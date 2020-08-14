@@ -1,0 +1,7 @@
+CazzuBot.ppk
+CazzuBot.pem
+.vscode
+__pycache__
+tmp
+secret.py
+conf.json
