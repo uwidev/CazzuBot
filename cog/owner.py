@@ -331,9 +331,12 @@ class Owner(commands.Cog):
         counter_settings['count'] = count
         write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
 
-
-    @commands.command()
+    @commands.group()
     async def story(self, ctx):
+        pass
+
+    @story.command()
+    async def compile(self, ctx):
         channel = ctx.channel
         contributions = 0
         emoji = re.compile(r'(<a?:[a-zA-Z0-9\_]+:[0-9]+>)')
@@ -369,6 +372,59 @@ class Owner(commands.Cog):
             # msg = await channel.send('🎉 Done compiling 🎉')
             # await msg.delete(delay=3)
             # await ctx.message.delete()
+
+    @story.command()
+    async def write(self, ctx, file_name):
+        async with ctx.channel.typing():
+            with open('story/{ch}.txt'.format(ch=file_name), mode='r', encoding='utf-8') as file:
+                while True:
+                    i = 0
+                    to_append = ''
+                    to_print = ''
+                    eof_reached = 0
+
+                    while(i <= 1900 or to_append != ' '):
+                        to_append = file.read(1)
+                        
+                        if not to_append:
+                            # print('>>> reached EOF')
+                            eof_reached = 1
+                            break
+                        
+                        to_print += to_append
+                        i += 1
+                        
+                    # print('going to print {}'.format(to_print))
+                    # print(to_print)
+                    await ctx.send(to_print)
+                    await asyncio.sleep(2)
+                    if eof_reached == 1:
+                        break
+            
+            with open('story/{ch}-contibutors.txt'.format(ch=file_name), mode='r', encoding='utf-8') as file:
+                while True:
+                    i = 0
+                    to_append = ''
+                    to_print = ''
+                    eof_reached = 0
+
+                    while(i <= 1900 or to_append != ' '):
+                        to_append = file.read(1)
+                        
+                        if not to_append:
+                            # print('>>> reached EOF')
+                            eof_reached = 1
+                            break
+                        
+                        to_print += to_append
+                        i += 1
+                        
+                    # print('going to print {}'.format(to_print))
+                    await ctx.send(to_print)
+                    if eof_reached == 1:
+                        break
+                    await asyncio.sleep(2)
+
 
 
 def setup(bot):
