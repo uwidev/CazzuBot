@@ -1,4 +1,5 @@
-import asyncio, os
+import asyncio, os, re
+from collections import defaultdict
 
 import discord
 from discord.ext import commands
@@ -329,6 +330,45 @@ class Owner(commands.Cog):
 
         counter_settings['count'] = count
         write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+
+
+    @commands.command()
+    async def story(self, ctx):
+        channel = ctx.channel
+        contributions = 0
+        emoji = re.compile(r'(<a?:[a-zA-Z0-9\_]+:[0-9]+>)')
+        contributors = defaultdict(int)
+
+        async with channel.typing():
+            if not os.path.isdir('story'):
+                    os.makedirs('story')
+
+            participants = defaultdict(int)
+            with open('story/{ch}.txt'.format(ch=channel.name), mode='w', encoding='utf-8') as file:
+                async for message in channel.history(limit=None, before=ctx.message, oldest_first=True):
+                    contributors[message.author.name] += 1
+
+                    file.write('{m} '.format(m=message.content))
+                    contributions += 1
+                    participants[message.author] += 1
+                
+
+                with open('story/{ch}-contibutors.txt'.format(ch=channel.name), mode='w', encoding='utf-8') as file:               
+                    file.write('.\n.\n.\n__**Total contributions: {c}**__\n'.format(c=contributions))
+
+                    i = 0
+                    for item in sorted(contributors.items(), key=lambda x: x[1], reverse=True):
+                        percent = (item[1]/contributions)
+                        if i < 5:
+                            file.write('**{auth}: {times} ({perc:.2%})**\n'.format(auth=item[0], times=item[1], perc=percent))
+                        else:
+                            file.write('{auth}: {times} ({perc:.2%})\n'.format(auth=item[0], times=item[1], perc=percent))
+                        i += 1
+
+            
+            # msg = await channel.send('🎉 Done compiling 🎉')
+            # await msg.delete(delay=3)
+            # await ctx.message.delete()
 
 
 def setup(bot):
