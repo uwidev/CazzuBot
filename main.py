@@ -8,7 +8,7 @@ from interfacedb import get_guild_conf
 from secret import TOKEN
 
 
-bot = commands.Bot(command_prefix='c!', owner_id = 92664421553307648)
+bot = commands.Bot(command_prefix='d!', owner_id = 92664421553307648)
 
 
 @bot.event
