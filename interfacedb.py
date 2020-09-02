@@ -1,14 +1,19 @@
+# Manages the TinyDB database and ensures that data is written/read safely.
+
 from tinydb import Query
 
 class ReadOnlyDict(dict):
     # This class is meant to only allow a read-only dictionary. 
     # It does not prevent mutable values from being changed.
+    #
+    # This is to ensure that the factory default settings of a guild never gets changed.
     def __setitem__(self, key, value):
         raise TypeError('read-only dictionary, setting values is not supported')
 
     def __delitem__(self, key):
         raise TypeError('read-only dict, deleting values is not supported')
 
+# Consider making this a class instead of a dictionary?
 default_settings = ReadOnlyDict({
     'id':None,
     'groups':{
@@ -41,7 +46,11 @@ default_settings = ReadOnlyDict({
 })
 
 def get_guild_conf(db, gid: int):
-    # Given a guidl id, fetches the group settings
+    # Returns the group settings of a guild
+    #
+    # @gid: the id of a guild
+    #
+    # @return: the configuration of {gid}
     query = db.get(Query().id == gid)
     if query is None:
         init_guild(db, gid)
@@ -50,23 +59,28 @@ def get_guild_conf(db, gid: int):
     return query['groups']
 
 
-def init_guild(db, id: int):
+def init_guild(db, gid: int):
     # Insert into the db a new posting for this guild id
-    # DOES NOT CHECK IF THIS GUILD ID ALREADY EXISTS
+    # DOES NOT CHECK IF THIS GUILD ID ALREADY EXISTS YET*
+    #
+    # @gid: the guild id
     guild_db = dict(default_settings)
     guild_db['id'] = id
     db.insert(guild_db)
 
 
-def write_back_settings(db, gid, settings):
-    # Given a guild ID and it's group settings values, 
-    # update in the in the database where the guild id is the same as the provided
+def write_back_settings(db, gid: int, settings: dict):
+    # Overwrites a guild's current settings
+    #
+    # @gid: the guild id
+    # @settings: a properly formatted 'groups', similar to 'default_settings'
     db.update({'groups':settings}, Query().id == gid)
 
 
-def update_settings(db, gid):
-    # Given a guid id,
-    # adds aand removes fields so that it matches the current default groups
+def update_settings(db, gid: int):
+    # Upgrades old group settings to a more current version
+    #
+    # @gid: the guild ids
     group = get_guild_conf(db, gid)
     default_groups = default_settings['groups']
     
