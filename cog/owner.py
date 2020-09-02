@@ -1,7 +1,6 @@
 import asyncio, os, re
 from collections import defaultdict
 
-import discord
 from discord.ext import commands
 from tinydb import Query
 from interfacedb import *
@@ -18,7 +17,6 @@ class Owner(commands.Cog):
     #         pass
     #     raise error
 
-
     async def cog_after_invoke(self, ctx):
         await ctx.message.add_reaction('👍')
         # await ctx.message.delete(delay=3)
@@ -29,11 +27,6 @@ class Owner(commands.Cog):
         if await self.bot.is_owner(ctx.author):
             return True
         return False
-
-
-    @commands.command()
-    async def ping(self, ctx):
-        await ctx.send(':ping_pong: Pong! {}ms'.format(str(self.bot.latency * 1000)[0:6]))
 
 
     @commands.group()

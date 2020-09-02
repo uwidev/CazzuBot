@@ -203,6 +203,63 @@ class Listener(commands.Cog):
             pass
 
 
+    @commands.command()
+    async def hashiresoriyo(self, ctx):
+        await ctx.send("https://www.youtube.com/watch?v=rkWk0Nq5GjI")
+
+
+    @commands.command()
+    async def channel(self, ctx):
+        print(ctx.channel)
+
+
+    @commands.command()
+    async def info(self, ctx, *, member: discord.Member):
+        fmt = '{0} joined on {0.joined_at} and has {1} roles'
+        await ctx.send(fmt.format(member, len(member.roles)))
+
+
+    @commands.command()
+    async def noot(self, ctx):
+        await ctx.send("NOOT NOOT")
+
+
+    @commands.command()
+    async def ping(self, ctx):
+        await ctx.send(':ping_pong: Pong! {}ms'.format(str(self.bot.latency * 1000)[0:6]))
+
+
+    @commands.command()
+    async def tableflip(self, ctx):
+        await ctx.send("(╯°□°）╯︵ ┻━┻")
+
+
+    @commands.command()
+    async def test(self, ctx):
+        info_pnts = dict()
+        his = ctx.channel.history
+
+        # Add all the messages into the info_pnts dictionary
+        async for message in his():
+            points = 0
+            for reaction in message.reactions:
+                if reaction.emoji == "👍":
+                    points += reaction.count
+                elif reaction.emoji == "👎":
+                    points -= reaction.count
+            info_pnts[message] = points
+        
+        info_pnts = {k: v for k, v in sorted(info_pnts.items(), key = lambda item: -item[1])}
+        message, votes = next(iter(info_pnts.items()))
+        await ctx.send("WINNERS:\nMessage with the most votes:\n{}\nAuthor: {}\nVotes: {}".format(message.content, message.author, votes))
+
+    
+    # @noot.error
+    # async def info_error(self, ctx, error):
+    #     if isinstance(error, commandsBadArgumnet):
+    #         await ctx.send('STOP')
+
+
     # @commands.Cog.listener()
     # async def on_raw_message_delete(self, payload):
     #     # If a server module depended on a deleted message,
