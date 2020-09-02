@@ -1,3 +1,7 @@
+# This cog is meant to listen to events in a guild and react
+#
+# DO NOT PUT COMMANDS HERE
+
 import asyncio, os
 from collections import defaultdict
 from copy import copy
@@ -9,21 +13,19 @@ from interfacedb import *
 from utility import make_simple_embed
 
 class Listener(commands.Cog):
-    
-    class MembersDecay(dict):
-        def __init__(self, func):
-            self.__func = func
-
-        def __getitem__(self, key):
-            try:
-                return dict.__getitem__(self, key)
-            except:
-                dict.__setitem__(self, key, self.__func)
-                return dict.__getitem__(self, key)
+    def __init__(self, bot):
+        self.bot = bot
+        self.counter_lock = False
+        self.recently_counted = dict() 
 
 
     @tasks.loop(count=1)
-    async def timer(self, seconds, func, *args, **kwargs):
+    async def timer(self, seconds: int, func, *args, **kwargs):
+    # A timer that must be copy() in order to function independently
+    # Begin timer with .start() or .restart() if alreaady started
+    #
+    # @seconds: how long until calling {func}
+    # @func: the function called after {seconds} seconds
         await asyncio.sleep(seconds)
         if asyncio.iscoroutinefunction(func):
             await func(*args, **kwargs)
@@ -31,15 +33,13 @@ class Listener(commands.Cog):
             func(*args, **kwargs)
 
 
-    def __init__(self, bot):
-        self.bot = bot
-        self.counter_lock = False
-        self.recently_counted = dict()
-        # whose key:value are members:timer
-
-
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
+    # Called on any and all reactionss
+    #
+    # Is organaized in the following:
+    #   User authentication
+    #   Counter
         if payload.member.id == self.bot.user.id:
             return
 
@@ -64,6 +64,9 @@ class Listener(commands.Cog):
                     pass
         
         # Counter event checking
+        #
+        # Uses a lock to ensure that multiple calals aren't ran multiple times
+        # when multiple users add rections to the counter
         if not self.counter_lock:
             counter_settings = guild_conf['counter']
             if counter_settings['op']:
@@ -86,7 +89,7 @@ class Listener(commands.Cog):
                                 else:
                                     self.recently_counted[member].restart(297, self.counter_member_decay, member)
                                 
-                            # Fetch embed from message and modify it
+                            # Fetch counter embed from message and modify it
                             embed = msg.embeds[0]
                             embed.description = counter_settings['description'].format(count=counter_settings['count'])
                             members = list(self.recently_counted.keys())
@@ -104,7 +107,6 @@ class Listener(commands.Cog):
                             else:
                                 embed.set_footer(text=counter_settings['footer'], icon_url='https://cdn.discordapp.com/emojis/695126166301835304.png?v=1')   
 
-                            
                             # Finalize and modify the message
                             await msg.edit(embed=embed)
                             await msg.clear_reactions()
@@ -113,15 +115,20 @@ class Listener(commands.Cog):
                             touch = await msg.channel.send('.')
                             await touch.delete()
 
+                            # Write back to DB the changed counter
                             write_back_settings(self.bot.db_confs, payload.guild_id, guild_conf)
                     
                     self.counter_lock = False
-                    # print(self.recently_counted.items())
 
 
     async def counter_member_decay(self, member):
-        # Should be called after any member X hasn't pressed the baka button for Y seconds
-        print('decaying {}'.format(member))
+        # Called after {seconds} from counter
+        #
+        # @member: the member we want to remove from recently counted
+        if member not in self.recently_counted:
+            print('Warning: for some reason, {m} wasn\'t found in recently counted for counter module.'.format(m=member.name))
+            return
+
         self.recently_counted.pop(member)
         await self.ensure_dependencies(member.guild.id)
         guild_conf = get_guild_conf(self.bot.db_confs, member.guild.id)
@@ -150,32 +157,41 @@ class Listener(commands.Cog):
         await msg.edit(embed=embed)
                     
 
-    @tasks.loop(count=1)
-    async def decay_recently_counted(self, seconds, payload):
-        await asyncio.sleep(seconds)
-        await self.ensure_dependencies(payload.guild_id)
-        guild_conf = get_guild_conf(self.bot.db_confs, payload.guild_id)
-        counter_settings = guild_conf['counter']
+    # @tasks.loop(count=1)
+    # async def decay_recently_counted(self, seconds, payload):
+    #     await asyncio.sleep(seconds)
+    #     await self.ensure_dependencies(payload.guild_id)
+    #     guild_conf = get_guild_conf(self.bot.db_confs, payload.guild_id)
+    #     counter_settings = guild_conf['counter']
 
-        if counter_settings['op']:
-            if self.verify_reaction(counter_settings, payload):
-                msg = await payload.member.guild.get_channel(payload.channel_id).fetch_message(payload.message_id)
-                embed = msg.embeds[0]
-                embed.set_footer(text=counter_settings['footer'], icon_url='https://cdn.discordapp.com/emojis/695126166301835304.png?v=1')
+    #     if counter_settings['op']:
+    #         if self.verify_reaction(counter_settings, payload):
+    #             msg = await payload.member.guild.get_channel(payload.channel_id).fetch_message(payload.message_id)
+    #             embed = msg.embeds[0]
+    #             embed.set_footer(text=counter_settings['footer'], icon_url='https://cdn.discordapp.com/emojis/695126166301835304.png?v=1')
                 
-                await msg.edit(embed=embed)
+    #             await msg.edit(embed=embed)
 
 
     def verify_reaction(self, settings, payload):
         # Checks to see if reaction is on the right message and the right emoji
+        #
+        # @settings: the group settings of a guild
+        # @payload: the payload from a raw reaction
+        #
+        # @return: bool
         return (str(payload.emoji) == settings['emoji'] and 
             payload.channel_id == settings['channel'] and 
             payload.message_id == settings['message'])
 
 
-    async def ensure_dependencies(self, guild_id):
+    async def ensure_dependencies(self, gid):
+    # Checks if data is still relevant to a guild, and if not set
+    # the settings to inoperable to speed up computation
+    #
+    # @gid: guild id to check dependencies
         affected = False
-        guild_conf = get_guild_conf(self.bot.db_confs, guild_id)
+        guild_conf = get_guild_conf(self.bot.db_confs, gid)
 
         for name, settings in guild_conf.items():
             # Check Verify dependencies here
@@ -184,7 +200,7 @@ class Listener(commands.Cog):
                     # Ensure channel, emoji and role exists
                     emoji = settings['emoji'] if self.bot.get_emoji(settings['emoji']) != None else settings['emoji']
 
-                    if (not emoji or not self.bot.get_guild(guild_id).get_role(settings['role']) or 
+                    if (not emoji or not self.bot.get_guild(gid).get_role(settings['role']) or 
                         not self.bot.get_channel(settings['channel'])):
                         affected = True
                         settings['op'] = False
@@ -204,38 +220,9 @@ class Listener(commands.Cog):
 
 
     @commands.command()
-    async def hashiresoriyo(self, ctx):
-        await ctx.send("https://www.youtube.com/watch?v=rkWk0Nq5GjI")
-
-
-    @commands.command()
-    async def channel(self, ctx):
-        print(ctx.channel)
-
-
-    @commands.command()
-    async def info(self, ctx, *, member: discord.Member):
-        fmt = '{0} joined on {0.joined_at} and has {1} roles'
-        await ctx.send(fmt.format(member, len(member.roles)))
-
-
-    @commands.command()
-    async def noot(self, ctx):
-        await ctx.send("NOOT NOOT")
-
-
-    @commands.command()
-    async def ping(self, ctx):
-        await ctx.send(':ping_pong: Pong! {}ms'.format(str(self.bot.latency * 1000)[0:6]))
-
-
-    @commands.command()
-    async def tableflip(self, ctx):
-        await ctx.send("(╯°□°）╯︵ ┻━┻")
-
-
-    @commands.command()
     async def test(self, ctx):
+    # Looks at all messages in a channel and returns the rating of all messsages
+    # based on 👍 and 👎, then sends a report into the channel
         info_pnts = dict()
         his = ctx.channel.history
 
