@@ -371,10 +371,11 @@ class Owner(commands.Cog):
             
             # msg = await channel.send('🎉 Done compiling 🎉')
             # await msg.delete(delay=3)
-            # await ctx.message.delete()
+            await ctx.message.delete()
 
     @story.command()
     async def write(self, ctx, file_name):
+        await ctx.send("```fix\n>>> {name} <<<```".format(name=file_name))
         async with ctx.channel.typing():
             with open('story/{ch}.txt'.format(ch=file_name), mode='r', encoding='utf-8') as file:
                 while True:
@@ -394,8 +395,6 @@ class Owner(commands.Cog):
                         to_print += to_append
                         i += 1
                         
-                    # print('going to print {}'.format(to_print))
-                    # print(to_print)
                     await ctx.send(to_print)
                     await asyncio.sleep(2)
                     if eof_reached == 1:
@@ -424,6 +423,8 @@ class Owner(commands.Cog):
                     if eof_reached == 1:
                         break
                     await asyncio.sleep(2)
+
+        await ctx.message.delete()
 
 
 
