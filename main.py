@@ -4,11 +4,11 @@ from collections import OrderedDict
 import discord
 from discord.ext import commands
 from tinydb import TinyDB
-from interfacedb import get_guild_conf
+from interfacedb import guild_settings_fetch
 from secret import TOKEN
 
 
-bot = commands.Bot(command_prefix='d!', owner_id = 92664421553307648)
+bot = commands.Bot(command_prefix='c!', owner_id = 92664421553307648)
 
 
 @bot.event
@@ -22,5 +22,6 @@ if __name__ == '__main__':
             bot.load_extension('cog.' + file[0:-3])
 
     bot.db_confs = TinyDB('conf.json')
+    bot.db_user = TinyDB('user.json')
 
     bot.run(TOKEN)

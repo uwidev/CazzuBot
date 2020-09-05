@@ -14,7 +14,7 @@ class ReadOnlyDict(dict):
         raise TypeError('read-only dict, deleting values is not supported')
 
 # Consider making this a class instead of a dictionary?
-default_settings = ReadOnlyDict({
+guild_settings_default = ReadOnlyDict({
     'id':None,
     'groups':{
         'verify':{
@@ -45,44 +45,44 @@ default_settings = ReadOnlyDict({
     }          
 })
 
-def get_guild_conf(db, gid: int):
+
+def guild_settings_fetch(db_guild, gid: int):
     # Returns the group settings of a guild
     #
     # @gid: the id of a guild
     #
     # @return: the configuration of {gid}
-    query = db.get(Query().id == gid)
+    query = db_guild.get(Query().id == gid)
     if query is None:
-        init_guild(db, gid)
-        query = db.get(Query().id == gid)
+        guild_settings_initialize(db, gid)
+        query = db_guild.get(Query().id == gid)
 
     return query['groups']
 
 
-def init_guild(db, gid: int):
+def guild_settings_initialize(db_guild, gid: int):
     # Insert into the db a new posting for this guild id
     # DOES NOT CHECK IF THIS GUILD ID ALREADY EXISTS YET*
     #
     # @gid: the guild id
-    guild_db = dict(default_settings)
-    guild_db['id'] = id
-    db.insert(guild_db)
+    guild = { gid : dict(guild_settings_default) }
+    db_guild.insert(guild)
 
 
-def write_back_settings(db, gid: int, settings: dict):
+def guild_settings_write(db_guild, gid: int, settings: dict):
     # Overwrites a guild's current settings
     #
     # @gid: the guild id
     # @settings: a properly formatted 'groups', similar to 'default_settings'
-    db.update({'groups':settings}, Query().id == gid)
+    db_guild.update({'groups':settings}, Query().id == gid)
 
 
-def update_settings(db, gid: int):
+def guild_settings_upgrade(db_guild, gid: int):
     # Upgrades old group settings to a more current version
     #
     # @gid: the guild ids
-    group = get_guild_conf(db, gid)
-    default_groups = default_settings['groups']
+    group = guild_settings_fetch(db_guild, gid)
+    default_groups = guild_settings_default['groups']
     
     union_groups = set(group.keys()).union(default_groups.keys())
     for setting in union_groups:
@@ -100,4 +100,22 @@ def update_settings(db, gid: int):
             elif field in group[setting] and field not in default_groups[setting]:
                 group[setting].pop(field)
     
-    write_back_settings(db, gid, group)
+    guild_settings_write(db_guild, gid, group)
+
+
+user_data_default = ReadOnlyDict({
+    'id':None,
+    'exp':0,
+    'exp_factor':1,
+    'frogs':0,
+    'frozen_frogs':0
+})
+
+
+def user_data_intialize(db_user, uid):
+    user = { str(uid) : dict(user_data_default) }
+    db_user.insert(user)
+
+
+def user_data_write(db_user, uid, data):
+    db_user.update(data, Query().id == uid)

@@ -57,20 +57,20 @@ class Owner(commands.Cog):
 
     @verify.command(name = 'make')
     async def verify_make(self, ctx, msg:discord.Message, emo:EmojiPlus, *, rol:discord.Role):
-    '''
-    Reacts to a message (given messsage id) withh the provided emoji. Anyone afterwards who reacts with
-    that emoji will be given the provided role.
-    '''
-    # Creates the embed for the verify module.
-    #
-    # @msg: The id of the message to watch reactions for verification
-    # @emo: The reaction to look for to apply the {rol}
-    # @rol: The role to give the member
+        '''
+        Reacts to a message (given messsage id) withh the provided emoji. Anyone afterwards who reacts with
+        that emoji will be given the provided role.
+        '''
+        # Creates the embed for the verify module.
+        #
+        # @msg: The id of the message to watch reactions for verification
+        # @emo: The reaction to look for to apply the {rol}
+        # @rol: The role to give the member
         if ctx.guild.me.top_role <= rol:
             await ctx.send('It appears that role is higher than what I could ever get :c')
             return
         
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         verify_settings = guild_conf['verify']
         
         
@@ -81,7 +81,7 @@ class Owner(commands.Cog):
         verify_settings['op'] = True
         await msg.add_reaction(emo)
 
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
 
 
     @verify.command(name = 'emoji')
@@ -90,7 +90,7 @@ class Owner(commands.Cog):
         Edits an existing verify message (if exists) such that it's new watched reaction is {emo}.
         '''
         # @emo: the new reaction to watch to apply role verification
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         verify_settings = guild_conf['verify']
 
         
@@ -102,21 +102,21 @@ class Owner(commands.Cog):
         await msg.add_reaction(str(emo))
 
         verify_settings['emoji'] = str(emo)
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
     
 
     @verify.command(name = 'role')
     async def verify_role(self, ctx, *, rol:discord.Role):
-    '''
-    Edits and existing verify message (if existss) such that the new role it gives to members is {rol}.
-    '''
-    # @rol: the new role to give
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        '''
+        Edits and existing verify message (if existss) such that the new role it gives to members is {rol}.
+        '''
+        # @rol: the new role to give
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         verify_settings = guild_conf['verify']
 
         verify_settings['role'] = rol.id
 
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
 
 
     @commands.group()
@@ -126,72 +126,72 @@ class Owner(commands.Cog):
 
     @welcome.command(name = 'here')
     async def welcome_here(self, ctx):
-    '''
-    Sets this current ctx.channel as the channel to welcome new users.
-    '''
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        '''
+        Sets this current ctx.channel as the channel to welcome new users.
+        '''
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         welcome_settings = guild_conf['welcome']
 
         welcome_settings['op'] = True
         welcome_settings['channel'] = ctx.channel.id
 
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
         await ctx.message.add_reaction('👍')
 
 
     @welcome.command(name = 'content')
     async def welcome_content(self, ctx, *, content: str):
-    '''
-    Edits the message that gets sent when a new user joins.
-    '''
+        '''
+        Edits the message that gets sent when a new user joins.
+        '''
     # @ content: the message of the new embed
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         welcome_settings = guild_conf['welcome']
 
         welcome_settings['content'] = content
 
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
         await ctx.message.add_reaction('👍')
 
 
     @welcome.command(name = 'title')
     async def welcome_title(self, ctx, *, title: str):
-    '''
-    Edits the embedded title that gets sent when a new user joins
-    '''
+        '''
+        Edits the embedded title that gets sent when a new user joins
+        '''
     # @ title: the new embed title
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         welcome_settings = guild_conf['welcome']
 
         welcome_settings['title'] = title
 
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
         # await ctx.message.add_reaction('👍')
         # await ctx.message.delete(delay=2)
 
 
     @welcome.command(name = 'description')
     async def welcome_desc(self, ctx, *, desc: str):
-    '''
-    Edits the embedded description that gets sent when a new user joins.
-    '''
-    #
-    # @ desc: the new embed description
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        '''
+        Edits the embedded description that gets sent when a new user joins.
+        '''
+        #
+        # @ desc: the new embed description
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         welcome_settings = guild_conf['welcome']
 
         welcome_settings['description'] = desc
 
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
         # await ctx.message.add_reaction('👍')
         # await ctx.message.delete(delay=2)
 
 
     @commands.command()
     async def listemojis(self, ctx):
-    '''
-    Lists all emojis the server has to offer with their name.
-    '''
+        '''
+        Lists all emojis the server has to offer with their name.
+        '''
         async with ctx.channel.typing:
             for emoji in ctx.guild.emojis():
                 await ctx.send(emoji)
@@ -203,25 +203,25 @@ class Owner(commands.Cog):
 
     @commands.command()
     async def init_hard(self, ctx):
-    '''
-    Completely wipes guild's settings.
-    '''
+        '''
+        Completely wipes guild's settings.
+        '''
         self.bot.db_confs.truncate()
         await ctx.send("Done!")
 
 
     @commands.command()
     async def update_guild_dbs(self, ctx):
-    '''
-    Updates the database so outdated server settings are current.
-    '''
+        '''
+        Updates the database so outdated server settings are current.
+        '''
         m1 = await ctx.send('Updating the db for all guilds I am connected to...')
         
         async with ctx.channel.typing():
             gids_generator = (g.id for g in self.bot.guilds)
 
             for gid in gids_generator:
-                update_settings(self.bot.db_confs, gid)
+                guild_settings_upgrade(self.bot.db_confs, gid)
 
         m2 = await ctx.send('Database is now updated!')
 
@@ -237,10 +237,10 @@ class Owner(commands.Cog):
 
     @counter.command(name = 'make')
     async def counter_make(self, ctx):
-    '''
-    Creates a counter module for the guild in this channel.
-    '''
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        '''
+        Creates a counter module for the guild in this channel.
+        '''
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         counter_settings = guild_conf['counter']
 
         title = counter_settings['title']
@@ -264,16 +264,16 @@ class Owner(commands.Cog):
         counter_settings['op'] = True
 
         await msg.add_reaction(counter_settings['emoji'])
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
         
 
     @counter.command(name = 'emoji')
     async def counter_emoji(self, ctx, emo: EmojiPlus):
-    '''
-    Sets the emoji for the counter module.
-    '''
-    # @emo: the new emoji to look for
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        '''
+        Sets the emoji for the counter module.
+        '''
+        # @emo: the new emoji to look for
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         counter_settings = guild_conf['counter']
 
         channel_id = counter_settings['channel']
@@ -284,15 +284,15 @@ class Owner(commands.Cog):
         await msg.add_reaction(emo)
         
         counter_settings['emoji'] = str(emo)
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
 
 
     @counter.command(name = 'title')
     async def counter_title(self, ctx, title: str):
-    '''
-    Edits the embedded title for the counter module.
-    '''
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        '''
+        Edits the embedded title for the counter module.
+        '''
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         counter_settings = guild_conf['counter']
 
         channel_id = counter_settings['channel']
@@ -304,14 +304,15 @@ class Owner(commands.Cog):
         await msg.edit(embed=embed)
 
         counter_settings['title'] = title
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
 
 
     @counter.command(name = 'description')
     async def counter_desc(self, ctx, desc: str):
-    '''
-    Edits the embedded description for the counter module.
-    '''        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        '''
+        Edits the embedded description for the counter module.
+        '''       
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         counter_settings = guild_conf['counter']
 
         channel_id = counter_settings['channel']
@@ -323,15 +324,15 @@ class Owner(commands.Cog):
         await msg.edit(embed=embed)
 
         counter_settings['description'] = desc
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
 
 
     @counter.command(name = 'footer')
     async def counter_footer(self, ctx, footer: str):
-    '''
-    Edits the embedded footer for the counter module.
-    '''
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        '''
+        Edits the embedded footer for the counter module.
+        '''
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         counter_settings = guild_conf['counter']
 
         channel_id = counter_settings['channel']
@@ -343,15 +344,15 @@ class Owner(commands.Cog):
         await msg.edit(embed=embed)
 
         counter_settings['footer'] = footer
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
 
 
     @counter.command(name = 'thumbnail')
     async def counter_thumbnail(self, ctx, url: str):
-    '''
-    Edits the embedded thumbnail for the counter module.
-    '''
-        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        '''
+        Edits the embedded thumbnail for the counter module.
+        '''
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         counter_settings = guild_conf['counter']
 
         channel_id = counter_settings['channel']
@@ -363,14 +364,15 @@ class Owner(commands.Cog):
         await msg.edit(embed=embed)
 
         counter_settings['thumbnail'] = url
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
 
 
     @counter.command(name = 'set')
     async def counter_set(self, ctx, count: int):
-    '''
-    Edits the current count for the counter module.
-    '''        guild_conf = get_guild_conf(self.bot.db_confs, ctx.guild.id)
+        '''
+        Edits the current count for the counter module.
+        '''        
+        guild_conf = guild_settings_fetch(self.bot.db_confs, ctx.guild.id)
         counter_settings = guild_conf['counter']
 
         channel_id = counter_settings['channel']
@@ -382,7 +384,7 @@ class Owner(commands.Cog):
         await msg.edit(embed=embed)
 
         counter_settings['count'] = count
-        write_back_settings(self.bot.db_confs, ctx.guild.id, guild_conf)
+        guild_settings_write(self.bot.db_confs, ctx.guild.id, guild_conf)
 
 
     @commands.group()
@@ -392,10 +394,10 @@ class Owner(commands.Cog):
 
     @story.command()
     async def compile(self, ctx):
-    '''
-    Saves all message in a .txt file as one long message. Also summarizes the contributions.
-    File name will be the same as the channel name.
-    '''
+        '''
+        Saves all message in a .txt file as one long message. Also summarizes the contributions.
+        File name will be the same as the channel name.
+        '''
         channel = ctx.channel
         contributions = 0
         emoji = re.compile(r'(<a?:[a-zA-Z0-9\_]+:[0-9]+>)')
@@ -432,11 +434,12 @@ class Owner(commands.Cog):
             # await msg.delete(delay=3)
             await ctx.message.delete()
 
+
     @story.command()
     async def write(self, ctx, file_name):
-    '''
-    Given a existing file name from a compiled story, writes the entire story.
-    '''
+        '''
+        Given a existing file name from a compiled story, writes the entire story.
+        '''
         await ctx.send("```fix\n>>> {name} <<<```".format(name=file_name))
         async with ctx.channel.typing():
             with open('story/{ch}.txt'.format(ch=file_name), mode='r', encoding='utf-8') as file:

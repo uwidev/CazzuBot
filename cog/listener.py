@@ -45,7 +45,7 @@ class Listener(commands.Cog):
 
         # Ensure dependencies of all reaction-related events
         await self.ensure_dependencies(payload.guild_id)
-        guild_conf = get_guild_conf(self.bot.db_confs, payload.guild_id)
+        guild_conf = guild_settings_fetch(self.bot.db_confs, payload.guild_id)
         
         # Automation for User Verification
         verify_settings = guild_conf['verify']
@@ -116,7 +116,7 @@ class Listener(commands.Cog):
                             await touch.delete()
 
                             # Write back to DB the changed counter
-                            write_back_settings(self.bot.db_confs, payload.guild_id, guild_conf)
+                            wguild_settings_writerite_back_settings(self.bot.db_confs, payload.guild_id, guild_conf)
                     
                     self.counter_lock = False
 
@@ -131,7 +131,7 @@ class Listener(commands.Cog):
 
         self.recently_counted.pop(member)
         await self.ensure_dependencies(member.guild.id)
-        guild_conf = get_guild_conf(self.bot.db_confs, member.guild.id)
+        guild_conf = guild_settings_fetch(self.bot.db_confs, member.guild.id)
         counter_settings = guild_conf['counter']
 
         msg = await member.guild.get_channel(counter_settings['channel']).fetch_message(counter_settings['message'])
@@ -191,7 +191,7 @@ class Listener(commands.Cog):
     #
     # @gid: guild id to check dependencies
         affected = False
-        guild_conf = get_guild_conf(self.bot.db_confs, gid)
+        guild_conf = guild_settings_fetch(self.bot.db_confs, gid)
 
         for name, settings in guild_conf.items():
             # Check Verify dependencies here
