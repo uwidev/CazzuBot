@@ -4,7 +4,7 @@
 # import discord
 # from discord.ext import commands, tasks
 # from tinydb import TinyDB
-# from interfacedb import get_guild_conf
+# from db_guild_interface import get_guild_conf
 # from secret import TOKEN
 
 
@@ -41,12 +41,18 @@
 # if __name__ == '__main__':
 #     bot.run(TOKEN)
 
-class C():
-    def test():
-        print('blah')
+# class C():
+#     def test():
+#         print('blah')
 
-one = C()
-two = C()
+# one = C()
+# two = C()
 
-print(one.test)
-print(two.test)
+# print(one.test)
+# print(two.test)
+
+num = [(1, 2), (3, 4)]
+
+gen = (c for c in num)
+
+print(list(map(lambda a: a[1], num)))

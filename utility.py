@@ -3,35 +3,37 @@ import discord
 from discord.ext import commands, tasks
 import asyncio
 
-# class Timer:
-#     def __init__(self, timeout, callback):
-#         self._timeout = timeout
-#         self._callback = callback
-#         self._task = asyncio.ensure_future(self._job())
-#         self.running = True
+@tasks.loop(count=1)
+async def timer(seconds: int, func=None, *args, **kwargs):
+    # Function is working but is not working as intended. Prone to bugs.
+    # 
+    #
+    # A timer that must be copy() in order to function independently
+    # Begin timer with .start() or .restart() if alreaady started
+    #
+    # @seconds: how long until calling {func}
+    # @func: the function called after {seconds} seconds
+    await asyncio.sleep(seconds)
+    if not func:
+        return
+    
+    if asyncio.iscoroutinefunction(func):
+        await func(*args, **kwargs)
+    else:
+        func(*args, **kwargs)
 
-#     async def _job(self):
-#         await asyncio.sleep(self._timeout)
-#         self.running = False
-#         await self._callback()
 
-#     def cancel(self):
-#         self._task.cancel()
+class ReadOnlyDict(dict):
+    # This class is meant to only allow a read-only dictionary. 
+    # It does not prevent mutable values from being changed.
+    #
+    # This is to ensure that the factory default settings of a guild never gets changed.
+    def __setitem__(self, key, value):
+        raise TypeError('read-only dictionary, setting values is not supported')
 
-#     async def restart(self):
-#         self._task.cancel()
-#         await self._job()
-
-
-# def test():
-#     pass
-
-# s = MembersDecay(test)
-# s[0]
-# s[1]
-# s[2]
-# print(s)
-
+    def __delitem__(self, key):
+        raise TypeError('read-only dict, deleting values is not supported')
+    
 
 async def is_custom_emoji(argument):
     '''Small helper function to see if an emoji is custom or unicode'''
@@ -100,9 +102,3 @@ def make_simple_embed(title: str, desc: str):
 
 def writiable_emoji(emo):
     return emo if type(emo) is discord.emoji.Emoji else emo
-
-# def get_group(guild_conf: dict, to_find: str):
-#     for name in guild_conf['groups'].keys():
-#         if name == to_find:
-#             return guild_conf['groups'][name]
-#     return None

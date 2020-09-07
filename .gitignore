@@ -4,4 +4,5 @@ CazzuBot.pem
 __pycache__
 tmp
 secret.py
-conf.json
+guild.json
+user.json

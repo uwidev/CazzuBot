@@ -6,31 +6,16 @@ import asyncio, os
 from collections import defaultdict
 from copy import copy
 
-import discord
+import discord, db_guild_interface
 from discord.ext import commands, tasks
 from tinydb import Query
-from interfacedb import *
-from utility import make_simple_embed
+from utility import make_simple_embed, timer
 
 class Listener(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.counter_lock = False
-        self.recently_counted = dict() 
-
-
-    @tasks.loop(count=1)
-    async def timer(self, seconds: int, func, *args, **kwargs):
-    # A timer that must be copy() in order to function independently
-    # Begin timer with .start() or .restart() if alreaady started
-    #
-    # @seconds: how long until calling {func}
-    # @func: the function called after {seconds} seconds
-        await asyncio.sleep(seconds)
-        if asyncio.iscoroutinefunction(func):
-            await func(*args, **kwargs)
-        else:
-            func(*args, **kwargs)
+        self.recently_counted = dict()
 
 
     @commands.Cog.listener()
@@ -45,7 +30,7 @@ class Listener(commands.Cog):
 
         # Ensure dependencies of all reaction-related events
         await self.ensure_dependencies(payload.guild_id)
-        guild_conf = guild_settings_fetch(self.bot.db_confs, payload.guild_id)
+        guild_conf = db_guild_interface.fetch(self.bot.db_guild, payload.guild_id)
         
         # Automation for User Verification
         verify_settings = guild_conf['verify']
@@ -84,7 +69,7 @@ class Listener(commands.Cog):
 
                                 # Start decaying for recently counted, note that the actual recent timer will be sleep + the first argument
                                 if member not in self.recently_counted:
-                                    self.recently_counted[member] = copy(self.timer)
+                                    self.recently_counted[member] = copy(timer)
                                     self.recently_counted[member].start(297, self.counter_member_decay, member)
                                 else:
                                     self.recently_counted[member].restart(297, self.counter_member_decay, member)
@@ -116,7 +101,7 @@ class Listener(commands.Cog):
                             await touch.delete()
 
                             # Write back to DB the changed counter
-                            wguild_settings_writerite_back_settings(self.bot.db_confs, payload.guild_id, guild_conf)
+                            db_guild_interface.write(self.bot.db_guild, payload.guild_id, guild_conf)
                     
                     self.counter_lock = False
 
@@ -131,7 +116,7 @@ class Listener(commands.Cog):
 
         self.recently_counted.pop(member)
         await self.ensure_dependencies(member.guild.id)
-        guild_conf = guild_settings_fetch(self.bot.db_confs, member.guild.id)
+        guild_conf = db_guild_interface.fetch(self.bot.db_guild, member.guild.id)
         counter_settings = guild_conf['counter']
 
         msg = await member.guild.get_channel(counter_settings['channel']).fetch_message(counter_settings['message'])
@@ -161,7 +146,7 @@ class Listener(commands.Cog):
     # async def decay_recently_counted(self, seconds, payload):
     #     await asyncio.sleep(seconds)
     #     await self.ensure_dependencies(payload.guild_id)
-    #     guild_conf = get_guild_conf(self.bot.db_confs, payload.guild_id)
+    #     guild_conf = get_guild_conf(self.bot.db_guild, payload.guild_id)
     #     counter_settings = guild_conf['counter']
 
     #     if counter_settings['op']:
@@ -191,7 +176,7 @@ class Listener(commands.Cog):
     #
     # @gid: guild id to check dependencies
         affected = False
-        guild_conf = guild_settings_fetch(self.bot.db_confs, gid)
+        guild_conf = db_guild_interface.fetch(self.bot.db_guild, gid)
 
         for name, settings in guild_conf.items():
             # Check Verify dependencies here
@@ -215,7 +200,7 @@ class Listener(commands.Cog):
                         continue
 
         if affected:
-            # self.bot.db_confs.update([guild_conf])
+            # self.bot.db_guild.update([guild_conf])
             pass
 
 
@@ -240,7 +225,8 @@ class Listener(commands.Cog):
         message, votes = next(iter(info_pnts.items()))
         await ctx.send("WINNERS:\nMessage with the most votes:\n{}\nAuthor: {}\nVotes: {}".format(message.content, message.author, votes))
 
-    
+
+
     # @noot.error
     # async def info_error(self, ctx, error):
     #     if isinstance(error, commandsBadArgumnet):
