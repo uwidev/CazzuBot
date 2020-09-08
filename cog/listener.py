@@ -204,26 +204,26 @@ class Listener(commands.Cog):
             pass
 
 
-    @commands.command()
-    async def test(self, ctx):
-    # Looks at all messages in a channel and returns the rating of all messsages
-    # based on 👍 and 👎, then sends a report into the channel
-        info_pnts = dict()
-        his = ctx.channel.history
+    # @commands.command()
+    # async def test(self, ctx):
+    # # Looks at all messages in a channel and returns the rating of all messsages
+    # # based on 👍 and 👎, then sends a report into the channel
+    #     info_pnts = dict()
+    #     his = ctx.channel.history
 
-        # Add all the messages into the info_pnts dictionary
-        async for message in his():
-            points = 0
-            for reaction in message.reactions:
-                if reaction.emoji == "👍":
-                    points += reaction.count
-                elif reaction.emoji == "👎":
-                    points -= reaction.count
-            info_pnts[message] = points
+    #     # Add all the messages into the info_pnts dictionary
+    #     async for message in his():
+    #         points = 0
+    #         for reaction in message.reactions:
+    #             if reaction.emoji == "👍":
+    #                 points += reaction.count
+    #             elif reaction.emoji == "👎":
+    #                 points -= reaction.count
+    #         info_pnts[message] = points
         
-        info_pnts = {k: v for k, v in sorted(info_pnts.items(), key = lambda item: -item[1])}
-        message, votes = next(iter(info_pnts.items()))
-        await ctx.send("WINNERS:\nMessage with the most votes:\n{}\nAuthor: {}\nVotes: {}".format(message.content, message.author, votes))
+    #     info_pnts = {k: v for k, v in sorted(info_pnts.items(), key = lambda item: -item[1])}
+    #     message, votes = next(iter(info_pnts.items()))
+    #     await ctx.send("WINNERS:\nMessage with the most votes:\n{}\nAuthor: {}\nVotes: {}".format(message.content, message.author, votes))
 
 
 

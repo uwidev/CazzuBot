@@ -23,6 +23,31 @@ async def timer(seconds: int, func=None, *args, **kwargs):
         func(*args, **kwargs)
 
 
+class Timer():
+    def __init__(self, callback, seconds=0, minutes=0, hours=0):
+        self._callback = callback
+        self._duration = seconds + 60*minutes + 3600*hours
+        self._task = None
+
+    async def start(self, *args, **kwargs):
+        self._task = asyncio.create_task(self._start(*args, **kwargs))
+
+    async def _start(self, *args, **kwargs):
+        await asyncio.sleep(self._duration)
+
+        if asyncio.iscoroutinefunction(self._callback):
+            await self._callback(*args, **kwargs)
+        else:
+            self._callback(*args, **kwargs)
+
+    async def restart(self, *args, **kwargs):
+        self._task.add_done_callback(self.start(*args, **kwargs))
+        self._task.cancel()
+
+    async def cancel(self):
+        self._task.cancel()
+
+
 class ReadOnlyDict(dict):
     # This class is meant to only allow a read-only dictionary. 
     # It does not prevent mutable values from being changed.

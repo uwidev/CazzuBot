@@ -29,6 +29,10 @@ def fetch(db_user, uid: int):
     return query
 
 
+def fetch_all(db_user):
+    return db_user.all()
+
+
 def modify_exp(db_user, uid: int, exp: int):
     try:
         user = db_user.search(Query().id == uid)[0]
@@ -37,7 +41,7 @@ def modify_exp(db_user, uid: int, exp: int):
         user['id'] = uid
 
     
-    user['exp'] += exp
+    user['exp'] += exp * user['exp_factor']
     db_user.upsert(user, Query().id == uid)
 
 

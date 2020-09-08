@@ -25,3 +25,11 @@ if __name__ == '__main__':
     bot.db_user = TinyDB('user.json')
 
     bot.run(TOKEN)
+
+    @bot.check
+    async def globally_block_dms(ctx):
+        return ctx.guild is not None
+
+    @bot.check
+    async def block_all_other_bots(ctx):
+        return not ctx.message.author.bot
