@@ -1,13 +1,18 @@
 import discord
 from discord.ext import commands
 import db_user_interface
+from utility import make_simple_embed
 
 
 def ranks_sort(arg):
-        print(arg.lower())
+        try:
+            return int(arg)
+        except:
+            pass
+
         if arg.lower() in ['exp', 'frogs', 'frog']:
-            if arg == 'frog':
-                return 'frogs'
+            if arg in ['frogs', 'frog']:
+                return 'frogs_normal'
             return arg
         
         raise commands.ConversionError
@@ -18,10 +23,16 @@ class Rank(commands.Cog):
         self.bot = bot
 
     @commands.command(aliases=['rank'])
-    async def ranks(self, ctx, key:ranks_sort = 'exp', page=1):
+    async def ranks(self, ctx, mode:ranks_sort = 'exp', page=1):
         '''
         Shows the ranks of all members sorted by their experience points.
+
+        Simply providing a number will let you view a page sorted by experience. If you want sort by frogs, be sure to provde the **mode** with **`frogs`**, followed by a page number if you so desire.
         '''
+        if type(mode) == int:
+            page = mode
+            mode = 'exp'
+
         sorted_users = db_user_interface.fetch_all(self.bot.db_user)
 
         total_pages = len(sorted_users)//10+1
@@ -30,25 +41,38 @@ class Rank(commands.Cog):
         elif page <= 0:
             page = 1
 
-        sorted_users.sort(key=lambda user: (user[key], user['exp' if key == 'frogs' else 'frogs']), reverse=True)
+        sorted_users.sort(key=lambda user: (user[mode], user['exp' if mode == 'frogs_normal' else 'frogs_normal']), reverse=True)
         
-        ranking = 'Page {page} of {total}\n\n'.format(page=page, total=total_pages)
-        embed = discord.Embed(
-                        title='Rankings',
-                        color=0x9edbf7
-                    )
-        embed.set_footer(text='-sarono', icon_url='https://i.imgur.com/BAj8IWu.png')
-        embed.set_thumbnail(url=self.bot.get_user(sorted_users[0]['id']).avatar_url)
+        title ='Rankings'
+
+        sorted_users_ids = list(map(lambda user: user['id'], sorted_users))
+        placement = sorted_users_ids.index(ctx.message.author.id)
+        ranking = 'You are ranked **`{place}`** out of **`{total}`**!'.format(place=placement + 1, total=len(sorted_users))
+        
+        display = 'Page {page} of {total}'.format(page=page, total=total_pages)
 
         lower = (page-1)*10
         upper = min((page-1)*10+10, len(sorted_users))
+        
+        display += '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode=mode.capitalize(), user='User')
 
         for i in range(lower, upper):
-            if self.bot.get_user(sorted_users[i]['id']) == None:
-                print(sorted_users[i]['id'])
-            ranking += '**`# {}` **'.format(i+1) + self.bot.get_user(sorted_users[i]['id']).mention + '\n'
+            if sorted_users[i]['id'] == ctx.message.author.id:
+                display += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+            elif i%2:
+                display += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+            else:
+                display += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
 
-        embed.description = ranking
+        display += '```'
+
+        comment = 'Currently being sorted by {mode}. To sort by {other}, try running `{pre}ranks {alt}`.'.format(mode='experience' if mode == 'exp' else 'frogs captured', other='frogs captured' if mode == 'exp' else 'experience', pre=self.bot.command_prefix, alt='frog' if mode == 'exp' else 'exp')
+
+        desc = ranking + '\n\n' + display + '\n' + comment
+
+        embed = make_simple_embed(title, desc)
+        embed.set_footer(text='-sarono', icon_url='https://i.imgur.com/BAj8IWu.png')
+        embed.set_thumbnail(url=self.bot.get_user(sorted_users[0]['id']).avatar_url)
 
         await ctx.send(embed=embed)
 

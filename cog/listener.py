@@ -37,13 +37,16 @@ class Listener(commands.Cog):
         if verify_settings['op']:
             if self.verify_reaction(verify_settings, payload):             
                 try:
-                    await payload.member.add_roles(payload.member.guild.get_role(verify_settings['role']))
-                    # Automation for welcoming new members
-                    welcome_settings = guild_conf['welcome']
-                    if welcome_settings['op']:
-                        channel = self.bot.get_channel(welcome_settings['channel'])
-                        embed = make_simple_embed(welcome_settings['title'], welcome_settings['description'])
-                        await channel.send(welcome_settings['content'].format(user=payload.member.mention), embed=embed)
+                    role = payload.member.guild.get_role(verify_settings['role'])
+                    if role not in payload.member.roles:
+                        await payload.member.add_roles(role)
+                        
+                        # Automation for welcoming new members
+                        welcome_settings = guild_conf['welcome']
+                        if welcome_settings['op']:
+                            channel = self.bot.get_channel(welcome_settings['channel'])
+                            embed = make_simple_embed(welcome_settings['title'], welcome_settings['description'])
+                            await channel.send(welcome_settings['content'].format(user=payload.member.mention), embed=embed)
                 
                 except discord.Forbidden:
                     pass
@@ -176,6 +179,7 @@ class Listener(commands.Cog):
     #
     # @gid: guild id to check dependencies
         affected = False
+
         guild_conf = db_guild_interface.fetch(self.bot.db_guild, gid)
 
         for name, settings in guild_conf.items():

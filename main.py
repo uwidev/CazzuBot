@@ -17,12 +17,12 @@ async def on_ready():
     print(f'With ID: {bot.user.id}')
 
 if __name__ == '__main__':
+    bot.db_guild = TinyDB('guild.json')
+    bot.db_user = TinyDB('user.json')
+
     for file in os.listdir('cog'):
         if file.endswith('.py'):
             bot.load_extension('cog.' + file[0:-3])
-
-    bot.db_guild = TinyDB('guild.json')
-    bot.db_user = TinyDB('user.json')
 
     bot.run(TOKEN)
 

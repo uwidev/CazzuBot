@@ -2,7 +2,7 @@
 
 from tinydb import Query
 from utility import ReadOnlyDict
-
+import sys, traceback
 
 # Consider making this a class instead of a dictionary?
 guild_settings_default = ReadOnlyDict({
@@ -18,23 +18,23 @@ guild_settings_default = ReadOnlyDict({
         'welcome':{
             'op':False,
             'channel':None,
-            'content':'{user}',
-            'title':'Welcome to the server',
-            'description':'Make sure you take a good look at the rules!'
+            'content':'<@&344969933878329347> {user}',
+            'title':'Oh look, a new user',
+            'description':'I hope you have a nice time on here, or something like that.\nHere\'s some things to snack on for the time being <:cirnoIceFrog:695126166343778364><:cirnoSugoiWow:695126168596250665><:cirnoIce:695126165756837999>'
         },
         'counter':{
             'op':False,
             'channel':None,
             'message':None,
             'count':0,
-            'emoji':'⚪',
+            'emoji':'<:cirnoHelp:695126168227151954>',
             'title':'Number of times people have touched the baka button',
             'description':'**> {count}**',
             'footer':'Looks like there\'s no bakas as of recent...',
             'thumbnail':'https://cdn.discordapp.com/emojis/695126170643071038.gif?v=1'
         },
         'frogs':{
-            'op':False,
+            'active':False,
             'channel_rates':list()
         }
     }          
@@ -47,10 +47,23 @@ def fetch(db_guild, gid: int):
     # @gid: the id of a guild
     #
     # @return: the configuration of {gid}
+    if type(gid) is not int:
+        raise TypeError
+
+    # print('>> Trying to fetch data for {}'.format(gid))
+
     query = db_guild.get(Query().id == gid)
     if query is None:
+        # print('>> gid does not exist, formally testing through code')
+        # for guild in db_guild.all():
+            # print('{test} vs {comp}'.format(test=gid, comp=guild['id']))
+            # print('{}'.format(gid == guild['id']))
+            # print()
+        # print()
+
         initialize(db_guild, gid)
         query = db_guild.get(Query().id == gid)
+        # raise RuntimeError
 
     return query['groups']
 
@@ -97,3 +110,13 @@ def upgrade(db_guild, gid: int):
                 group[setting].pop(field)
     
     write(db_guild, gid, group)
+
+
+def reset_frog_active_all(db_guild):
+    guilds = db_guild.all()
+    for guild in guilds:
+        guild['groups']['frogs']['active'] = False
+
+    db_guild.truncate()
+    for guild in guilds:
+        db_guild.insert(guild)

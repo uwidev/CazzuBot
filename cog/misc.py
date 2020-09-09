@@ -8,7 +8,7 @@ class MyHelpCommand(commands.MinimalHelpCommand):
             return '{0.clean_prefix}{1.qualified_name} {1.signature}'.format(self, command)
 
 
-class Member(commands.Cog):
+class Misc(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._original_help_command = bot.help_command
@@ -56,4 +56,4 @@ class Member(commands.Cog):
 
 
 def setup(bot):
-    bot.add_cog(Member(bot))
+    bot.add_cog(Misc(bot))
