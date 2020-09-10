@@ -16,6 +16,21 @@ class Experience(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        '''Adds experience to the user for the message they sent.
+
+        For a user to be considered eligible to get experience, they must not be a bot and must not have recently
+        received experience. Once eligible, {author.id : Timer()} is added to self._user_cooldown and their data is
+        modified in the database.
+
+        Paramaters
+        --------------------
+        message : discord.Message
+            The message that was send by a certain user.
+
+        Notes
+        --------------------
+        Soon to be rewritten with extended functionality.
+        '''
         if message.author.id == self.bot.user.id:
             return
 
@@ -30,19 +45,20 @@ class Experience(commands.Cog):
             # print('>> {} needs to slow down!'.format(message.author))
             return
         
-        self._user_cooldown[message.author] = Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN)
-        await self._user_cooldown[message.author].start(message.author)
+        self._user_cooldown[message.author.id] = Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN)
+        await self._user_cooldown[message.author.id].start(message.author)
 
         db_user_interface.modify_exp(self.bot.db_user, message.author.id, _EXP_BASE)
     
-    async def user_cooldowned(self, member):
-        self._user_cooldown.pop(member)
+
+    async def user_cooldowned(self, member.id):
+        '''A callback that removes the member from self._user_cooldown so they can receive experience again.'''
+        self._user_cooldown.pop(member.id)
 
 
     @commands.group(aliases=['xp'])
     async def exp(self, ctx, *, user:discord.Member=None):
-        '''
-        Shows everything about you related to your experience points.
+        '''Shows everything about you related to your experience points.
 
         Provide a user to see their stats instead.
         '''
