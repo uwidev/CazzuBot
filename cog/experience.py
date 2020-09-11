@@ -51,7 +51,7 @@ class Experience(commands.Cog):
         db_user_interface.modify_exp(self.bot.db_user, message.author.id, _EXP_BASE)
     
 
-    async def user_cooldowned(self, member.id):
+    async def user_cooldowned(self, member):
         '''A callback that removes the member from self._user_cooldown so they can receive experience again.'''
         self._user_cooldown.pop(member.id)
 
