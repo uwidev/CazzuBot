@@ -7,8 +7,9 @@ from tinydb import TinyDB
 from db_guild_interface import fetch
 from secret import TOKEN
 
+DEV_MODE = True
 
-bot = commands.Bot(command_prefix='d!', owner_id = 92664421553307648)
+bot = commands.Bot(command_prefix='d!' if DEV_MODE else 'c!', owner_id = 92664421553307648)
 
 
 @bot.event

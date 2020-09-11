@@ -13,7 +13,7 @@ from copy import copy
 # Later, read these vars from some db on startup
 _SPAWNRATE_DEFAULT = 3.5 #minutes
 _SPAWNRATE_SWING = .1 #within 20% offsets
-_TIMEOUT = 60
+_TIMEOUT = 5
 
 # -----------
 #
@@ -62,19 +62,24 @@ class Frogs(commands.Cog):
 
 
     class Spawner():
-        def __init__(self, channel: discord.TextChannel, base_rate: int, spawner_loop, cog):
-            self._channel = channel
+        def __init__(self, guild_id: int, channel_id: int, base_rate: int, spawner_loop, cog):
+            self.guild_id = guild_id
+            self.channel_id = channel_id
             self._base_rate = base_rate
             self._spawner = spawner_loop
             self._task_delay_start = None
             self._cog = cog
 
         async def start(self, seconds=0, minutes=0):
-            async def delay_start(seconds=_TIMEOUT, minutes=0):
-                await asyncio.sleep(seconds + 60*minutes)
+            async def delay_start(minutes):
+                self.debug_frog_spawns_in(minutes)
+                await asyncio.sleep(minutes*60 + seconds)
+                self.change_interval(random=True)
                 self._spawner.start(self)
             
-            self._task_delay_start = asyncio.create_task(delay_start(minutes=self.get_random_spawn_time()))
+            delay_minutes = self.get_random_spawn_time()
+            self.change_interval(minutes=delay_minutes)
+            self._task_delay_start = asyncio.create_task(delay_start(self.get_random_spawn_time()))
             
         def stop(self):
             self._task_delay_start.cancel()
@@ -86,32 +91,25 @@ class Frogs(commands.Cog):
             
             self._base_rate = rate
 
-        def change_interval(self, random=False, seconds=0, minutes=0, hours=0):
-            if random:
-                self._spawner.change_interval(seconds=_TIMEOUT, minutes=self.get_random_spawn_time())
-            else:
-                self._spawner.change_interval(seconds=seconds+_TIMEOUT, minutes=minutes, hours=hours)
+        def change_interval(self, random=False, minutes=0, debug=False):
+            self._spawner.change_interval(seconds=_TIMEOUT, minutes=self.get_random_spawn_time(debug=debug) if random == True else minutes)
 
-        def get_random_spawn_time(self):
-            ret = _SPAWNRATE_SWING*self._base_rate*uniform(-1, 1) + self._base_rate
-            print('>> Spawning frog in {:.2f} minutes ({:2f} seconds) in #{ch}'.format(ret+_TIMEOUT/60, ret*60+_TIMEOUT, ch=self.get_channel().name))
-            return ret
+        def get_random_spawn_time(self, debug=False):
+            delay = _SPAWNRATE_SWING*self._base_rate*uniform(-1, 1) + self._base_rate
+            
+            if debug:
+                self.debug_frog_spawns_in(delay)
+            return delay
 
-        def get_channel(self):
-            return self._channel
-
-        def set_first_spawn_task(self, task):
-            self._first_spawn_task = task
-
-        def get_first_spawn_task(self):
-            return self._first_spawn_task
+        def debug_frog_spawns_in(self, minutes):
+            print('>> Spawning frog in {:.2f} minutes ({:2f} seconds) in {ch}'.format(minutes/60, minutes*60, ch=self.channel_id))
 
     
     @tasks.loop(minutes=_SPAWNRATE_DEFAULT)
     async def frog_timer(self, spawner):
-        await self.spawn(spawner.get_channel())
+        await self.spawn(spawner.channel_id, spawner.guild_id)
         # print('\nloop has finished the spawn function, will now change interval')
-        spawner.change_interval(random=True)
+        spawner.change_interval(random=True, debug=True)
 
 
     @commands.group(aliases=['frog'], invoke_without_command=True)
@@ -148,7 +146,7 @@ class Frogs(commands.Cog):
 
             data = 'Lifetime Captures: **`{lifetime}`**\nCurrently in possession of **`{count}`** frogs.'.format(lifetime=lifetime, count=possession)
 
-            display = _CAPTURED * (possession // 10)
+            display = _CAPTURED * (possession // 10)    # Not used at the moment
 
             if placement == -1:
                 report = ''
@@ -197,16 +195,16 @@ class Frogs(commands.Cog):
     
         frogs_settings['active'] = True
 
-        channel_rates = list((ctx.guild.get_channel(cr[0]), cr[1]) for cr in frogs_settings['channel_rates'])
+        channel_ids, rates = zip(*frogs_settings['channel_rates'])
 
 
-        for i in range(len(channel_rates)):
-            spawner = self.Spawner(channel_rates[i][0], channel_rates[i][1], copy(self.frog_timer), self)
+        for i in range(len(channel_ids)):
+            spawner = self.Spawner(ctx.guild.id, channel_ids[i], rates[i], copy(self.frog_timer), self)
             await spawner.start()
             self._frogs_spawner[ctx.guild.id].append(spawner)
 
         # Message
-        embed = make_simple_embed('Frogs will now start spawning in the following channels...', '\n'.join(ch[0].mention for ch in channel_rates))    
+        embed = make_simple_embed('Frogs will now start spawning in the following channels...', '\n'.join(ctx.guild.get_channel(id).mention for id in channel_ids))    
         embed.set_thumbnail(url='https://i.imgur.com/IR5htIF.png')
         await ctx.send(embed=embed)
 
@@ -258,24 +256,26 @@ class Frogs(commands.Cog):
 
         if not channel:
             channel = ctx.channel
+        
+        channel_id = channel.id
 
         guild_conf = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
         frogs_settings = guild_conf['frogs']
 
         channels, rates = zip(*frogs_settings['channel_rates'])
         rates = list(rates) #because it's in a tuple and this immutable
-        if channel.id not in channels:
+        if channel_id not in channels:
             await ctx.send('Channel is not registered!')
             return
 
         for i in range(len(channels)):
-            if channel.id == channels[i]:
+            if channel_id == channels[i]:
                 old_rate = rates[i]
                 rates[i] = new_rate
                 break
 
         for spawner in self._frogs_spawner[ctx.guild.id]:
-            if spawner.get_channel() == channel:
+            if spawner.channel_id == channel_id:
                 spawner.set_base_rate(new_rate)
                 spawner.stop()
                 await spawner.start()
@@ -302,7 +302,7 @@ class Frogs(commands.Cog):
                 return
 
         if frogs_settings['active']:
-            spawner = self.Spawner(channel, rate, copy(self.frog_timer), self)
+            spawner = self.Spawner(ctx.guild.id, channel, rate, copy(self.frog_timer), self)
             await spawner.start()
             self._frogs_spawner[ctx.guild.id].append(spawner)
 
@@ -342,7 +342,10 @@ class Frogs(commands.Cog):
         await ctx.send('{ch} was never spawning frogs to begin with!'.format(ch=channel.mention))
 
 
-    async def spawn(self, channel: discord.TextChannel):
+    async def spawn(self, channel: discord.TextChannel, guild_id = None):
+        if not isinstance(channel, discord.TextChannel):
+            channel = self.bot.get_guild(guild_id).get_channel(channel)
+
         msg_spawn = await channel.send(_SPAWN)
         await msg_spawn.add_reaction(_REACT)
         
@@ -392,7 +395,7 @@ class Frogs(commands.Cog):
         consumer_frogs = consumer_data['frogs_normal']
         consumer_factor = consumer_data['exp_factor']
 
-        if consumer_factor >= _EXP_FACTOR_CAP:
+        if consumer_factor >= 1 + _EXP_FACTOR_CAP:
             embed = make_simple_embed('', 'You\'re already at the experience factor cap of **`x{cap}`**!'.format(cap=1+_EXP_FACTOR_CAP))
             await ctx.send(content=consumer.mention, embed=embed)
             return
@@ -445,7 +448,7 @@ class Frogs(commands.Cog):
             # Applying counts and error checking
             consumer_frogs -= count
             if consumer_frogs < 0:
-                warnings.warn('Consumer {consumer}\'s frog count resulted in {old} -> {new} frogs. Defaulting to 0...'.format(consumer=message.author, old=consumer_frogs-count, new=consumer_frogs), RuntimeWarning)
+                warnings.warn('Consumer {consumer}\'s frog count resulted in {old} -> {new} frogs. Defaulting to 0...'.format(consumer=consumer, old=consumer_frogs-count, new=consumer_frogs), RuntimeWarning)
                 consumer_frogs = 0
             
             consumer_factor += count * _EXP_FACTOR_PER_FROG
@@ -459,7 +462,7 @@ class Frogs(commands.Cog):
             confirmation_embed.title = 'Frog(s) have been consumed'
             confirmation_embed.description = effects + '\n\n' + duration
             confirmation_embed.set_thumbnail(url='https://i.imgur.com/kCHjymJ.png')
-            await confirmation.edit(embed=confirmation_embed)
+            await confirmation.edit(content=consumer.mention, embed=confirmation_embed)
 
             # Applying values to data structure and writing
             consumer_data['exp_factor'] = consumer_factor
