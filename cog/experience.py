@@ -41,7 +41,7 @@ class Experience(commands.Cog):
         # if message.author.id != self.bot.owner_id:
         #     return
 
-        if message.author in self._user_cooldown:
+        if message.author.id in self._user_cooldown:
             # print('>> {} needs to slow down!'.format(message.author))
             return
         
