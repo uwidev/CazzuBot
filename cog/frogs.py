@@ -11,9 +11,9 @@ from random import uniform
 from copy import copy
 
 # Later, read these vars from some db on startup
-_SPAWNRATE_DEFAULT = 3.5 #minutes
-_SPAWNRATE_SWING = .1 #within 20% offsets
-_TIMEOUT = 5
+_SPAWNRATE_DEFAULT = 7 #minutes
+_SPAWNRATE_SWING = .1 #within % offsets
+_TIMEOUT = 60
 
 # -----------
 #
