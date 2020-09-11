@@ -12,7 +12,7 @@ def ranks_sort(arg):
 
         if arg.lower() in ['exp', 'frogs', 'frog']:
             if arg in ['frogs', 'frog']:
-                return 'frogs_normal'
+                return 'frogs_lifetime'
             return arg
         
         raise commands.ConversionError
@@ -41,7 +41,7 @@ class Rank(commands.Cog):
         elif page <= 0:
             page = 1
 
-        sorted_users.sort(key=lambda user: (user[mode], user['exp' if mode == 'frogs_normal' else 'frogs_normal']), reverse=True)
+        sorted_users.sort(key=lambda user: (user[mode], user['exp' if mode == 'frogs_lifetime' else 'frogs_lifetime']), reverse=True)
         
         title ='Rankings'
 
@@ -54,7 +54,7 @@ class Rank(commands.Cog):
         lower = (page-1)*10
         upper = min((page-1)*10+10, len(sorted_users))
         
-        display += '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode=mode.capitalize(), user='User')
+        display += '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode='Exp' if mode == 'exp' else 'Frogs', user='User')
 
         for i in range(lower, upper):
             if sorted_users[i]['id'] == ctx.message.author.id:
@@ -66,7 +66,7 @@ class Rank(commands.Cog):
 
         display += '```'
 
-        comment = 'Currently being sorted by {mode}. To sort by {other}, try running `{pre}ranks {alt}`.'.format(mode='experience' if mode == 'exp' else 'frogs captured', other='frogs captured' if mode == 'exp' else 'experience', pre=self.bot.command_prefix, alt='frog' if mode == 'exp' else 'exp')
+        comment = 'Currently being sorted by **{mode}**. To sort by {other}, try running `{pre}ranks {alt}`.'.format(mode='experience' if mode == 'exp' else 'lifetime frog captures', other='lifetime frog captures' if mode == 'exp' else 'experience', pre=self.bot.command_prefix, alt='frog' if mode == 'exp' else 'exp')
 
         desc = ranking + '\n\n' + display + '\n' + comment
 
