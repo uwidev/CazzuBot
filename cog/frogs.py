@@ -126,11 +126,11 @@ class Frogs(commands.Cog):
 
             user_data = db_user_interface.fetch(self.bot.db_user, user.id)
             sorted_users = db_user_interface.fetch_all(self.bot.db_user)
-            sorted_users = list(filter(lambda user: user['frogs_normal'] > 0, sorted_users))
-            sorted_users.sort(key=lambda user: user['frogs_normal'], reverse=True)
+            sorted_users = list(filter(lambda user: user['frogs_lifetime'] > 0, sorted_users))
+            sorted_users.sort(key=lambda user: user['frogs_lifetime'], reverse=True)
 
             sorted_users_ids = list(map(lambda user: user['id'], sorted_users))
-            if user_data['frogs_normal'] == 0:
+            if user_data['frogs_lifetime'] == 0:
                 placement = -1
             else:
                 placement = sorted_users_ids.index(user.id)
@@ -158,11 +158,11 @@ class Frogs(commands.Cog):
                 compare = '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode='Frogs', user='User')
                 for i in range(max(0, placement-2), min(placement+3, len(sorted_users))):
                     if i == placement:
-                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['frogs_normal']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
                     elif i%2:
-                        compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['frogs_normal']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                        compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
                     else:
-                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['frogs_normal']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
                 compare += '```'
 
             desc = data + '\n\n' + report + '\n' + compare
