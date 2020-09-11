@@ -28,6 +28,7 @@ _CONGRATS = 'Congrats on your catch!'
 _DELTA = '+1 to froggies'
 _RESULT = '**Total froggies: `{old}` -> `{new}`**'
 _URL_CAUGHT = 'https://i.imgur.com/uwPIHMv.png'
+_TIP = 'TIP: Consume frogs with c!frogs consume '
 
 # Failure
 _FAIL = 'You were too slow!'
@@ -371,7 +372,7 @@ class Frogs(commands.Cog):
                         color=0x9edbf7)
             
             embed.set_thumbnail(url=_URL_CAUGHT)
-            embed.set_footer(text=catcher.display_name, icon_url=catcher.avatar_url)
+            embed.set_footer(text=_TIP, icon_url=catcher.avatar_url)
             
             await msg_spawn.delete()
             await channel.send(content=catcher.mention, embed=embed, delete_after=20)
