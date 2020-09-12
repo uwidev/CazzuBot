@@ -8,7 +8,7 @@ from db_guild_interface import fetch
 from secret import TOKEN
 from utility import make_simple_embed
 
-DEV_MODE = True
+DEV_MODE = False
 
 bot = commands.Bot(command_prefix='d!' if DEV_MODE else 'c!', owner_id = 92664421553307648)
 
@@ -37,6 +37,7 @@ if __name__ == '__main__':
         return not ctx.message.author.bot
 
     @bot.command()
+    @commands.is_owner()
     async def reload(ctx, *, ext_name):
         ext = 'cog.' + ext_name
         if ext not in bot.extensions:
@@ -51,6 +52,7 @@ if __name__ == '__main__':
             raise e
 
     @bot.command()
+    @commands.is_owner()
     async def load(ctx, ext_name):
         ext = ext_name + '.py'
         dir = os.listdir('cog')
@@ -66,6 +68,7 @@ if __name__ == '__main__':
             await ctx.send(embed=make_simple_embed('ERROR', 'File doesn\'t exist or you can\'t spell!'))
 
     @bot.command()
+    @commands.is_owner()
     async def unload(ctx, ext_name):
         ext = 'cog.' + ext_name
         if ext not in bot.extensions:
