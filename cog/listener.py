@@ -11,11 +11,11 @@ from discord.ext import commands, tasks
 from tinydb import Query
 from utility import make_simple_embed, timer
 
-class Listener(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.counter_lock = False
-        self.recently_counted = dict()
+import customs.cog
+
+class Listener(customs.cog.Cog):
+    _counter_lock_ = False
+    _recently_counted_ = dict()
 
 
     @commands.Cog.listener()
@@ -55,11 +55,11 @@ class Listener(commands.Cog):
         #
         # Uses a lock to ensure that multiple calals aren't ran multiple times
         # when multiple users add rections to the counter
-        if not self.counter_lock:
+        if not Listener._counter_lock_:
             counter_settings = guild_conf['counter']
             if counter_settings['op']:
                 if self.verify_reaction(counter_settings, payload):
-                    self.counter_lock = True
+                    Listener._counter_lock_ = True
                     await asyncio.sleep(3)
                     msg = await payload.member.guild.get_channel(payload.channel_id).fetch_message(payload.message_id)
                     
@@ -71,16 +71,16 @@ class Listener(commands.Cog):
                                 counter_settings['count'] += 1
 
                                 # Start decaying for recently counted, note that the actual recent timer will be sleep + the first argument
-                                if member not in self.recently_counted:
-                                    self.recently_counted[member] = copy(timer)
-                                    self.recently_counted[member].start(297, self.counter_member_decay, member)
+                                if member not in Listener._recently_counted_:
+                                    Listener._recently_counted_[member] = copy(timer)
+                                    Listener._recently_counted_[member].start(297, self.counter_member_decay, member)
                                 else:
-                                    self.recently_counted[member].restart(297, self.counter_member_decay, member)
+                                    Listener._recently_counted_[member].restart(297, self.counter_member_decay, member)
                                 
                             # Fetch counter embed from message and modify it
                             embed = msg.embeds[0]
                             embed.description = counter_settings['description'].format(count=counter_settings['count'])
-                            members = list(self.recently_counted.keys())
+                            members = list(Listener._recently_counted_.keys())
                             
                             # String creation for recently counted footer
                             count = len(members)
@@ -106,18 +106,18 @@ class Listener(commands.Cog):
                             # Write back to DB the changed counter
                             db_guild_interface.write(self.bot.db_guild, payload.guild_id, guild_conf)
                     
-                    self.counter_lock = False
+                    Listener._counter_lock_ = False
 
 
     async def counter_member_decay(self, member):
         # Called after {seconds} from counter
         #
         # @member: the member we want to remove from recently counted
-        if member not in self.recently_counted:
+        if member not in Listener._recently_counted_:
             print('Warning: for some reason, {m} wasn\'t found in recently counted for counter module.'.format(m=member.name))
             return
 
-        self.recently_counted.pop(member)
+        Listener._recently_counted_.pop(member)
         await self.ensure_dependencies(member.guild.id)
         guild_conf = db_guild_interface.fetch(self.bot.db_guild, member.guild.id)
         counter_settings = guild_conf['counter']
@@ -127,7 +127,7 @@ class Listener(commands.Cog):
         # Fetch embed from message and modify it
         embed = msg.embeds[0]
         embed.description = counter_settings['description'].format(count=counter_settings['count'])
-        members = list(self.recently_counted.keys())
+        members = list(Listener._recently_counted_.keys())
         
         # String creation for recently counted footer
         count = len(members)

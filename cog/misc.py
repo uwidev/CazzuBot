@@ -3,12 +3,14 @@
 import discord
 from discord.ext import commands
 
+import customs.cog
+
 class MyHelpCommand(commands.MinimalHelpCommand):
         def get_command_signature(self, command):
             return '{0.clean_prefix}{1.qualified_name} {1.signature}'.format(self, command)
 
 
-class Misc(commands.Cog):
+class Misc(customs.cog.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._original_help_command = bot.help_command
