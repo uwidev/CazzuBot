@@ -3,6 +3,7 @@ from discord.ext import commands
 import db_user_interface
 from utility import make_simple_embed
 
+import customs.cog
 
 def ranks_sort(arg):
         try:
@@ -18,7 +19,7 @@ def ranks_sort(arg):
         raise commands.ConversionError
 
 
-class Rank(commands.Cog):
+class Rank(customs.cog.Cog):
     def __init__(self, bot):
         self.bot = bot
 

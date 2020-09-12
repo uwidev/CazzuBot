@@ -1,17 +1,23 @@
 import discord, db_user_interface
 from discord.ext import commands
-from utility import timer, Timer, make_simple_embed
+from utility import timer, Timer, make_simple_embed, PARSE_CLASS_VAR
 from copy import copy
+
+import customs.cog
 
 _EXP_BASE = 5
 _EXP_COOLDOWN = 5 #seconds
 
-class Experience(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self._user_cooldown = dict()
+class Experience(customs.cog.Cog):
+    _user_cooldown_ = dict()
 
+    def __init__(self, bot, data:dict = None):
+        self.bot = bot
         db_user_interface.reset_exp_factor_all(self.bot.db_user)
+
+        if data:
+            for key, val in data.items():
+                setattr(Experience, key, val)
 
 
     @commands.Cog.listener()
@@ -19,7 +25,7 @@ class Experience(commands.Cog):
         '''Adds experience to the user for the message they sent.
 
         For a user to be considered eligible to get experience, they must not be a bot and must not have recently
-        received experience. Once eligible, {author.id : Timer()} is added to self._user_cooldown and their data is
+        received experience. Once eligible, {author.id : Timer()} is added to Experience._user_cooldown and their data is
         modified in the database.
 
         Paramaters
@@ -41,19 +47,19 @@ class Experience(commands.Cog):
         # if message.author.id != self.bot.owner_id:
         #     return
 
-        if message.author.id in self._user_cooldown:
+        if message.author.id in Experience._user_cooldown_:
             # print('>> {} needs to slow down!'.format(message.author))
             return
         
-        self._user_cooldown[message.author.id] = Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN)
-        await self._user_cooldown[message.author.id].start(message.author)
+        Experience._user_cooldown_[message.author.id] = Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN)
+        await Experience._user_cooldown_[message.author.id].start(message.author)
 
         db_user_interface.modify_exp(self.bot.db_user, message.author.id, _EXP_BASE)
     
 
     async def user_cooldowned(self, member):
-        '''A callback that removes the member from self._user_cooldown so they can receive experience again.'''
-        self._user_cooldown.pop(member.id)
+        '''A callback that removes the member from Experience._user_cooldown so they can receive experience again.'''
+        Experience._user_cooldown_.pop(member.id)
 
 
     @commands.group(aliases=['xp'])
@@ -103,4 +109,9 @@ class Experience(commands.Cog):
 
 
 def setup(bot):
-    bot.add_cog(Experience(bot))
+    bot.add_cog(Experience(bot, bot.data_to_return))
+
+def teardown(bot):
+    data = vars(Experience)
+    data = dict(filter(lambda pair: PARSE_CLASS_VAR.match(pair[0]), data.items()))
+    bot.data_to_return = data

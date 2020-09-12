@@ -11,7 +11,9 @@ from discord.ext import commands, tasks
 from tinydb import Query
 from utility import make_simple_embed, timer
 
-class Listener(commands.Cog):
+import customs.cog
+
+class Listener(customs.cog.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.counter_lock = False

@@ -10,7 +10,9 @@ import db_guild_interface, db_user_interface
 import emoji
 from utility import EmojiPlus, writiable_emoji
 
-class Owner(commands.Cog):
+import customs.cog
+
+class Owner(customs.cog.Cog):
     '''
     These are commands meant to be ran only by the owner.
     '''

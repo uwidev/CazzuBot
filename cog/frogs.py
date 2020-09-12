@@ -6,12 +6,13 @@ import discord
 from discord.ext import commands, tasks
 import db_user_interface, db_guild_interface
 import asyncio
-from utility import make_simple_embed, Timer
+from utility import make_simple_embed, Timer, PARSE_CLASS_VAR
 from random import uniform
 from copy import copy
+import customs.cog
 
 # Later, read these vars from some db on startup
-_SPAWNRATE_DEFAULT = 7 #minutes
+_SPAWNRATE_DEFAULT = 7.0 #minutes
 _SPAWNRATE_SWING = .1 #within % offsets
 _TIMEOUT = 60
 
@@ -41,12 +42,17 @@ _EXP_FACTOR_CAP = 1.5
 _EXP_FACTOR_BUFF_DURATION_NORMAL = 30 #minutes
 
 
-class Frogs(commands.Cog):
-    def __init__(self, bot):
+class Frogs(customs.cog.Cog):
+    _frogs_spawner_ = defaultdict(list) # guild_id : [spawner]
+
+    def __init__(self, bot, data:dict = None):
         self.bot = bot
-        self._frogs_spawner = defaultdict(list) # guild_id : [spawner]
 
         db_guild_interface.reset_frog_active_all(self.bot.db_guild)
+
+        if data:
+            for key, val in data.items():
+                setattr(Frogs, key, val)
 
     
     async def cog_command_error(self, ctx, error):
@@ -202,7 +208,7 @@ class Frogs(commands.Cog):
         for i in range(len(channel_ids)):
             spawner = self.Spawner(ctx.guild.id, channel_ids[i], rates[i], copy(self.frog_timer), self)
             await spawner.start()
-            self._frogs_spawner[ctx.guild.id].append(spawner)
+            Frogs._frogs_spawner_[ctx.guild.id].append(spawner)
 
         # Message
         embed = make_simple_embed('Frogs will now start spawning in the following channels...', '\n'.join(ctx.guild.get_channel(id).mention for id in channel_ids))    
@@ -224,11 +230,11 @@ class Frogs(commands.Cog):
 
         frogs_settings['active'] = False
 
-        while len(self._frogs_spawner[ctx.guild.id]) != 0:
-            spawner = self._frogs_spawner[ctx.guild.id].pop()
+        while len(Frogs._frogs_spawner_[ctx.guild.id]) != 0:
+            spawner = Frogs._frogs_spawner_[ctx.guild.id].pop()
             spawner.stop()
 
-        del self._frogs_spawner[ctx.guild.id]
+        del Frogs._frogs_spawner_[ctx.guild.id]
 
         await ctx.send('Frogs have stopped spawning...')
 
@@ -275,7 +281,7 @@ class Frogs(commands.Cog):
                 rates[i] = new_rate
                 break
 
-        for spawner in self._frogs_spawner[ctx.guild.id]:
+        for spawner in Frogs._frogs_spawner_[ctx.guild.id]:
             if spawner.channel_id == channel_id:
                 spawner.set_base_rate(new_rate)
                 spawner.stop()
@@ -290,7 +296,7 @@ class Frogs(commands.Cog):
     
     @frogs.command()
     @commands.has_guild_permissions(manage_guild=True) 
-    async def register(self, ctx, channel:discord.TextChannel = None, rate=_SPAWNRATE_DEFAULT):
+    async def register(self, ctx, channel:discord.TextChannel=None, rate=_SPAWNRATE_DEFAULT):
         if not channel:
             channel = ctx.channel
 
@@ -305,7 +311,7 @@ class Frogs(commands.Cog):
         if frogs_settings['active']:
             spawner = self.Spawner(ctx.guild.id, channel, rate, copy(self.frog_timer), self)
             await spawner.start()
-            self._frogs_spawner[ctx.guild.id].append(spawner)
+            Frogs._frogs_spawner_[ctx.guild.id].append(spawner)
 
         frogs_settings['channel_rates'].append([channel.id, rate])        
         db_guild_interface.write(self.bot.db_guild, ctx.guild.id, guild_conf)
@@ -323,12 +329,12 @@ class Frogs(commands.Cog):
         frogs_settings = guild_conf['frogs']
         
         if frogs_settings['active']:
-            for spawner in self._frogs_spawner[ctx.guild.id]:
+            for spawner in Frogs._frogs_spawner_[ctx.guild.id]:
                 if spawner.get_channel() == channel:
                     spawner.stop()
-                    self._frogs_spawner[ctx.guild.id].remove(spawner)
+                    Frogs._frogs_spawner_[ctx.guild.id].remove(spawner)
                     
-                    if len(self._frogs_spawner[ctx.guild.id]) == 0:
+                    if len(Frogs._frogs_spawner_[ctx.guild.id]) == 0:
                         frogs_settings['active'] = False
                     
                     break
@@ -488,4 +494,9 @@ class Frogs(commands.Cog):
 
 
 def setup(bot):
-    bot.add_cog(Frogs(bot))
+    bot.add_cog(Frogs(bot, bot.data_to_return))
+
+def teardown(bot):
+    data = vars(Frogs)
+    data = dict(filter(lambda pair: PARSE_CLASS_VAR.match(pair[0]), data.items()))
+    bot.data_to_return = data

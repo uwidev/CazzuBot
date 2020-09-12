@@ -1,7 +1,11 @@
+import re
+
 import emoji
 import discord
 from discord.ext import commands, tasks
 import asyncio
+
+PARSE_CLASS_VAR = re.compile(r'^(_[^_].*_)$')
 
 @tasks.loop(count=1)
 async def timer(seconds: int, func=None, *args, **kwargs):
