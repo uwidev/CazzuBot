@@ -24,6 +24,8 @@ from discord.ext import commands
 from utility import PARSE_CLASS_VAR
 
 class Cog(commands.Cog):
+    _first_load_ = True
+
     def __init__(self, bot):
         '''super() should be called from the child to enable hotswapping.'''
         self.bot = bot
@@ -36,6 +38,8 @@ class Cog(commands.Cog):
             del self.bot.data_to_return[type(self).__name__]
 
     def cog_unload(self):
+        type(self)._first_load_ = False
+        
         data = vars(type(self))
         data = dict(filter(lambda pair: PARSE_CLASS_VAR.match(pair[0]), data.items()))
         

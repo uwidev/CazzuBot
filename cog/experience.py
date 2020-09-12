@@ -13,7 +13,13 @@ class Experience(customs.cog.Cog):
 
     def __init__(self, bot):
         super().__init__(bot)
-        db_user_interface.reset_exp_factor_all(self.bot.db_user)
+        if self._first_load_:
+            db_user_interface.reset_exp_factor_all(self.bot.db_user)
+
+
+    def cog_unload(self):
+        Experience._first_load_ = False
+        super().cog_unload()
 
 
     @commands.Cog.listener()

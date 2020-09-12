@@ -47,7 +47,8 @@ class Frogs(customs.cog.Cog):
 
     def __init__(self, bot, data:dict = None):
         super().__init__(bot)
-        db_guild_interface.reset_frog_active_all(self.bot.db_guild)
+        if self._first_load_:
+            db_guild_interface.reset_frog_active_all(self.bot.db_guild)
     
 
     async def cog_command_error(self, ctx, error):
