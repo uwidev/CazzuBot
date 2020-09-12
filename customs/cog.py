@@ -31,7 +31,6 @@ class Cog(commands.Cog):
         data = self.bot.data_to_return.get(type(self).__name__, None)
         if data:
             for key, val in data.items():
-                print(f'settings {key} : {val} onto {type(self)}')
                 setattr(type(self), key, val)
         
             del self.bot.data_to_return[type(self).__name__]

@@ -16,10 +16,6 @@ class Owner(customs.cog.Cog):
     '''
     These are commands meant to be ran only by the owner.
     '''
-    def __init__(self, bot):
-        self.bot = bot
-
-
     async def cog_after_invoke(self, ctx):
         # await ctx.message.add_reaction('👍')
         # await ctx.message.delete(delay=3)

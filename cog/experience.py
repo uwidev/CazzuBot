@@ -11,13 +11,9 @@ _EXP_COOLDOWN = 5 #seconds
 class Experience(customs.cog.Cog):
     _user_cooldown_ = dict()
 
-    def __init__(self, bot, data:dict = None):
-        self.bot = bot
+    def __init__(self, bot):
+        super().__init__(bot)
         db_user_interface.reset_exp_factor_all(self.bot.db_user)
-
-        if data:
-            for key, val in data.items():
-                setattr(Experience, key, val)
 
 
     @commands.Cog.listener()
@@ -109,9 +105,4 @@ class Experience(customs.cog.Cog):
 
 
 def setup(bot):
-    bot.add_cog(Experience(bot, bot.data_to_return))
-
-def teardown(bot):
-    data = vars(Experience)
-    data = dict(filter(lambda pair: PARSE_CLASS_VAR.match(pair[0]), data.items()))
-    bot.data_to_return = data
+    bot.add_cog(Experience(bot))

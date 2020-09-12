@@ -20,9 +20,6 @@ def ranks_sort(arg):
 
 
 class Rank(customs.cog.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
     @commands.command(aliases=['rank'])
     async def ranks(self, ctx, mode:ranks_sort = 'exp', page=1):
         '''

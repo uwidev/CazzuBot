@@ -46,15 +46,10 @@ class Frogs(customs.cog.Cog):
     _frogs_spawner_ = defaultdict(list) # guild_id : [spawner]
 
     def __init__(self, bot, data:dict = None):
-        self.bot = bot
-
+        super().__init__(bot)
         db_guild_interface.reset_frog_active_all(self.bot.db_guild)
-
-        if data:
-            for key, val in data.items():
-                setattr(Frogs, key, val)
-
     
+
     async def cog_command_error(self, ctx, error):
         # This statement checks to see if the command has a local error handler,
         # and if so, don't run the cog error handler
@@ -494,9 +489,4 @@ class Frogs(customs.cog.Cog):
 
 
 def setup(bot):
-    bot.add_cog(Frogs(bot, bot.data_to_return))
-
-def teardown(bot):
-    data = vars(Frogs)
-    data = dict(filter(lambda pair: PARSE_CLASS_VAR.match(pair[0]), data.items()))
-    bot.data_to_return = data
+    bot.add_cog(Frogs(bot))
