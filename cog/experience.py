@@ -1,6 +1,6 @@
 import discord, db_user_interface
 from discord.ext import commands
-from utility import timer, Timer, make_simple_embed, PARSE_CLASS_VAR
+from utility import Timer, make_simple_embed, PARSE_CLASS_VAR
 from copy import copy
 
 import customs.cog
@@ -54,7 +54,7 @@ class Experience(customs.cog.Cog):
             return
         
         Experience._user_cooldown_[message.author.id] = Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN)
-        await Experience._user_cooldown_[message.author.id].start(message.author)
+        Experience._user_cooldown_[message.author.id].start(message.author)
 
         db_user_interface.modify_exp(self.bot.db_user, message.author.id, _EXP_BASE)
     
