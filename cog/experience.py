@@ -1,6 +1,6 @@
 import discord, db_user_interface
 from discord.ext import commands
-from utility import timer, Timer, make_simple_embed, PARSE_CLASS_VAR
+from utility import Timer, make_simple_embed, PARSE_CLASS_VAR
 from copy import copy
 
 import customs.cog

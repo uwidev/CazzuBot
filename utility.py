@@ -32,12 +32,20 @@ class Timer():
         self._callback = callback
         self._duration = seconds + 60*minutes + 3600*hours
         self._task = None
+        self._is_running = False
 
     def start(self, *args, **kwargs):
+        if self._is_running:
+            raise RuntimeError('Timer is already running and is not yet complete!')
+
         self._task = asyncio.create_task(self._start(*args, **kwargs))
+        self._is_running = True
+
+        return self._task
 
     async def _start(self, *args, **kwargs):
         await asyncio.sleep(self._duration)
+        self._is_running = False
 
         if asyncio.iscoroutinefunction(self._callback):
             await self._callback(*args, **kwargs)
@@ -45,11 +53,33 @@ class Timer():
             self._callback(*args, **kwargs)
 
     def restart(self, *args, **kwargs):
-        self._task.add_done_callback(self.start(*args, **kwargs))
+        '''
+        Because of the nature of task scheduling, do not restart the timer and immediately cancel it. This method merely
+        schedules for a restart when it is safe to do so. Meaning in order for it to actually be scheduled, we need to
+        regularly do context switches until it is scheduled. Typically this is done naturally with await's, but if not 
+        enough prevelant or you want to ensure that the timer has already been restarted, try the following:
+
+            await asyncio.tasks.wait([task], return_when=asyncio.ALL_COMPLETED)
+
+        Where [task] is the task(s) you want to ensure have restarted. task is returned from start(). The code resumes
+        operation when the task is either cancelled or finishes.
+
+        restart() does not return the _task.
+        '''
+
+        def restart_when_cancelled(future, args=args, kwargs=kwargs):
+            self._task.remove_done_callback(restart_when_cancelled)
+            self.start(*args, **kwargs)
+
+        self._task.add_done_callback(restart_when_cancelled)
+        self.cancel()
+        
+    def cancel(self):
+        self._is_running = False
         self._task.cancel()
 
-    def cancel(self):
-        self._task.cancel()
+    def get_currently_running_task(self):
+        return self._task
 
 
 class ReadOnlyDict(dict):
