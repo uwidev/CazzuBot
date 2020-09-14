@@ -203,7 +203,7 @@ class Frogs(customs.cog.Cog):
 
         for i in range(len(channel_ids)):
             spawner = self.Spawner(ctx.guild.id, channel_ids[i], rates[i], copy(self.frog_timer), self)
-            await spawner.start()
+            spawner.start()
             Frogs._frogs_spawner_[ctx.guild.id].append(spawner)
 
         # Message
@@ -281,7 +281,7 @@ class Frogs(customs.cog.Cog):
             if spawner.channel_id == channel_id:
                 spawner.set_base_rate(new_rate)
                 spawner.stop()
-                await spawner.start()
+                spawner.start()
                 
 
         frogs_settings['channel_rates'] = list(zip(channels, rates))
@@ -306,7 +306,7 @@ class Frogs(customs.cog.Cog):
 
         if frogs_settings['active']:
             spawner = self.Spawner(ctx.guild.id, channel, rate, copy(self.frog_timer), self)
-            await spawner.start()
+            spawner.start()
             Frogs._frogs_spawner_[ctx.guild.id].append(spawner)
 
         frogs_settings['channel_rates'].append([channel.id, rate])        
