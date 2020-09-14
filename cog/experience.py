@@ -54,7 +54,7 @@ class Experience(customs.cog.Cog):
             return
         
         Experience._user_cooldown_[message.author.id] = Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN)
-        await Experience._user_cooldown_[message.author.id].start(message.author)
+        Experience._user_cooldown_[message.author.id].start(message.author)
 
         db_user_interface.modify_exp(self.bot.db_user, message.author.id, _EXP_BASE)
     
