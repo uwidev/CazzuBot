@@ -50,10 +50,22 @@ def modify_exp(db_user, uid: int, exp: int):
     except IndexError:
         user = dict(user_data_default)
         user['id'] = uid
-
     
     user['exp'] += exp * user['exp_factor']
     db_user.upsert(user, Query().id == uid)
+
+
+# def reset_count():
+#     pass
+
+
+# def modify_count(db_user, uid: int):
+#     try:
+#         user = db_user.search(Query().id == uid)[0]
+#     except IndexError:
+#         user = dict(user_data_default)
+#         user['id'] = uid
+#     user['count'] += 1
 
 
 def initialize(db_user, uid: int):

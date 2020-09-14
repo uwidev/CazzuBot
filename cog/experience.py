@@ -2,7 +2,6 @@ import discord, db_user_interface
 from discord.ext import commands
 from utility import timer, Timer, make_simple_embed, PARSE_CLASS_VAR
 from copy import copy
-from collections import defaultdict
 
 import customs.cog
 
@@ -11,6 +10,7 @@ _EXP_BONUS_FACTOR = 25
 _EXP_DECAY_UNTIL_BASE = 20
 _EXP_DECAY_FACTOR = 0.5
 _EXP_COOLDOWN = 5 #seconds
+_EXP_BUFF_RESET = 1 #mins
 
 class Experience(customs.cog.Cog):
     _user_cooldown_ = dict()
@@ -43,6 +43,7 @@ class Experience(customs.cog.Cog):
         --------------------
         Soon to be rewritten with extended functionality.
         '''
+
         if message.author.id == self.bot.user.id:
             return
 
@@ -53,25 +54,47 @@ class Experience(customs.cog.Cog):
         # if message.author.id != self.bot.owner_id:
         #     return
 
-        if message.author.id in Experience._user_cooldown_:
-            # print('>> {} needs to slow down!'.format(message.author))
+        # if message.author.id in Experience._user_cooldown_:
+        #     # print('>> {} needs to slow down!'.format(message.author))
+        #     return
+
+        if (message.author.id in Experience._user_cooldown_ and not Experience._user_cooldown_[message.author.id][1]):
             return
-        
-        # potential_bonus = (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE)
-        # bonus_exp = max(0, potential_bonus - potential_bonus * ())
 
-        Experience._user_cooldown_[message.author.id] = [0, Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN)]
-        await Experience._user_cooldown_[message.author.id][1].start(message.author)
-        Experience._user_cooldown_[message.author.id][0] += 1
+        if (message.author.id not in Experience._user_cooldown_):
+            Experience._user_cooldown_[message.author.id] = [0, False, Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN), Timer(self.user_reset_count, minutes=_EXP_BUFF_RESET)]
+            await Experience._user_cooldown_[message.author.id][3].start(message.author)
+            # the value for Experience._user_cooldown_ is [count, ableToGetXP, Timer]
+        elif (Experience._user_cooldown_[message.author.id][1]):
+            Experience._user_cooldown_[message.author.id][0] += 1
+            Experience._user_cooldown_[message.author.id][1] = False
+            Experience._user_cooldown_[message.author.id][2] = Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN)
 
+        potential_bonus = (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE)
         count = Experience._user_cooldown_[message.author.id][0]
-        print(count)
-        db_user_interface.modify_exp(self.bot.db_user, message.author.id, _EXP_BASE)
+        # bonus_exp = max(0, potential_bonus - potential_bonus * (count/potential_bonus)**_EXP_DECAY_FACTOR)
+        # top code is directly from Timmy's DM
+        # bottom code is a direct translation of the original formula
+        bonus_exp = max(0, _EXP_BONUS_FACTOR - (_EXP_BONUS_FACTOR - _EXP_BASE) * (count/_EXP_DECAY_UNTIL_BASE)**_EXP_DECAY_FACTOR)
+        total_exp = _EXP_BASE + bonus_exp
+
+        print(bonus_exp)
+
+        await Experience._user_cooldown_[message.author.id][2].start(message.author)
+        db_user_interface.modify_exp(self.bot.db_user, message.author.id, total_exp)
     
 
     async def user_cooldowned(self, member):
         '''A callback that removes the member from Experience._user_cooldown so they can receive experience again.'''
-        Experience._user_cooldown_.pop(member.id)
+        Experience._user_cooldown_[member.id][1] = True
+        # Experience._user_cooldown_.pop(member.id)
+
+
+    async def user_reset_count(self, member):
+        '''A callback that resets the message count from Experience._user_cooldown so they can get the exp bonus.'''
+        Experience._user_cooldown_[member.id][0] = -1
+        Experience._user_cooldown_[member.id][3] = Timer(self.user_reset_count, minutes=_EXP_BUFF_RESET)
+        await Experience._user_cooldown_[member.id][3].start(member)
 
 
     @commands.group(aliases=['xp'])
@@ -118,7 +141,6 @@ class Experience(customs.cog.Cog):
             await ctx.send(embed=embed)
             
             # await ctx.send('Your current exp is **`{exp}`** with an exp factor of **`x{factor:.2f}`**.'.format(exp=int(exp), factor=factor))
-
 
 def setup(bot):
     bot.add_cog(Experience(bot))
