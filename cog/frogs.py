@@ -203,7 +203,7 @@ class Frogs(customs.cog.Cog):
 
         for i in range(len(channel_ids)):
             spawner = self.Spawner(ctx.guild.id, channel_ids[i], rates[i], copy(self.frog_timer), self)
-            await spawner.start()
+            spawner.start()
             Frogs._frogs_spawner_[ctx.guild.id].append(spawner)
 
         # Message
