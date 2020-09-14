@@ -1,4 +1,4 @@
-import re, time
+import re
 
 import emoji
 import discord
