@@ -460,7 +460,7 @@ class Frogs(customs.cog.Cog):
                 consumer_factor = 2.5
             
             expiration = Timer(self.factor_expire, minutes=30)
-            await expiration.start(consumer, count)
+            expiration.start(consumer, count)
 
             confirmation_embed.title = 'Frog(s) have been consumed'
             confirmation_embed.description = effects + '\n\n' + duration
