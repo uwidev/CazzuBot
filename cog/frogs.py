@@ -73,7 +73,7 @@ class Frogs(customs.cog.Cog):
             self._task_delay_start = None
             self._cog = cog
 
-        async def start(self):
+        def start(self):
             async def delay_start(minutes):
                 self.debug_frog_spawns_in(minutes)
                 await asyncio.sleep(minutes*60)
