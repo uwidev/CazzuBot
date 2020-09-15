@@ -73,7 +73,7 @@ class Frogs(customs.cog.Cog):
             self._task_delay_start = None
             self._cog = cog
 
-        async def start(self):
+        def start(self):
             async def delay_start(minutes):
                 self.debug_frog_spawns_in(minutes)
                 await asyncio.sleep(minutes*60)
@@ -203,7 +203,7 @@ class Frogs(customs.cog.Cog):
 
         for i in range(len(channel_ids)):
             spawner = self.Spawner(ctx.guild.id, channel_ids[i], rates[i], copy(self.frog_timer), self)
-            await spawner.start()
+            spawner.start()
             Frogs._frogs_spawner_[ctx.guild.id].append(spawner)
 
         # Message
@@ -281,7 +281,7 @@ class Frogs(customs.cog.Cog):
             if spawner.channel_id == channel_id:
                 spawner.set_base_rate(new_rate)
                 spawner.stop()
-                await spawner.start()
+                spawner.start()
                 
 
         frogs_settings['channel_rates'] = list(zip(channels, rates))
@@ -306,7 +306,7 @@ class Frogs(customs.cog.Cog):
 
         if frogs_settings['active']:
             spawner = self.Spawner(ctx.guild.id, channel, rate, copy(self.frog_timer), self)
-            await spawner.start()
+            spawner.start()
             Frogs._frogs_spawner_[ctx.guild.id].append(spawner)
 
         frogs_settings['channel_rates'].append([channel.id, rate])        
@@ -460,7 +460,7 @@ class Frogs(customs.cog.Cog):
                 consumer_factor = 2.5
             
             expiration = Timer(self.factor_expire, minutes=30)
-            await expiration.start(consumer, count)
+            expiration.start(consumer, count)
 
             confirmation_embed.title = 'Frog(s) have been consumed'
             confirmation_embed.description = effects + '\n\n' + duration

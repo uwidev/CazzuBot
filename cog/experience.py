@@ -1,6 +1,6 @@
 import discord, db_user_interface
 from discord.ext import commands
-from utility import timer, Timer, make_simple_embed, PARSE_CLASS_VAR
+from utility import Timer, make_simple_embed, PARSE_CLASS_VAR
 from copy import copy
 
 import customs.cog
@@ -60,6 +60,9 @@ class Experience(customs.cog.Cog):
 
         if (message.author.id in Experience._user_cooldown_ and not Experience._user_cooldown_[message.author.id][1]):
             return
+        
+        Experience._user_cooldown_[message.author.id] = Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN)
+        Experience._user_cooldown_[message.author.id].start(message.author)
 
         if (message.author.id not in Experience._user_cooldown_):
             Experience._user_cooldown_[message.author.id] = [0, False, Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN), Timer(self.user_reset_count, minutes=_EXP_BUFF_RESET)]
