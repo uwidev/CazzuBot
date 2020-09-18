@@ -50,25 +50,11 @@ class Experience(customs.cog.Cog):
         if message.author.bot:
             # print('>> Saw a bot message and will ignore it...')
             return
-        
-        # if message.author.id != self.bot.owner_id:
-        #     return
-
-        # if message.author.id in Experience._user_cooldown_:
-        #     # print('>> {} needs to slow down!'.format(message.author))
-        #     return
-
-        # if (message.author.id in Experience._user_cooldown_ and not Experience._user_cooldown_[message.author.id][1]):
-        #     return
-        
-        # Experience._user_cooldown_[message.author.id][1] = Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN)
-        # Experience._user_cooldown_[message.author.id].start(message.author)
 
         if (message.author.id not in Experience._user_cooldown_):
             Experience._user_cooldown_[message.author.id] = [0, Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN), Timer(self.user_reset_count, minutes=_EXP_BUFF_RESET)]
             Experience._user_cooldown_[message.author.id][1].start(message.author)
             Experience._user_cooldown_[message.author.id][2].start(message.author)
-            # the value for Experience._user_cooldown_ is [count, ableToGetXP, Timer]
         elif (not Experience._user_cooldown_[message.author.id][1].is_running):
             Experience._user_cooldown_[message.author.id][0] += 1
             Experience._user_cooldown_[message.author.id][1].restart()
@@ -80,15 +66,10 @@ class Experience(customs.cog.Cog):
         bonus_exp = max(0, _EXP_BONUS_FACTOR - (_EXP_BONUS_FACTOR - _EXP_BASE) * (count/_EXP_DECAY_UNTIL_BASE)**_EXP_DECAY_FACTOR)
         total_exp = _EXP_BASE + bonus_exp
 
-        print(bonus_exp)
 
-        # Experience._user_cooldown_[message.author.id][2].start(message.author)
-        # db_user_interface.modify_exp(self.bot.db_user, message.author.id, total_exp)
-    
     async def user_cooldowned(self, member):
         '''A callback that removes the member from Experience._user_cooldown so they can receive experience again.'''
         Experience._user_cooldown_[member.author.id][1].restart()
-        # Experience._user_cooldown_.pop(member.id)
 
 
     async def user_reset_count(self, member):
