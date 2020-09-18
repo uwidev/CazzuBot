@@ -135,7 +135,7 @@ class Experience(customs.cog.Cog):
 
     @tasks.loop(minutes=15)
     async def exp_logger(self):
-        with open('exp_log.cvs', 'a') as log:
+        with open('exp_log.csv', 'a') as log:
             all_users = db_user_interface.fetch_all(self.bot.db_user)
 
             log.write(','.join(str(user['exp']) for user in all_users) + '\n')
