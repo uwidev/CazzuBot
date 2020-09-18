@@ -5,9 +5,15 @@ from copy import copy
 
 import customs.cog
 
+<<<<<<< HEAD
 _EXP_BASE = 5
 _EXP_BONUS_FACTOR = 13
 _EXP_DECAY_UNTIL_BASE = 15
+=======
+_EXP_BASE = 4
+_EXP_BONUS_FACTOR = 6
+_EXP_DECAY_UNTIL_BASE = 27
+>>>>>>> master
 _EXP_DECAY_FACTOR = 2
 _EXP_COOLDOWN = 6 #seconds
 _EXP_BUFF_RESET = 15 #mins
