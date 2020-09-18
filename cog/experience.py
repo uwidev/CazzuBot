@@ -5,12 +5,12 @@ from copy import copy
 
 import customs.cog
 
-_EXP_BASE = 5
-_EXP_BONUS_FACTOR = 5
-_EXP_DECAY_UNTIL_BASE = 20
-_EXP_DECAY_FACTOR = 0.5
-_EXP_COOLDOWN = 5 #seconds
-_EXP_BUFF_RESET = 5 #mins
+_EXP_BASE = 4
+_EXP_BONUS_FACTOR = 6
+_EXP_DECAY_UNTIL_BASE = 27
+_EXP_DECAY_FACTOR = 2
+_EXP_COOLDOWN = 6 #seconds
+_EXP_BUFF_RESET = 15 #mins
 
 class Experience(customs.cog.Cog):
     _user_cooldown_ = dict()
@@ -64,7 +64,7 @@ class Experience(customs.cog.Cog):
 
         potential_bonus = (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE)
         count = Experience._user_cooldown_[message.author.id][0]
-        bonus_exp = max(0, potential_bonus - potential_bonus * (count/_EXP_DECAY_UNTIL_BASE)**_EXP_DECAY_FACTOR)
+        bonus_exp = max(0, potential_bonus - potential_bonus * ((count-1)/_EXP_DECAY_UNTIL_BASE)**_EXP_DECAY_FACTOR)
         total_exp = _EXP_BASE + bonus_exp
 
         db_user_interface.modify_exp(self.bot.db_user, message.author.id, total_exp)
