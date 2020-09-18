@@ -6,7 +6,7 @@ from copy import copy
 import customs.cog
 
 _EXP_BASE = 5
-_EXP_BONUS_FACTOR = 25
+_EXP_BONUS_FACTOR = 5
 _EXP_DECAY_UNTIL_BASE = 20
 _EXP_DECAY_FACTOR = 0.5
 _EXP_COOLDOWN = 5 #seconds
@@ -55,6 +55,7 @@ class Experience(customs.cog.Cog):
             Experience._user_cooldown_[message.author.id] = [0, Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN), Timer(self.user_reset_count, minutes=_EXP_BUFF_RESET)]
             Experience._user_cooldown_[message.author.id][1].start(message.author)
             Experience._user_cooldown_[message.author.id][2].start(message.author)
+            # the value for Experience._user_cooldown_ is [count, ableToGetXP, Timer]
         elif (not Experience._user_cooldown_[message.author.id][1].is_running):
             Experience._user_cooldown_[message.author.id][0] += 1
             Experience._user_cooldown_[message.author.id][1].restart()
@@ -63,10 +64,11 @@ class Experience(customs.cog.Cog):
 
         potential_bonus = (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE)
         count = Experience._user_cooldown_[message.author.id][0]
-        bonus_exp = max(0, _EXP_BONUS_FACTOR - (_EXP_BONUS_FACTOR - _EXP_BASE) * (count/_EXP_DECAY_UNTIL_BASE)**_EXP_DECAY_FACTOR)
+        bonus_exp = max(0, potential_bonus - potential_bonus * (count/_EXP_DECAY_UNTIL_BASE)**_EXP_DECAY_FACTOR)
         total_exp = _EXP_BASE + bonus_exp
 
-
+        db_user_interface.modify_exp(self.bot.db_user, message.author.id, total_exp)
+    
     async def user_cooldowned(self, member):
         '''A callback that removes the member from Experience._user_cooldown so they can receive experience again.'''
         Experience._user_cooldown_[member.author.id][1].restart()
