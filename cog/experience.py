@@ -1,14 +1,14 @@
 import discord, db_user_interface
-from discord.ext import commands
+from discord.ext import commands, tasks
 from utility import Timer, make_simple_embed, PARSE_CLASS_VAR
 from copy import copy
 
 import customs.cog
 
-_EXP_BASE = 4
-_EXP_BONUS_FACTOR = 8
-_EXP_DECAY_UNTIL_BASE = 20
-_EXP_DECAY_FACTOR = 2.5
+_EXP_BASE = 5
+_EXP_BONUS_FACTOR = 5
+_EXP_DECAY_UNTIL_BASE = 30
+_EXP_DECAY_FACTOR = 3
 _EXP_COOLDOWN = 6 #seconds
 _EXP_BUFF_RESET = 15 #mins
 
@@ -51,16 +51,16 @@ class Experience(customs.cog.Cog):
             # print('>> Saw a bot message and will ignore it...')
             return
 
-        if (message.author.id not in Experience._user_cooldown_):
-            Experience._user_cooldown_[message.author.id] = [0, Timer(self.user_cooldowned, seconds=_EXP_COOLDOWN), Timer(self.user_reset_count, minutes=_EXP_BUFF_RESET)]
+        if message.author.id not in Experience._user_cooldown_:     # then track the user and start timers
+            Experience._user_cooldown_[message.author.id] = [0, Timer(lambda *args: None, seconds=_EXP_COOLDOWN), Timer(self.user_reset_count, minutes=_EXP_BUFF_RESET)]
             Experience._user_cooldown_[message.author.id][1].start(message.author)
             Experience._user_cooldown_[message.author.id][2].start(message.author)
-            # the value for Experience._user_cooldown_ is [count, ableToGetXP, Timer]
-        elif (not Experience._user_cooldown_[message.author.id][1].is_running):
-            Experience._user_cooldown_[message.author.id][0] += 1
-            Experience._user_cooldown_[message.author.id][1].restart()
-        else:
+            # the value for Experience._user_cooldown_ is [count, Timer exp cooldown, Timer exp buff]     
+        elif Experience._user_cooldown_[message.author.id][1].is_running:   # if exp on cd
             return
+
+        Experience._user_cooldown_[message.author.id][0] += 1
+        Experience._user_cooldown_[message.author.id][1].restart()
 
         potential_bonus = (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE)
         count = Experience._user_cooldown_[message.author.id][0]
@@ -68,16 +68,11 @@ class Experience(customs.cog.Cog):
         total_exp = _EXP_BASE + bonus_exp
 
         db_user_interface.modify_exp(self.bot.db_user, message.author.id, total_exp)
-    
-    async def user_cooldowned(self, member):
-        '''A callback that removes the member from Experience._user_cooldown so they can receive experience again.'''
-        Experience._user_cooldown_[member.author.id][1].restart()
 
 
     async def user_reset_count(self, member):
-        '''A callback that resets the message count from Experience._user_cooldown so they can get the exp bonus.'''
-        Experience._user_cooldown_[member.id][0] = -1
-        Experience._user_cooldown_[member.id][2].restart(self.user_reset_count, minutes=_EXP_BUFF_RESET);
+        '''A callback that removes the user from being tracked in _user_cooldown_ once enough time has passed.'''
+        del Experience._user_cooldown_[member.id]
 
 
     @commands.group(aliases=['xp'])
@@ -124,6 +119,27 @@ class Experience(customs.cog.Cog):
             await ctx.send(embed=embed)
             
             # await ctx.send('Your current exp is **`{exp}`** with an exp factor of **`x{factor:.2f}`**.'.format(exp=int(exp), factor=factor))
+
+    
+    @commands.command()
+    @commands.is_owner()
+    async def log_exp(self, ctx):
+        try:
+            self.exp_logger.start()
+        except RuntimeError:
+            await ctx.send('Already logging exp!')
+            return
+
+        await ctx.send('Will now start logging exp over time...')
+
+
+    @tasks.loop(minutes=15)
+    async def exp_logger(self):
+        with open('exp_log.cvs', 'a') as log:
+            all_users = db_user_interface.fetch_all(self.bot.db_user)
+
+            log.write(','.join(str(user['exp']) for user in all_users) + '\n')
+
 
 def setup(bot):
     bot.add_cog(Experience(bot))
