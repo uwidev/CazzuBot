@@ -32,20 +32,20 @@ class Timer():
         self._callback = callback
         self._duration = seconds + 60*minutes + 3600*hours
         self._task = None
-        self._is_running = False
+        self.is_running = False
 
     def start(self, *args, **kwargs):
-        if self._is_running:
+        if self.is_running:
             raise RuntimeError('Timer is already running and is not yet complete!')
 
         self._task = asyncio.create_task(self._start(*args, **kwargs))
-        self._is_running = True
+        self.is_running = True
 
         return self._task
 
     async def _start(self, *args, **kwargs):
         await asyncio.sleep(self._duration)
-        self._is_running = False
+        self.is_running = False
 
         if asyncio.iscoroutinefunction(self._callback):
             await self._callback(*args, **kwargs)
@@ -75,7 +75,7 @@ class Timer():
         self.cancel()
         
     def cancel(self):
-        self._is_running = False
+        self.is_running = False
         self._task.cancel()
 
     def get_currently_running_task(self):
