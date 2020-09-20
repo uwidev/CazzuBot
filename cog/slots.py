@@ -10,7 +10,7 @@ _SYMBOL_AMOUNT_IN_REEL = 5
 _NUM_OF_REELS = 3
 
 class Slots(customs.cog.Cog):
-    _emotes = [":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:", ":x:"]
+    _emotes = [":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:", ":x:"] # Change later
     _reels = [[] for i in range(0, _NUM_OF_REELS)]
 
     def __init__(self, bot):
@@ -26,24 +26,29 @@ class Slots(customs.cog.Cog):
 
     @commands.group(alias=['slots'])
     async def slots(self, ctx, *, user:discord.Member=None):
+        '''
+        Runs the slot machine.
+        '''
         ran_index_1, ran_index_2, ran_index_3 = randint(0, len(Slots._emotes)-1), randint(0, len(Slots._emotes)-1), randint(0, len(Slots._emotes)-1)
         self._assign_reels()
+        # The line at the bottom is disgusting. Change it when you get the chance.
         await ctx.send("{slot_0} : {slot_1} : {slot_2}\n{slot_3} : {slot_4} : {slot_5}\n{slot_6} : {slot_7} : {slot_8}"\
             .format(slot_0=Slots._reels[0][0], slot_1=Slots._reels[1][0], slot_2=Slots._reels[2][0], \
             slot_3=Slots._reels[0][1], slot_4=Slots._reels[1][1], slot_5=Slots._reels[2][1], \
             slot_6=Slots._reels[0][2], slot_7=Slots._reels[1][2], slot_8=Slots._reels[2][2]))
-        # .format(slot_1=Slots._reels[0][0], slot_2=Slots._reels[1][0], slot_3=Slots._reels[2][0]))
-        # await ctx.send("{slot_1} : {slot_2} : {slot_3}".format(slot_1=Slots._reels[0][1], slot_2=Slots._reels[1][1], slot_3=Slots._reels[2][1]))
-        # await ctx.send("{slot_1} : {slot_2} : {slot_3}".format(slot_1=Slots._reels[0][2], slot_2=Slots._reels[1][2], slot_3=Slots._reels[2][2]))
-        # await ctx.send("{slot_1} {slot_2} {slot_3}".format(slot_1=Slots._emotes[ran_index_1], slot_2=Slots._emotes[ran_index_2], slot_3=Slots._emotes[ran_index_3]))
 
 
     def _reset_reels(self):
+        '''Simply resets the reels to empty'''
         for reel in Slots._reels:
             reel.clear()
 
 
     def _assign_reels(self):
+        '''This assigns each reel a list of symbols. 
+        
+        It's designed so that no three stright symbols are the same
+        '''
         self._reset_reels()
 
         for reel in Slots._reels:
