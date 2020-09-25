@@ -8,7 +8,7 @@ from db_guild_interface import fetch
 from secret import TOKEN
 from utility import make_simple_embed
 
-DEV_MODE = False
+DEV_MODE = True
 
 bot = commands.Bot(command_prefix='d!' if DEV_MODE else 'c!', owner_id = 92664421553307648)
 
