@@ -8,7 +8,7 @@ from discord.ext import commands
 from tinydb import Query
 import db_guild_interface, db_user_interface
 import emoji
-from utility import EmojiPlus, writiable_emoji
+from utility import EmojiPlus, writiable_emoji, make_simple_embed
 
 import customs.cog
 
@@ -505,6 +505,54 @@ class Owner(customs.cog.Cog):
 
         await ctx.message.delete()
 
+
+    @commands.command()
+    async def reload(self, ctx, *, ext_name):
+        ext = 'cog.' + ext_name
+        if ext not in self.bot.extensions:
+            await ctx.send(embed=make_simple_embed('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
+            raise commands.BadArgument
+        
+        try:
+            self.bot.reload_extension(ext)
+            await ctx.send(embed=make_simple_embed('Success', f'{ext_name.capitalize()} has been reloaded'))
+        except Exception as e:
+            await ctx.send(embed=make_simple_embed('ERROR', 'There appears to be a problem with your code, baka.'))
+            raise e
+
+    @commands.command()
+    async def load(self, ctx, ext_name):
+        ext = ext_name + '.py'
+        dir = os.listdir('cog')
+        
+        if ext in dir:
+            try:
+                self.bot.load_extension('cog.' + ext_name)
+                await ctx.send(embed=make_simple_embed('Success', f'{ext_name.capitalize()} has been loaded'))
+            except Exception as e:
+                await ctx.send(embed=make_simple_embed('ERROR', 'Something terrible happened!'))
+                raise e
+        else:
+            await ctx.send(embed=make_simple_embed('ERROR', 'File doesn\'t exist or you can\'t spell!'))
+
+    @commands.command()
+    async def unload(self, ctx, ext_name):
+        ext = 'cog.' + ext_name
+        if ext not in self.bot.extensions:
+            await ctx.send(embed=make_simple_embed('ERROR', 'Extension wasn\'t loaded to begin with!'))
+            raise commands.BadArgument
+        
+        
+        dir = os.listdir('cog')
+        if ext_name + '.py' in dir:
+            try:
+                self.bot.unload_extension('cog.' + ext_name)
+                await ctx.send(embed=make_simple_embed('Success', f'{ext_name.capitalize()} has been unloaded'))
+            except Exception as e:
+                await ctx.send(embed=make_simple_embed('ERROR', 'Something terrible happened!'))
+                raise e
+        else:
+            await ctx.send(embed=make_simple_embed('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
 
 
 def setup(bot):
