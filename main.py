@@ -5,10 +5,10 @@ import discord
 from discord.ext import commands
 from tinydb import TinyDB
 from db_guild_interface import fetch
-from secret import TOKEN
 from utility import make_simple_embed
 
-DEV_MODE = True
+from secret import TOKEN
+from dev import DEV_MODE
 
 bot = commands.Bot(command_prefix='d!' if DEV_MODE else 'c!', owner_id = 92664421553307648)
 
@@ -35,57 +35,5 @@ if __name__ == '__main__':
     @bot.check
     async def block_all_other_bots(ctx):
         return not ctx.message.author.bot
-
-    @bot.command()
-    @commands.is_owner()
-    async def reload(ctx, *, ext_name):
-        ext = 'cog.' + ext_name
-        if ext not in bot.extensions:
-            await ctx.send(embed=make_simple_embed('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
-            raise commands.BadArgument
-        
-        try:
-            bot.reload_extension(ext)
-            await ctx.send(embed=make_simple_embed('Success', f'{ext_name.capitalize()} has been reloaded'))
-        except Exception as e:
-            await ctx.send(embed=make_simple_embed('ERROR', 'There appears to be a problem with your code, baka.'))
-            raise e
-
-    @bot.command()
-    @commands.is_owner()
-    async def load(ctx, ext_name):
-        ext = ext_name + '.py'
-        dir = os.listdir('cog')
-        
-        if ext in dir:
-            try:
-                bot.load_extension('cog.' + ext_name)
-                await ctx.send(embed=make_simple_embed('Success', f'{ext_name.capitalize()} has been loaded'))
-            except Exception as e:
-                await ctx.send(embed=make_simple_embed('ERROR', 'Something terrible happened!'))
-                raise e
-        else:
-            await ctx.send(embed=make_simple_embed('ERROR', 'File doesn\'t exist or you can\'t spell!'))
-
-    @bot.command()
-    @commands.is_owner()
-    async def unload(ctx, ext_name):
-        ext = 'cog.' + ext_name
-        if ext not in bot.extensions:
-            await ctx.send(embed=make_simple_embed('ERROR', 'Extension wasn\'t loaded to begin with!'))
-            raise commands.BadArgument
-        
-        
-        dir = os.listdir('cog')
-        if ext_name + '.py' in dir:
-            try:
-                bot.unload_extension('cog.' + ext_name)
-                await ctx.send(embed=make_simple_embed('Success', f'{ext_name.capitalize()} has been unloaded'))
-            except Exception as e:
-                await ctx.send(embed=make_simple_embed('ERROR', 'Something terrible happened!'))
-                raise e
-        else:
-            await ctx.send(embed=make_simple_embed('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
-
 
     bot.run(TOKEN)
