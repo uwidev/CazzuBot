@@ -55,19 +55,6 @@ def modify_exp(db_user, uid: int, exp: int):
     db_user.upsert(user, Query().id == uid)
 
 
-# def reset_count():
-#     pass
-
-
-# def modify_count(db_user, uid: int):
-#     try:
-#         user = db_user.search(Query().id == uid)[0]
-#     except IndexError:
-#         user = dict(user_data_default)
-#         user['id'] = uid
-#     user['count'] += 1
-
-
 def initialize(db_user, uid: int):
     user = dict(user_data_default)
     user['id'] = uid
@@ -88,3 +75,25 @@ def upgrade(db_user):
                 continue
     
     write_all(db_user, users_all)
+
+
+def exchange_frogs_normal(db_user, user_id_from:int, user_id_to:int, amount:int):
+    '''Moves normal frogs from one usesr to another. Has built in error checking for negative frogs.'''
+    type = 'frogs_normal'
+    user_from = fetch(db_user, user_id_from)
+    user_to = fetch(db_user, user_id_to)
+
+    if type not in user_from and type not in user_to:
+        print(f'>> ERROR: Tried to exchange {amount} {type} from {user_id_from} to {user_id_to}. {type} doesn\'t exist as an attribute for users in database.')
+        return -1
+    
+    if user_from[type] < amount:
+        return 1
+
+    user_from[type] -= amount
+    user_to[type] += amount
+
+    write(db_user, user_id_from, user_from)
+    write(db_user, user_id_to, user_to)
+
+    return 0
