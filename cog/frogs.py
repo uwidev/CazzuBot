@@ -46,7 +46,7 @@ _EXP_FACTOR_BUFF_DURATION_NORMAL = 30 #minutes
 # --------------------------------------------
 _ACTIVITY_CONCURRENT_MEMEBRS = 2 #at least X members
 _ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND = 30 #messages until upper bound
-_ACTIVITY_UPPER_BOUND = 0.9 #what rng roll has to be above to spawn aa frog
+_ACTIVITY_UPPER_BOUND = 0.8 #what rng roll has to be above to spawn aa frog
 _ACTIVITY_FACTOR = 2
 _ACTIVITY_TIMEOUT = 15 #minutes
 
@@ -514,7 +514,7 @@ class Frogs(customs.cog.Cog):
     @frogs.command(name='gift')
     async def gift(self, ctx, to:discord.Member, amount:int):
         type='frogs_normal'
-        
+
         if amount <= 0:
             embed = make_simple_embed('Nice try', 'You can\'t steal frogs by negative gifting.')
             embed.set_thumbnail(url='https://cdn.discordapp.com/emojis/701138244712136774.png')
