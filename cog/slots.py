@@ -29,11 +29,7 @@ class Slots(customs.cog.Cog):
             slot_3=reels[0][1], slot_4=reels[1][1], slot_5=reels[2][1], \
             slot_6=reels[0][2], slot_7=reels[1][2], slot_8=reels[2][2]))
 
-        await self._roll_reels(reels, message)
-        # await message.edit(content = "{slot_0} : {slot_1} : {slot_2}\n{slot_3} : {slot_4} : {slot_5}\n{slot_6} : {slot_7} : {slot_8}"\
-        #     .format(slot_0=reels[0][1], slot_1=reels[1][0], slot_2=reels[2][0], \
-        #     slot_3=reels[0][2], slot_4=reels[1][1], slot_5=reels[2][1], \
-        #     slot_6=reels[0][3], slot_7=reels[1][2], slot_8=reels[2][2]))
+        await self._roll_reels(reels, message, ctx)
 
 
     def _assign_reels(self, reels):
@@ -54,34 +50,52 @@ class Slots(customs.cog.Cog):
                 reel.append(Slots._emotes[current_index])
 
 
-    async def _roll_reels(self, reels, msg):
+    async def _roll_reels(self, reels, msg, ctx):
         ''' Roll each reel for a certain amount of ticks '''
         bottom_slot0, bottom_slot1, bottom_slot2 = 2, randint(0, 4), randint(0, 4)
-        reel0_ticks, reel1_ticks, reel2_ticks = randint(5, 10), reel0_ticks + randint(1, 3), reel1_ticks(1, 3)
-        elapsed = 0
-        start = round(time(), 3)
-        stop = start + Slots._update_speed_secs
+        reel0_ticks = randint(5, 10)
+        reel1_ticks = reel0_ticks + randint(1, 3)
+        reel2_ticks = reel1_ticks + randint(1, 3) # reel2_ticks always have the largest amount of ticks
+        content_string = ""
         
-        while(elapsed < Slots._update_speed_secs):
+        reel0_border = "**:**"
+        reel1_border = "**:**"
+        reel2_border = "**:**"
+
+        while(reel2_ticks >= 0):
             content_string = ""
-            await msg.edit(content = "{slot_0} : {slot_1} : {slot_2}\n{slot_3} : {slot_4} : {slot_5}\n{slot_6} : {slot_7} : {slot_8}"\
-                .format(slot_0=reels[0][(bottom_slot0 - 2) % 5], slot_1=reels[1][0], slot_2=reels[2][0], \
-                slot_3=reels[0][(bottom_slot0 - 1) % 5], slot_4=reels[1][1], slot_5=reels[2][1], \
-                slot_6=reels[0][bottom_slot0], slot_7=reels[1][2], slot_8=reels[2][2]))
-            # elapsed = round(time(), 3) - start
-            elapsed += 0.02
-            bottom_slot0 = (bottom_slot0 + 1) % 5
-            bottom_slot1 = (bottom_slot1 + 1) % 5
-            bottom_slot2 = (bottom_slot2 + 1) % 5
+            content_string += "----------------\n"
 
-            print(elapsed)
+            content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4}\n".format(reel0_border, reels[0][(bottom_slot0 - 2) % 5], reel1_border, reels[1][(bottom_slot1 - 2) % 5], reel2_border, reels[2][(bottom_slot2 - 2) % 5])
+            content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4} <\n".format(reel0_border, reels[0][(bottom_slot0 - 1) % 5], reel1_border, reels[1][(bottom_slot1 - 1) % 5], reel2_border, reels[2][(bottom_slot2 - 1) % 5])
+            content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4}\n".format(reel0_border, reels[0][bottom_slot0], reel1_border, reels[1][bottom_slot1], reel2_border, reels[2][bottom_slot2])
+            content_string += "----------------\n"
+            await msg.edit(content = content_string)
+            
+            reel0_ticks -= 1
+            reel1_ticks -= 1
+            reel2_ticks -= 1
 
-            temp = elapsed
-            # if (elapsed >= 0.35):
-            #     temp = 0.35
-            # print(temp)
+            if (reel0_ticks > 0):
+                bottom_slot0 = (bottom_slot0 + 1) % 5
+            else:
+                reel0_border = ":"
+            if (reel1_ticks > 0):
+                bottom_slot1 = (bottom_slot1 + 1) % 5
+            else:
+                reel1_border = ":"
+            if (reel2_ticks > 0):
+                bottom_slot2 = (bottom_slot2 + 1) % 5
+            else:
+                reel2_border = ":"
+
             await asyncio.sleep(1)
-        print("stop")
+
+        content_string += "|== LOST ==|\n\n"
+        content_string += "**{}** used 1 frogo(s). It's now gone... :(".format(ctx.author)
+        await msg.edit(content = content_string)
+        print(content_string)
+
 
 def setup(bot):
     bot.add_cog(Slots(bot))
