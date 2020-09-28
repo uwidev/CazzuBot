@@ -81,6 +81,9 @@ class Timer():
     def get_currently_running_task(self):
         return self._task
 
+    def __del__(self):
+        self.cancel()
+
 
 class ReadOnlyDict(dict):
     # This class is meant to only allow a read-only dictionary. 
