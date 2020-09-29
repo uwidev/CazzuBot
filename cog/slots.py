@@ -26,7 +26,7 @@ import customs.cog
 #########################################################
 #########################################################
 
-_SYMBOL_AMOUNT_IN_REEL = 20
+_SYMBOL_AMOUNT_IN_REEL = 5
 _NUM_OF_REELS = 3
 
 class Slots(customs.cog.Cog):
@@ -53,8 +53,10 @@ class Slots(customs.cog.Cog):
         _emotes[1]+_emotes[1]+_emotes[1] :  1,
         _emotes[1]+_emotes[1]+_emotes[0] :  1
         }
+
+
     @commands.group(alias=['slots'])
-    async def slots(self, ctx, *, user:discord.Member=None):
+    async def slots(self, ctx, credits):
         '''
         Runs the slot machine.
         '''
@@ -91,22 +93,30 @@ class Slots(customs.cog.Cog):
     async def _roll_reels(self, reels, msg, ctx):
         ''' Roll each reel for a certain amount of ticks '''
         bottom_slot0, bottom_slot1, bottom_slot2 = 2, randint(0, _SYMBOL_AMOUNT_IN_REEL - 4), randint(0, _SYMBOL_AMOUNT_IN_REEL - 4)
-        reel0_ticks = randint(5, 10)
-        reel1_ticks = reel0_ticks + randint(1, 3)
-        reel2_ticks = reel1_ticks + randint(1, 3) # reel2_ticks always have the largest amount of ticks
+        reel0_ticks = randint(1, 2)
+        reel1_ticks = reel0_ticks + randint(0,1)
+        reel2_ticks = reel1_ticks + randint(0,1)
         content_string = ""
         
         reel0_border = "**:**"
         reel1_border = "**:**"
         reel2_border = "**:**"
 
+        slot_0 = None
+        slot_1 = None
+        slot_2 = None
+
         while(reel2_ticks >= 0):
             content_string = ""
+            content_string += "--CIRNO  SLOTS--\n"
             content_string += "----------------\n"
             # This is currently designed to accomidate three reels
             # TODO: Make printing strings more modulare for different number of reels
             content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4}\n".format(reel0_border, reels[0][(bottom_slot0 - 2) % 5], reel1_border, reels[1][(bottom_slot1 - 2) % 5], reel2_border, reels[2][(bottom_slot2 - 2) % 5])
             content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4} <\n".format(reel0_border, reels[0][(bottom_slot0 - 1) % 5], reel1_border, reels[1][(bottom_slot1 - 1) % 5], reel2_border, reels[2][(bottom_slot2 - 1) % 5])
+            slot_0 = reels[0][(bottom_slot0 - 1) % 5]
+            slot_1 = reels[1][(bottom_slot1 - 1) % 5]
+            slot_2 = reels[2][(bottom_slot2 - 1) % 5]
             content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4}\n".format(reel0_border, reels[0][bottom_slot0], reel1_border, reels[1][bottom_slot1], reel2_border, reels[2][bottom_slot2])
             content_string += "----------------\n"
             await msg.edit(content = content_string)
@@ -128,10 +138,15 @@ class Slots(customs.cog.Cog):
             else:
                 reel2_border = ":"
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.2)
 
-        content_string += "|== LOST ==|\n\n"
-        content_string += "**{}** used 1 frogo(s). It's now gone... :(".format(ctx.author)
+        payout = Slots._combo_payout.get(slot_0+slot_1+slot_2, 0)
+        if (payout > 0):
+            content_string += "|== WIN ==|\n\n"
+            content_string += "**{}** used 1 frogo(s). You've gained {} frogo(s)! :cirnoYay:".format(ctx.author, payout)
+        else:
+            content_string += "|== LOST ==|\n\n"
+            content_string += "**{}** used 1 frogo(s). It's now gone... :(".format(ctx.author)
         await msg.edit(content = content_string)
     
 
