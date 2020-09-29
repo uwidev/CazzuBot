@@ -120,17 +120,37 @@ class Experience(customs.cog.Cog):
             
             # await ctx.send('Your current exp is **`{exp}`** with an exp factor of **`x{factor:.2f}`**.'.format(exp=int(exp), factor=factor))
 
-    
-    @commands.command()
+
+    @commands.group(name='logexp', aliases=['logxp'], invoke_without_command=True)
     @commands.is_owner()
     async def log_exp(self, ctx):
+        if ctx.invoked_subcommand is None:
+            if self.exp_logger.is_running():
+                await ctx.send('I am currently logging experience.')
+            else:
+                await ctx.send('I am currently **not** logging experience.')
+    
+
+    @log_exp.command(name='start')
+    @commands.is_owner()
+    async def log_exp_start(self, ctx):
         try:
             self.exp_logger.start()
         except RuntimeError:
-            await ctx.send('Already logging exp!')
+            await ctx.send('Already logging experience!')
             return
 
-        await ctx.send('Will now start logging exp over time...')
+        await ctx.send('Will now start logging experience over time...')
+
+    
+    @log_exp.command(name='stop')
+    @commands.is_owner()
+    async def log_exp_stop(self, ctx):
+        if self.exp_logger.is_running():
+            self.exp_logger.stop()
+            await ctx.send('Will stop logging experience...')
+        else:
+            await ctx.send('Was never logging to begin with...')
 
 
     @tasks.loop(minutes=15)
