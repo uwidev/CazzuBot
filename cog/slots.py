@@ -8,13 +8,51 @@ from time import time
 
 import customs.cog
 
-_SYMBOL_AMOUNT_IN_REEL = 5
+######################## PAYOUTS ########################
+#########################################################
+#################    combo     frogs   ##################
+#################    7 7 7       25    ##################
+#################    6 6 6       15    ##################
+#################    5 5 5       15    ##################
+#################    5 5 6       13    ##################
+#################    4 4 4        7    ##################
+#################    4 4 6        6    ##################
+#################    3 3 3        5    ##################
+#################    3 3 6        4    ##################
+#################    2 2 2        3    ##################
+#################    2 2 6        2    ##################
+#################    1 1 ?        1    ##################
+#################    1 ? ?        1    ##################
+#########################################################
+#########################################################
+
+_SYMBOL_AMOUNT_IN_REEL = 20
 _NUM_OF_REELS = 3
 
 class Slots(customs.cog.Cog):
-    _emotes = [":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:", ":x:"] # Change later
-    _update_speed_secs = 1 # there can be two events every second
-
+    # Minimum of 8 emotes required for this to work
+    _emotes = [":x:", ":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:"] # Change/comment out later
+    _update_speed_secs = 1 # there can be two events (awaits) every second
+    # For future designer(s): change this to change combo->payout
+    # The last two payouts will be handled by a helper function
+    _combo_payout = {
+        _emotes[7]+_emotes[7]+_emotes[7] : 25,
+        _emotes[6]+_emotes[6]+_emotes[6] : 15,
+        _emotes[5]+_emotes[5]+_emotes[5] : 15,
+        _emotes[5]+_emotes[5]+_emotes[6] : 13,
+        _emotes[4]+_emotes[4]+_emotes[4] :  7,
+        _emotes[4]+_emotes[4]+_emotes[6] :  6,
+        _emotes[3]+_emotes[3]+_emotes[3] :  5,
+        _emotes[3]+_emotes[3]+_emotes[6] :  4,
+        _emotes[2]+_emotes[2]+_emotes[2] :  3,
+        _emotes[2]+_emotes[2]+_emotes[6] :  2,
+        _emotes[1]+_emotes[1]+_emotes[5] :  1,
+        _emotes[1]+_emotes[1]+_emotes[4] :  1,
+        _emotes[1]+_emotes[1]+_emotes[3] :  1,
+        _emotes[1]+_emotes[1]+_emotes[2] :  1,
+        _emotes[1]+_emotes[1]+_emotes[1] :  1,
+        _emotes[1]+_emotes[1]+_emotes[0] :  1
+        }
     @commands.group(alias=['slots'])
     async def slots(self, ctx, *, user:discord.Member=None):
         '''
@@ -35,7 +73,7 @@ class Slots(customs.cog.Cog):
     def _assign_reels(self, reels):
         '''This assigns each reel a list of symbols. 
         
-        It's designed so that no three stright symbols are the same
+        It's designed so that no three straight symbols are the same
         '''
 
         for reel in reels:
@@ -52,7 +90,7 @@ class Slots(customs.cog.Cog):
 
     async def _roll_reels(self, reels, msg, ctx):
         ''' Roll each reel for a certain amount of ticks '''
-        bottom_slot0, bottom_slot1, bottom_slot2 = 2, randint(0, 4), randint(0, 4)
+        bottom_slot0, bottom_slot1, bottom_slot2 = 2, randint(0, _SYMBOL_AMOUNT_IN_REEL - 4), randint(0, _SYMBOL_AMOUNT_IN_REEL - 4)
         reel0_ticks = randint(5, 10)
         reel1_ticks = reel0_ticks + randint(1, 3)
         reel2_ticks = reel1_ticks + randint(1, 3) # reel2_ticks always have the largest amount of ticks
@@ -65,7 +103,8 @@ class Slots(customs.cog.Cog):
         while(reel2_ticks >= 0):
             content_string = ""
             content_string += "----------------\n"
-
+            # This is currently designed to accomidate three reels
+            # TODO: Make printing strings more modulare for different number of reels
             content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4}\n".format(reel0_border, reels[0][(bottom_slot0 - 2) % 5], reel1_border, reels[1][(bottom_slot1 - 2) % 5], reel2_border, reels[2][(bottom_slot2 - 2) % 5])
             content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4} <\n".format(reel0_border, reels[0][(bottom_slot0 - 1) % 5], reel1_border, reels[1][(bottom_slot1 - 1) % 5], reel2_border, reels[2][(bottom_slot2 - 1) % 5])
             content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4}\n".format(reel0_border, reels[0][bottom_slot0], reel1_border, reels[1][bottom_slot1], reel2_border, reels[2][bottom_slot2])
@@ -94,8 +133,7 @@ class Slots(customs.cog.Cog):
         content_string += "|== LOST ==|\n\n"
         content_string += "**{}** used 1 frogo(s). It's now gone... :(".format(ctx.author)
         await msg.edit(content = content_string)
-        print(content_string)
-
+    
 
 def setup(bot):
     bot.add_cog(Slots(bot))
