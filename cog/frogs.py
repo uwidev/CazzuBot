@@ -7,18 +7,18 @@ from discord.ext import commands, tasks
 import db_user_interface, db_guild_interface
 import asyncio
 from utility import make_simple_embed, Timer, PARSE_CLASS_VAR
-from random import uniform
+from random import uniform, random
 from copy import copy
 import customs.cog
 
 # Later, read these vars from some db on startup
 _SPAWNRATE_DEFAULT = 7.0 #minutes
 _SPAWNRATE_SWING = .1 #within % offsets
-_TIMEOUT = 60
+_TIMEOUT = 120   # how long until frogs disappear
 
-# -----------
-#
+
 # The elements used on frog spawn
+# --------------------------------------------
 # Initial Spawning
 _SPAWN = '<:cirnoFrog:695126166301835304>'
 _REACT = '<:cirnoNet:752290769712316506>'
@@ -34,16 +34,28 @@ _TIP = 'TIP: Consume frogs with c!frogs consume '
 # Failure
 _FAIL = 'You were too slow!'
 
-# ----------
-#
+
 # Consumption of frogs
+# --------------------------------------------
 _EXP_FACTOR_PER_FROG = .1
-_EXP_FACTOR_CAP = 1.5
+_EXP_FACTOR_CAP = 0.5
 _EXP_FACTOR_BUFF_DURATION_NORMAL = 30 #minutes
+
+
+# Activity-based spawns
+# --------------------------------------------
+_ACTIVITY_CONCURRENT_MEMEBRS = 2 #at least X members
+_ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND = 30 #messages until upper bound
+_ACTIVITY_UPPER_BOUND = 0.8 #what rng roll has to be above to spawn aa frog
+_ACTIVITY_FACTOR = 2
+_ACTIVITY_TIMEOUT = 15 #minutes
+
+_ACTIVITY_FUNTION = lambda count: _ACTIVITY_UPPER_BOUND*(count/_ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND)**_ACTIVITY_FACTOR
 
 
 class Frogs(customs.cog.Cog):
     _frogs_spawner_ = defaultdict(list) # guild_id : [spawner]
+    _activity_ = defaultdict(lambda: defaultdict(list)) # guild_id : member_id : timer
 
     def __init__(self, bot, data:dict = None):
         super().__init__(bot)
@@ -62,6 +74,22 @@ class Frogs(customs.cog.Cog):
         else:
             print('Ignoring exception from command {}:'.format(ctx.command), file=sys.stderr)
             raise(error)
+
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        timer = Timer(self.activity_decay, seconds=3)
+        guild_id = message.guild.id
+        member_id = message.author.id
+
+        timer.start(guild_id, member_id, timer)
+        self._activity_[guild_id][member_id].append(timer)
+
+
+    def activity_decay(self, guild_id, member_id, timer):
+        self._activity_[guild_id][member_id].remove(timer)
+        if not len(self._activity_[guild_id][member_id]):
+            del self._activity_[guild_id][member_id]
 
 
     class Spawner():
@@ -142,10 +170,10 @@ class Frogs(customs.cog.Cog):
             possession = user_data['frogs_normal']
             lifetime = user_data['frogs_lifetime']
 
-            if lifetime < possession:
-                lifetime = possession
-                user_data['frogs_lifetime'] = user_data['frogs_normal']
-                db_user_interface.write(self.bot.db_user, user.id, user_data)
+            # if lifetime < possession:             # This was here as a patch to update lifetime frogs based on current frogs. Not needed anymore.
+            #     lifetime = possession
+            #     user_data['frogs_lifetime'] = user_data['frogs_normal']
+            #     db_user_interface.write(self.bot.db_user, user.id, user_data)
 
             data = 'Lifetime Captures: **`{lifetime}`**\nCurrently in possession of **`{count}`** frogs.'.format(lifetime=lifetime, count=possession)
 
@@ -179,7 +207,7 @@ class Frogs(customs.cog.Cog):
     @commands.is_owner()
     async def fspawn(self, ctx):
         # Force a frog to spawn
-        await self.spawn(ctx.channel)
+        await self.spawn(ctx.channel, force=True)
 
 
     @frogs.command()   
@@ -244,10 +272,11 @@ class Frogs(customs.cog.Cog):
             guild_conf = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
             frogs_settings = guild_conf['frogs']
             
-            channels, rates = zip(*frogs_settings['channel_rates'])
-
-            if len(channels) == 0:
-                ctx.send('No channels are registered...')
+            try:
+                channels, rates = zip(*frogs_settings['channel_rates'])
+            except ValueError as e:
+                await ctx.send('No channels are registered...')
+                return
 
             desc = ''
 
@@ -326,7 +355,7 @@ class Frogs(customs.cog.Cog):
         
         if frogs_settings['active']:
             for spawner in Frogs._frogs_spawner_[ctx.guild.id]:
-                if spawner.get_channel() == channel:
+                if spawner.channel_id == channel:
                     spawner.stop()
                     Frogs._frogs_spawner_[ctx.guild.id].remove(spawner)
                     
@@ -345,9 +374,15 @@ class Frogs(customs.cog.Cog):
         await ctx.send('{ch} was never spawning frogs to begin with!'.format(ch=channel.mention))
 
 
-    async def spawn(self, channel: discord.TextChannel, guild_id = None):
+    async def spawn(self, channel: discord.TextChannel, guild_id = None, force=False):
         if not isinstance(channel, discord.TextChannel):
             channel = self.bot.get_guild(guild_id).get_channel(channel)
+
+        if len(self._activity_[channel.guild.id]) >= _ACTIVITY_CONCURRENT_MEMEBRS:
+            count = sum(len(recent_messages) for recent_messages in self._activity_[channel.guild.id].values())
+            roll = random()
+            if roll < min(_ACTIVITY_UPPER_BOUND, _ACTIVITY_FUNTION(count)):
+                return
 
         msg_spawn = await channel.send(_SPAWN)
         await msg_spawn.add_reaction(_REACT)
@@ -474,6 +509,68 @@ class Frogs(customs.cog.Cog):
         
         except asyncio.TimeoutError:
             await confirmation.delete()
+
+    
+    @frogs.command(name='gift')
+    async def gift(self, ctx, to:discord.Member, amount:int):
+        type='frogs_normal'
+
+        if amount <= 0:
+            embed = make_simple_embed('Nice try', 'You can\'t steal frogs by negative gifting.')
+            embed.set_thumbnail(url='https://cdn.discordapp.com/emojis/701138244712136774.png')
+            await ctx.send(embed=embed)
+            return
+
+        user_from = db_user_interface.fetch(self.bot.db_user, ctx.message.author.id)
+        user_to = db_user_interface.fetch(self.bot.db_user, to.id)
+
+        if user_from[type] < amount:
+            embed = make_simple_embed('ERROR', f'You do not have enough frogs!\nCurrently in possession of **`{user_from[type]}`** frogs.')
+            embed.set_thumbnail(url='https://cdn.discordapp.com/emojis/755168446232264775.png')
+            await ctx.send(embed=embed)
+            return
+
+        intro = f'You are going to give **`{amount}`** frogs to {to.mention}. Please confirm.'
+        result = f'**Your** resulting frogs\n**`{user_from["frogs_normal"]}`** -> **`{user_from["frogs_normal"] - amount}`**\n{to.mention}\'s resulting frogs\n**`{user_to["frogs_normal"]}`** -> **`{user_to["frogs_normal"] + amount}`**'
+
+        embed = make_simple_embed('Confirmation', '\n\n'.join([intro, result]))
+        embed.set_thumbnail(url='https://i.imgur.com/ybxI7pu.png')
+        confirmation = await self.request_confirmation(ctx, ctx.message.author, embed=embed)
+        if confirmation:
+            result = db_user_interface.exchange_frogs_normal(self.bot.db_user, ctx.author.id, to.id, amount)
+            if result != 0:
+                print(f">> ERROR: Gifting raised an error of {result}.")
+                return
+
+            embed.title = 'Frog(s) have been gifted'
+            embed.description = f'{ctx.message.author.mention}\'s resulting frog count\n**`{user_from["frogs_normal"]}`** -> **`{user_from["frogs_normal"] - amount}`**\n{to.mention}\'s resulting frog count\n**`{user_to["frogs_normal"]}`** -> **`{user_to["frogs_normal"] + amount}`**'
+            embed.set_thumbnail(url='https://cdn.discordapp.com/emojis/735692725520957481.gif')
+            await confirmation.edit(content=' '.join([ctx.message.author.mention, to.mention]), embed=embed)
+
+
+    async def request_confirmation(self, ctx, confirm_from:discord.Member, content=None, embed=None, timeout=10):
+        def check(reaction, user):
+            if user.id == confirm_from.id and reaction.message.id == confirmation.id:
+                if reaction.emoji in ['❌', '✅']:
+                    return True
+        
+            return False
+        
+        confirmation = await ctx.send(content, embed=embed)
+        await confirmation.add_reaction('❌')
+        await confirmation.add_reaction('✅')
+        try:            
+            reaction, _ = await self.bot.wait_for('reaction_add', check=check, timeout=timeout)
+            
+            if reaction.emoji == '❌':
+                await confirmation.delete()
+                return False
+            
+        except asyncio.TimeoutError:
+            await confirmation.delete()
+            return False
+        
+        return confirmation
 
 
     async def factor_expire(self, consumer, count):
