@@ -1,6 +1,7 @@
 from copy import copy
 from random import randint
 from time import time
+import fileinput
 
 ######################## PAYOUTS ########################
 #########################################################
@@ -48,8 +49,28 @@ class Slots():
         _emotes[1]+_emotes[1]+_emotes[0] :  1
         }
 
+    _winnings_data = {
+        _emotes[7]+_emotes[7]+_emotes[7] :  0,
+        _emotes[6]+_emotes[6]+_emotes[6] :  0,
+        _emotes[5]+_emotes[5]+_emotes[5] :  0,
+        _emotes[5]+_emotes[5]+_emotes[6] :  0,
+        _emotes[4]+_emotes[4]+_emotes[4] :  0,
+        _emotes[4]+_emotes[4]+_emotes[6] :  0,
+        _emotes[3]+_emotes[3]+_emotes[3] :  0,
+        _emotes[3]+_emotes[3]+_emotes[6] :  0,
+        _emotes[2]+_emotes[2]+_emotes[2] :  0,
+        _emotes[2]+_emotes[2]+_emotes[6] :  0,
+        _emotes[1]+_emotes[1]+_emotes[5] :  0,
+        _emotes[1]+_emotes[1]+_emotes[4] :  0,
+        _emotes[1]+_emotes[1]+_emotes[3] :  0,
+        _emotes[1]+_emotes[1]+_emotes[2] :  0,
+        _emotes[1]+_emotes[1]+_emotes[1] :  0,
+        _emotes[1]+_emotes[1]+_emotes[0] :  0,
+        "LOSS" : 0
+    }
 
-    async def slots(self, credits):
+
+    def slots(self, credits):
         '''
         Runs the slot machine.
         '''
@@ -57,12 +78,8 @@ class Slots():
         reels = [[] for i in range(0, _NUM_OF_REELS)]
         self._assign_reels(reels)
         # The line at the bottom is disgusting. Change it when you get the chance.
-        message = await ctx.send("{slot_0} : {slot_1} : {slot_2}\n{slot_3} : {slot_4} : {slot_5}\n{slot_6} : {slot_7} : {slot_8}"\
-            .format(slot_0=reels[0][0], slot_1=reels[1][0], slot_2=reels[2][0], \
-            slot_3=reels[0][1], slot_4=reels[1][1], slot_5=reels[2][1], \
-            slot_6=reels[0][2], slot_7=reels[1][2], slot_8=reels[2][2]))
 
-        self._roll_reels(reels, message)
+        self._roll_reels(reels)
 
 
     def _assign_reels(self, reels):
@@ -83,35 +100,23 @@ class Slots():
                 reel.append(Slots._emotes[current_index])
 
 
-    async def _roll_reels(self, reels, msg):
+    def _roll_reels(self, reels):
         ''' Roll each reel for a certain amount of ticks '''
         bottom_slot0, bottom_slot1, bottom_slot2 = 2, randint(0, _SYMBOL_AMOUNT_IN_REEL - 4), randint(0, _SYMBOL_AMOUNT_IN_REEL - 4)
         reel0_ticks = randint(1, 2)
         reel1_ticks = reel0_ticks + randint(0,1)
         reel2_ticks = reel1_ticks + randint(0,1)
-        content_string = ""
-        
-        reel0_border = "**:**"
-        reel1_border = "**:**"
-        reel2_border = "**:**"
 
         slot_0 = None
         slot_1 = None
         slot_2 = None
 
         while(reel2_ticks >= 0):
-            content_string = ""
-            content_string += "--CIRNO  SLOTS--\n"
-            content_string += "----------------\n"
             # This is currently designed to accomidate three reels
             # TODO: Make printing strings more modulare for different number of reels
-            content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4}\n".format(reel0_border, reels[0][(bottom_slot0 - 2) % 5], reel1_border, reels[1][(bottom_slot1 - 2) % 5], reel2_border, reels[2][(bottom_slot2 - 2) % 5])
-            content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4} <\n".format(reel0_border, reels[0][(bottom_slot0 - 1) % 5], reel1_border, reels[1][(bottom_slot1 - 1) % 5], reel2_border, reels[2][(bottom_slot2 - 1) % 5])
             slot_0 = reels[0][(bottom_slot0 - 1) % 5]
             slot_1 = reels[1][(bottom_slot1 - 1) % 5]
             slot_2 = reels[2][(bottom_slot2 - 1) % 5]
-            content_string += "{0}{1}{0} {2}{3}{2} {4}{5}{4}\n".format(reel0_border, reels[0][bottom_slot0], reel1_border, reels[1][bottom_slot1], reel2_border, reels[2][bottom_slot2])
-            content_string += "----------------\n"
             
             reel0_ticks -= 1
             reel1_ticks -= 1
@@ -119,23 +124,14 @@ class Slots():
 
             if (reel0_ticks > 0):
                 bottom_slot0 = (bottom_slot0 + 1) % 5
-            else:
-                reel0_border = ":"
             if (reel1_ticks > 0):
                 bottom_slot1 = (bottom_slot1 + 1) % 5
-            else:
-                reel1_border = ":"
             if (reel2_ticks > 0):
                 bottom_slot2 = (bottom_slot2 + 1) % 5
-            else:
-                reel2_border = ":"
 
 
         payout = Slots._combo_payout.get(slot_0+slot_1+slot_2, 0)
         if (payout > 0):
-            content_string += "|== WIN ==|\n\n"
-            content_string += "**{}** used 1 frogo(s). You've gained {} frogo(s)! :cirnoYay:".format(ctx.author, payout)
+            Slots._winnings_data[slot_0+slot_1+slot_2] += 1
         else:
-            content_string += "|== LOST ==|\n\n"
-            content_string += "**{}** used 1 frogo(s). It's now gone... :(".format(ctx.author)
-        await msg.edit(content = content_string)
+            Slots._winnings_data["LOSS"] += 1
