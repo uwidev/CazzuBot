@@ -190,14 +190,15 @@ class Owner(customs.cog.Cog):
         '''
         Lists all emojis the server has to offer with their name.
         '''
-        async with ctx.channel.typing:
-            for emoji in ctx.guild.emojis():
-                await ctx.send(emoji)
-                await ctx.send('**`:' + emoji.name + ':`**')
+        async with ctx.channel.typing():
+            for emoji in sorted(ctx.guild.emojis, key=lambda emo: emo.name):
+                embed = discord.Embed(color=0x9edbf7)
+                embed.set_thumbnail(url=str(emoji.url))
+                await ctx.send(f'**`:{emoji.name}:`**', embed=embed)
                 await asyncio.sleep(1)
         
         await ctx.message.delete()
-    
+
 
     @commands.command()
     async def init_hard(self, ctx):
@@ -520,6 +521,7 @@ class Owner(customs.cog.Cog):
             await ctx.send(embed=make_simple_embed('ERROR', 'There appears to be a problem with your code, baka.'))
             raise e
 
+
     @commands.command()
     async def load(self, ctx, ext_name):
         ext = ext_name + '.py'
@@ -535,13 +537,13 @@ class Owner(customs.cog.Cog):
         else:
             await ctx.send(embed=make_simple_embed('ERROR', 'File doesn\'t exist or you can\'t spell!'))
 
+
     @commands.command()
     async def unload(self, ctx, ext_name):
         ext = 'cog.' + ext_name
         if ext not in self.bot.extensions:
             await ctx.send(embed=make_simple_embed('ERROR', 'Extension wasn\'t loaded to begin with!'))
             raise commands.BadArgument
-        
         
         dir = os.listdir('cog')
         if ext_name + '.py' in dir:

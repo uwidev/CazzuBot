@@ -586,5 +586,45 @@ class Frogs(customs.cog.Cog):
         db_user_interface.write(self.bot.db_user, consumer.id, consumer_data)
 
 
+    @commands.group(name='logfrogs', aliases=['logfrog'], invoke_without_command=True)
+    @commands.is_owner()
+    async def log_frogs(self, ctx):
+        if ctx.invoked_subcommand is None:
+            if self.frogs_logger.is_running():
+                await ctx.send('I am currently logging frogs.')
+            else:
+                await ctx.send('I am currently **not** logging frogs.')
+    
+
+    @log_frogs.command(name='start')
+    @commands.is_owner()
+    async def log_frogs_start(self, ctx):
+        try:
+            self.frogs_logger.start()
+        except RuntimeError:
+            await ctx.send('Already logging frogs!')
+            return
+
+        await ctx.send('Will now start logging frogs over time...')
+
+    
+    @log_frogs.command(name='stop')
+    @commands.is_owner()
+    async def log_frogs_stop(self, ctx):
+        if self.frogs_logger.is_running():
+            self.frogs_logger.stop()
+            await ctx.send('Will stop logging frogs...')
+        else:
+            await ctx.send('Was never logging to begin with...')
+
+
+    @tasks.loop(minutes=15)
+    async def frogs_logger(self):
+        with open('frog_captures_log.csv', 'a') as log:
+            all_users = db_user_interface.fetch_all(self.bot.db_user)
+
+            log.write(','.join(str(user['frogs_lifetime']) for user in all_users) + '\n')
+
+
 def setup(bot):
     bot.add_cog(Frogs(bot))
