@@ -55,6 +55,17 @@ def modify_exp(db_user, uid: int, exp: int):
     db_user.upsert(user, Query().id == uid)
 
 
+def modify_frog(db_user, uid: int, frogs: int):
+    try:
+        user = db_user.search(Query().id == uid)[0]
+    except IndexError:
+        user = dict(user_data_default)
+        user['id'] = uid
+
+    user['frogs_normal'] += frogs
+    db_user.upsert(user, Query().id == uid)
+
+
 def initialize(db_user, uid: int):
     user = dict(user_data_default)
     user['id'] = uid

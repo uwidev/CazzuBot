@@ -29,6 +29,9 @@ import customs.cog
 _SYMBOL_AMOUNT_IN_REEL = 5
 _NUM_OF_REELS = 3
 
+class FrogException(Exception):
+    pass
+
 class Slots(customs.cog.Cog):
     # Minimum of 8 emotes required for this to work
     _emotes = [":x:", ":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:"] # Change/comment out later
@@ -55,16 +58,39 @@ class Slots(customs.cog.Cog):
         }
 
 
+    _credits = {
+        'low' : 1,
+        'mid' : 5,
+        'high' : 15
+    }
+
+
+    # credits -> low = 1, mid = 5, high = 15
     @commands.group(alias=['slots'])
-    async def slots(self, ctx, credits):
+    async def slots(self, ctx, credits_index = 'low'):
         '''
         Runs the slot machine.
         '''
+        if credits_index not in Slots._credits:
+            await ctx.send("BAKA")
+            return
 
+        consumer = ctx.message.author
+        consumer_data = db_user_interface.fetch(self.bot.db_user, consumer.id)
+        consumer_frogs = consumer_data['frogs_normal']
+
+        if Slots._credits[credits_index] > consumer_frogs:
+            embed = make_simple_embed('', 'You do not have enough frogs! You only have **`{count}`**'.format(count=consumer_frogs))
+            await ctx.send(content=consumer.mention, embed=embed)
+            return
+
+        db_user_interface.modify_frog(self.bot.db_user, ctx.message.author.id, -Slots._credits[credits_index])
+
+        
         reels = [[] for i in range(0, _NUM_OF_REELS)]
         self._assign_reels(reels)
         # The line at the bottom is disgusting. Change it when you get the chance.
-        message = await ctx.send("{slot_0} : {slot_1} : {slot_2}\n{slot_3} : {slot_4} : {slot_5}\n{slot_6} : {slot_7} : {slot_8}"\
+        message = await ctx.send(content="{slot_0} : {slot_1} : {slot_2}\n{slot_3} : {slot_4} : {slot_5}\n{slot_6} : {slot_7} : {slot_8}"\
             .format(slot_0=reels[0][0], slot_1=reels[1][0], slot_2=reels[2][0], \
             slot_3=reels[0][1], slot_4=reels[1][1], slot_5=reels[2][1], \
             slot_6=reels[0][2], slot_7=reels[1][2], slot_8=reels[2][2]))
@@ -149,6 +175,16 @@ class Slots(customs.cog.Cog):
             content_string += "**{}** used 1 frogo(s). It's now gone... :(".format(ctx.author)
         await msg.edit(content = content_string)
     
+
+    async def has_enough_frogs(self, ctx, count):
+
+
+        if count > consumer_frogs:
+            embed = make_simple_embed('', 'You do not have enough frogs! You only have **`{count}`**'.format(count=consumer_frogs))
+            await ctx.send(content=consumer.mention, embed=embed)
+            return False
+        return True
+
 
 def setup(bot):
     bot.add_cog(Slots(bot))
