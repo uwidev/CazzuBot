@@ -8,6 +8,8 @@ from time import time
 
 import customs.cog
 
+# This line is added to my linux machine
+
 ######################## PAYOUTS ########################
 #########################################################
 #################    combo     frogs   ##################
