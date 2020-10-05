@@ -62,6 +62,10 @@ def modify_frog(db_user, uid: int, frogs: int):
         user = dict(user_data_default)
         user['id'] = uid
 
+    if (user['frogs_normal'] + frogs) < user['frogs_normal']:
+        print(f">>ERROR: Tried to subtract {abs(frogs)} frogs from user's current amount ({user['frogs_normal']}). User doesn't have enough frogs.")
+        return 1
+
     user['frogs_normal'] += frogs
     db_user.upsert(user, Query().id == uid)
 
