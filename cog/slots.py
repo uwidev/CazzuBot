@@ -31,8 +31,9 @@ import customs.cog
 _SYMBOL_AMOUNT_IN_REEL = 5
 _NUM_OF_REELS = 3
 
-class FrogException(Exception):
-    pass
+# The converter for the slots function
+def _is_valid_credits(args):
+    return args if args in ('low', 'mid', 'high') else 'stop'
 
 class Slots(customs.cog.Cog):
     # Minimum of 8 emotes required for this to work
@@ -68,15 +69,14 @@ class Slots(customs.cog.Cog):
 
     # credits -> low = 1, mid = 5, high = 15
     @commands.group(alias=['slots'])
-    async def slots(self, ctx, credits_index = 'low'):
+    async def slots(self, ctx, credits_index: _is_valid_credits):
         '''
         Runs the slot machine.
         '''
 
-
-        if credits_index not in Slots._credits:
-            await ctx.send("BAKA")
-            return
+        # if credits_index not in Slots._credits:
+        #     await ctx.send("BAKA")
+        #     return
 
         # consumer = ctx.message.author
         # consumer_data = db_user_interface.fetch(self.bot.db_user, consumer.id)
@@ -87,7 +87,11 @@ class Slots(customs.cog.Cog):
         #     await ctx.send(content=consumer.mention, embed=embed)
         #     return
 
-        db_user_interface.modify_frog(self.bot.db_user, ctx.message.author.id, -Slots._credits[credits_index])
+        try:
+            db_user_interface.modify_frog(self.bot.db_user, ctx.message.author.id, -Slots._credits[credits_index])
+        except KeyError:
+            await ctx.send("BAKA!")
+            return
 
         reels = [[] for i in range(0, _NUM_OF_REELS)]
         self._assign_reels(reels)
@@ -162,8 +166,6 @@ class Slots(customs.cog.Cog):
                 bottom_slot2 = (bottom_slot2 + 1) % 5
             else:
                 reel2_border = ":"
-
-            
 
         payout = Slots._combo_payout.get(slot_0+slot_1+slot_2, 0)
         if (payout > 0):
