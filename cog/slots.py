@@ -73,25 +73,15 @@ class Slots(customs.cog.Cog):
         '''
         Runs the slot machine.
         '''
-
-        # if credits_index not in Slots._credits:
-        #     await ctx.send("BAKA")
-        #     return
-
-        # consumer = ctx.message.author
-        # consumer_data = db_user_interface.fetch(self.bot.db_user, consumer.id)
-        # consumer_frogs = consumer_data['frogs_normal']
-
-        # if Slots._credits[credits_index] > consumer_frogs:
-        #     embed = make_simple_embed('', 'You do not have enough frogs! You only have **`{count}`**'.format(count=consumer_frogs))
-        #     await ctx.send(content=consumer.mention, embed=embed)
-        #     return
-
+        # If the user types "c!slots" without a given parameter
+        # there will be a Missing Argument Error from discord.ext
+        # TODO: catch this exception
         try:
             db_user_interface.modify_frog(self.bot.db_user, ctx.message.author.id, -Slots._credits[credits_index])
         except KeyError:
             await ctx.send("BAKA!")
             return
+
 
         reels = [[] for i in range(0, _NUM_OF_REELS)]
         self._assign_reels(reels)
