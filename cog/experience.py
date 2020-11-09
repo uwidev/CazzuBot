@@ -103,12 +103,20 @@ class Experience(customs.cog.Cog):
             
             compare = '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode='Exp', user='User')
             for i in range(max(0, placement-2), min(placement+3, len(sorted_users))):
-                if i == placement:
-                    compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-                elif i%2:
-                    compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-                else:
-                    compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                try:
+                    if i == placement:
+                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                    elif i%2:
+                        compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                    else:
+                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                except AttributeError:
+                    if i == placement:
+                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['exp']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
+                    elif i%2:
+                        compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
+                    else:
+                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
             compare += '```'
 
             desc = data + '\n\n' + report + '\n' + compare
