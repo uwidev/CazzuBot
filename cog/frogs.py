@@ -45,8 +45,8 @@ _EXP_FACTOR_BUFF_DURATION_NORMAL = 30 #minutes
 # Activity-based spawns
 # --------------------------------------------
 _ACTIVITY_CONCURRENT_MEMEBRS = 2 #at least X members
-_ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND = 30 #messages until upper bound
-_ACTIVITY_UPPER_BOUND = 0.8 #what rng roll has to be above to spawn aa frog
+_ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND = 100 #messages until upper bound
+_ACTIVITY_UPPER_BOUND = 0.6 #what rng roll has to be above to spawn aa frog
 _ACTIVITY_FACTOR = 2
 _ACTIVITY_TIMEOUT = 15 #minutes
 
@@ -187,12 +187,20 @@ class Frogs(customs.cog.Cog):
 
                 compare = '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode='Frogs', user='User')
                 for i in range(max(0, placement-2), min(placement+3, len(sorted_users))):
-                    if i == placement:
-                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-                    elif i%2:
-                        compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-                    else:
-                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                    try:
+                        if i == placement:
+                            compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                        elif i%2:
+                            compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                        else:
+                            compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                    except AttributeError:
+                        if i == placement:
+                            compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
+                        elif i%2:
+                            compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
+                        else:
+                            compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['frogs_lifetime']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)                
                 compare += '```'
 
             desc = data + '\n\n' + report + '\n' + compare

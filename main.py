@@ -10,7 +10,10 @@ from utility import make_simple_embed
 from secret import TOKEN
 from dev import DEV_MODE
 
-bot = commands.Bot(command_prefix='d!' if DEV_MODE else 'c!', owner_id = 92664421553307648)
+intents = discord.Intents.default()
+intents.members = True
+
+bot = commands.Bot(command_prefix='d!' if DEV_MODE else 'c!', owner_id = 92664421553307648, intents=intents)
 
 
 @bot.event

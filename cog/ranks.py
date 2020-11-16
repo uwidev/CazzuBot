@@ -55,13 +55,21 @@ class Rank(customs.cog.Cog):
         display += '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode='Exp' if mode == 'exp' else 'Frogs', user='User')
 
         for i in range(lower, upper):
-            if sorted_users[i]['id'] == ctx.message.author.id:
-                display += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-            elif i%2:
-                display += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-            else:
-                display += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-
+            try:
+                if sorted_users[i]['id'] == ctx.message.author.id:
+                    display += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                elif i%2:
+                    display += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                else:
+                    display += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+            except AttributeError:
+                if sorted_users[i]['id'] == ctx.message.author.id:
+                    display += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i][mode]), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
+                elif i%2:
+                    display += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
+                else:
+                    display += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
+            
         display += '```'
 
         comment = 'Currently being sorted by **{mode}**. To sort by {other}, try running `{pre}ranks {alt}`.'.format(mode='experience' if mode == 'exp' else 'lifetime frog captures', other='lifetime frog captures' if mode == 'exp' else 'experience', pre=self.bot.command_prefix, alt='frog' if mode == 'exp' else 'exp')
