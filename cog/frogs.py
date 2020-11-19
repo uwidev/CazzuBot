@@ -626,7 +626,7 @@ class Frogs(customs.cog.Cog):
             await ctx.send('Was never logging to begin with...')
 
 
-    @tasks.loop(minutes=15)
+    @tasks.loop(minutes=60)
     async def frogs_logger(self):
         with open('frog_captures_log.csv', 'a') as log:
             all_users = db_user_interface.fetch_all(self.bot.db_user)

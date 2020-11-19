@@ -161,7 +161,7 @@ class Experience(customs.cog.Cog):
             await ctx.send('Was never logging to begin with...')
 
 
-    @tasks.loop(minutes=15)
+    @tasks.loop(minutes=60)
     async def exp_logger(self):
         with open('exp_log.csv', 'a') as log:
             all_users = db_user_interface.fetch_all(self.bot.db_user)
