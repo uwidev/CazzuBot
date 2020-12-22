@@ -521,6 +521,9 @@ class Frogs(customs.cog.Cog):
     
     @frogs.command(name='gift')
     async def gift(self, ctx, to:discord.Member, amount:int):
+        if to == ctx.author:
+            return
+
         type='frogs_normal'
 
         if amount <= 0:
@@ -626,7 +629,7 @@ class Frogs(customs.cog.Cog):
             await ctx.send('Was never logging to begin with...')
 
 
-    @tasks.loop(minutes=15)
+    @tasks.loop(minutes=60)
     async def frogs_logger(self):
         with open('frog_captures_log.csv', 'a') as log:
             all_users = db_user_interface.fetch_all(self.bot.db_user)
