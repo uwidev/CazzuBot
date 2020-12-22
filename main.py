@@ -21,6 +21,8 @@ async def on_ready():
     print(f'Logged in as: {bot.user.name}')
     print(f'With ID: {bot.user.id}')
 
+    print(flush=True)
+
 
 if __name__ == '__main__':
     bot.db_guild = TinyDB('guild.json')
