@@ -557,5 +557,15 @@ class Owner(customs.cog.Cog):
             await ctx.send(embed=make_simple_embed('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
 
 
+    @commands.command()
+    async def embed(self, ctx, *, content:str):
+        if '|' not in content:
+            await ctx.send('ERROR: There is no splitter | to split title and content!')
+
+        title, desc = content.split('|')
+        embed = make_simple_embed(title, desc)
+
+        await ctx.send(embed=embed)
+
 def setup(bot):
     bot.add_cog(Owner(bot))
