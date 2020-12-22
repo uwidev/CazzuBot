@@ -566,6 +566,12 @@ class Owner(customs.cog.Cog):
         embed = make_simple_embed(title, desc)
 
         await ctx.send(embed=embed)
+        
+    @commands.command()
+    async def embed_channel(self, ctx, channel: discord.TextChannel, *, desc:str):
+        embed = make_simple_embed(f'#{channel.name}', desc)
+
+        await ctx.send(embed=embed)
 
 def setup(bot):
     bot.add_cog(Owner(bot))
