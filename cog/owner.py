@@ -557,8 +557,12 @@ class Owner(customs.cog.Cog):
             await ctx.send(embed=make_simple_embed('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
 
 
-    @commands.command()
-    async def embed(self, ctx, *, content:str):
+    @commands.group()
+    async def embed(self, ctx):
+        pass
+
+    @embed.command(name='make')
+    async def embed_make(self, ctx, *, content:str):
         if '|' not in content:
             await ctx.send('ERROR: There is no splitter | to split title and content!')
 
@@ -567,11 +571,21 @@ class Owner(customs.cog.Cog):
 
         await ctx.send(embed=embed)
         
-    @commands.command()
+    @embed.command(name='channel')
     async def embed_channel(self, ctx, channel: discord.TextChannel, *, desc:str):
         embed = make_simple_embed(f'#{channel.name}', desc)
 
         await ctx.send(embed=embed)
+
+    @embed.command(name='edit')
+    async def embed_edit(self, ctx, msg: discord.Message, *, content:str):
+        if '|' not in content:
+            await ctx.send('ERROR: There is no splitter | to split title and content!')
+
+        title, desc = content.split('|')
+        embed = make_simple_embed(title, desc)
+
+        await msg.edit(embed=embed)
 
 def setup(bot):
     bot.add_cog(Owner(bot))
