@@ -78,7 +78,14 @@ class Rank(customs.cog.Cog):
 
         embed = make_simple_embed(title, desc)
         embed.set_footer(text='-sarono', icon_url='https://i.imgur.com/BAj8IWu.png')
-        embed.set_thumbnail(url=self.bot.get_user(sorted_users[0]['id']).avatar_url)
+
+        for user in sorted_users:
+            member_id = user['id']
+            member = self.bot.get_user(member_id)
+            if member is not None:
+                break
+        
+        embed.set_thumbnail(url=member.avatar_url)
 
         await ctx.send(embed=embed)
 
@@ -89,6 +96,11 @@ class Rank(customs.cog.Cog):
             print(error)
         else:
             raise error
+
+    @commands.command()
+    async def test(self, ctx):
+        me = self.bot.get_user(310260458047275009)
+        await ctx.send(me)
 
 
 def setup(bot):
