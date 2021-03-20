@@ -1,3 +1,18 @@
+'''
+Handles all of the frog mechanics.
+
+Frog can spawn within any channel in accordance to that guild's frog settings. When a frog spawns, it will roll to check if it will actually spawn or not.
+This roll must be above _ACTIVITY_UPPER_BOUND for the frog to actually spawn. If it rolls lower the frog will not spawn and another timer will begin for it's
+next spawn.
+
+Frogs are scared of talking users. If users are actively talking in the server at all, there will be less of a chance of them to spawn. Once
+_ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND messages have been sent in the last _ACTIVITY_TIMEOUT minutes, the roll for frogs must be above _ACTIVITY_UPPER_BOUND for
+the frog the spawn. The reasoning for this was to promote talking when there already exists talking. When there isn't much talking users are free to
+catch frogs as they want.
+
+When a frog spawns(?) (or after it is captured?) it will start a timer that will spawn another from when it runs out.
+'''
+
 import sys, warnings
 
 from collections import defaultdict
@@ -14,7 +29,7 @@ import customs.cog
 # Later, read these vars from some db on startup
 _SPAWNRATE_DEFAULT = 7.0 #minutes
 _SPAWNRATE_SWING = .1 #within % offsets
-_TIMEOUT = 120   # how long until frogs disappear
+_TIMEOUT = 120   # seconds before frog disappears
 
 
 # The elements used on frog spawn
@@ -34,27 +49,31 @@ _TIP = 'TIP: Consume frogs with c!frogs consume '
 # Failure
 _FAIL = 'You were too slow!'
 
-
+# --------------------------------------------
 # Consumption of frogs
 # --------------------------------------------
 _EXP_FACTOR_PER_FROG = .1
 _EXP_FACTOR_CAP = 0.5
 _EXP_FACTOR_BUFF_DURATION_NORMAL = 30 #minutes
 
-
+# --------------------------------------------
 # Activity-based spawns
 # --------------------------------------------
-_ACTIVITY_CONCURRENT_MEMEBRS = 2 #at least X members
+_ACTIVITY_CONCURRENT_MEMBERS = 2 #at least X members
 _ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND = 100 #messages until upper bound
-_ACTIVITY_UPPER_BOUND = 0.6 #what rng roll has to be above to spawn aa frog
+_ACTIVITY_UPPER_BOUND = 0.6 #what rng roll has to be above to spawn a frog
 _ACTIVITY_FACTOR = 2
 _ACTIVITY_TIMEOUT = 15 #minutes
 
-_ACTIVITY_FUNTION = lambda count: _ACTIVITY_UPPER_BOUND*(count/_ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND)**_ACTIVITY_FACTOR
+_ACTIVITY_FUNCTION = lambda count: _ACTIVITY_UPPER_BOUND*(count/_ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND)**_ACTIVITY_FACTOR
 
 
 class Frogs(customs.cog.Cog):
+    # One spawner per channel. Each spawner is responsible for it's set channel.
     _frogs_spawner_ = defaultdict(list) # guild_id : [spawner]
+
+    # Contains the current activity in a channel. This is used to determine if a frog will spawn or not.
+    # Frogs are scared of active users talking.
     _activity_ = defaultdict(lambda: defaultdict(list)) # guild_id : member_id : timer
 
     def __init__(self, bot, data:dict = None):
@@ -75,9 +94,9 @@ class Frogs(customs.cog.Cog):
             print('Ignoring exception from command {}:'.format(ctx.command), file=sys.stderr)
             raise(error)
 
-
     @commands.Cog.listener()
     async def on_message(self, message):
+        '''Keep a log of recent activities of users.'''
         timer = Timer(self.activity_decay, seconds=3)
         guild_id = message.guild.id
         member_id = message.author.id
@@ -93,6 +112,9 @@ class Frogs(customs.cog.Cog):
 
 
     class Spawner():
+        '''
+        Manages the frog spawns for a particular channel. It leverages discord.py's built in tasks.loop to automate looping the timer.
+        '''
         def __init__(self, guild_id: int, channel_id: int, base_rate: int, spawner_loop, cog):
             self.guild_id = guild_id
             self.channel_id = channel_id
@@ -108,6 +130,7 @@ class Frogs(customs.cog.Cog):
                 self.change_interval(random=True)
                 self._spawner.start(self)
             
+            # Manually have a pre-timer before spawning as tasks.loop does not support wait-in at the time of writing
             delay_minutes = self.get_random_spawn_time()
             self.change_interval(minutes=delay_minutes)
             self._task_delay_start = asyncio.create_task(delay_start(self.get_random_spawn_time()))
@@ -116,7 +139,8 @@ class Frogs(customs.cog.Cog):
             self._task_delay_start.cancel()
             self._spawner.cancel()
 
-        def set_base_rate(self, rate):
+        def set_wait(self, rate):
+        '''How long to wait until spawning another frog.'''
             if rate < 0:
                 rate = 1
             
@@ -139,10 +163,12 @@ class Frogs(customs.cog.Cog):
     @tasks.loop(minutes=_SPAWNRATE_DEFAULT)
     async def frog_timer(self, spawner):
         await self.spawn(spawner.channel_id, spawner.guild_id)
-        # print('\nloop has finished the spawn function, will now change interval')
         spawner.change_interval(random=True, debug=True)
 
 
+    # --------------------------------------------
+    # User Commands
+    # --------------------------------------------
     @commands.group(aliases=['frog'], invoke_without_command=True)
     async def frogs(self, ctx, user:discord.Member=None):
         '''
@@ -169,11 +195,6 @@ class Frogs(customs.cog.Cog):
 
             possession = user_data['frogs_normal']
             lifetime = user_data['frogs_lifetime']
-
-            # if lifetime < possession:             # This was here as a patch to update lifetime frogs based on current frogs. Not needed anymore.
-            #     lifetime = possession
-            #     user_data['frogs_lifetime'] = user_data['frogs_normal']
-            #     db_user_interface.write(self.bot.db_user, user.id, user_data)
 
             data = 'Lifetime Captures: **`{lifetime}`**\nCurrently in possession of **`{count}`** frogs.'.format(lifetime=lifetime, count=possession)
 
@@ -214,7 +235,7 @@ class Frogs(customs.cog.Cog):
     @frogs.command()
     @commands.is_owner()
     async def fspawn(self, ctx):
-        # Force a frog to spawn
+        '''Force a frog to spawn'''
         await self.spawn(ctx.channel, force=True)
 
 
@@ -276,6 +297,9 @@ class Frogs(customs.cog.Cog):
     @frogs.command(aliases=['rate'])
     @commands.has_guild_permissions(manage_guild=True) 
     async def rates(self, ctx, new_rate:float=None, channel:discord.TextChannel=None):
+        '''
+        Make adjustments to this wait time for the frog spawns in this channel.
+        '''
         if new_rate == None:
             guild_conf = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
             frogs_settings = guild_conf['frogs']
@@ -316,7 +340,7 @@ class Frogs(customs.cog.Cog):
 
         for spawner in Frogs._frogs_spawner_[ctx.guild.id]:
             if spawner.channel_id == channel_id:
-                spawner.set_base_rate(new_rate)
+                spawner.set_wait(new_rate)
                 spawner.stop()
                 spawner.start()
                 
@@ -383,13 +407,14 @@ class Frogs(customs.cog.Cog):
 
 
     async def spawn(self, channel: discord.TextChannel, guild_id = None, force=False):
+        '''Spawn the frog and roll of it will actually spawn. Called internally.'''
         if not isinstance(channel, discord.TextChannel):
             channel = self.bot.get_guild(guild_id).get_channel(channel)
 
-        if len(self._activity_[channel.guild.id]) >= _ACTIVITY_CONCURRENT_MEMEBRS:
+        if len(self._activity_[channel.guild.id]) >= _ACTIVITY_CONCURRENT_MEMBERS:
             count = sum(len(recent_messages) for recent_messages in self._activity_[channel.guild.id].values())
             roll = random()
-            if roll < min(_ACTIVITY_UPPER_BOUND, _ACTIVITY_FUNTION(count)):
+            if roll < min(_ACTIVITY_UPPER_BOUND, _ACTIVITY_FUNCTION(count)):
                 return
 
         msg_spawn = await channel.send(_SPAWN)
@@ -435,6 +460,8 @@ class Frogs(customs.cog.Cog):
         Consumes a the specified amount of frogs. 
         
         Consuming frogs will give you additional experience factor, greatly increasing the amount of experience you get permessage sent.
+
+        This is planned to be deprecated to an extent... need more thought on it
         '''
         consumer = ctx.message.author
         consumer_data = db_user_interface.fetch(self.bot.db_user, consumer.id)
@@ -585,6 +612,9 @@ class Frogs(customs.cog.Cog):
 
 
     async def factor_expire(self, consumer, count):
+        '''
+        Called by timers defined under consume().
+        '''
         consumer_data = db_user_interface.fetch(self.bot.db_user, consumer.id)
         consumer_factor = consumer_data['exp_factor']
 
@@ -597,6 +627,9 @@ class Frogs(customs.cog.Cog):
         db_user_interface.write(self.bot.db_user, consumer.id, consumer_data)
 
 
+    # ----------------------------------------------------------    
+    # Statistics
+    # ----------------------------------------------------------
     @commands.group(name='logfrogs', aliases=['logfrog'], invoke_without_command=True)
     @commands.is_owner()
     async def log_frogs(self, ctx):

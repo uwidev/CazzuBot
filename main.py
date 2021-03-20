@@ -20,7 +20,6 @@ bot = commands.Bot(command_prefix='d!' if DEV_MODE else 'c!', owner_id = 9266442
 async def on_ready():
     print(f'Logged in as: {bot.user.name}')
     print(f'With ID: {bot.user.id}')
-
     print(flush=True)
 
 
@@ -33,6 +32,7 @@ if __name__ == '__main__':
         if file.endswith('.py'):
             bot.load_extension('cog.' + file[0:-3])
 
+    # Block DMs and other bots
     @bot.check
     async def globally_block_dms(ctx):
         return ctx.guild is not None

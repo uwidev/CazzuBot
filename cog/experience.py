@@ -1,3 +1,16 @@
+'''
+Handles all experience logic.
+
+Users are to gain experience at some _EXP_BASE rate. However, once a user hasn't talked for _EXP_BUFF_RESET minutes, they will receive a buff that will multiply
+their base by _EXP_BONUS_FACTOR. This multiplier will decay overtime based on _EXP_DECAY_UNTIL_BASE and _EXP_DECAY_FACTOR. Exact formula can be found under the 
+method on_message(self, message).
+
+To actually gain experience, a user must send a message to chat. A timer with duration _EXP_COOLDOWN will begin. They will be added to a _user_cooldown dict.
+Anyone found in this dictionary will be blocked from receiving experience. When the timer finished, it will itself (and thus, the user) from that dict. They
+will then be able to receive experience again.
+'''
+
+
 import discord, db_user_interface
 from discord.ext import commands, tasks
 from utility import Timer, make_simple_embed, PARSE_CLASS_VAR
@@ -6,10 +19,10 @@ from copy import copy
 import customs.cog
 
 _EXP_BASE = 5
-_EXP_BONUS_FACTOR = 5
-_EXP_DECAY_UNTIL_BASE = 30
+_EXP_BONUS_FACTOR = 20
+_EXP_DECAY_UNTIL_BASE = 18
 _EXP_DECAY_FACTOR = 3
-_EXP_COOLDOWN = 6 #seconds
+_EXP_COOLDOWN = 10 #seconds
 _EXP_BUFF_RESET = 15 #mins
 
 class Experience(customs.cog.Cog):

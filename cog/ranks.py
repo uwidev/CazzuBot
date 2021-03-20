@@ -25,7 +25,8 @@ class Rank(customs.cog.Cog):
         '''
         Shows the ranks of all members sorted by their experience points.
 
-        Simply providing a number will let you view a page sorted by experience. If you want sort by frogs, be sure to provde the **mode** with **`frogs`**, followed by a page number if you so desire.
+        Simply providing a number will let you view a page sorted by experience. If you want sort by frogs, be sure to provde the **mode** with **`frogs`**, 
+        followed by a page number if you so desire.
         '''
         if type(mode) == int:
             page = mode
