@@ -18,12 +18,12 @@ from copy import copy
 
 import customs.cog
 
-_EXP_BASE = 5
-_EXP_BONUS_FACTOR = 20
-_EXP_DECAY_UNTIL_BASE = 18
-_EXP_DECAY_FACTOR = 3
-_EXP_COOLDOWN = 10 #seconds
-_EXP_BUFF_RESET = 15 #mins
+_EXP_BASE = 1
+_EXP_BONUS_FACTOR = 35
+_EXP_DECAY_UNTIL_BASE = 116
+_EXP_DECAY_FACTOR = 2
+_EXP_COOLDOWN = 20 #seconds
+_EXP_BUFF_RESET = 1440 #mins    |   1440m = 24h
 
 class Experience(customs.cog.Cog):
     _user_cooldown_ = dict()
