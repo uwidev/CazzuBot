@@ -1,39 +1,57 @@
 '''
 Handles all experience logic.
 
-Users are to gain experience at some _EXP_BASE rate. However, once a user hasn't talked for _EXP_BUFF_RESET minutes, they will receive a buff that will multiply
-their base by _EXP_BONUS_FACTOR. This multiplier will decay overtime based on _EXP_DECAY_UNTIL_BASE and _EXP_DECAY_FACTOR. Exact formula can be found under the 
-method on_message(self, message).
+The amount of experience given to users are based on my Rested Experience (RE) system. This is essentially your daily boost for talking. After _EXP_BUFF_RESET
+minutes, the users will be refreshed a buff that will cause their next _EXP_DECAY_UNTIL_BASE messages to yield much more experience than base rates.
 
 To actually gain experience, a user must send a message to chat. A timer with duration _EXP_COOLDOWN will begin. They will be added to a _user_cooldown dict.
 Anyone found in this dictionary will be blocked from receiving experience. When the timer finished, it will itself (and thus, the user) from that dict. They
 will then be able to receive experience again.
 '''
-
-
-import discord, db_user_interface
-from discord.ext import commands, tasks
-from utility import Timer, make_simple_embed, PARSE_CLASS_VAR
 from copy import copy
+import asyncio
+
+
+import discord, db_user_interface, db_guild_interface
+from discord.ext import commands, tasks
+from utility import Timer, make_simple_embed_t, PARSE_CLASS_VAR
 
 import customs.cog
 
+# Global Variables for Experience rates
+#
+# These variables are never meant to be modified except through hard code.
 _EXP_BASE = 1
-_EXP_BONUS_FACTOR = 35
-_EXP_DECAY_UNTIL_BASE = 116
+_EXP_BONUS_FACTOR = 20
+_EXP_DECAY_UNTIL_BASE = 77
 _EXP_DECAY_FACTOR = 2
-_EXP_COOLDOWN = 20 #seconds
+_EXP_COOLDOWN = 15 #seconds
 _EXP_BUFF_RESET = 1440 #mins    |   1440m = 24h
 
+_FUNC_BONUS_EXP = lambda x : max(0, (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE) - (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE) * ((x-1)/_EXP_DECAY_UNTIL_BASE)**_EXP_DECAY_FACTOR)
+
+# Used for to lookup later by levels.py to determine level threshold
+RE_MIN_DURATION = _EXP_COOLDOWN/60.0 * _EXP_DECAY_UNTIL_BASE
+
+EXP_CUMULATIVE = list()
+EXP_CUMULATIVE.append(_EXP_BASE + _FUNC_BONUS_EXP(0))
+for i in range(1, _EXP_DECAY_UNTIL_BASE):
+    EXP_CUMULATIVE.append(EXP_CUMULATIVE[i-1] + _EXP_BASE + _FUNC_BONUS_EXP(i))
+
 class Experience(customs.cog.Cog):
+    '''
+    Experiences uses a _user_cooldown_ dictionary that maps a user.id to a list containing the following
+        0 : int : message contributions on this buff interval
+        1 : Timer : cooldown until their next message is counted
+        2 : Timer : cooldown until their buff is refreshed
+    '''
     _user_cooldown_ = dict()
 
     def __init__(self, bot):
         super().__init__(bot)
         if self._first_load_:
-            db_user_interface.reset_exp_factor_all(self.bot.db_user)
-
-
+            db_user_interface.reset_exp_factor_all(self.bot.db_user)    
+    
     def cog_unload(self):
         Experience._first_load_ = False
         super().cog_unload()
@@ -56,7 +74,6 @@ class Experience(customs.cog.Cog):
         --------------------
         Soon to be rewritten with extended functionality.
         '''
-
         if message.author.id == self.bot.user.id:
             return
 
@@ -69,18 +86,48 @@ class Experience(customs.cog.Cog):
             Experience._user_cooldown_[message.author.id][1].start(message.author)
             Experience._user_cooldown_[message.author.id][2].start(message.author)
             # the value for Experience._user_cooldown_ is [count, Timer exp cooldown, Timer exp buff]     
-        elif Experience._user_cooldown_[message.author.id][1].is_running:   # if exp on cd
+        elif Experience._user_cooldown_[message.author.id][1].is_running:   # if exp on cd, return and don't do anything
             return
 
-        Experience._user_cooldown_[message.author.id][0] += 1
+        # if program gets to this point, it means that either the user's message cooldown has expired (can receive exp), or this is their first message since
+        # their buff refresh, or the bot went offline and data on message counts per user was lost.
+        guild_settings_exp = db_guild_interface.fetch(self.bot.db_guild, message.guild.id)['experience']
+
+        if str(message.channel.id) in guild_settings_exp['channel_factors']:
+            msg_value = guild_settings_exp['channel_factors'][str(message.channel.id)]
+        else:
+            msg_value = 1
+
+
+        # save the old message contributions
+        old_msg_contribs = Experience._user_cooldown_[message.author.id][0]
+        Experience._user_cooldown_[message.author.id][0] += msg_value # this needs to look into the guild.db and determine the participation factor for this channel
         Experience._user_cooldown_[message.author.id][1].restart()
 
-        potential_bonus = (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE)
-        count = Experience._user_cooldown_[message.author.id][0]
-        bonus_exp = max(0, potential_bonus - potential_bonus * ((count-1)/_EXP_DECAY_UNTIL_BASE)**_EXP_DECAY_FACTOR)
-        total_exp = _EXP_BASE + bonus_exp
+        # if the old message contributions is a new whole number above the new, grant the user the new experience
+        # otherwise DO NOTHING
+        diff = int(Experience._user_cooldown_[message.author.id][0]) - int(old_msg_contribs)
+        
+        member = db_user_interface.fetch(self.bot.db_user, message.author.id)
+        old_exp = member['exp']
+        
+        if diff != 0:
+            member = db_user_interface.fetch(self.bot.db_user, message.author.id)
+            member_exp = member['exp']
+            count = old_msg_contribs + 1
+            for _ in range(diff):
+                bonus_exp = _FUNC_BONUS_EXP(count)
+                total_bonus_exp = _EXP_BASE + bonus_exp
 
-        db_user_interface.modify_exp(self.bot.db_user, message.author.id, total_exp)
+                # print(f'>> {total_bonus_exp} experience rewarded to {message.author}')
+
+                member_exp += total_bonus_exp
+                count += 1
+
+            await self.bot.get_cog("Levels").on_experience(message.channel, message.author, member_exp)
+            await self.bot.get_cog("Ranks").on_experience(message, member_exp)
+            print(f'>> {message.author} :: {int(old_exp)} => {int(member_exp)}')
+            db_user_interface.set_user_exp(self.bot.db_user, message.author.id, member_exp)
 
 
     async def user_reset_count(self, member):
@@ -134,7 +181,7 @@ class Experience(customs.cog.Cog):
 
             desc = data + '\n\n' + report + '\n' + compare
 
-            embed = make_simple_embed(title, desc)
+            embed = make_simple_embed_t(desc, title)
             embed.set_thumbnail(url=user.avatar_url)
 
             await ctx.send(embed=embed)

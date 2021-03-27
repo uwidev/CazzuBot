@@ -1,108 +1,156 @@
+from math import sin
+
 import discord
 from discord.ext import commands
-import db_user_interface
-from utility import make_simple_embed
+from copy import copy
 
+import db_user_interface, db_guild_interface
+from utility import make_error_embed, is_admin, make_simple_embed_t, quick_embed, request_user_confirmation
 import customs.cog
 
-def ranks_sort(arg):
-        try:
-            return int(arg)
-        except:
-            pass
 
-        if arg.lower() in ['exp', 'frogs', 'frog']:
-            if arg in ['frogs', 'frog']:
-                return 'frogs_lifetime'
-            return arg
-        
-        raise commands.ConversionError
+class Ranks(customs.cog.Cog):
+    def __init__(self, bot):
+        super().__init__(bot)
+
+    async def from_levels(self, gid, rank_lvl_ids, level:int):
+        ranks = copy(rank_lvl_ids) # copy so we don't change the og rank list
+        ranks[0] = None # used to as a floor for from_levels to so a user doesn't get a rank when below all ranks
+        return min(ranks.items(), key=lambda kv: (1 if level >= int(kv[0]) else float('inf')) * abs(int(kv[0])-level))[1]
 
 
-class Rank(customs.cog.Cog):
-    @commands.command(aliases=['rank'])
-    async def ranks(self, ctx, mode:ranks_sort = 'exp', page=1):
-        '''
-        Shows the ranks of all members sorted by their experience points.
+    async def on_experience(self, message, exp):
+        # print('\n>>> ranks.on_experience')
+        settings_guild = db_guild_interface.fetch(self.bot.db_guild, message.guild.id)
+        settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
 
-        Simply providing a number will let you view a page sorted by experience. If you want sort by frogs, be sure to provde the **mode** with **`frogs`**, 
-        followed by a page number if you so desire.
-        '''
-        if type(mode) == int:
-            page = mode
-            mode = 'exp'
+        user = message.author
 
-        sorted_users = db_user_interface.fetch_all(self.bot.db_user)
+        level = await self.bot.get_cog('Levels').from_experience(exp)
+        # print(f'=== level : {level}')
+        rank_id = await self.from_levels(message.guild.id, settings_rank_thresholds, level)
+        # print(f'=== rank_id : {rank_id}')
+        rank = message.guild.get_role(rank_id)
+        # print(f'=== calculated current rank: {rank}')
 
-        total_pages = len(sorted_users)//10+1
-        if page > total_pages:
-            page = total_pages
-        elif page <= 0:
-            page = 1
+        ranks = list()
+        for role_id in settings_rank_thresholds.values():
+            ranks.append(message.guild.get_role(role_id))        
 
-        sorted_users.sort(key=lambda user: (user[mode], user['exp' if mode == 'frogs_lifetime' else 'frogs_lifetime']), reverse=True)
-        
-        title ='Rankings'
+        if rank is None:
+            for r in (ranks):
+                try:
+                    await user.remove_roles(r, reason='Rank change')
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+        elif rank not in message.author.roles:
+            for r in ranks:
+                try:
+                    await user.remove_roles(r, reason='Rank change')
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
 
-        sorted_users_ids = list(map(lambda user: user['id'], sorted_users))
-        placement = sorted_users_ids.index(ctx.message.author.id)
-        ranking = 'You are ranked **`{place}`** out of **`{total}`**!'.format(place=placement + 1, total=len(sorted_users))
-        
-        display = 'Page {page} of {total}'.format(page=page, total=total_pages)
-
-        lower = (page-1)*10
-        upper = min((page-1)*10+10, len(sorted_users))
-        
-        display += '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode='Exp' if mode == 'exp' else 'Frogs', user='User')
-
-        for i in range(lower, upper):
             try:
-                if sorted_users[i]['id'] == ctx.message.author.id:
-                    display += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-                elif i%2:
-                    display += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-                else:
-                    display += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-            except AttributeError:
-                if sorted_users[i]['id'] == ctx.message.author.id:
-                    display += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i][mode]), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
-                elif i%2:
-                    display += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
-                else:
-                    display += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i][mode]), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
-            
-        display += '```'
+                await user.add_roles(rank, reason='Rank change')
+            except (discord.Forbidden, discord.HTTPException):
+                pass
 
-        comment = 'Currently being sorted by **{mode}**. To sort by {other}, try running `{pre}ranks {alt}`.'.format(mode='experience' if mode == 'exp' else 'lifetime frog captures', other='lifetime frog captures' if mode == 'exp' else 'experience', pre=self.bot.command_prefix, alt='frog' if mode == 'exp' else 'exp')
+            print('\n//////////////////////////////////////////////////////////////')
+            print(f"/// {user} has changed ranks to {rank}!")
+            print('//////////////////////////////////////////////////////////////\n')
 
-        desc = ranking + '\n\n' + display + '\n' + comment
 
-        embed = make_simple_embed(title, desc)
-        embed.set_footer(text='-sarono', icon_url='https://i.imgur.com/BAj8IWu.png')
+    @commands.group(aliases=['rank'])
+    async def ranks(self, ctx):
+        pass
 
-        for user in sorted_users:
-            member_id = user['id']
-            member = self.bot.get_user(member_id)
-            if member is not None:
-                break
+    @ranks.command(name='add')
+    @is_admin()
+    async def ranks_add(self, ctx, rank_level_threshold:int, *, rank:discord.Role):
+        # print(f'>>> ranks_add args {ctx.args}')
+        # print(f'>>> ranks_add kwargs {ctx.kwargs}')
+        if rank_level_threshold < 1 or rank_level_threshold > 999:
+            embed = make_error_embed(f'Level must be between 1 and 999.\n\nYou provided me with level **`{rank_level_threshold}`**.')
+            await ctx.send(embed=embed)
+            return
         
-        embed.set_thumbnail(url=member.avatar_url)
+        settings_guild = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
+        settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
 
-        await ctx.send(embed=embed)
+        if rank.id in settings_rank_thresholds.values():
+            to_rank = {v:k for k,v in settings_rank_thresholds.items()}[rank.id]
+            embed = make_error_embed(f'{rank.mention} is already registered as a rank!\n\nUsers will reach this rank at level **`{to_rank}`**.')
+            await ctx.send(embed=embed)
+            return
+
+        level = str(rank_level_threshold)
+        if level in settings_rank_thresholds:
+            rank_id = settings_rank_thresholds[level]
+            rank = ctx.guild.get_role(rank_id)
+            embed = make_error_embed(f'Level {level} is already registered for rank {rank.mention}.')
+            await ctx.send(embed=embed)
+            return
+
+        settings_rank_thresholds[level] = rank.id
+        db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings_guild)
+
+        await quick_embed(ctx, 'success', f'Reaching level **`{rank_level_threshold}`** will now promote users to {rank.mention}.')
 
 
-    @ranks.error
-    async def ranks_error_handler(self, ctx, error):
-        if isinstance(error, commands.BadArgument):
-            print(error)
-        else:
-            raise error
+    @ranks.command(name='addmany')
+    async def ranks_addmany(self, ctx, *, args):
+        # print(f'>>> ranks_addmany args {ctx.args}')
+        # print(f'>>> ranks_addmany kwargs {ctx.kwargs}')
 
-    @commands.command()
-    async def test(self, ctx):
-        me = self.bot.get_user(310260458047275009)
-        await ctx.send(me)
+        sep_pairs = args.split('|')
+
+        if len(sep_pairs) % 2 == 1:
+            await quick_embed(ctx, 'error', 'You are missing a level or rank for a pair.')
+        
+        args_pair = list(pair.strip().split(' ', 1) for pair in sep_pairs)
+
+        for i in range(len(args_pair)):
+            args_pair[i][1] = await commands.RoleConverter().convert(ctx, args_pair[i][1])
+
+        for level, rank in args_pair:
+            ctx.command = await self.bot.get_command('ranks add')(ctx, int(level), rank=rank)
+
+            # print(f'>>> expected ranks_add args {ctx.args}')
+            # print(f'>>> expected ranks_add kwargs {ctx.kwargs}')
+            # await self.bot.invoke(ctx)
+            pass # here we need to call ranks_add as if a user was calling it
+
+
+    @ranks.command(name='remove', aliases=['del', 'delete'])
+    @is_admin()
+    async def ranks_remove(self, ctx, *, rank:discord.Role):
+        settings_guild = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
+        settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
+
+        if rank.id not in settings_rank_thresholds.values():
+            embed = make_error_embed(f'{rank.mention} is not registered as a rank.')
+            await ctx.send(embed=embed)
+            return
+
+        to_rank = {v:k for k,v in settings_rank_thresholds.items()}[rank.id]
+        settings_rank_thresholds.pop(to_rank)
+        db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings_guild)
+
+        await quick_embed(ctx, 'success', f'Removed rank {rank} from ranks.\n\nThis rank was originally attained at level **`{to_rank}`**.')
+
+
+    @ranks.command(name='clear', aliases=['clean'])
+    @is_admin()
+    async def ranks_clear(self, ctx):
+        # TODO show all ranks to confirm before clearing
+        if await request_user_confirmation(ctx, self.bot, 'Are you sure you would like to clear ranks?', delete_after=True):
+            settings_guild = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
+            settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
+            settings_rank_thresholds.clear()
+            db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings_guild)
+
+            await quick_embed(ctx, 'success', f'Ranks and their level requirements have been cleared!')
 
 
 def setup(bot):
-    bot.add_cog(Rank(bot))
+    bot.add_cog(Ranks(bot))

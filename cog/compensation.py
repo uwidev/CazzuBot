@@ -1,6 +1,6 @@
 import discord, db_user_interface
 from discord.ext import commands, tasks
-from utility import Timer, make_simple_embed, PARSE_CLASS_VAR
+from utility import Timer, make_simple_embed_t, PARSE_CLASS_VAR
 from copy import copy
 
 import customs.cog
@@ -8,7 +8,6 @@ import customs.cog
 class Compensation(customs.cog.Cog):
     amount = 0
     reason = None
-    # a
     _users_compensated = list()
 
     def __init__(self, bot):
@@ -24,7 +23,7 @@ class Compensation(customs.cog.Cog):
 
     @commands.command()
     @commands.is_owner()
-    async def compensate(self, ctx, frogs: int, reason: str):
+    async def compensate(self, ctx, frogs: int, *, reason: str):
         '''
         Gives users the option to obtain frogs after a
         server wipe
@@ -42,7 +41,7 @@ class Compensation(customs.cog.Cog):
             return
         
         Compensation._users_compensated.append(ctx.message.author)
-        db_user_interface.modify_frog(self.bot.db_user, ctx.author.id, Compensation.amount)
+        db_user_interface.add_user_frog(self.bot.db_user, ctx.author.id, Compensation.amount)
         await ctx.send(f'You have recieved `{Compensation.amount}` frogs because `{Compensation.reason}`')
 
 

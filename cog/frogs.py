@@ -21,7 +21,7 @@ import discord
 from discord.ext import commands, tasks
 import db_user_interface, db_guild_interface
 import asyncio
-from utility import make_simple_embed, Timer, PARSE_CLASS_VAR
+from utility import make_simple_embed_t, Timer, PARSE_CLASS_VAR
 from random import uniform, random
 from copy import copy
 import customs.cog
@@ -31,9 +31,9 @@ _SPAWNRATE_DEFAULT = 7.0 #minutes
 _SPAWNRATE_SWING = .1 #within % offsets
 _TIMEOUT = 120   # seconds before frog disappears
 
-
+################################################################
 # The elements used on frog spawn
-# --------------------------------------------
+################################################################
 # Initial Spawning
 _SPAWN = '<:cirnoFrog:695126166301835304>'
 _REACT = '<:cirnoNet:752290769712316506>'
@@ -49,22 +49,21 @@ _TIP = 'TIP: Consume frogs with c!frogs consume '
 # Failure
 _FAIL = 'You were too slow!'
 
-# --------------------------------------------
+################################################################
 # Consumption of frogs
-# --------------------------------------------
+################################################################
 _EXP_FACTOR_PER_FROG = .1
 _EXP_FACTOR_CAP = 0.5
 _EXP_FACTOR_BUFF_DURATION_NORMAL = 30 #minutes
 
-# --------------------------------------------
+################################################################
 # Activity-based spawns
-# --------------------------------------------
+################################################################
 _ACTIVITY_CONCURRENT_MEMBERS = 2 #at least X members
 _ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND = 100 #messages until upper bound
 _ACTIVITY_UPPER_BOUND = 0.6 #what rng roll has to be above to spawn a frog
 _ACTIVITY_FACTOR = 2
 _ACTIVITY_TIMEOUT = 15 #minutes
-
 _ACTIVITY_FUNCTION = lambda count: _ACTIVITY_UPPER_BOUND*(count/_ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND)**_ACTIVITY_FACTOR
 
 
@@ -82,17 +81,17 @@ class Frogs(customs.cog.Cog):
             db_guild_interface.reset_frog_active_all(self.bot.db_guild)
     
 
-    async def cog_command_error(self, ctx, error):
-        # This statement checks to see if the command has a local error handler,
-        # and if so, don't run the cog error handler
-        if hasattr(ctx.command, 'on_error'):
-            return
+    # async def cog_command_error(self, ctx, error):
+    #     # This statement checks to see if the command has a local error handler,
+    #     # and if so, don't run the cog error handler
+    #     if hasattr(ctx.command, 'on_error'):
+    #         return
 
-        if isinstance(error, commands.MissingPermissions):
-            await ctx.send('You are missing the following permissions: `{}`'.format(', '.join(error.missing_perms)))
-        else:
-            print('Ignoring exception from command {}:'.format(ctx.command), file=sys.stderr)
-            raise(error)
+    #     if isinstance(error, commands.MissingPermissions):
+    #         await ctx.send('You are missing the following permissions: `{}`'.format(', '.join(error.missing_perms)))
+    #     else:
+    #         print('Ignoring exception from command {}:'.format(ctx.command), file=sys.stderr)
+    #         raise(error)
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -140,7 +139,7 @@ class Frogs(customs.cog.Cog):
             self._spawner.cancel()
 
         def set_wait(self, rate):
-        '''How long to wait until spawning another frog.'''
+            '''How long to wait until spawning another frog.'''
             if rate < 0:
                 rate = 1
             
@@ -226,7 +225,7 @@ class Frogs(customs.cog.Cog):
 
             desc = data + '\n\n' + report + '\n' + compare
 
-            embed = make_simple_embed(title, desc)
+            embed = make_simple_embed_t(title, desc)
             embed.set_thumbnail(url=user.avatar_url)
             
             await ctx.send(embed=embed)
@@ -264,7 +263,7 @@ class Frogs(customs.cog.Cog):
             Frogs._frogs_spawner_[ctx.guild.id].append(spawner)
 
         # Message
-        embed = make_simple_embed('Frogs will now start spawning in the following channels...', '\n'.join(ctx.guild.get_channel(id).mention for id in channel_ids))    
+        embed = make_simple_embed_t('Frogs will now start spawning in the following channels...', '\n'.join(ctx.guild.get_channel(id).mention for id in channel_ids))    
         embed.set_thumbnail(url='https://i.imgur.com/IR5htIF.png')
         await ctx.send(embed=embed)
 
@@ -469,12 +468,12 @@ class Frogs(customs.cog.Cog):
         consumer_factor = consumer_data['exp_factor']
 
         if consumer_factor >= 1 + _EXP_FACTOR_CAP:
-            embed = make_simple_embed('', 'You\'re already at the experience factor cap of **`x{cap}`**!'.format(cap=1+_EXP_FACTOR_CAP))
+            embed = make_simple_embed_t('', 'You\'re already at the experience factor cap of **`x{cap}`**!'.format(cap=1+_EXP_FACTOR_CAP))
             await ctx.send(content=consumer.mention, embed=embed)
             return
         
         if count > consumer_frogs:
-            embed = make_simple_embed('', 'You do not have enough frogs! You only have **`{count}`**!'.format(count=consumer_frogs))
+            embed = make_simple_embed_t('', 'You do not have enough frogs! You only have **`{count}`**!'.format(count=consumer_frogs))
             await ctx.send(content=consumer.mention, embed=embed)
             return
         
@@ -491,14 +490,14 @@ class Frogs(customs.cog.Cog):
             duration = '*This buff will last {long} minutes.*'.format(long=_EXP_FACTOR_BUFF_DURATION_NORMAL)
 
             desc = topic + '\n\n' + effects + '\n\n' + duration
-            confirmation_embed = make_simple_embed('Confirmation', desc)
+            confirmation_embed = make_simple_embed_t('Confirmation', desc)
         else:
             topic = '**Are you sure you\'d like you consume `{count}` frog(s) with the following effects?**'.format(count=count)
             effects = 'Resulting frogs\n**`{old_frogs}`**->**`{new_frogs}`**\nResulting experience factor\n**`x{old_fact:.2f}`**->**`x{new_fact:.2f}`**'.format(old_frogs=consumer_frogs, new_frogs=consumer_frogs-count, old_fact=consumer_factor, new_fact=consumer_factor+count*_EXP_FACTOR_PER_FROG)
             duration = '*This buff will last {long} minutes.*'.format(long=_EXP_FACTOR_BUFF_DURATION_NORMAL)
 
             desc = topic + '\n\n' + effects + '\n\n' + duration
-            confirmation_embed = make_simple_embed('Confirmation', desc)
+            confirmation_embed = make_simple_embed_t('Confirmation', desc)
         
         confirmation_embed.set_thumbnail(url='https://i.imgur.com/ybxI7pu.png')
         confirmation = await ctx.send(embed=confirmation_embed)
@@ -554,7 +553,7 @@ class Frogs(customs.cog.Cog):
         type='frogs_normal'
 
         if amount <= 0:
-            embed = make_simple_embed('Nice try', 'You can\'t steal frogs by negative gifting.')
+            embed = make_simple_embed_t('Nice try', 'You can\'t steal frogs by negative gifting.')
             embed.set_thumbnail(url='https://cdn.discordapp.com/emojis/701138244712136774.png')
             await ctx.send(embed=embed)
             return
@@ -563,7 +562,7 @@ class Frogs(customs.cog.Cog):
         user_to = db_user_interface.fetch(self.bot.db_user, to.id)
 
         if user_from[type] < amount:
-            embed = make_simple_embed('ERROR', f'You do not have enough frogs!\nCurrently in possession of **`{user_from[type]}`** frogs.')
+            embed = make_simple_embed_t('ERROR', f'You do not have enough frogs!\nCurrently in possession of **`{user_from[type]}`** frogs.')
             embed.set_thumbnail(url='https://cdn.discordapp.com/emojis/755168446232264775.png')
             await ctx.send(embed=embed)
             return
@@ -571,7 +570,7 @@ class Frogs(customs.cog.Cog):
         intro = f'You are going to give **`{amount}`** frogs to {to.mention}. Please confirm.'
         result = f'**Your** resulting frogs\n**`{user_from["frogs_normal"]}`** -> **`{user_from["frogs_normal"] - amount}`**\n{to.mention}\'s resulting frogs\n**`{user_to["frogs_normal"]}`** -> **`{user_to["frogs_normal"] + amount}`**'
 
-        embed = make_simple_embed('Confirmation', '\n\n'.join([intro, result]))
+        embed = make_simple_embed_t('Confirmation', '\n\n'.join([intro, result]))
         embed.set_thumbnail(url='https://i.imgur.com/ybxI7pu.png')
         confirmation = await self.request_confirmation(ctx, ctx.message.author, embed=embed)
         if confirmation:

@@ -13,7 +13,7 @@ async def timer(seconds: int, func=None, *args, **kwargs):
     # 
     #
     # A timer that must be copy() in order to function independently
-    # Begin timer with .start() or .restart() if alreaady started
+    # Begin timer with .start() or .restart() if already started
     #
     # @seconds: how long until calling {func}
     # @func: the function called after {seconds} seconds
@@ -77,6 +77,9 @@ class Timer():
     def cancel(self):
         self.is_running = False
         self._task.cancel()
+
+    def set_duration(self, seconds=0, minutes=0, hours=0):
+        self._duration = seconds + 60*minutes + 3600*hours
 
     def get_currently_running_task(self):
         return self._task
@@ -150,7 +153,8 @@ class EmojiPlus(commands.EmojiConverter):
 #     return emoji.emoji_count(argument) >= 1 or bool(bot.get_emoji(argument))
 
 
-def make_simple_embed(title: str, desc: str):
+# Consider doing proper ducktyping and making these embeds as classes that have a send function.
+def make_simple_embed_t(title: str, desc: str):
     '''Creates a simple discord.embed object and returns it'''
     embed = discord.Embed(
                         title=title,
@@ -162,5 +166,104 @@ def make_simple_embed(title: str, desc: str):
     return embed
 
 
+def make_simple_embed(desc: str, title: str):
+    '''Creates a simple discord.embed object and returns it'''
+    embed = discord.Embed(
+                        title=title,
+                        description=desc,
+                        color=0x9edbf7)
+
+    embed.set_footer(text='-sarono', icon_url='https://i.imgur.com/BAj8IWu.png')
+
+    return embed
+
+
+def make_error_embed(desc: str, title: str = 'ERROR'):
+    '''Creates a simple error object and returns it'''
+    embed = discord.Embed(
+                        title=title,
+                        description=desc,
+                        color=0xff0000)
+
+    embed.set_footer(text='-sarono', icon_url='https://i.imgur.com/BBwM9lr.png')
+
+    return embed
+
+
+def make_success_embed(desc: str, title: str = 'SUCCESS'):
+    '''Creates a simple success object and returns it'''
+    embed = discord.Embed(
+                        title=title,
+                        description=desc,
+                        color=0xe8e33e)
+
+    embed.set_footer(text='-sarono', icon_url='https://i.imgur.com/rE4YR6C.png')
+
+    return embed
+
+
+templates_embed = {
+    'simple':make_simple_embed,
+    'success':make_success_embed,
+    'error':make_error_embed
+}
+
+
+async def quick_embed(ctx, type: str, desc: str, title: str = None):
+    '''
+    Quickly send an embedded messages from defined templates.
+    '''
+    if title is None:
+        await ctx.send(embed=templates_embed[type](desc))
+    else:
+        await ctx.send(embed=templates_embed[type](desc, title))
+
+
+async def request_user_confirmation(ctx, bot, desc: str, title: str = 'Confirmation', delete_after: bool = True) -> bool:
+    request_from = ctx.author
+    
+    if title is None:
+        embed = make_simple_embed(desc, 'CONFIRMATION')
+    else:  
+        embed = make_simple_embed(desc, title)
+    embed.color = 0xfffa4d
+    
+    confirmation = await ctx.send(embed=embed)
+    await confirmation.add_reaction('❌')
+    await confirmation.add_reaction('✅')
+    
+    def check(reaction, user):
+                if user.id == request_from.id and reaction.message.id == confirmation.id:
+                    if reaction.emoji in ['❌', '✅']:
+                        return True
+            
+                return False
+    
+    try:
+        reaction, consumer = await bot.wait_for('reaction_add', check=check, timeout=10)
+    except asyncio.TimeoutError:
+        if delete_after:
+            await confirmation.delete()
+        return False
+    
+    if reaction.emoji == '❌':
+        if delete_after:
+            await confirmation.delete()
+        return False
+
+    if delete_after:
+        await confirmation.delete()
+
+    return True
+
+
 def writiable_emoji(emo):
     return emo if type(emo) is discord.emoji.Emoji else emo
+
+
+def is_admin():
+    ''' Decorator for a specific command to check for admin perms. '''
+    def predicate(ctx):
+        return ctx.author.guild_permissions.administrator
+    
+    return commands.check(predicate)

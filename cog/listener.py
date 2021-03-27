@@ -9,7 +9,7 @@ from copy import copy
 import discord, db_guild_interface
 from discord.ext import commands, tasks
 from tinydb import Query
-from utility import make_simple_embed, timer
+from utility import make_simple_embed_t, timer
 
 import customs.cog
 
@@ -45,7 +45,7 @@ class Listener(customs.cog.Cog):
                         welcome_settings = guild_conf['welcome']
                         if welcome_settings['op']:
                             channel = self.bot.get_channel(welcome_settings['channel'])
-                            embed = make_simple_embed(welcome_settings['title'], welcome_settings['description'])
+                            embed = make_simple_embed_t(welcome_settings['title'], welcome_settings['description'])
                             await channel.send(welcome_settings['content'].format(user=payload.member.mention), embed=embed)
                 
                 except discord.Forbidden:

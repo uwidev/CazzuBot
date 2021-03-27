@@ -1,6 +1,6 @@
 # This cog holds all the commands and their functionality that can only be ran by the bot owner.
 
-import asyncio, os, re, csv
+import asyncio, os, re
 from collections import defaultdict
 
 import discord
@@ -8,7 +8,7 @@ from discord.ext import commands
 from tinydb import Query
 import db_guild_interface, db_user_interface
 import emoji
-from utility import EmojiPlus, writiable_emoji, make_simple_embed
+from utility import EmojiPlus, writiable_emoji, make_simple_embed_t
 
 import customs.cog
 
@@ -406,44 +406,6 @@ class Owner(customs.cog.Cog):
     async def story(self, ctx):
         pass
 
-    @story.command(name='all')
-    async def story_all(self, ctx):
-        print(">> attempting to aggregate data...", flush=True)
-        guild = ctx.guild
-        channels = [ch for ch in [channel for channel in await guild.fetch_channels()] if ch.name.startswith("great-story")]
-
-        async with ctx.channel.typing():
-            count_db = defaultdict(int)   # user_id : count
-            name_db = dict()    # user_id : name
-            
-            for channel in channels:
-                    await ctx.send(f'Aggregating data for {channel}')
-                    async for message in channel.history(limit=None):
-                        count_db[message.author.id] += 1
-                        name_db[message.author.id] = message.author.name   
-
-            
-            aggregate = list()
-            for member in name_db.items():
-                aggregate.append({"ID":member[0], "NAME":member[1], "CONTRIBUTION":count_db[member[0]]})
-
-            await ctx.channel.send('writing data...')
-            try:
-                print(len(aggregate),flush=True)
-                with open("story_aggregate.csv", 'w', encoding='utf-8') as file:
-                    writer = csv.DictWriter(file, fieldnames=["ID", 'NAME', 'CONTRIBUTION'])
-                    writer.writeheader()
-
-                    for data in aggregate:
-                        writer.writerow(data)
-
-                await ctx.send('🎉 Done aggregating stories 🎉')
-            except IOError:
-                await ctx.send("There appears to be an error in writing the csv!")
-                
-        
-        # await msg.delete(delay=3)
-        # await ctx.message.delete()
 
     @story.command(name='compile')
     async def story_compile(self, ctx):
@@ -549,14 +511,14 @@ class Owner(customs.cog.Cog):
     async def reload(self, ctx, *, ext_name):
         ext = 'cog.' + ext_name
         if ext not in self.bot.extensions:
-            await ctx.send(embed=make_simple_embed('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
+            await ctx.send(embed=make_simple_embed_t('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
             raise commands.BadArgument
         
         try:
             self.bot.reload_extension(ext)
-            await ctx.send(embed=make_simple_embed('Success', f'{ext_name.capitalize()} has been reloaded'))
+            await ctx.send(embed=make_simple_embed_t('Success', f'{ext_name.capitalize()} has been reloaded'))
         except Exception as e:
-            await ctx.send(embed=make_simple_embed('ERROR', 'There appears to be a problem with your code, baka.'))
+            await ctx.send(embed=make_simple_embed_t('ERROR', 'There appears to be a problem with your code, baka.'))
             raise e
 
 
@@ -568,31 +530,31 @@ class Owner(customs.cog.Cog):
         if ext in dir:
             try:
                 self.bot.load_extension('cog.' + ext_name)
-                await ctx.send(embed=make_simple_embed('Success', f'{ext_name.capitalize()} has been loaded'))
+                await ctx.send(embed=make_simple_embed_t('Success', f'{ext_name.capitalize()} has been loaded'))
             except Exception as e:
-                await ctx.send(embed=make_simple_embed('ERROR', 'Something terrible happened!'))
+                await ctx.send(embed=make_simple_embed_t('ERROR', 'Something terrible happened!'))
                 raise e
         else:
-            await ctx.send(embed=make_simple_embed('ERROR', 'File doesn\'t exist or you can\'t spell!'))
+            await ctx.send(embed=make_simple_embed_t('ERROR', 'File doesn\'t exist or you can\'t spell!'))
 
 
     @commands.command()
     async def unload(self, ctx, ext_name):
         ext = 'cog.' + ext_name
         if ext not in self.bot.extensions:
-            await ctx.send(embed=make_simple_embed('ERROR', 'Extension wasn\'t loaded to begin with!'))
+            await ctx.send(embed=make_simple_embed_t('ERROR', 'Extension wasn\'t loaded to begin with!'))
             raise commands.BadArgument
         
         dir = os.listdir('cog')
         if ext_name + '.py' in dir:
             try:
                 self.bot.unload_extension('cog.' + ext_name)
-                await ctx.send(embed=make_simple_embed('Success', f'{ext_name.capitalize()} has been unloaded'))
+                await ctx.send(embed=make_simple_embed_t('Success', f'{ext_name.capitalize()} has been unloaded'))
             except Exception as e:
-                await ctx.send(embed=make_simple_embed('ERROR', 'Something terrible happened!'))
+                await ctx.send(embed=make_simple_embed_t('ERROR', 'Something terrible happened!'))
                 raise e
         else:
-            await ctx.send(embed=make_simple_embed('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
+            await ctx.send(embed=make_simple_embed_t('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
 
 
     @commands.group()
@@ -605,13 +567,13 @@ class Owner(customs.cog.Cog):
             await ctx.send('ERROR: There is no splitter | to split title and content!')
 
         title, desc = content.split('|')
-        embed = make_simple_embed(title, desc)
+        embed = make_simple_embed_t(title, desc)
 
         await ctx.send(embed=embed)
         
     @embed.command(name='channel')
     async def embed_channel(self, ctx, channel: discord.TextChannel, *, desc:str):
-        embed = make_simple_embed(f'#{channel.name}', desc)
+        embed = make_simple_embed_t(f'#{channel.name}', desc)
 
         await ctx.send(embed=embed)
 
@@ -621,8 +583,15 @@ class Owner(customs.cog.Cog):
             await ctx.send('ERROR: There is no splitter | to split title and content!')
 
         title, desc = content.split('|')
-        embed = make_simple_embed(title, desc)
+        embed = msg.embeds[0]
+        embed.title = title
+        embed.description = desc
+        await msg.edit(embed=embed)
 
+    @embed.command(name='thumbnail')
+    async def embed_thumbnail(self, ctx, msg: discord.Message, img_url):
+        embed = msg.embeds[0]
+        embed.set_thumbnail(url=img_url)
         await msg.edit(embed=embed)
 
 def setup(bot):
