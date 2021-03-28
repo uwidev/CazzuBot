@@ -36,11 +36,19 @@ guild_settings_default = ReadOnlyDict({
         'frogs':{
             'active':False,
             'channel_rates':list()
+        },
+        'experience':{
+            'channel_factors':dict(),
+        },
+        'ranks':{
+            'level_thresholds':dict()
         }
     }          
 })
 
-
+# ==============================================================
+# Generic write and fetch
+# ==============================================================
 def fetch(db_guild, gid: int):
     # Returns the group settings of a guild
     #
@@ -68,6 +76,17 @@ def fetch(db_guild, gid: int):
     return query['groups']
 
 
+def write(db_guild, gid: int, settings: dict):
+    # Overwrites a guild's current settings
+    #
+    # @gid: the guild id
+    # @settings: a properly formatted 'groups', similar to 'default_settings'
+    db_guild.update({'groups':settings}, Query().id == gid)
+
+
+# ==============================================================
+# Resets, full passes, etc
+# ==============================================================
 def initialize(db_guild, gid: int):
     # Insert into the db a new posting for this guild id
     # DOES NOT CHECK IF THIS GUILD ID ALREADY EXISTS YET*
@@ -76,14 +95,6 @@ def initialize(db_guild, gid: int):
     guild = dict(guild_settings_default)
     guild['id'] = gid
     db_guild.insert(guild)
-
-
-def write(db_guild, gid: int, settings: dict):
-    # Overwrites a guild's current settings
-    #
-    # @gid: the guild id
-    # @settings: a properly formatted 'groups', similar to 'default_settings'
-    db_guild.update({'groups':settings}, Query().id == gid)
 
 
 def upgrade(db_guild, gid: int):

@@ -7,6 +7,40 @@ import asyncio
 
 PARSE_CLASS_VAR = re.compile(r'^(_[^_].*_)$')
 
+class EmbedSummary:
+    def __init__(self, title=None, description=None, thumbnail=None, color=None, payload=dict()):
+        self.title = title
+        self.description = description
+        self.thumbnail = thumbnail
+        self.color = color
+        self.payload = payload
+        
+        if None not in self.__dict__.values():
+            self.touched = True
+        else:
+            self.touched = False
+
+    @classmethod
+    def from_summary(cls, other):
+        obj = cls()
+        obj.merge_left(other)
+        return obj
+
+    def merge_left(self, other):
+        # Merges the embed passed to this embed. Anything not None on
+        # other embed will override values on this embed.
+        for k, v in other.__dict__.items():
+            if k == 'payload':
+                # Payload updated like this to ensure correct ordering when unpacked
+                other.payload.update(self.payload)
+                self.payload = other.payload
+            elif k == 'touched':
+                self.touched = self.touched or other.touched
+            elif v is not None:
+                self.__dict__[k] = v
+            
+
+
 @tasks.loop(count=1)
 async def timer(seconds: int, func=None, *args, **kwargs):
     # Function is working but is not working as intended. Prone to bugs.
@@ -195,7 +229,7 @@ def make_success_embed(desc: str, title: str = 'SUCCESS'):
     embed = discord.Embed(
                         title=title,
                         description=desc,
-                        color=0xe8e33e)
+                        color=0x14a011) #14a011
 
     embed.set_footer(text='-sarono', icon_url='https://i.imgur.com/rE4YR6C.png')
 

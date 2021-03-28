@@ -1,22 +1,26 @@
-# Manages the TinyDB database and ensures that data is written/read safely.
+'''
+Manages the TinyDB database and ensures that data is written/read safely.
+'''
 
 from tinydb import Query
 from utility import ReadOnlyDict
 
-
-BASE_EXP = 5
-
+# BASE_EXP = 5       I have no idea what this is used for
 
 user_data_default = ReadOnlyDict({
     'id':None,
     'exp':0,
+    'level':0,
+    'rank':None,
     'exp_factor':1,
     'frogs_lifetime':0,
     'frogs_normal':0,
     'frogs_frozen':0
 })
 
-
+# ==============================================================
+# Generic write and fetch
+# ==============================================================
 def write(db_user, uid: int, data: dict):
     db_user.update(data, Query().id == uid)
 
@@ -39,23 +43,30 @@ def fetch(db_user, uid: int):
 def fetch_all(db_user):
     return db_user.all()
 
-
-def reset_exp_factor_all(db_user):
-    db_user.update({'exp_factor':1.0})
-
-
-def modify_exp(db_user, uid: int, exp: int):
+# ==============================================================
+# Specific data modifications given user
+# ==============================================================
+def set_user_level(db_user, uid: int, level: int):
     try:
         user = db_user.search(Query().id == uid)[0]
     except IndexError:
         user = dict(user_data_default)
         user['id'] = uid
     
-    user['exp'] += exp * user['exp_factor']
+    user['level'] = level
     db_user.upsert(user, Query().id == uid)
 
+def set_user_exp(db_user, uid: int, exp: int):
+    try:
+        user = db_user.search(Query().id == uid)[0]
+    except IndexError:
+        user = dict(user_data_default)
+        user['id'] = uid
+    
+    user['exp'] = exp  # * user['exp_factor']        exp factor no longer in effect
+    db_user.upsert(user, Query().id == uid)
 
-def modify_frog(db_user, uid: int, frogs: int):
+def add_user_frog(db_user, uid: int, frogs: int):
     try:
         user = db_user.search(Query().id == uid)[0]
     except IndexError:
@@ -69,30 +80,7 @@ def modify_frog(db_user, uid: int, frogs: int):
     user['frogs_normal'] += frogs
     db_user.upsert(user, Query().id == uid)
 
-
-def initialize(db_user, uid: int):
-    user = dict(user_data_default)
-    user['id'] = uid
-    db_user.insert(user)
-
-
-def upgrade(db_user):
-    users_all = fetch_all(db_user)
-
-    unioned_keys = set(users_all[0].keys()).union(user_data_default.keys())
-    for user in users_all:
-        for key in unioned_keys:
-            if key not in user and key in user_data_default:
-                user[key] = user_data_default[key]
-                continue
-            elif key in user and key not in user_data_default:
-                user.pop(key)
-                continue
-    
-    write_all(db_user, users_all)
-
-
-def exchange_frogs_normal(db_user, user_id_from:int, user_id_to:int, amount:int):
+def users_trade_frogs(db_user, user_id_from:int, user_id_to:int, amount:int):
     '''Moves normal frogs from one usesr to another. Has built in error checking for negative frogs.'''
     type = 'frogs_normal'
     user_from = fetch(db_user, user_id_from)
@@ -112,3 +100,32 @@ def exchange_frogs_normal(db_user, user_id_from:int, user_id_to:int, amount:int)
     write(db_user, user_id_to, user_to)
 
     return 0
+
+
+# ==============================================================
+# Resets, full passes, etc
+# ==============================================================
+def initialize(db_user, uid: int):
+    user = dict(user_data_default)
+    user['id'] = uid
+    db_user.insert(user)
+
+
+def reset_exp_factor_all(db_user):
+    db_user.update({'exp_factor':1.0})
+
+
+def upgrade(db_user):
+    users_all = fetch_all(db_user)
+
+    unioned_keys = set(users_all[0].keys()).union(user_data_default.keys())
+    for user in users_all:
+        for key in unioned_keys:
+            if key not in user and key in user_data_default:
+                user[key] = user_data_default[key]
+                continue
+            elif key in user and key not in user_data_default:
+                user.pop(key)
+                continue
+    
+    write_all(db_user, users_all)

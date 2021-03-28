@@ -14,13 +14,16 @@ import asyncio
 
 import discord, db_user_interface, db_guild_interface
 from discord.ext import commands, tasks
-from utility import Timer, make_simple_embed_t, PARSE_CLASS_VAR
+from utility import Timer, make_simple_embed_t, PARSE_CLASS_VAR, EmbedSummary
 
 import customs.cog
 
 # Global Variables for Experience rates
 #
 # These variables are never meant to be modified except through hard code.
+# These variables, especially the cooldown and exp reset, are not changed upon cog reload at the moment.
+# Im just having some some problems when it comes to cancelling a task and restarting it. Maybe in the future when I'm more used
+# to tasks it might be feasible, but for now, if you ever need to change these values, it's best to restart the bot.
 _EXP_BASE = 1
 _EXP_BONUS_FACTOR = 20
 _EXP_DECAY_UNTIL_BASE = 77
@@ -28,15 +31,21 @@ _EXP_DECAY_FACTOR = 2
 _EXP_COOLDOWN = 15 #seconds
 _EXP_BUFF_RESET = 1440 #mins    |   1440m = 24h
 
-_FUNC_BONUS_EXP = lambda x : max(0, (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE) - (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE) * ((x-1)/_EXP_DECAY_UNTIL_BASE)**_EXP_DECAY_FACTOR)
+_FUNC_BONUS_EXP = lambda x : max(0, (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE) - (_EXP_BASE * _EXP_BONUS_FACTOR - _EXP_BASE) * ((x)/_EXP_DECAY_UNTIL_BASE)**_EXP_DECAY_FACTOR)
 
 # Used for to lookup later by levels.py to determine level threshold
-RE_MIN_DURATION = _EXP_COOLDOWN/60.0 * _EXP_DECAY_UNTIL_BASE
+RE_MIN_DURATION = _EXP_COOLDOWN * _EXP_DECAY_UNTIL_BASE / 60
 
-EXP_CUMULATIVE = list()
-EXP_CUMULATIVE.append(_EXP_BASE + _FUNC_BONUS_EXP(0))
-for i in range(1, _EXP_DECAY_UNTIL_BASE):
-    EXP_CUMULATIVE.append(EXP_CUMULATIVE[i-1] + _EXP_BASE + _FUNC_BONUS_EXP(i))
+# dict of message count to its rewarded exp, starting at 1
+RE_MSG_EXP_CUMULATIVE = dict()
+RE_MSG_EXP_CUMULATIVE[1] = _EXP_BASE + _FUNC_BONUS_EXP(0)
+# print(RE_MSG_EXP_CUMULATIVE[1])
+for i in range(2, _EXP_DECAY_UNTIL_BASE+1):
+    
+    RE_MSG_EXP_CUMULATIVE[i] = RE_MSG_EXP_CUMULATIVE[i-1] + _EXP_BASE + _FUNC_BONUS_EXP(i-1)
+    # print(RE_MSG_EXP_CUMULATIVE[i])
+
+_EMBED_SUMMARY_TEMPLATE = '**{name}** **{old}** -> **{new}**'
 
 class Experience(customs.cog.Cog):
     '''
@@ -98,35 +107,43 @@ class Experience(customs.cog.Cog):
         else:
             msg_value = 1
 
-
-        # save the old message contributions
-        old_msg_contribs = Experience._user_cooldown_[message.author.id][0]
-        Experience._user_cooldown_[message.author.id][0] += msg_value # this needs to look into the guild.db and determine the participation factor for this channel
-        Experience._user_cooldown_[message.author.id][1].restart()
+        
 
         # if the old message contributions is a new whole number above the new, grant the user the new experience
         # otherwise DO NOTHING
-        diff = int(Experience._user_cooldown_[message.author.id][0]) - int(old_msg_contribs)
+        contribution_old = Experience._user_cooldown_[message.author.id][0]
+        contribution_new = contribution_old + msg_value
         
-        member = db_user_interface.fetch(self.bot.db_user, message.author.id)
-        old_exp = member['exp']
+        diff = int(contribution_new) - int(contribution_old)
+        Experience._user_cooldown_[message.author.id][1].restart()
+        
+        db_member = db_user_interface.fetch(self.bot.db_user, message.author.id)
+        old_exp = db_member['exp']
         
         if diff != 0:
-            member = db_user_interface.fetch(self.bot.db_user, message.author.id)
-            member_exp = member['exp']
-            count = old_msg_contribs + 1
+            embed = EmbedSummary()
+            member_exp = old_exp
+            count = contribution_old
+            
             for _ in range(diff):
                 bonus_exp = _FUNC_BONUS_EXP(count)
                 total_bonus_exp = _EXP_BASE + bonus_exp
-
-                # print(f'>> {total_bonus_exp} experience rewarded to {message.author}')
-
                 member_exp += total_bonus_exp
                 count += 1
 
-            await self.bot.get_cog("Levels").on_experience(message.channel, message.author, member_exp)
-            await self.bot.get_cog("Ranks").on_experience(message, member_exp)
-            print(f'>> {message.author} :: {int(old_exp)} => {int(member_exp)}')
+            embed = await self.bot.get_cog("Levels").on_experience(message, old_exp, member_exp)
+            if embed.touched:
+                discord_embed = make_simple_embed_t(embed.title, embed.description.format(user=message.author.mention))
+                discord_embed.set_thumbnail(url=embed.thumbnail)
+                discord_embed.color = embed.color
+                discord_embed.add_field(name = '__**Summary**__', 
+                    value = '\n'.join(_EMBED_SUMMARY_TEMPLATE.format(name=key, old=val[0], new=val[1]) for key,val in embed.payload.items()),
+                    inline = False)
+                
+                await message.channel.send(message.author.mention, embed=discord_embed)
+            
+            print(f'>> [EXP] {message.author}\t::\t{int(old_exp)}\t=>\t{int(member_exp)}\t::\t{member_exp-old_exp}')
+            
             db_user_interface.set_user_exp(self.bot.db_user, message.author.id, member_exp)
 
 

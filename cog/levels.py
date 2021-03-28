@@ -5,19 +5,38 @@ is the concept of dropping the threshold to level up at regular intervals of lev
 Initial functions are based on how many minutes of real discussion a user has participated in. This will eventually need to be converted into experience.
 '''
 
-from math import sin, pi, floor, inf
+from math import sin, pi, floor, inf, ceil
 
 import discord
 from discord.ext import commands
 
 import db_user_interface
 import customs.cog
+from utility import make_simple_embed_t, EmbedSummary
 from cog.experience import \
     _EXP_BASE, _EXP_BONUS_FACTOR, _EXP_BUFF_RESET, \
     _EXP_COOLDOWN, _EXP_DECAY_FACTOR, _EXP_DECAY_FACTOR, \
     _EXP_DECAY_UNTIL_BASE, _FUNC_BONUS_EXP, RE_MIN_DURATION, \
-    EXP_CUMULATIVE
+    RE_MSG_EXP_CUMULATIVE
 
+# from cog.ranks import \
+#     _RANK_EMBED_TITLE, _RANK_EMBED_DESCRIPTION, _RANK_EMBED_THUMBNAIL, \
+#     _RANK_EMBED_COLOR
+
+# ==============================================================
+# Level Change Embed
+# ==============================================================
+_LEVEL_EMBED_TITLE = 'Level Up! 🎉'
+_LEVEL_EMBED_DESCRIPTION = 'Congratulations {user}, you have reached a new level!'
+_LEVEL_EMBED_THUMBNAIL = 'https://i.imgur.com/kCHjymJ.png'
+_LEVEL_EMBED_COLOR = 0x9EDDF5
+
+_EMBED_SUMMARY_TEMPLATE = '**{name}** **{old}** -> **{new}**'
+
+
+# ==============================================================
+# Formula Variables for level-threshold calculations
+# ==============================================================
 # "Class" variables are in global scope because of lambda's troublesome scoping. It can't access class variables!!!
 # Upper Bound on Level Thresholds
 _LEVELS_UPPER_BOUND_LOWER_LIMIT = 3.0
@@ -105,23 +124,24 @@ class Levels(customs.cog.Cog):
         # for i in range(0, 101):
         #     print(f'{i:2d}     :     {Levels._LEVEL_MINUTE_THRESHOLDS_CUMULATIVE[i]}')
 
-        # Calculation and creation of LEVEL_THRESHOLDS
+        # Calculation and creation of LEVEL_THRESHOLDS, which is a mapping of level -> total_exp
         Levels.LEVEL_THRESHOLDS[0] = 0
         for i in range(1, 1000):
             # Divide the total messages sent by the limit messages per buff interval
-            num_full_intervals = Levels._LEVEL_MINUTE_THRESHOLDS_CUMULATIVE[i]*60 / _EXP_COOLDOWN / _EXP_DECAY_UNTIL_BASE
+            wake_days = Levels._LEVEL_MINUTE_THRESHOLDS_CUMULATIVE[i]*60 / _EXP_COOLDOWN / _EXP_DECAY_UNTIL_BASE
             
             # Determine the left over minutes
-            min_left_over = Levels._LEVEL_MINUTE_THRESHOLDS_CUMULATIVE[i] - floor(num_full_intervals) * RE_MIN_DURATION
+            minutes_leftover = Levels._LEVEL_MINUTE_THRESHOLDS_CUMULATIVE[i] - floor(wake_days) * RE_MIN_DURATION
             
             # Convert the full minute intervals into experience
-            threshold_interval = EXP_CUMULATIVE[-1] * floor(num_full_intervals)
+            threshold_interval = RE_MSG_EXP_CUMULATIVE[_EXP_DECAY_UNTIL_BASE] * floor(wake_days)
 
             # Convert left over minutes into experience
-            threshold_left_over = EXP_CUMULATIVE[floor(min_left_over*60 / _EXP_COOLDOWN)-1]
+            messages_leftover = ceil(minutes_leftover*60 / _EXP_COOLDOWN)
+            threshold_left_over = RE_MSG_EXP_CUMULATIVE[messages_leftover]
 
             # Finally, add to our list
-            Levels.LEVEL_THRESHOLDS[i] = int(threshold_interval + threshold_left_over)
+            Levels.LEVEL_THRESHOLDS[i] = threshold_interval + threshold_left_over
         
 
         # for i in range(0, 101):
@@ -139,20 +159,90 @@ class Levels(customs.cog.Cog):
         # Equation below will find the nearest fit level and round down.
         return min(Levels.LEVEL_THRESHOLDS.items(), key=lambda kv: (1 if exp >= kv[1] else float('inf')) * abs(kv[1]-exp))[0]
 
-    async def on_experience(self, channel: discord.TextChannel, member: discord.Member, resulting_exp: int):
-        resulting_exp = int(resulting_exp)
+    @commands.command()
+    async def exp_level(self, ctx, exp:float):
+        # Equation below will find the nearest fit level and round down.
+        await ctx.send(f'You will be level {await self.from_experience(exp)}.')
 
-        expected_level = await self.from_experience(resulting_exp)
-         
+    @commands.command()
+    async def level_exp(self, ctx, exp: float):
+        if exp < 1 or exp > 999:
+            return
+       
+        await ctx.send(f'You need {int(self.LEVEL_THRESHOLDS[exp])} experience.')
+
+
+    @commands.command()
+    async def level_minutes(self, ctx, exp: float):
+        if exp < 1 or exp > 999:
+            return
+       
+        await ctx.send(f'You need {int(self._LEVEL_MINUTE_THRESHOLDS_CUMULATIVE[exp])} minutes.')
+
+
+    async def summary_payload(self, level_old, level_new):
+        assert(level_old != level_new)
+
+        payload = dict()
+        payload['Level'] = (level_old, level_new)
+
+        return payload
+
+
+    async def on_experience(self, message: discord.Message, exp_old: int, exp_new: int):
+        channel = message.channel
+        member = message.author
+        exp_new = int(exp_new)
+        cog_ranks = self.bot.get_cog('Ranks')
         db_member = db_user_interface.fetch(self.bot.db_user, member.id)
-        if db_member['level'] != expected_level:
-            if db_member['level'] < expected_level:
-                # await ctx.send(f"Congratulations! You are now level {expected_level}!")
-                print('\n//////////////////////////////////////////////////////////////')
-                print(f"/// {member} is now level {expected_level}!")
-                print('//////////////////////////////////////////////////////////////\n')
-            db_member['level'] = expected_level
+        embed = EmbedSummary()
+        
+        
+        level_old = db_member['level']
+        level_new = await self.from_experience(exp_new)
+        
+        # Handle level changes
+        if level_old != level_new:
+            db_member['level'] = level_new
             db_user_interface.write(self.bot.db_user, member.id, db_member)
+            
+        # Summary
+        if level_old < level_new:
+            print('\n//////////////////////////////////////////////////////////////')
+            print(f"/// {member} has changed levels from {level_old} to {level_new}!")
+            print('//////////////////////////////////////////////////////////////\n')
+            embed = EmbedSummary(_LEVEL_EMBED_TITLE, _LEVEL_EMBED_DESCRIPTION, _LEVEL_EMBED_THUMBNAIL, _LEVEL_EMBED_COLOR, await self.summary_payload(level_old, level_new))
+        
+
+        # Further calls that depend on levels
+        embed_ranks = await cog_ranks.on_experience(message, level_new)
+        
+        embed.merge_left(embed_ranks)
+        return embed
+            
+
+
+    async def summary_order(self, summary, order:list):
+        ordered_summary = dict()
+        for stat in order:
+            if stat in summary:
+                ordered_summary[stat] = summary[stat]
+        
+        return ordered_summary
+
+
+    async def on_level_up(self, channel, member, title, desc, thumbnail, summary_dict:dict):
+        embed = make_simple_embed_t(title, desc.format(user=member.name))
+        
+        summary = '\n'.join(_EMBED_SUMMARY_TEMPLATE.format(name=key, old=val[0], new=val[1]) for key,val in summary_dict.items())
+        
+        embed.add_field(name='__Summary__', value=summary, inline=False)
+        embed.set_thumbnail(url=thumbnail)
+
+        # print(f'title: {embed.title}\ndesc: {embed.description}\nsummary: {summary}')
+        await channel.send(member.mention, embed=embed)
+
+
 
 
 def setup(bot):

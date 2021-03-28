@@ -1,3 +1,8 @@
+'''
+If you ever plan to implement promote/demote commands, only changing experience would be perfectly fine. The next time the user talks they will be updated.
+However, if you wanted instant updates, you will have to manually adjust the exp, database, and then member roles. The former is quicker and will work.
+'''
+
 from math import sin
 
 import discord
@@ -5,60 +10,188 @@ from discord.ext import commands
 from copy import copy
 
 import db_user_interface, db_guild_interface
-from utility import make_error_embed, is_admin, make_simple_embed_t, quick_embed, request_user_confirmation
+from utility import make_error_embed, is_admin, make_simple_embed_t, quick_embed, request_user_confirmation, EmbedSummary
 import customs.cog
+
+
+# ==============================================================
+# Summary Embed Override
+# ==============================================================
+_RANK_EMBED_TITLE = 'Rank Promotion! 🎉'
+_RANK_EMBED_DESCRIPTION = 'Congratulations {user}, you have reached a new rank!'
+_RANK_EMBED_THUMBNAIL = 'https://i.imgur.com/iBtT4e1.png'
+_RANK_EMBED_COLOR = 0x00B1F5
 
 
 class Ranks(customs.cog.Cog):
     def __init__(self, bot):
         super().__init__(bot)
 
-    async def from_levels(self, gid, rank_lvl_ids, level:int):
-        ranks = copy(rank_lvl_ids) # copy so we don't change the og rank list
-        ranks[0] = None # used to as a floor for from_levels to so a user doesn't get a rank when below all ranks
-        return min(ranks.items(), key=lambda kv: (1 if level >= int(kv[0]) else float('inf')) * abs(int(kv[0])-level))[1]
-
-
-    async def on_experience(self, message, exp):
-        # print('\n>>> ranks.on_experience')
+    async def on_experience(self, message: discord.Message, level: int):
+        # Handles ranks when a member receives experience.
+        #
+        # Returns summary:dict() if there was a positive change
+        # Returns None if there was no or a negative change
         settings_guild = db_guild_interface.fetch(self.bot.db_guild, message.guild.id)
         settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
+        
+        member = message.author
+        db_member = db_user_interface.fetch(self.bot.db_user, member.id)
+        
+        embed = EmbedSummary()
 
-        user = message.author
+        rank_old_id = db_member['rank']
+        rank_new_id = await self.from_level(message.guild.id, level)
 
-        level = await self.bot.get_cog('Levels').from_experience(exp)
-        # print(f'=== level : {level}')
-        rank_id = await self.from_levels(message.guild.id, settings_rank_thresholds, level)
-        # print(f'=== rank_id : {rank_id}')
-        rank = message.guild.get_role(rank_id)
-        # print(f'=== calculated current rank: {rank}')
+        # Handle rank changes
+        if rank_old_id != rank_new_id:
+            db_member['rank'] = rank_new_id
+            db_user_interface.write(self.bot.db_user, member.id, db_member)
+
+        # Summary
+        rank_old = message.guild.get_role(rank_old_id) if rank_old_id is not None else None
+        rank_new = message.guild.get_role(rank_new_id) if rank_new_id is not None else None
+
+        ranks_ids = list(settings_rank_thresholds.values())
+        ranks_ids.insert(0, None)
+
+        if rank_old == rank_new or ranks_ids.index(rank_old_id) > ranks_ids.index(rank_new_id): # Force consistency between member and database
+            # Ensure user has no other ranks except their database rank
+            await self.member_clean(member, rank_new)
+            # If they don't have their internal database   rank, give it to them
+            if rank_new is not None and rank_new not in member.roles:
+                await member.add_roles(rank_new, reason="Preserving Discord model with internal database")
+            
+                print('\n//////////////////////////////////////////////////////////////')
+                print(f"/// {member} has changed rank from {'None' if rank_old is None else rank_old} to {rank_new}!")
+                print('//////////////////////////////////////////////////////////////\n')
+        
+        else: # Inversely checks for positive changes to ranks, if so return summary
+            await self.member_clean(member, rank_new)
+            await member.add_roles(rank_new, reason="Preserving Discord model with internal database")
+            print('\n//////////////////////////////////////////////////////////////')
+            print(f"/// {member} has changed rank from {'None' if rank_old is None else rank_old} to {rank_new}!")
+            print('//////////////////////////////////////////////////////////////\n')
+            embed = EmbedSummary(_RANK_EMBED_TITLE, _RANK_EMBED_DESCRIPTION, _RANK_EMBED_THUMBNAIL, _RANK_EMBED_COLOR, await self.summary_payload(message.guild.id, rank_old, rank_new))
+
+        # Further calls that depend on ranks
+        # NONE
+        
+        return embed
+
+
+    async def db_to_roles(self, guild):
+        settings_guild = db_guild_interface.fetch(self.bot.db_guild, guild.id)
+        settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
 
         ranks = list()
         for role_id in settings_rank_thresholds.values():
-            ranks.append(message.guild.get_role(role_id))        
+            ranks.append(guild.get_role(role_id))
 
-        if rank is None:
-            for r in (ranks):
-                try:
-                    await user.remove_roles(r, reason='Rank change')
-                except (discord.Forbidden, discord.HTTPException):
-                    pass
-        elif rank not in message.author.roles:
-            for r in ranks:
-                try:
-                    await user.remove_roles(r, reason='Rank change')
-                except (discord.Forbidden, discord.HTTPException):
-                    pass
+        return ranks
 
-            try:
-                await user.add_roles(rank, reason='Rank change')
-            except (discord.Forbidden, discord.HTTPException):
-                pass
 
-            print('\n//////////////////////////////////////////////////////////////')
-            print(f"/// {user} has changed ranks to {rank}!")
-            print('//////////////////////////////////////////////////////////////\n')
+    async def from_level(self, gid, level:int):
+        settings_guild = db_guild_interface.fetch(self.bot.db_guild, gid)
+        settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
 
+        ranks = copy(settings_rank_thresholds) # copy so we don't change the og rank list
+        ranks[0] = None # used to as a floor for from_levels to so a user doesn't get a rank when below all ranks
+        return min(ranks.items(), key=lambda kv: (1 if int(kv[0]) <= level else float('inf')) * abs(int(kv[0])-level))[1]
+
+    # @commands.command()
+    # async def test(self, ctx, l:int, n:int):
+    #     print(await self.is_rank_change(ctx.guild, l, n))
+
+
+    async def is_rank_change(self, guild, level1, level2):
+        # Compares the ranks given two levels. 
+        # 
+        # Returns a tuple where:
+        # element 0 denotes that they are not the same
+        # element 1 denotes that rank 1 is ranked lower than rank 2
+        # element 2 is rank1 from level1
+        # element 3 is rank2 from level2
+        id = guild.id
+
+        settings_guild = db_guild_interface.fetch(self.bot.db_guild, gid)
+        settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
+
+        rank1 = await self.from_levels(gid, level1)
+        rank2 = await self.from_levels(gid, level2)
+
+        print(rank1, rank2)
+
+        if rank1 is None and rank2 is not None:
+            rank2 = guild.get_role(rank2)
+            return (True, True, None, rank2)
+        elif rank1 is not None and rank2 is None:
+            rank1 = guild.get_role(rank1)
+            return (True, False, rank1, None)
+
+        rank1 = guild.get_role(rank1)
+        rank2 = guild.get_role(rank2)
+        ranks_inv = {v:k for k,v in settings_rank_thresholds.items()}
+        return (rank1.id != rank2.id, ranks_inv[rank1.id] < ranks_inv[rank2.id], rank1, rank2)
+
+
+    async def apply_rank(self, member:discord.Member, rank:discord.Role):
+        db_member = db_user_interface.fetch(self.bot.db_user, member.id)
+        await self.user_clean(member)
+
+        db_member['rank'] = rank.id
+        await member.add_roles(rank)
+
+
+    async def get_user_highest(self, member):
+        settings_guild = db_guild_interface.fetch(self.bot.db_guild, message.guild.id)
+        settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
+
+        ranks = list()
+        for role_id in settings_rank_thresholds.values():
+            ranks.append(message.guild.get_role(role_id))
+        
+        for rank in reversed(ranks):
+            if rank in member.roles:
+                return rank
+        
+        return None
+
+
+    async def member_clean(self, member: discord.Member, current_rank = None):
+        ranks = await self.db_to_roles(member.guild)
+        if current_rank is not None:
+            ranks.remove(current_rank)
+        to_remove = list()
+
+        for rank in ranks:
+            if rank in member.roles:
+                to_remove.append(rank)
+        
+        await member.remove_roles(*to_remove, reason="Preserving Discord model with internal database")
+
+
+    async def summary_payload(self, gid, rank_old, rank_new):
+        assert(rank_old != rank_new)
+
+        payload = dict()
+        payload['Rank'] = ('`None`' if rank_old is None else rank_old.mention, rank_new.mention)
+
+        return payload
+
+
+    async def send_rank_up(self, channel, member, summary_dict:dict):
+        embed = make_simple_embed_t(_RANK_EMBED_TITLE, _RANK_EMBED_DESCRIPTION.format(user=member.name))
+        summary = '\n'.join(_RANK_EMBED_SUMMARY_TEMPLATE.format(name=key, old=val[0], new=val[1]) for key,val in summary_dict.items())
+        embed.add_field(name='**Summary**', value=summary, inline=False)
+        embed.set_thumbnail(url=_RANK_EMBED_THUMBNAIL)
+
+        # print(f'title: {embed.title}\ndesc: {embed.description}\nsummary: {summary}')
+        await channel.send(member.mention, embed=embed)
+
+    # @commands.command()
+    # async def test(self, ctx):
+    #     await self.send_rank_up(ctx, ctx.author , {'Rank':('Random role', 'Some other random role')})
 
     @commands.group(aliases=['rank'])
     async def ranks(self, ctx):
@@ -92,6 +225,10 @@ class Ranks(customs.cog.Cog):
             return
 
         settings_rank_thresholds[level] = rank.id
+        
+        # Sort by level for easier reading/formatting later
+        settings_rank_thresholds = {k:v for k,v in sorted(settings_rank_thresholds.items())}
+        
         db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings_guild)
 
         await quick_embed(ctx, 'success', f'Reaching level **`{rank_level_threshold}`** will now promote users to {rank.mention}.')
