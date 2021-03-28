@@ -41,6 +41,7 @@ guild_settings_default = ReadOnlyDict({
             'channel_factors':dict(),
         },
         'ranks':{
+            'op':False,
             'level_thresholds':dict()
         }
     }          

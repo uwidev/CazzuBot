@@ -205,12 +205,13 @@ class Levels(customs.cog.Cog):
         if level_old != level_new:
             db_member['level'] = level_new
             db_user_interface.write(self.bot.db_user, member.id, db_member)
-            
-        # Summary
-        if level_old < level_new:
+
             print('\n//////////////////////////////////////////////////////////////')
             print(f"/// {member} has changed levels from {level_old} to {level_new}!")
             print('//////////////////////////////////////////////////////////////\n')
+            
+        # Summary
+        if level_old < level_new:
             embed = EmbedSummary(_LEVEL_EMBED_TITLE, _LEVEL_EMBED_DESCRIPTION, _LEVEL_EMBED_THUMBNAIL, _LEVEL_EMBED_COLOR, await self.summary_payload(level_old, level_new))
         
 

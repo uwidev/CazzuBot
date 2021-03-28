@@ -13,7 +13,6 @@ import db_user_interface, db_guild_interface
 from utility import make_error_embed, is_admin, make_simple_embed_t, quick_embed, request_user_confirmation, EmbedSummary
 import customs.cog
 
-
 # ==============================================================
 # Summary Embed Override
 # ==============================================================
@@ -32,51 +31,56 @@ class Ranks(customs.cog.Cog):
         #
         # Returns summary:dict() if there was a positive change
         # Returns None if there was no or a negative change
-        settings_guild = db_guild_interface.fetch(self.bot.db_guild, message.guild.id)
-        settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
-        
-        member = message.author
-        db_member = db_user_interface.fetch(self.bot.db_user, member.id)
-        
         embed = EmbedSummary()
-
-        rank_old_id = db_member['rank']
-        rank_new_id = await self.from_level(message.guild.id, level)
-
-        # Handle rank changes
-        if rank_old_id != rank_new_id:
-            db_member['rank'] = rank_new_id
-            db_user_interface.write(self.bot.db_user, member.id, db_member)
-
-        # Summary
-        rank_old = message.guild.get_role(rank_old_id) if rank_old_id is not None else None
-        rank_new = message.guild.get_role(rank_new_id) if rank_new_id is not None else None
-
-        ranks_ids = list(settings_rank_thresholds.values())
-        ranks_ids.insert(0, None)
-
-        if rank_old == rank_new or ranks_ids.index(rank_old_id) > ranks_ids.index(rank_new_id): # Force consistency between member and database
-            # Ensure user has no other ranks except their database rank
-            await self.member_clean(member, rank_new)
-            # If they don't have their internal database   rank, give it to them
-            if rank_new is not None and rank_new not in member.roles:
-                await member.add_roles(rank_new, reason="Preserving Discord model with internal database")
+        
+        settings_guild = db_guild_interface.fetch(self.bot.db_guild, message.guild.id)
+        settings_rank = settings_guild['ranks']
+        if settings_rank['op']:
+            settings_rank_thresholds = settings_rank['level_thresholds']
             
+            member = message.author
+            db_member = db_user_interface.fetch(self.bot.db_user, member.id)
+            
+            
+
+            rank_old_id = db_member['rank']
+            rank_new_id = await self.from_level(message.guild.id, level)
+
+            # Handle rank changes
+            if rank_old_id != rank_new_id:
+                db_member['rank'] = rank_new_id
+                db_user_interface.write(self.bot.db_user, member.id, db_member)
+
+            # Summary
+            rank_old = message.guild.get_role(rank_old_id) if rank_old_id is not None else None
+            rank_new = message.guild.get_role(rank_new_id) if rank_new_id is not None else None
+
+            ranks_ids = list(settings_rank_thresholds.values())
+            ranks_ids.insert(0, None)
+
+            if rank_old == rank_new or ranks_ids.index(rank_old_id) > ranks_ids.index(rank_new_id): # Force consistency between member and database
+                # Ensure user has no other ranks except their database rank
+                await self.member_clean(member, rank_new)
+                # If they don't have their internal database rank, give it to them
+                if rank_new is not None and rank_new not in member.roles:
+                    await member.add_roles(rank_new, reason="Preserving Discord model with internal database")
+                
+                # print('\n//////////////////////////////////////////////////////////////')
+                # print(f"/// {member} has changed rank from {'None' if rank_old is None else rank_old} to {rank_new}!")
+                # print('//////////////////////////////////////////////////////////////\n')
+            
+            else: # Inversely checks for positive changes to ranks, if so return summary
+                await self.member_clean(member, rank_new)
+                await member.add_roles(rank_new, reason="Preserving Discord model with internal database")
                 print('\n//////////////////////////////////////////////////////////////')
                 print(f"/// {member} has changed rank from {'None' if rank_old is None else rank_old} to {rank_new}!")
                 print('//////////////////////////////////////////////////////////////\n')
-        
-        else: # Inversely checks for positive changes to ranks, if so return summary
-            await self.member_clean(member, rank_new)
-            await member.add_roles(rank_new, reason="Preserving Discord model with internal database")
-            print('\n//////////////////////////////////////////////////////////////')
-            print(f"/// {member} has changed rank from {'None' if rank_old is None else rank_old} to {rank_new}!")
-            print('//////////////////////////////////////////////////////////////\n')
-            embed = EmbedSummary(_RANK_EMBED_TITLE, _RANK_EMBED_DESCRIPTION, _RANK_EMBED_THUMBNAIL, _RANK_EMBED_COLOR, await self.summary_payload(message.guild.id, rank_old, rank_new))
+                embed = EmbedSummary(_RANK_EMBED_TITLE, _RANK_EMBED_DESCRIPTION, _RANK_EMBED_THUMBNAIL, _RANK_EMBED_COLOR, await self.summary_payload(message.guild.id, rank_old, rank_new))
 
-        # Further calls that depend on ranks
-        # NONE
-        
+            # Further calls that depend on ranks
+            # NONE
+            
+            
         return embed
 
 
@@ -193,9 +197,39 @@ class Ranks(customs.cog.Cog):
     # async def test(self, ctx):
     #     await self.send_rank_up(ctx, ctx.author , {'Rank':('Random role', 'Some other random role')})
 
-    @commands.group(aliases=['rank'])
+    @commands.group(aliases=['rank'], invoke_without_command=True)
     async def ranks(self, ctx):
         pass
+
+    
+    @ranks.command(name='on', aliases=['enable', 'enabled'])
+    @is_admin()
+    async def ranks_on(self, ctx):
+        '''
+        Turning on server ranks will immediately start to apply and remove role ranks to members who talk.
+        '''
+        if await request_user_confirmation(ctx, self.bot, 'Are you sure you want to make server rankings active?', delete_after=True):
+            settings = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
+            settings['ranks']['op'] = True
+
+            db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings)
+
+            await quick_embed(ctx, 'success', 'Ranks will now be actively applied and removed.')
+
+
+    @ranks.command(name='off', aliases=['disable', 'disabled'])
+    @is_admin()
+    async def ranks_off(self, ctx):
+        '''
+        Turn off server ranks.
+        '''
+        settings = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
+        settings['ranks']['op'] = False
+
+        db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings)
+
+        await quick_embed(ctx, 'success', 'Ranks will no longer be actively applied and removed.')
+
 
     @ranks.command(name='add')
     @is_admin()
@@ -287,6 +321,31 @@ class Ranks(customs.cog.Cog):
             db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings_guild)
 
             await quick_embed(ctx, 'success', f'Ranks and their level requirements have been cleared!')
+
+    
+    @ranks.command(name='migrate')
+    @is_admin()
+    async def ranks_migrate(self, ctx):
+        '''
+        With ranks set, sync the database to the guild such that their experience matches the minimum for their highest rank.
+        '''
+        if await request_user_confirmation(ctx, self.bot, 'Are you sure you want to migrate server ranks to CazzuBot experience?', delete_after=True):
+            settings = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
+            ranks_threshold = settings['ranks']['level_thresholds']
+
+            ranks_threshold_inv = {v:k for k, v in ranks_threshold.items()}
+
+            ranks = await self.db_to_roles(ctx.guild)
+            
+            async with ctx.typing():
+                level_exp_map = self.bot.get_cog('Levels').LEVEL_THRESHOLDS
+                for rank in ranks:
+                    for member in rank.members:
+                        db_user_interface.set_user_exp(self.bot.db_user, member.id, level_exp_map[int(ranks_threshold_inv[rank.id])])
+            
+            await quick_embed(ctx, 'success', f'Ranks have been migrated to Cazzubot!')
+        
+
 
 
 def setup(bot):

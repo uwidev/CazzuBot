@@ -169,7 +169,7 @@ class Frogs(customs.cog.Cog):
     # User Commands
     # --------------------------------------------
     @commands.group(aliases=['frog'], invoke_without_command=True)
-    async def frogs(self, ctx, user:discord.Member=None):
+    async def frogs(self, ctx, *, user:discord.Member=None):
         '''
         Shows everything about you related to frogs.
 

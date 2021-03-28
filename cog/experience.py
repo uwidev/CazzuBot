@@ -14,7 +14,7 @@ import asyncio
 
 import discord, db_user_interface, db_guild_interface
 from discord.ext import commands, tasks
-from utility import Timer, make_simple_embed_t, PARSE_CLASS_VAR, EmbedSummary
+from utility import Timer, make_simple_embed_t, PARSE_CLASS_VAR, EmbedSummary, is_admin, request_user_confirmation, quick_embed
 
 import customs.cog
 
@@ -60,7 +60,8 @@ class Experience(customs.cog.Cog):
         super().__init__(bot)
         if self._first_load_:
             db_user_interface.reset_exp_factor_all(self.bot.db_user)    
-    
+
+
     def cog_unload(self):
         Experience._first_load_ = False
         super().cog_unload()
@@ -102,12 +103,14 @@ class Experience(customs.cog.Cog):
         # their buff refresh, or the bot went offline and data on message counts per user was lost.
         guild_settings_exp = db_guild_interface.fetch(self.bot.db_guild, message.guild.id)['experience']
 
+        # because we are taking into account the guild's experience factor, experience is essentially guild-specific at this point.
+        # this means that all user.db contains data specifically for this guild
+        #
+        # in other words, user data WILL BLEED TO OTHER GUILDS IF YOU DO NOT DIFFERENTIATE THE TWO
         if str(message.channel.id) in guild_settings_exp['channel_factors']:
             msg_value = guild_settings_exp['channel_factors'][str(message.channel.id)]
         else:
             msg_value = 1
-
-        
 
         # if the old message contributions is a new whole number above the new, grant the user the new experience
         # otherwise DO NOTHING
@@ -115,7 +118,7 @@ class Experience(customs.cog.Cog):
         contribution_new = contribution_old + msg_value
         
         diff = int(contribution_new) - int(contribution_old)
-        Experience._user_cooldown_[message.author.id][0] = diff
+        Experience._user_cooldown_[message.author.id][0] = contribution_new
         Experience._user_cooldown_[message.author.id][1].restart()
         
         db_member = db_user_interface.fetch(self.bot.db_user, message.author.id)
@@ -143,7 +146,7 @@ class Experience(customs.cog.Cog):
                 
                 await message.channel.send(message.author.mention, embed=discord_embed)
             
-            print(f'>> [EXP] {message.author}\t::\t{int(old_exp)}\t=>\t{int(member_exp)}\t::\t{member_exp-old_exp}')
+            print(f'>> [EXP] {message.author}\t::\t{int(old_exp)} => {int(member_exp)}\t::\t{member_exp-old_exp:.2f}\t::\t{Experience._user_cooldown_[message.author.id][0]}')
             
             db_user_interface.set_user_exp(self.bot.db_user, message.author.id, member_exp)
 
@@ -153,58 +156,101 @@ class Experience(customs.cog.Cog):
         del Experience._user_cooldown_[member.id]
 
 
-    @commands.group(aliases=['xp'])
-    async def exp(self, ctx, *, user:discord.Member=None):
+    @commands.group(aliases=['xp'], invoke_without_command=True)
+    async def exp(self, ctx, *, user:discord.Member = None):
         '''Shows everything about you related to your experience points.
 
         Provide a user to see their stats instead.
         '''
-        if ctx.invoked_subcommand is None:
-            if user == None:
-                user = ctx.message.author
+        if user == None:
+            user = ctx.message.author
 
-            user_data = db_user_interface.fetch(self.bot.db_user, user.id)
-            
-            sorted_users = db_user_interface.fetch_all(self.bot.db_user)
-            sorted_users.sort(key=lambda user: user['exp'], reverse=True)
+        user_data = db_user_interface.fetch(self.bot.db_user, user.id)
+        
+        sorted_users = db_user_interface.fetch_all(self.bot.db_user)
+        sorted_users.sort(key=lambda user: user['exp'], reverse=True)
 
-            sorted_users_ids = list(map(lambda user: user['id'], sorted_users))
-            placement = sorted_users_ids.index(user.id)
+        sorted_users_ids = list(map(lambda user: user['id'], sorted_users))
+        placement = sorted_users_ids.index(user.id)
 
-            title = '{user}\'s Experience Report Card'.format(user=user.display_name)
-            
-            exp = user_data['exp']
-            factor = user_data['exp_factor']
+        title = '{user}\'s Experience Report Card'.format(user=user.display_name)
+        
+        exp = user_data['exp']
+        factor = user_data['exp_factor']
 
-            data = 'Experience: **`{xp}`**\nExperience Factor: **`x{fa:.2f}`**'.format(xp=int(exp), fa=factor)
-            report = '{user} are ranked **`#{place}`** out of **`{total}`**!'.format(user='You' if ctx.message.author == user else user.mention, place=placement + 1, total=len(sorted_users))
-            
-            compare = '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode='Exp', user='User')
-            for i in range(max(0, placement-2), min(placement+3, len(sorted_users))):
-                try:
-                    if i == placement:
-                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-                    elif i%2:
-                        compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-                    else:
-                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
-                except AttributeError:
-                    if i == placement:
-                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['exp']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
-                    elif i%2:
-                        compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
-                    else:
-                        compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
-            compare += '```'
+        data = 'Experience: **`{xp}`**\nExperience Factor: **`x{fa:.2f}`**'.format(xp=int(exp), fa=factor)
+        report = '{user} are ranked **`#{place}`** out of **`{total}`**!'.format(user='You' if ctx.message.author == user else user.mention, place=placement + 1, total=len(sorted_users))
+        
+        compare = '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode='Exp', user='User')
+        for i in range(max(0, placement-2), min(placement+3, len(sorted_users))):
+            try:
+                if i == placement:
+                    compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                elif i%2:
+                    compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+                else:
+                    compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=self.bot.get_user(sorted_users[i]['id']).display_name)
+            except AttributeError:
+                if i == placement:
+                    compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place='@'+str(i+1), count=int(sorted_users[i]['exp']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
+                elif i%2:
+                    compare += '{place:<8}{count:<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
+                else:
+                    compare += '{place:.<8}{count:.<8}{user:20}\n'.format(place=str(i+1), count=int(sorted_users[i]['exp']), user=(await self.bot.fetch_user(sorted_users[i]['id'])).display_name)
+        compare += '```'
 
-            desc = data + '\n\n' + report + '\n' + compare
+        desc = data + '\n\n' + report + '\n' + compare
 
-            embed = make_simple_embed_t(title, desc)
-            embed.set_thumbnail(url=user.avatar_url)
+        embed = make_simple_embed_t(title, desc)
+        embed.set_thumbnail(url=user.avatar_url)
+
+        await ctx.send(embed=embed)
+        
+        # await ctx.send('Your current exp is **`{exp}`** with an exp factor of **`x{factor:.2f}`**.'.format(exp=int(exp), factor=factor))
+
+
+    @exp.group(name='rate', aliases=['rates'], invoke_without_command=True)
+    @is_admin()
+    async def exp_rate(self, ctx, rate:int=None, *, channel:discord.TextChannel=None):
+        '''
+        Adjusts the experience rate of a channel for a guild.
+        '''
+        # Currently if rate = 1 it will still write it. This is redundant because when checking the doc for
+        # the channel exp factor, if not found it default to one
+        #
+        # You  would have to mess with formatting to 
+        settings = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
+        settings_exp = settings['experience']
+        
+        if rate == None and channel == None:
+            template = '{channel} => **`x{rate}`**'
+            summary = '\n'.join(template.format(channel=ctx.guild.get_channel(int(k)).mention, rate=v) for k, v in settings_exp['channel_factors'].items())
+            if summary is None:
+                summary = 'The server is using default rates!'
+            embed = make_simple_embed_t(f'{ctx.guild.name}\'s Experience Rates per Channel', summary)
+            embed.set_thumbnail(url=ctx.guild.icon_url)
 
             await ctx.send(embed=embed)
             
-            # await ctx.send('Your current exp is **`{exp}`** with an exp factor of **`x{factor:.2f}`**.'.format(exp=int(exp), factor=factor))
+            return
+        
+        if channel == None:
+            channel = ctx.channel
+
+        settings_exp['channel_factors'][str(channel.id)] = rate
+        db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings)
+        await quick_embed(ctx, 'success', f'{ctx.channel.mention} now has an experience rate of {rate}.')
+
+
+    @exp_rate.command(name='clear', invoke_without_command=True)
+    @is_admin()
+    async def exp_rate_clear(self, ctx):
+        if await request_user_confirmation(ctx, self.bot, 'Are you sure you would like to clear experience rates for the server?', delete_after=True):
+            settings = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
+            settings_exp = settings['experience']['channel_factors'].clear()
+            db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings)
+
+            await quick_embed(ctx, 'success', f'Server experience rates have been cleared!')
 
 
     @commands.group(name='logexp', aliases=['logxp'], invoke_without_command=True)
