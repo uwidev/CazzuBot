@@ -115,6 +115,7 @@ class Experience(customs.cog.Cog):
         contribution_new = contribution_old + msg_value
         
         diff = int(contribution_new) - int(contribution_old)
+        Experience._user_cooldown_[message.author.id][0] = diff
         Experience._user_cooldown_[message.author.id][1].restart()
         
         db_member = db_user_interface.fetch(self.bot.db_user, message.author.id)
@@ -198,7 +199,7 @@ class Experience(customs.cog.Cog):
 
             desc = data + '\n\n' + report + '\n' + compare
 
-            embed = make_simple_embed_t(desc, title)
+            embed = make_simple_embed_t(title, desc)
             embed.set_thumbnail(url=user.avatar_url)
 
             await ctx.send(embed=embed)
