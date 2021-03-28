@@ -215,7 +215,7 @@ class Experience(customs.cog.Cog):
 
     @exp.group(name='rate', aliases=['rates'], invoke_without_command=True)
     @is_admin()
-    async def exp_rate(self, ctx, rate:int=None, *, channel:discord.TextChannel=None):
+    async def exp_rate(self, ctx, rate:float=None, *, channel:discord.TextChannel=None):
         '''
         Adjusts the experience rate of a channel for a guild.
         '''
