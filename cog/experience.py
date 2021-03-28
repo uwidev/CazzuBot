@@ -177,10 +177,12 @@ class Experience(customs.cog.Cog):
         
         rank_id = user_data['rank']
         rank = ctx.guild.get_role(rank_id)
+        level = user_data['level']
         exp = user_data['exp']
-        factor = user_data['exp_factor']
+        # factor = user_data['exp_factor']
 
-        data = 'Rank: {rk}\nExperience: **`{xp}`**\nExperience Factor: **`x{fa:.2f}`**'.format(rk=rank.mention, xp=int(exp), fa=factor)
+        # data = 'Rank: {rk}\nExperience: **`{xp}`**\nExperience Factor: **`x{fa:.2f}`**'.format(rk=rank.mention, xp=int(exp), fa=factor)
+        data = 'Rank: {rk}\nLevel: **`{lvl}`**\nExperience: **`{xp}`**'.format(rk=rank.mention, lvl=level xp=int(exp))
         report = '{user} are ranked **`#{place}`** out of **`{total}`**!'.format(user='You' if ctx.message.author == user else user.mention, place=placement + 1, total=len(sorted_users))
         
         compare = '```py\n{place:8}{mode:<8}{user:20}\n'.format(place='Place', mode='Exp', user='User')
