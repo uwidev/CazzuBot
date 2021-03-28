@@ -261,7 +261,7 @@ class Ranks(customs.cog.Cog):
         settings_rank_thresholds[level] = rank.id
         
         # Sort by level for easier reading/formatting later
-        settings_rank_thresholds = {k:v for k,v in sorted(settings_rank_thresholds.items())}
+        settings_rank_thresholds = {k:v for k,v in sorted(settings_rank_thresholds.items(), key=lambda kv: int(kv[0]))}
         
         db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings_guild)
 
