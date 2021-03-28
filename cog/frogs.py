@@ -574,7 +574,7 @@ class Frogs(customs.cog.Cog):
         embed.set_thumbnail(url='https://i.imgur.com/ybxI7pu.png')
         confirmation = await self.request_confirmation(ctx, ctx.message.author, embed=embed)
         if confirmation:
-            result = db_user_interface.exchange_frogs_normal(self.bot.db_user, ctx.author.id, to.id, amount)
+            result = db_user_interface.users_trade_frogs(self.bot.db_user, ctx.author.id, to.id, amount)
             if result != 0:
                 print(f">> ERROR: Gifting raised an error of {result}.")
                 return
