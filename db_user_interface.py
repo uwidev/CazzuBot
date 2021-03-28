@@ -114,6 +114,9 @@ def initialize(db_user, uid: int):
 def reset_exp_factor_all(db_user):
     db_user.update({'exp_factor':1.0})
 
+def reset_exp_all(db_user):
+    db_user.update({'exp':0})
+
 
 def upgrade(db_user):
     users_all = fetch_all(db_user)

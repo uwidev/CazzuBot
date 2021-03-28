@@ -251,6 +251,21 @@ class Experience(customs.cog.Cog):
             db_guild_interface.write(self.bot.db_guild, ctx.guild.id, settings)
 
             await quick_embed(ctx, 'success', f'Server experience rates have been cleared!')
+        
+    
+    @exp.command(name='reset')
+    @is_admin()
+    async def exp_reset(self, ctx):
+        if await request_user_confirmation(ctx, self.bot, 'Are you sure you would like reset all member\'s experience?', delete_after=True):
+            if await request_user_confirmation(ctx, self.bot, 'You sure?', delete_after=True):
+                wait_for_me = await ctx.send('Doing the deed...')
+                async with ctx.typing():
+                    db_user_interface.reset_exp_all(self.bot.db_user)
+
+                await wait_for_me.delete()
+        
+        await quick_embed(ctx, 'success', f'Server experience for all members have been reset!')
+
 
 
     @commands.group(name='logexp', aliases=['logxp'], invoke_without_command=True)
