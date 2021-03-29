@@ -423,12 +423,13 @@ class Ranks(customs.cog.Cog):
                             caz_strongest_score = await cog_level.level_exp(ctx, 100)
                             # print(caz_strongest_score)
 
-                            tatsu_diff = tatsu_score - _OLD_RANKS[tatsu_rank]
-                            percent_more = tatsu_diff / _OLD_RANKS[tatsu_rank]
+                            tatsu_score_diff = tatsu_score - _OLD_RANKS[tatsu_rank]
+                            percent_more = tatsu_score_diff / _OLD_RANKS[tatsu_rank]
 
                             extra_exp = caz_strongest_score * percent_more * 0.50
 
-                            db_member = db_user_interface.fetch(self.bot.db_user, ctx.author.id)
+                            db_member = db_user_interface.fetch(self.bot.db_user, member.user_id)
+                            old = db_member['exp']
                             db_member['exp'] += extra_exp
                         else:
                             tatsu_to_next_rank = _OLD_RANKS[tatsu_next_rank]
@@ -444,14 +445,17 @@ class Ranks(customs.cog.Cog):
                             # db_member = db_user_interface.fetch(self.bot.db_user, ctx.author.id)
                             # print(db_member['exp'] + (tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp)))
 
-                            db_member = db_user_interface.fetch(self.bot.db_user, ctx.author.id)
+                            db_member = db_user_interface.fetch(self.bot.db_user, member.user_id)
                             # print(db_member['exp'], tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp))
+                            old = db_member['exp']
                             db_member['exp'] += (tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp))
                             
-                        db_user_interface.write(self.bot.db_user, ctx.author.id, db_member)
+                        this_member = ctx.guild.get_member(member.user_id)
+                        # print(f"{this_member} adjusted exp from {old} to {db_member['exp']}")
+                        db_user_interface.write(self.bot.db_user, member.user_id, db_member)
                     
                     await asyncio.sleep(3)
-                
+            
             await quick_embed(ctx, 'success', f'Ranks have been migrated to Cazzubot!')
         
 

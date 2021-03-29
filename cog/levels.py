@@ -170,6 +170,7 @@ class Levels(customs.cog.Cog):
             return
        
         # await ctx.send(f'You need {int(self.LEVEL_THRESHOLDS[exp])} experience.')
+        # print(f'You need {int(self.LEVEL_THRESHOLDS[exp])} experience.')
 
         return self.LEVEL_THRESHOLDS[exp]
 
