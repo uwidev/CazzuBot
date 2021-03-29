@@ -144,7 +144,7 @@ class Experience(customs.cog.Cog):
                     value = '\n'.join(_EMBED_SUMMARY_TEMPLATE.format(name=key, old=val[0], new=val[1]) for key,val in embed.payload.items()),
                     inline = False)
                 
-                await message.channel.send(message.author.mention, embed=discord_embed, delete_after=20)
+                await message.channel.send(message.author.mention, embed=discord_embed)
             
             print(f'>> [EXP] {message.author}\t::\t{int(old_exp)} => {int(member_exp)}\t::\t{member_exp-old_exp:.2f}\t::\t{Experience._user_cooldown_[message.author.id][0]}')
             
