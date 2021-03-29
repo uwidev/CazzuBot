@@ -4,6 +4,7 @@ However, if you wanted instant updates, you will have to manually adjust the exp
 '''
 
 from math import sin
+import asyncio
 
 import discord
 from discord.ext import commands
@@ -13,6 +14,24 @@ import db_user_interface, db_guild_interface
 from utility import make_error_embed, is_admin, make_simple_embed_t, quick_embed, request_user_confirmation, EmbedSummary
 import customs.cog
 
+_OLD_RANKS = {
+    547245884426158100:	465,
+    547245885629923328:	2326,
+    547245887483674625:	6513,
+    547245889404796928:	13957,
+    547245890969272320:	25588,
+    547245892328226846:	42536,
+    547245893565546506:	65132,
+    547245894953730054:	94907,
+    547245896266678272:	132591,
+    547245897541484573:	179114,
+    547245898816552961:	235407,
+    547245899575984143:	302400,
+    0 : 0
+}
+
+_OLD_RANKS_LIST = list(_OLD_RANKS.keys())
+
 # ==============================================================
 # Summary Embed Override
 # ==============================================================
@@ -21,10 +40,63 @@ _RANK_EMBED_DESCRIPTION = 'Congratulations {user}, you have reached a new rank!'
 _RANK_EMBED_THUMBNAIL = 'https://i.imgur.com/iBtT4e1.png'
 _RANK_EMBED_COLOR = 0x00B1F5
 
+from tatsu.wrapper import ApiWrapper
 
 class Ranks(customs.cog.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot):        
         super().__init__(bot)
+        self.bot.tatsu = ApiWrapper(key='LiT9zi3WWG-JEqVvWAMYSrsgbaREWuJON')
+
+
+    @commands.command()
+    async def tatsu(self, ctx):
+        if ctx.author.id != 338486462519443461:
+            return
+        
+        # res = await self.bot.tatsu.get_guild_rankings(ctx.guild.id)
+        # for member in res.rankings:
+        #     print(member.score)
+
+        settings_guild = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
+        settings_rank_thresholds = settings_guild['ranks']['level_thresholds']
+
+        threshold_inv = {v:k for k,v in settings_rank_thresholds.items()}
+
+        p = await self.bot.tatsu.get_member_ranking(293796316193095690, ctx.author.id)
+        
+        score = p.score
+        rank = min(_OLD_RANKS.items(), key=lambda kv: (1 if int(kv[1]) <= score else float('inf')) * abs(int(kv[1])-score))[0]
+        print(score)
+        print(rank)        
+
+        to_rank = _OLD_RANKS[rank]
+        next_rank = _OLD_RANKS_LIST[_OLD_RANKS_LIST.index(rank) + 1]
+
+        if next_rank == 0:
+            pass # this means the user is above strongest baka, different formula
+            return
+
+        to_next_rank =  _OLD_RANKS[next_rank]
+        
+        caz_rank_lvl = threshold_inv[rank]
+        caz_next_rank_lvl = threshold_inv[next_rank]
+
+        cog_level = self.bot.get_cog('Levels')
+        
+        caz_rank_exp = await cog_level.level_exp(ctx, int(caz_rank_lvl))
+        caz_next_rank_exp = await cog_level.level_exp(ctx, int(caz_next_rank_lvl))
+
+        progress = (score-to_rank)/(to_next_rank-to_rank)
+
+        cog_level = self.bot.get_cog('Levels')
+        
+        percent = (score - to_rank)/(to_next_rank - to_rank)
+
+        exp = caz_rank_exp + (percent * (caz_next_rank_exp - caz_rank_exp))
+
+        print(exp)
+
+
 
     async def on_experience(self, message: discord.Message, level: int):
         # Handles ranks when a member receives experience.
@@ -40,8 +112,6 @@ class Ranks(customs.cog.Cog):
             
             member = message.author
             db_member = db_user_interface.fetch(self.bot.db_user, member.id)
-            
-            
 
             rank_old_id = db_member['rank']
             rank_new_id = await self.from_level(message.guild.id, level)
@@ -124,8 +194,6 @@ class Ranks(customs.cog.Cog):
         rank1 = await self.from_levels(gid, level1)
         rank2 = await self.from_levels(gid, level2)
 
-        print(rank1, rank2)
-
         if rank1 is None and rank2 is not None:
             rank2 = guild.get_role(rank2)
             return (True, True, None, rank2)
@@ -193,9 +261,6 @@ class Ranks(customs.cog.Cog):
         # print(f'title: {embed.title}\ndesc: {embed.description}\nsummary: {summary}')
         await channel.send(member.mention, embed=embed)
 
-    # @commands.command()
-    # async def test(self, ctx):
-    #     await self.send_rank_up(ctx, ctx.author , {'Rank':('Random role', 'Some other random role')})
 
     @commands.group(aliases=['rank'], invoke_without_command=True)
     async def ranks(self, ctx):
@@ -333,16 +398,60 @@ class Ranks(customs.cog.Cog):
             settings = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
             ranks_threshold = settings['ranks']['level_thresholds']
 
-            ranks_threshold_inv = {v:k for k, v in ranks_threshold.items()}
+            threshold_inv = {v:k for k, v in ranks_threshold.items()}
 
             ranks = await self.db_to_roles(ctx.guild)
             
             async with ctx.typing():
+                cog_level = self.bot.get_cog('Levels')
                 level_exp_map = self.bot.get_cog('Levels').LEVEL_THRESHOLDS
-                for rank in ranks:
-                    for member in rank.members:
-                        db_user_interface.set_user_exp(self.bot.db_user, member.id, level_exp_map[int(ranks_threshold_inv[rank.id])])
-            
+                
+                for i in range(0, 5):
+                    result = await self.bot.tatsu.get_guild_rankings(ctx.guild.id, offset=100*i)
+                    # result = await self.bot.tatsu.get_member_ranking(ctx.guild.id, ctx.author.id)
+                    for member in result.rankings:
+                        # member = result
+                        tatsu_score = member.score
+                        
+                        tatsu_rank = min(_OLD_RANKS.items(), key=lambda kv: (1 if int(kv[1]) <= tatsu_score else float('inf')) * abs(int(kv[1])-tatsu_score))[0]
+                        
+                        tatsu_to_rank = _OLD_RANKS[tatsu_rank]
+                        tatsu_next_rank = _OLD_RANKS_LIST[_OLD_RANKS_LIST.index(tatsu_rank) + 1]
+
+                        if tatsu_next_rank == 0: # it means they strongest, use different formula
+                            # print('user is strongest...')
+                            caz_strongest_score = await cog_level.level_exp(ctx, 100)
+                            # print(caz_strongest_score)
+
+                            tatsu_diff = tatsu_score - _OLD_RANKS[tatsu_rank]
+                            percent_more = tatsu_diff / _OLD_RANKS[tatsu_rank]
+
+                            extra_exp = caz_strongest_score * percent_more * 0.50
+
+                            db_member = db_user_interface.fetch(self.bot.db_user, ctx.author.id)
+                            db_member['exp'] += extra_exp
+                        else:
+                            tatsu_to_next_rank = _OLD_RANKS[tatsu_next_rank]
+
+                            caz_rank_level = threshold_inv[tatsu_rank]
+                            caz_next_rank_level = threshold_inv[tatsu_next_rank]
+
+                            caz_rank_exp = await cog_level.level_exp(ctx, int(caz_rank_level))
+                            caz_next_rank_exp = await cog_level.level_exp(ctx, int(caz_next_rank_level))
+
+                            tatsu_progress_percent = (tatsu_score-tatsu_to_rank)/(tatsu_to_next_rank-tatsu_to_rank)
+                            
+                            # db_member = db_user_interface.fetch(self.bot.db_user, ctx.author.id)
+                            # print(db_member['exp'] + (tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp)))
+
+                            db_member = db_user_interface.fetch(self.bot.db_user, ctx.author.id)
+                            # print(db_member['exp'], tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp))
+                            db_member['exp'] += (tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp))
+                            
+                        db_user_interface.write(self.bot.db_user, ctx.author.id, db_member)
+                    
+                    await asyncio.sleep(3)
+                
             await quick_embed(ctx, 'success', f'Ranks have been migrated to Cazzubot!')
         
 

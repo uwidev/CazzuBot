@@ -169,7 +169,9 @@ class Levels(customs.cog.Cog):
         if exp < 1 or exp > 999:
             return
        
-        await ctx.send(f'You need {int(self.LEVEL_THRESHOLDS[exp])} experience.')
+        # await ctx.send(f'You need {int(self.LEVEL_THRESHOLDS[exp])} experience.')
+
+        return self.LEVEL_THRESHOLDS[exp]
 
 
     @commands.command()
