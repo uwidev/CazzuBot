@@ -16,6 +16,7 @@ When a frog spawns(?) (or after it is captured?) it will start a timer that will
 import sys, warnings
 
 from collections import defaultdict
+from random import choice, random
 
 import discord
 from discord.ext import commands, tasks
@@ -28,8 +29,10 @@ import customs.cog
 
 # Later, read these vars from some db on startup
 _SPAWNRATE_DEFAULT = 7.0 #minutes
-_SPAWNRATE_SWING = .1 #within % offsets
-_TIMEOUT = 120   # seconds before frog disappears
+_SPAWNRATE_SWING = 0 #within % offsets
+_TIMEOUT = 10   # seconds before frog disappears
+# og 7, .1, 120
+
 
 ################################################################
 # The elements used on frog spawn
@@ -65,6 +68,50 @@ _ACTIVITY_UPPER_BOUND = 0.6 #what rng roll has to be above to spawn a frog
 _ACTIVITY_FACTOR = 2
 _ACTIVITY_TIMEOUT = 15 #minutes
 _ACTIVITY_FUNCTION = lambda count: _ACTIVITY_UPPER_BOUND*(count/_ACTIVITY_MESSAGES_UNTIL_UPPER_BOUND)**_ACTIVITY_FACTOR
+
+
+################################################################
+# April Fools
+################################################################
+_FOOLS_FROG = [
+    "<:cirnoCursedPogFrog:780634396699918376>",
+    "'Sorry, I know you were trying to catch your frog, but Soru took 'em!' <:cirnoCursedSugoiWow:780633607123107862>",
+    "https://tenor.com/view/dance-moves-dancing-singer-groovy-gif-17029825",
+    "https://tenor.com/view/frog-pat-head-pet-froge-gif-17800229",
+    "https://cdn.discordapp.com/attachments/826587217438441552/826588787492388914/cirnoBakaFrog.png",
+    "https://tenor.com/view/fortnite-thanos-orange-justice-dancing-dance-gif-16354935 thanos took your frog <:cirnoPfft:695126168373952562>",
+    "https://cdn.discordapp.com/attachments/826587217438441552/826589658091487272/1617144672969.png",
+    "https://cdn.discordapp.com/attachments/826587217438441552/826594308978376744/Cute-angry-frog-696x358.jpg",
+    "https://cdn.discordapp.com/attachments/826587217438441552/826594468986617905/5c7cd1159fa339e417bffb9e616c9a08.jpg",
+    "https://cdn.discordapp.com/attachments/826587217438441552/826597037863993354/frog_suwako_hat.png",
+    "https://tenor.com/view/touhou-fumo-suwako-jump-bounce-gif-18089454",
+    "https://media4.giphy.com/media/Wrh8aL75aj4uZwuqta/200.gif",
+    "<:cirnoFrogClassy:706228020251197490>",
+    "<:cirnoFrogBox:796194831226503179>",
+    "https://tenor.com/view/touhou-suwako-anime-gif-8780783",
+    "https://tenor.com/view/happy-dance-frog-dancing-excited-toad-gif-7628390",
+    "Cirno fumo was here. <:cirnoFumo:755178677603401879>",
+    "you thought it was frog, but it was me, dio! https://tenor.com/view/dio-jojo-anime-cartoon-japanese-gif-7432836",
+    "<:cirnoCursedPogFrog:780634396699918376> <:cirnoNom:695126168508301353>",
+    "https://tenor.com/bblhd.gif",
+    "https://tenor.com/view/bababooey-gif-19046935",
+    "https://tenor.com/view/pepe-punch-hit-meme-frog-gif-14157444",
+    "https://tenor.com/view/funny-frog-frog-meme-vibe-pee-mode-gif-17420275",
+    "https://tenor.com/view/im-cheezin-bright-smiles-got-teeth-frog-smile-frog-gif-12039847",
+    "https://tenor.com/view/pepe-pepe-the-frog-sad-pepe-crying-tears-gif-7939264",
+    "https://tenor.com/view/frog-drummer-drums-drumming-musical-instrument-gif-17694215",
+    "https://tenor.com/view/touhou-cirno-fumo-plush-ice-gif-18790493",
+    '"Not only you capture le frog, but you also froze it!" <:cirnoShookWoke:695126170466910268>',
+    'https://tenor.com/view/hi-reimu-cirno-silly-cirno-kfc-cirno-touhou-gif-20796926',
+    'https://tenor.com/view/toad-frog-eat-gif-16894804',
+    'your frog has turned on you http://33.media.tumblr.com/9afdac240962d937c6240ce50cf36994/tumblr_n9u7jmDDdt1s9ab4to1_400.gif',
+    'https://media.tenor.com/images/c869633d539f497e7375657668e084a4/tenor.gif?ctx=share',
+    'https://media.tenor.com/images/c4537c60c4f201305adc3fae8b9a536a/tenor.gif?ctx=share',
+    'https://tenor.com/view/on-pepe-frog-in-ugly-gif-14404607',
+    'https://tenor.com/view/run-smokey-use-your-legs-hotfoot-gif-15544418 "Wrong frog! Run! <:cirnoSpooketh:695126170575962172>"',
+    'https://giphy.com/gifs/kermit-vqj0SziyUHmnK',
+    'https://tenor.com/view/roblox-funny-oof-gaming-gif-17036380'
+]
 
 
 class Frogs(customs.cog.Cog):
@@ -427,27 +474,34 @@ class Frogs(customs.cog.Cog):
         try:
             reaction, catcher = await self.bot.wait_for('reaction_add', check=check, timeout=_TIMEOUT)
 
-            catcher_data = db_user_interface.fetch(self.bot.db_user, catcher.id)            
-            catcher_data['frogs_lifetime'] += 1
-            catcher_data['frogs_normal'] += 1
-            
-            # Workaround to update lifetime on implementation
-            if catcher_data['frogs_lifetime'] < catcher_data['frogs_normal']:
-                catcher_data['frogs_lifetime'] = catcher_data['frogs_normal']
+            # April Fools Update
+            if random() < 0.2:
+                embed = discord.Embed(
+                            title=_CONGRATS, 
+                            description=_DELTA + '\n\n' + _RESULT.format(old=catcher_data['frogs_normal']-1,new=catcher_data['frogs_normal']),
+                            color=0x9edbf7)
+                
+                embed.set_thumbnail(url=_URL_CAUGHT)
+                embed.set_footer(text=_TIP, icon_url=catcher.avatar_url)
+                
+                await msg_spawn.delete()
+                await channel.send(content=catcher.mention, embed=embed, delete_after=20)
 
-            embed = discord.Embed(
-                        title=_CONGRATS, 
-                        description=_DELTA + '\n\n' + _RESULT.format(old=catcher_data['frogs_normal']-1,new=catcher_data['frogs_normal']),
-                        color=0x9edbf7)
+                catcher_data = db_user_interface.fetch(self.bot.db_user, catcher.id)            
+                catcher_data['frogs_lifetime'] += 1
+                catcher_data['frogs_normal'] += 1
             
-            embed.set_thumbnail(url=_URL_CAUGHT)
-            embed.set_footer(text=_TIP, icon_url=catcher.avatar_url)
-            
-            await msg_spawn.delete()
-            await channel.send(content=catcher.mention, embed=embed, delete_after=20)
+                # Workaround to update lifetime on implementation
+                if catcher_data['frogs_lifetime'] < catcher_data['frogs_normal']:
+                    catcher_data['frogs_lifetime'] = catcher_data['frogs_normal']
 
-            db_user_interface.write(self.bot.db_user, catcher.id, catcher_data)
-        
+                db_user_interface.write(self.bot.db_user, catcher.id, catcher_data)        
+                
+            else:
+                await msg_spawn.edit(content=choice(_FOOLS_FROG))
+                await msg_spawn.clear_reactions()
+
+
         except asyncio.TimeoutError:
             await msg_spawn.delete()
             # await channel.send(_FAIL)
