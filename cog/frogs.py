@@ -476,6 +476,14 @@ class Frogs(customs.cog.Cog):
 
             # April Fools Update
             if random() < 0.2:
+                catcher_data = db_user_interface.fetch(self.bot.db_user, catcher.id)            
+                catcher_data['frogs_lifetime'] += 1
+                catcher_data['frogs_normal'] += 1
+            
+                # Workaround to update lifetime on implementation
+                if catcher_data['frogs_lifetime'] < catcher_data['frogs_normal']:
+                    catcher_data['frogs_lifetime'] = catcher_data['frogs_normal']
+                
                 embed = discord.Embed(
                             title=_CONGRATS, 
                             description=_DELTA + '\n\n' + _RESULT.format(old=catcher_data['frogs_normal']-1,new=catcher_data['frogs_normal']),
@@ -487,14 +495,7 @@ class Frogs(customs.cog.Cog):
                 await msg_spawn.delete()
                 await channel.send(content=catcher.mention, embed=embed, delete_after=20)
 
-                catcher_data = db_user_interface.fetch(self.bot.db_user, catcher.id)            
-                catcher_data['frogs_lifetime'] += 1
-                catcher_data['frogs_normal'] += 1
-            
-                # Workaround to update lifetime on implementation
-                if catcher_data['frogs_lifetime'] < catcher_data['frogs_normal']:
-                    catcher_data['frogs_lifetime'] = catcher_data['frogs_normal']
-
+                
                 db_user_interface.write(self.bot.db_user, catcher.id, catcher_data)        
                 
             else:
