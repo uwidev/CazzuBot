@@ -36,7 +36,7 @@ _OLD_RANKS_LIST = list(_OLD_RANKS.keys())
 # Summary Embed Override
 # ==============================================================
 _RANK_EMBED_TITLE = 'Rank Promotion! 🎉'
-_RANK_EMBED_DESCRIPTION = 'Congratulations {user}, you have reached a new rank!'
+_RANK_EMBED_DESCRIPTION = '**__Rank:__ {old} -> {new}**'
 _RANK_EMBED_THUMBNAIL = 'https://i.imgur.com/iBtT4e1.png'
 _RANK_EMBED_COLOR = 0x00B1F5
 
@@ -45,7 +45,7 @@ from tatsu.wrapper import ApiWrapper
 class Ranks(customs.cog.Cog):
     def __init__(self, bot):        
         super().__init__(bot)
-        self.bot.tatsu = ApiWrapper(key='LiT9zi3WWG-JEqVvWAMYSrsgbaREWuJON')
+        self.bot.tatsu = ApiWrapper(key='LiT9zi3WWG-JEqVvWAMYSrsgbaREWuJON') # DANGER PUBLIC API KEY
 
 
     @commands.command()
@@ -93,9 +93,6 @@ class Ranks(customs.cog.Cog):
         percent = (score - to_rank)/(to_next_rank - to_rank)
 
         exp = caz_rank_exp + (percent * (caz_next_rank_exp - caz_rank_exp))
-
-        print(exp)
-
 
 
     async def on_experience(self, message: discord.Message, level: int):
@@ -145,7 +142,9 @@ class Ranks(customs.cog.Cog):
                 print('\n//////////////////////////////////////////////////////////////')
                 print(f"/// {member} has changed rank from {'None' if rank_old is None else rank_old} to {rank_new}!")
                 print('//////////////////////////////////////////////////////////////\n')
-                embed = EmbedSummary(_RANK_EMBED_TITLE, _RANK_EMBED_DESCRIPTION, _RANK_EMBED_THUMBNAIL, _RANK_EMBED_COLOR, await self.summary_payload(message.guild.id, rank_old, rank_new))
+                
+                update_rank = _RANK_EMBED_DESCRIPTION.format(old='`None`' if rank_old is None else rank_old.mention, new=rank_new.mention)
+                embed = EmbedSummary(_RANK_EMBED_TITLE, update_rank, _RANK_EMBED_THUMBNAIL, _RANK_EMBED_COLOR)
 
             # Further calls that depend on ranks
             # NONE
@@ -172,10 +171,6 @@ class Ranks(customs.cog.Cog):
         ranks = copy(settings_rank_thresholds) # copy so we don't change the og rank list
         ranks[0] = None # used to as a floor for from_levels to so a user doesn't get a rank when below all ranks
         return min(ranks.items(), key=lambda kv: (1 if int(kv[0]) <= level else float('inf')) * abs(int(kv[0])-level))[1]
-
-    # @commands.command()
-    # async def test(self, ctx, l:int, n:int):
-    #     print(await self.is_rank_change(ctx.guild, l, n))
 
 
     async def is_rank_change(self, guild, level1, level2):

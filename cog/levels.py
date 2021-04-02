@@ -12,7 +12,7 @@ from discord.ext import commands
 
 import db_user_interface
 import customs.cog
-from utility import make_simple_embed_t, EmbedSummary
+from utility import make_simple_embed_t, EmbedSummary, make_simple_embed
 from cog.experience import \
     _EXP_BASE, _EXP_BONUS_FACTOR, _EXP_BUFF_RESET, \
     _EXP_COOLDOWN, _EXP_DECAY_FACTOR, _EXP_DECAY_FACTOR, \
@@ -27,11 +27,12 @@ from cog.experience import \
 # Level Change Embed
 # ==============================================================
 _LEVEL_EMBED_TITLE = 'Level Up! 🎉'
-_LEVEL_EMBED_DESCRIPTION = 'Congratulations {user}, you have reached a new level!'
-_LEVEL_EMBED_THUMBNAIL = 'https://i.imgur.com/kCHjymJ.png'
+_LEVEL_EMBED_DESCRIPTION = '**__Level:__ `{old}` -> `{new}`**'
+_LEVEL_EMBED_THUMBNAIL = None
 _LEVEL_EMBED_COLOR = 0x9EDDF5
 
-_EMBED_SUMMARY_TEMPLATE = '**{name}** **{old}** -> **{new}**'
+_EMBED_SUMMARY_TEMPLATE = None
+# _EMBED_SUMMARY_TEMPLATE = '**{name}** **{old}** -> **{new}**'
 
 
 # ==============================================================
@@ -159,10 +160,12 @@ class Levels(customs.cog.Cog):
         # Equation below will find the nearest fit level and round down.
         return min(Levels.LEVEL_THRESHOLDS.items(), key=lambda kv: (1 if exp >= kv[1] else float('inf')) * abs(kv[1]-exp))[0]
 
+
     @commands.command()
     async def exp_level(self, ctx, exp:float):
         # Equation below will find the nearest fit level and round down.
         await ctx.send(f'You will be level {await self.from_experience(exp)}.')
+
 
     @commands.command()
     async def level_exp(self, ctx, exp: float):
@@ -215,15 +218,34 @@ class Levels(customs.cog.Cog):
             
         # Summary
         if level_old < level_new:
-            embed = EmbedSummary(_LEVEL_EMBED_TITLE, _LEVEL_EMBED_DESCRIPTION, _LEVEL_EMBED_THUMBNAIL, _LEVEL_EMBED_COLOR, await self.summary_payload(level_old, level_new))
-        
+            level_update = _LEVEL_EMBED_DESCRIPTION.format(old=level_old, new=level_new)
+            embed = EmbedSummary(_LEVEL_EMBED_TITLE, level_update, _LEVEL_EMBED_THUMBNAIL, _LEVEL_EMBED_COLOR)
+            print('embed has been prepared for level up')
 
         # Further calls that depend on levels
         embed_ranks = await cog_ranks.on_experience(message, level_new)
         
         embed.merge_left(embed_ranks)
         return embed
-            
+    
+
+    @commands.command()
+    @commands.is_owner()
+    async def test(self, ctx):
+        embed = EmbedSummary(_LEVEL_EMBED_TITLE, _LEVEL_EMBED_DESCRIPTION, _LEVEL_EMBED_THUMBNAIL, _LEVEL_EMBED_COLOR, await self.summary_payload(31, 32))
+
+        discord_embed = make_simple_embed('Level **`31`** -> **`32`**.', _LEVEL_EMBED_TITLE)
+        # discord_embed = make_simple_embed('You are now level **`31`** -> **`32`**.')
+        # discord_embed.set_thumbnail(url=embed.thumbnail)
+        
+        discord_embed.color = embed.color
+        
+        # discord_embed.add_field(name = '__**Summary**__', 
+        #     value = '\n'.join(_EMBED_SUMMARY_TEMPLATE.format(name=key, old=val[0], new=val[1]) for key,val in embed.payload.items()),
+        #     inline = False)
+        
+        msg = await ctx.channel.send(embed=discord_embed)
+        await msg.edit(content=ctx.author.mention, embed=discord_embed)
 
 
     async def summary_order(self, summary, order:list):

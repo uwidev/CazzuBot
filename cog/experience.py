@@ -137,12 +137,19 @@ class Experience(customs.cog.Cog):
 
             embed = await self.bot.get_cog("Levels").on_experience(message, old_exp, member_exp)
             if embed.touched:
-                discord_embed = make_simple_embed_t(embed.title, embed.description.format(user=message.author.mention))
-                discord_embed.set_thumbnail(url=embed.thumbnail)
-                discord_embed.color = embed.color
-                discord_embed.add_field(name = '__**Summary**__', 
-                    value = '\n'.join(_EMBED_SUMMARY_TEMPLATE.format(name=key, old=val[0], new=val[1]) for key,val in embed.payload.items()),
-                    inline = False)
+                discord_embed = make_simple_embed_t(embed.title, '\n'.join(reversed(embed.description)))
+                
+                if embed.thumbnail is not None:
+                    discord_embed.set_thumbnail(url=embed.thumbnail)
+                if embed.color is not None:
+                    discord_embed.color = embed.color
+                
+                # discord_embed.add_field(name = '__**Summary**__', 
+                #     value = '\n'.join(_EMBED_SUMMARY_TEMPLATE.format(name=key, old=val[0], new=val[1]) for key,val in embed.payload.items()),
+                #     inline = False)
+
+                # Remove footer for smaller footprint
+                discord_embed.set_footer(text=discord.embeds.EmptyEmbed, icon_url=discord.embeds.EmptyEmbed)
                 
                 msg = await message.channel.send(embed=discord_embed)
                 await msg.edit(content=message.author.mention, embed=discord_embed)
