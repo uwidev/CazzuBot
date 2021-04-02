@@ -8,14 +8,23 @@ import asyncio
 PARSE_CLASS_VAR = re.compile(r'^(_[^_].*_)$')
 
 class EmbedSummary:
-    def __init__(self, title=None, description=None, thumbnail=None, color=None, payload=dict()):
+    def __init__(self, title=None, description=None, thumbnail=None, color=None):
         self.title = title
-        self.description = description
+
+        self.description = list()
+        if description is None:
+            pass
+        elif type(description) is list:
+            self.description.extend(description)
+        elif type(description) is str:
+            self.description.append(description)
+        else:
+            raise TypeError(f'EmbedSummary expected list, str, or None for paramater description, got {type(description)}')
+
         self.thumbnail = thumbnail
         self.color = color
-        self.payload = payload
         
-        if None not in self.__dict__.values():
+        if any(map(lambda x: x not in [None, list()], self.__dict__.values())):
             self.touched = True
         else:
             self.touched = False
@@ -30,10 +39,12 @@ class EmbedSummary:
         # Merges the embed passed to this embed. Anything not None on
         # other embed will override values on this embed.
         for k, v in other.__dict__.items():
-            if k == 'payload':
-                # Payload updated like this to ensure correct ordering when unpacked
-                other.payload.update(self.payload)
-                self.payload = other.payload
+            # if k == 'payload':
+            #     # Payload updated like this to ensure correct ordering when unpacked
+            #     other.payload.update(self.payload)
+            #     self.payload = other.payload
+            if k == 'description':
+                self.description.extend(other.description)
             elif k == 'touched':
                 self.touched = self.touched or other.touched
             elif v is not None:
