@@ -474,34 +474,26 @@ class Frogs(customs.cog.Cog):
         try:
             reaction, catcher = await self.bot.wait_for('reaction_add', check=check, timeout=_TIMEOUT)
 
-            # April Fools Update
-            if random() < 0.2:
-                catcher_data = db_user_interface.fetch(self.bot.db_user, catcher.id)            
-                catcher_data['frogs_lifetime'] += 1
-                catcher_data['frogs_normal'] += 1
+            catcher_data = db_user_interface.fetch(self.bot.db_user, catcher.id)            
+            catcher_data['frogs_lifetime'] += 1
+            catcher_data['frogs_normal'] += 1
+        
+            # Workaround to update lifetime on implementation
+            if catcher_data['frogs_lifetime'] < catcher_data['frogs_normal']:
+                catcher_data['frogs_lifetime'] = catcher_data['frogs_normal']
             
-                # Workaround to update lifetime on implementation
-                if catcher_data['frogs_lifetime'] < catcher_data['frogs_normal']:
-                    catcher_data['frogs_lifetime'] = catcher_data['frogs_normal']
-                
-                embed = discord.Embed(
-                            title=_CONGRATS, 
-                            description=_DELTA + '\n\n' + _RESULT.format(old=catcher_data['frogs_normal']-1,new=catcher_data['frogs_normal']),
-                            color=0x9edbf7)
-                
-                embed.set_thumbnail(url=_URL_CAUGHT)
-                embed.set_footer(text=_TIP, icon_url=catcher.avatar_url)
-                
-                await msg_spawn.delete()
-                await channel.send(content=catcher.mention, embed=embed, delete_after=20)
-
-                
-                db_user_interface.write(self.bot.db_user, catcher.id, catcher_data)        
-                
-            else:
-                await msg_spawn.edit(content=choice(_FOOLS_FROG))
-                await msg_spawn.clear_reactions()
-
+            embed = discord.Embed(
+                        title=_CONGRATS, 
+                        description=_DELTA + '\n\n' + _RESULT.format(old=catcher_data['frogs_normal']-1,new=catcher_data['frogs_normal']),
+                        color=0x9edbf7)
+            
+            embed.set_thumbnail(url=_URL_CAUGHT)
+            embed.set_footer(text=_TIP, icon_url=catcher.avatar_url)
+            
+            await msg_spawn.delete()
+            await channel.send(content=catcher.mention, embed=embed, delete_after=20)
+            
+            db_user_interface.write(self.bot.db_user, catcher.id, catcher_data)        
 
         except asyncio.TimeoutError:
             await msg_spawn.delete()
