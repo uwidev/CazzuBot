@@ -145,7 +145,7 @@ class Experience(customs.cog.Cog):
                     inline = False)
                 
                 msg = await message.channel.send(embed=discord_embed)
-                await msg.edit(content=message.author.mention, embed=embed)
+                await msg.edit(content=message.author.mention, embed=discord_embed)
             
             print(f'>> [EXP] {message.author}\t::\t{int(old_exp)} => {int(member_exp)}\t::\t{member_exp-old_exp:.2f}\t::\t{Experience._user_cooldown_[message.author.id][0]}')
             
