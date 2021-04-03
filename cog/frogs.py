@@ -29,8 +29,8 @@ import customs.cog
 
 # Later, read these vars from some db on startup
 _SPAWNRATE_DEFAULT = 7.0 #minutes
-_SPAWNRATE_SWING = 0 #within % offsets
-_TIMEOUT = 10   # seconds before frog disappears
+_SPAWNRATE_SWING = .1 #within % offsets
+_TIMEOUT = 120   # seconds before frog disappears
 # og 7, .1, 120
 
 
