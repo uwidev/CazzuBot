@@ -439,9 +439,9 @@ class Ranks(customs.cog.Cog):
                 db_member = db_user_interface.fetch(self.bot.db_user, tatsu_member.user_id)
                 # print(db_member['exp'], tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp))
                 old = db_member['exp']
-                cazzu_to_next_progress_exp = (tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp))
+                cazzu_extra_exp = (tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp))
                 
-                db_member['exp'] += caz_rank_exp + cazzu_to_next_progress_exp
+                db_member['exp'] += caz_rank_exp + cazzu_extra_exp
                 
             this_member = ctx.guild.get_member(tatsu_member.user_id)
             print(f"{this_member} adjusted exp from {old} to {db_member['exp']}")
