@@ -533,21 +533,28 @@ class Frogs(customs.cog.Cog):
             count = int((_EXP_FACTOR_CAP - (consumer_factor - 1)) / _EXP_FACTOR_PER_FROG)
             
             topic = 'Consuming **`{old}`** number of frogs will put you over the experience factor cap (**`x{cap}`**). Would you like to instead consume **`{count}`** frog(s) for the cap?'.format(old=old_count, cap=_EXP_FACTOR_CAP+1, count=int(count))
-            effects = 'Resulting frogs\n**`{old_frogs}`**->**`{new_frogs}`**\nResulting experience factor\n**`x{old_fact:.2f}`**->**`x{new_fact:.2f}`**'.format(old_frogs=consumer_frogs, new_frogs=consumer_frogs-count, old_fact=consumer_factor, new_fact=consumer_factor+count*_EXP_FACTOR_PER_FROG)
+            #effects = 'Resulting frogs\n**`{old_frogs}`**->**`{new_frogs}`**\nResulting experience factor\n**`x{old_fact:.2f}`**->**`x{new_fact:.2f}`**'.format(old_frogs=consumer_frogs, new_frogs=consumer_frogs-count, old_fact=consumer_factor, new_fact=consumer_factor+count*_EXP_FACTOR_PER_FROG)
             duration = '*This buff will last {long} minutes.*'.format(long=_EXP_FACTOR_BUFF_DURATION_NORMAL)
+            
+            effects = 'Resulting frogs\n**`{old_frogs}`**->**`{new_frogs}`**'.format(old_frogs=consumer_frogs, new_frogs=consumer_frogs-count)
+
 
             desc = topic + '\n\n' + effects + '\n\n' + duration
             confirmation_embed = make_simple_embed_t('Confirmation', desc)
         else:
             topic = '**Are you sure you\'d like you consume `{count}` frog(s) with the following effects?**'.format(count=count)
-            effects = 'Resulting frogs\n**`{old_frogs}`**->**`{new_frogs}`**\nResulting experience factor\n**`x{old_fact:.2f}`**->**`x{new_fact:.2f}`**'.format(old_frogs=consumer_frogs, new_frogs=consumer_frogs-count, old_fact=consumer_factor, new_fact=consumer_factor+count*_EXP_FACTOR_PER_FROG)
+            #effects = 'Resulting frogs\n**`{old_frogs}`**->**`{new_frogs}`**\nResulting experience factor\n**`x{old_fact:.2f}`**->**`x{new_fact:.2f}`**'.format(old_frogs=consumer_frogs, new_frogs=consumer_frogs-count, old_fact=consumer_factor, new_fact=consumer_factor+count*_EXP_FACTOR_PER_FROG)
             duration = '*This buff will last {long} minutes.*'.format(long=_EXP_FACTOR_BUFF_DURATION_NORMAL)
+                
+            effects = 'Resulting frogs\n**`{old_frogs}`**->**`{new_frogs}`**'.format(old_frogs=consumer_frogs, new_frogs=consumer_frogs-count)
+
 
             desc = topic + '\n\n' + effects + '\n\n' + duration
             confirmation_embed = make_simple_embed_t('Confirmation', desc)
         
         confirmation_embed.set_thumbnail(url='https://i.imgur.com/ybxI7pu.png')
-        confirmation = await ctx.send(embed=confirmation_embed)
+        deprecated_consume_msg = make_simple_embed_t("Consuming no longer apply experience factor", "Consume anyways?")
+        confirmation = await ctx.send(embed=deprecated_consume_msg)
         await confirmation.add_reaction('❌')
         await confirmation.add_reaction('✅')
         try:
@@ -579,7 +586,7 @@ class Frogs(customs.cog.Cog):
             expiration.start(consumer, count)
 
             confirmation_embed.title = 'Frog(s) have been consumed'
-            confirmation_embed.description = effects + '\n\n' + duration
+            confirmation_embed.description = effects# + '\n\n' + duration
             confirmation_embed.set_thumbnail(url='https://i.imgur.com/kCHjymJ.png')
             await confirmation.edit(content=consumer.mention, embed=confirmation_embed)
 
