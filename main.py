@@ -29,68 +29,64 @@ async def load_cogs():
     for file in os.listdir('cogs'):
         if file.endswith('.py'):
             try:
-                await bot.load_extension(f'cogs.{file[0:-3]}')
+                await bot.load_extension(f'cogs.{file[:-3]}')
+                print(f'{file[:-3]} has been loaded!')
             except Exception as e:
                 print(traceback.print_exception(e))
+    
+    print(bot.extensions)
 
 
 # turn cog reload into group command with check for admin perms
-# @bot.group()
-# async def cog(ctx: commands.Context):
-#     if ctx.channel.permissions_for(ctx.author).administrator:
-#         load_cogs()
+@commands.check(lambda ctx : ctx.message.author.guild_permissions.administrator)
+@bot.group()
+async def cog(ctx: commands.Context):
+    pass
 
 
-#     @commands.command()
-#     async def reload(self, ctx, *, ext_name):
-#         ext = 'cog.' + ext_name
-#         if ext not in self.bot.extensions:
-#             await ctx.send(embed=make_simple_embed_t('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
-#             raise commands.BadArgument
-        
-#         try:
-#             self.bot.reload_extension(ext)
-#             await ctx.send(embed=make_simple_embed_t('Success', f'{ext_name.capitalize()} has been reloaded'))
-#         except Exception as e:
-#             await ctx.send(embed=make_simple_embed_t('ERROR', 'There appears to be a problem with your code, baka.'))
-#             raise e
+@cog.command()
+async def reload(ctx, *, ext_name):
+    ext = 'cogs.' + ext_name
+    if ext not in bot.extensions:
+        await ctx.send(f"❌ cog {ext_name} does not exist")
+    
+    try:
+        await bot.reload_extension(ext)
+        await ctx.send(f"✅ cog {ext_name} has been reloaded")
+    except Exception as e:
+        await ctx.send(f"❌ cog {ext_name} was found but an error occured (probably within cog code)")
 
 
-#     @commands.command()
-#     async def load(self, ctx, ext_name):
-#         ext = ext_name + '.py'
-#         dir = os.listdir('cog')
-        
-#         if ext in dir:
-#             try:
-#                 self.bot.load_extension('cog.' + ext_name)
-#                 await ctx.send(embed=make_simple_embed_t('Success', f'{ext_name.capitalize()} has been loaded'))
-#             except Exception as e:
-#                 await ctx.send(embed=make_simple_embed_t('ERROR', 'Something terrible happened!'))
-#                 raise e
-#         else:
-#             await ctx.send(embed=make_simple_embed_t('ERROR', 'File doesn\'t exist or you can\'t spell!'))
+@cog.command()
+async def load(ctx, ext_name):
+    ext = ext_name + '.py'
+    dir = os.listdir('cogs')
+    
+    if ext in dir:
+        try:
+            await bot.load_extension('cogs.' + ext_name)
+            await ctx.send(f"✅ cog {ext_name} has been loaded")
+        except Exception as e:
+            await ctx.send(f"❌ cog {ext_name} was found but an error occured (probably within cog code)")
+    else:
+        await ctx.send(f"❌ cog {ext_name} does not exist")
 
 
-#     @commands.command()
-#     async def unload(self, ctx, ext_name):
-#         ext = 'cog.' + ext_name
-#         if ext not in self.bot.extensions:
-#             await ctx.send(embed=make_simple_embed_t('ERROR', 'Extension wasn\'t loaded to begin with!'))
-#             raise commands.BadArgument
-        
-#         dir = os.listdir('cog')
-#         if ext_name + '.py' in dir:
-#             try:
-#                 self.bot.unload_extension('cog.' + ext_name)
-#                 await ctx.send(embed=make_simple_embed_t('Success', f'{ext_name.capitalize()} has been unloaded'))
-#             except Exception as e:
-#                 await ctx.send(embed=make_simple_embed_t('ERROR', 'Something terrible happened!'))
-#                 raise e
-#         else:
-#             await ctx.send(embed=make_simple_embed_t('ERROR', 'Extension doesn\'t exist or you can\'t spell!'))
-
-
+@cog.command()
+async def unload(ctx, ext_name):
+    ext = 'cogs.' + ext_name
+    if ext not in bot.extensions:
+        await ctx.send(f'❌ cog {ext_name} wasn\'t loaded to begin with!')
+    
+    dir = os.listdir('cogs')
+    if ext_name + '.py' in dir:
+        try:
+            await bot.unload_extension('cogs.' + ext_name)
+            await ctx.send(f"✅ cog {ext_name} has been unloaded")
+        except Exception as e:
+            await ctx.send(f"❌ cog {ext_name} was found but an error occured (probably within cog code)")
+    else:
+        await ctx.send(f"❌ cog {ext_name} does not exist")
 
 
 if __name__ == "__main__":
