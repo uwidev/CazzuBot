@@ -147,7 +147,7 @@ class ReadOnlyDict(dict):
 
 async def is_custom_emoji(argument):
     '''Small helper function to see if an emoji is custom or unicode'''
-    if argument in emoji.UNICODE_EMOJI or argument in emoji.UNICODE_EMOJI_ALIAS:
+    if argument in emoji.UNICODE_EMOJI_ENGLISH or argument in emoji.UNICODE_EMOJI_ALIAS_ENGLISH:
         return False
     return True
 

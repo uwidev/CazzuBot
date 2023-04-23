@@ -19,6 +19,17 @@ class Listener(customs.cog.Cog):
 
 
     @commands.Cog.listener()
+    async def on_member_update(self, before, after):
+        roles_old = [role.id for role in before.roles]
+        roles_new = [role.id for role in after.roles]
+
+        if 921944439075778630 in roles_new and 921944439075778630 not in roles_old:
+            ch = before.guild.channels
+            for i in range(len(ch)):
+                if ch[i].id == 921950663494213633:
+                    await ch[i].send(f"{before.mention} is requesting image perms.")
+
+    @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
     # Called on any and all reactionss
     #
@@ -39,8 +50,11 @@ class Listener(customs.cog.Cog):
                 try:
                     role = payload.member.guild.get_role(verify_settings['role'])
                     if role not in payload.member.roles:
-                        await payload.member.add_roles(role)
+                        # Remove the Visitng Baka role from users so they can see the rest of the server
+                        await payload.member.remove_roles(payload.member.guild.get_role(968911056913199134))
                         
+                        await payload.member.add_roles(role)
+
                         # Automation for welcoming new members
                         welcome_settings = guild_conf['welcome']
                         if welcome_settings['op']:
@@ -197,7 +211,11 @@ class Listener(customs.cog.Cog):
                 
                     # Ensure message exists
                     try:
-                        await self.bot.get_channel(settings['channel']).fetch_message(settings['message'])
+                        pass
+                        #test = self.bot.get_channel(settings['channel'])
+                        #await test.fetch_message(settings['message'])
+                        # this doesn't fucking work for some reason
+                        # might have something to do with await? accessing it w/ different method?
                     except discord.NotFound:
                         affected = True
                         settings['op'] = False

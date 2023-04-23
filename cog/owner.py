@@ -31,6 +31,41 @@ class Owner(customs.cog.Cog):
         return False
 
 
+    @commands.command()
+    async def visiting(self, ctx):
+    # Gives all memebers of the server the visitng role baka if they
+    # don't have visitng role or club cirno membership
+        members = ctx.guild.members
+        visit_role = ctx.guild.get_role(968911056913199134)
+        membership = ctx.guild.get_role(468478131234275333)
+
+        for member in members:
+            if membership not in member.roles and visit_role not in member.roles:
+                print(f'Member {member} with roles {member.roles} adding Visiting...')
+                await member.add_roles(visit_role)
+            
+        await ctx.send("Operation complete!")
+
+
+    @commands.command()
+    async def scrape(self, ctx):
+        await ctx.send("Scraping images...", delete_after=3)
+        ch = ctx.channel
+
+        submitted = []
+
+        async for msg in ch.history(limit=100, oldest_first=True):
+            if msg.author.id in submitted:
+                continue
+
+            if msg.attachments:
+                print(f"scrapping message {msg.id}")
+                await msg.attachments[0].save(f"./trees/{msg.id}.png")
+            
+            submitted.append(msg.author.id)
+
+        await ctx.send("Complete!", delete_after=3)
+
     @commands.group()
     async def compile(self, ctx):
         pass
@@ -561,6 +596,16 @@ class Owner(customs.cog.Cog):
     async def embed(self, ctx):
         pass
 
+    @embed.command(name='makesig')
+    async def embed_makesig(self, ctx, *, content:str):
+        if '|' not in content:
+            await ctx.send('ERROR: There is no splitter | to split title and content!')
+
+        title, desc = content.split('|')
+        embed = make_simple_embed_t(title, desc)
+
+        await ctx.send(embed=embed)
+        
     @embed.command(name='make')
     async def embed_make(self, ctx, *, content:str):
         if '|' not in content:
@@ -568,6 +613,7 @@ class Owner(customs.cog.Cog):
 
         title, desc = content.split('|')
         embed = make_simple_embed_t(title, desc)
+        embed.set_footer(text=discord.Embed.Empty, icon_url=discord.Embed.Empty)
 
         await ctx.send(embed=embed)
         

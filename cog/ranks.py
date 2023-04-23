@@ -450,6 +450,80 @@ class Ranks(customs.cog.Cog):
             await quick_embed(ctx, 'success', f'{member.mention}\'s tatsu score has been migrated to Cazzubot!')
 
 
+    @ranks.command(name='migrate2')
+    @is_admin()
+    async def ranks_migrate2(self, ctx):
+        '''
+        This migrate looks at all users that are no longer in the server and adjusts their exp to what's on tatsu.
+        '''
+        if await request_user_confirmation(ctx, self.bot, 'Are you sure you want to migrate left member\'s server ranks to CazzuBot experience?', delete_after=True):
+            settings = db_guild_interface.fetch(self.bot.db_guild, ctx.guild.id)
+            ranks_threshold = settings['ranks']['level_thresholds']
+
+            threshold_inv = {v:k for k, v in ranks_threshold.items()}
+
+            ranks = await self.db_to_roles(ctx.guild)
+            
+            async with ctx.typing():
+                cog_level = self.bot.get_cog('Levels')
+                level_exp_map = self.bot.get_cog('Levels').LEVEL_THRESHOLDS
+                guild_members = ctx.guild.members
+
+                for i in range(0, 5):
+                    result = await self.bot.tatsu.get_guild_rankings(ctx.guild.id, offset=100*i)
+                    # result = await self.bot.tatsu.get_member_ranking(ctx.guild.id, ctx.author.id)
+                    for member in result.rankings:
+                        if ctx.guild.get_member(member.user_id) in guild_members:
+                            continue
+                        # member = result
+                        tatsu_score = member.score
+                        
+                        tatsu_rank = min(_OLD_RANKS.items(), key=lambda kv: (1 if int(kv[1]) <= tatsu_score else float('inf')) * abs(int(kv[1])-tatsu_score))[0]
+                        
+                        tatsu_to_rank = _OLD_RANKS[tatsu_rank]
+                        tatsu_next_rank = _OLD_RANKS_LIST[_OLD_RANKS_LIST.index(tatsu_rank) + 1]
+
+                        if tatsu_next_rank == 0: # it means they strongest, use different formula
+                            # print('user is strongest...')
+                            caz_strongest_score = await cog_level.level_exp(ctx, 100)
+                            # print(caz_strongest_score)
+
+                            tatsu_score_diff = tatsu_score - _OLD_RANKS[tatsu_rank]
+                            percent_more = tatsu_score_diff / _OLD_RANKS[tatsu_rank]
+
+                            extra_exp = caz_strongest_score * percent_more * 0.50
+
+                            db_member = db_user_interface.fetch(self.bot.db_user, member.user_id)
+                            old = db_member['exp']
+                            db_member['exp'] += extra_exp
+                        else:
+                            tatsu_to_next_rank = _OLD_RANKS[tatsu_next_rank]
+
+                            caz_rank_level = threshold_inv[tatsu_rank]
+                            caz_next_rank_level = threshold_inv[tatsu_next_rank]
+
+                            caz_rank_exp = await cog_level.level_exp(ctx, int(caz_rank_level))
+                            caz_next_rank_exp = await cog_level.level_exp(ctx, int(caz_next_rank_level))
+
+                            tatsu_progress_percent = (tatsu_score-tatsu_to_rank)/(tatsu_to_next_rank-tatsu_to_rank)
+                            
+                            # db_member = db_user_interface.fetch(self.bot.db_user, ctx.author.id)
+                            # print(db_member['exp'] + (tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp)))
+
+                            db_member = db_user_interface.fetch(self.bot.db_user, member.user_id)
+                            # print(db_member['exp'], tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp))
+                            old = db_member['exp']
+                            db_member['exp'] += (tatsu_progress_percent * (caz_next_rank_exp - caz_rank_exp))
+                            
+                        this_member = ctx.guild.get_member(member.user_id)
+                        # print(f"{this_member} adjusted exp from {old} to {db_member['exp']}")
+                        db_user_interface.write(self.bot.db_user, member.user_id, db_member)
+                    
+                    await asyncio.sleep(3)
+            
+            await quick_embed(ctx, 'success', f'Ranks have been migrated to Cazzubot!')
+
+
     # This migrate command determins the percent a user is from one rank the next rank and uses that percent
     # to determine how much exp to give a user form what they currently are. It is partially a migration but no not really.
     #
