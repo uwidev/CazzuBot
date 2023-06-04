@@ -2,8 +2,11 @@
 import discord
 from discord.ext import commands
 
+from utility import log  # What we use to log to console
+
 # Define the cog here. Change Echo to whatever you want.
 class Echo(commands.Cog):
+
     def __init__(self, bot):
         # This class needs a reference to the bot,
         # as it gets no references anywhere else.
@@ -14,7 +17,7 @@ class Echo(commands.Cog):
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction: discord.Reaction, user: discord.Member):
         # Listener parameters will vary based on the event.
-        if user.id == bot.owner_id:
+        if user.id == self.bot.owner_id:
             # A lot of methods are coroutines, and must be await'ed.
             await reaction.message.channel.send("Hello there...")
     

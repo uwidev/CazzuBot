@@ -1,28 +1,43 @@
 import os
 import traceback
+import logging
 
 import discord
 from discord.ext import commands
-import tinydb
+from tinydb import TinyDB
 
 from secret import TOKEN, OWNER_ID
 
+
+DEFAULT_DATABASE_TABLE = 'user'
+
+
+# Setup logging
+discord.utils.setup_logging()  # Log to console
+handler_file = logging.FileHandler(filename='discord.log',
+                              encoding='utf-8',
+                              mode='w')
+
+discord.utils.setup_logging(handler=handler_file)  # Log to file
 
 # Intents need to be set up to let discord know what we want for requests
 intents = discord.Intents.default()
 intents.message_content = True
 
-# Run bot
-bot = commands.Bot('d!', intents=intents, owner_id=OWNER_ID)
+bot = commands.Bot('d!',
+                   intents=intents,
+                   owner_id=OWNER_ID)
+
+_log = logging.getLogger(__name__)
 
 
 @bot.event
 async def on_ready():
-    print(f'Loading extensions...')
+    logging.info('Loading extensions...')
 
     await load_cogs()
 
-    print(f'Logged in as {bot.user.name}')
+    logging.info('Logged in as %s', bot.user.name)
 
 
 async def load_cogs():
@@ -30,15 +45,16 @@ async def load_cogs():
         if file.endswith('.py'):
             try:
                 await bot.load_extension(f'cogs.{file[:-3]}')
-                print(f'{file[:-3]} has been loaded!')
-            except Exception as e:
-                print(traceback.print_exception(e))
-    
-    print(bot.extensions)
+                logging.info('%s has been loaded!', file[:-3])
+            except (commands.ExtensionNotFound, 
+                    commands.ExtensionAlreadyLoaded,
+                    commands.NoEntryPointError,
+                    commands.ExtensionFailed) as err:
+                logging.error(err)
 
 
 # turn cog reload into group command with check for admin perms
-@commands.check(lambda ctx : ctx.message.author.guild_permissions.administrator)
+@commands.check(lambda ctx: ctx.message.author.guild_permissions.administrator)
 @bot.group()
 async def cog(ctx: commands.Context):
     pass
@@ -53,8 +69,9 @@ async def reload(ctx, *, ext_name):
     try:
         await bot.reload_extension(ext)
         await ctx.send(f"✅ cog {ext_name} has been reloaded")
-    except Exception as e:
-        await ctx.send(f"❌ cog {ext_name} was found but an error occured (probably within cog code)")
+    except (commands.ExtensionNotLoaded, commands.ExtensionNotFound,
+            commands.NoEntryPointError, commands.ExtensionFailed) as err:
+        logging.error(err)
 
 
 @cog.command()
@@ -66,8 +83,11 @@ async def load(ctx, ext_name):
         try:
             await bot.load_extension('cogs.' + ext_name)
             await ctx.send(f"✅ cog {ext_name} has been loaded")
-        except Exception as e:
-            await ctx.send(f"❌ cog {ext_name} was found but an error occured (probably within cog code)")
+        except (commands.ExtensionNotFound, 
+                commands.ExtensionAlreadyLoaded,
+                commands.NoEntryPointError,
+                commands.ExtensionFailed) as err:
+            logging.error(err)
     else:
         await ctx.send(f"❌ cog {ext_name} does not exist")
 
@@ -83,11 +103,15 @@ async def unload(ctx, ext_name):
         try:
             await bot.unload_extension('cogs.' + ext_name)
             await ctx.send(f"✅ cog {ext_name} has been unloaded")
-        except Exception as e:
-            await ctx.send(f"❌ cog {ext_name} was found but an error occured (probably within cog code)")
+        except (commands.ExtensionNotFound, 
+                commands.ExtensionNotLoaded) as err:
+            logging.error(err)
     else:
         await ctx.send(f"❌ cog {ext_name} does not exist")
 
 
 if __name__ == "__main__":
-    bot.run(TOKEN)
+    bot.db = TinyDB('db.json')
+    bot.db.default_table_name = DEFAULT_DATABASE_TABLE
+
+    bot.run(TOKEN, log_handler=None)  # Ignore built-in logger
