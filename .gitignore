@@ -1,6 +1,6 @@
 .vscode
 __pycache__
-venv
+venv/
 .python-version
 *.pem
 *.ppk
