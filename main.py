@@ -1,5 +1,4 @@
 import os
-import traceback
 import logging
 
 import discord
@@ -14,11 +13,13 @@ DEFAULT_DATABASE_TABLE = 'user'
 
 # Setup logging
 discord.utils.setup_logging()  # Log to console
-handler_file = logging.FileHandler(filename='discord.log',
-                              encoding='utf-8',
-                              mode='w')
 
-discord.utils.setup_logging(handler=handler_file)  # Log to file
+handler_file = logging.FileHandler(filename='discord.log',
+                                   encoding='utf-8',
+                                   mode='w')
+
+_log = logging.getLogger(__name__)
+_log.addHandler(handler_file)
 
 # Intents need to be set up to let discord know what we want for requests
 intents = discord.Intents.default()
@@ -27,8 +28,6 @@ intents.message_content = True
 bot = commands.Bot('d!',
                    intents=intents,
                    owner_id=OWNER_ID)
-
-_log = logging.getLogger(__name__)
 
 
 @bot.event
@@ -77,9 +76,9 @@ async def reload(ctx, *, ext_name):
 @cog.command()
 async def load(ctx, ext_name):
     ext = ext_name + '.py'
-    dir = os.listdir('cogs')
+    dir_cog = os.listdir('cogs')
     
-    if ext in dir:
+    if ext in dir_cog:
         try:
             await bot.load_extension('cogs.' + ext_name)
             await ctx.send(f"✅ cog {ext_name} has been loaded")
@@ -98,8 +97,8 @@ async def unload(ctx, ext_name):
     if ext not in bot.extensions:
         await ctx.send(f'❌ cog {ext_name} wasn\'t loaded to begin with!')
     
-    dir = os.listdir('cogs')
-    if ext_name + '.py' in dir:
+    dir_cog = os.listdir('cogs')
+    if ext_name + '.py' in dir_cog:
         try:
             await bot.unload_extension('cogs.' + ext_name)
             await ctx.send(f"✅ cog {ext_name} has been unloaded")

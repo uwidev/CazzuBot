@@ -2,7 +2,7 @@
 import discord
 from discord.ext import commands
 
-from utility import log  # What we use to log to console
+from utility import _log  # What we use to log to console
 
 # Define the cog here. Change Echo to whatever you want.
 class Echo(commands.Cog):
