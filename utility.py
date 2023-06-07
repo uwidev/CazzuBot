@@ -1,4 +1,6 @@
-# Helper functions
+"""
+General-purpose functions.
+"""
 import logging
 import asyncio
 
@@ -60,8 +62,11 @@ def author_confirm(confirmation_msg: str = "Please confirm.",
 
 
 def update_dict(old: dict, ref: dict, new: dict = {}) -> dict:
-    """Returns a new dictionary that matches the reference, retaining values.
+    """Returns a new dict that matches reference dict, retaining values.
     
+    Does not remap fields, and is something that might need to be implemented
+    in the future when making restructuring existing fields.
+
     Example
         Input
         old = {'a': 3, 'b': {'x': 5}, 'c': 7}

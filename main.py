@@ -1,3 +1,6 @@
+"""
+Runs the bot.
+"""
 import os
 import logging
 
@@ -6,9 +9,10 @@ from discord.ext import commands
 from tinydb import TinyDB
 
 from secret import TOKEN, OWNER_ID
+from db_interface import Table
 
 
-DEFAULT_DATABASE_TABLE = 'user'
+DEFAULT_DATABASE_TABLE = Table.USER_EXPERIENCE.name
 
 
 # Setup logging
@@ -64,7 +68,7 @@ async def reload(ctx, *, ext_name):
     ext = 'cogs.' + ext_name
     if ext not in bot.extensions:
         await ctx.send(f"❌ cog {ext_name} does not exist")
-    
+
     try:
         await bot.reload_extension(ext)
         await ctx.send(f"✅ cog {ext_name} has been reloaded")
