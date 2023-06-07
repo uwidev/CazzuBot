@@ -10,9 +10,16 @@ from discord.ext import commands
 from discord.ext.commands.context import Context
 
 import db_interface as dbi
+import db_settings_aggregator as dsa
+from db_settings_aggregator import Table, Scope
 
 
 _log = logging.getLogger(__name__)
+
+
+settings = {
+
+}
 
 
 class Moderation(commands.Cog):
@@ -31,4 +38,5 @@ class Moderation(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
+    dsa.register_settings(Table.GUILD_SETTINGS, Scope.DEFAULT, settings)
     await bot.add_cog(Moderation(bot))

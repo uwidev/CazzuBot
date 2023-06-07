@@ -15,29 +15,8 @@ from tinydb import TinyDB, Query
 from tinydb.table import Document
 
 from utility import _log, ReadOnlyDict, update_dict
-
-
-GUILD_TEMPLATE_SETTINGS = ReadOnlyDict({
-    'guild': {},
-    'frogs': {}
-})
-
-
-GUILD_TEMPLATE_MODLOGS = ReadOnlyDict({
-    
-})
-
-
-USER_TEMPLATE_EXPERIENCE = ReadOnlyDict({
-    'experience': 0,
-})
-
-
-class Table(Enum):
-    """Enum mapping from database name to their expected schema."""
-    GUILD_SETTINGS  = GUILD_TEMPLATE_SETTINGS
-    GUILD_MODLOGS   = GUILD_TEMPLATE_MODLOGS
-    USER_EXPERIENCE = USER_TEMPLATE_EXPERIENCE
+import db_settings_aggregator as dsa
+from db_settings_aggregator import Table, Scope
 
 
 _log = logging.getLogger(__name__)
@@ -46,7 +25,7 @@ _log = logging.getLogger(__name__)
 def valid_table(func):
     """Decorator to ensure table is valid."""
     def check(db: TinyDB, table: Table, id_: int, *args, **kwargs):
-        if not table in Table:
+        if table not in Table:
             raise Invalidtable(table)
 
         return func(db, table, id_, *args, **kwargs)
@@ -74,9 +53,9 @@ def initialize(db: TinyDB, table: Table, id_: int):
 
 def upgrade(db: TinyDB):
     """Converts ALL table entries to new templates.
-    
+
     It does this by removing the entry, creating an updated entry, then
-    re-enters it. It will retain any pre-existing values, delete deprecated 
+    re-enters it. It will retain any pre-existing values, delete deprecated
     fields, and add new fields with default values.
     """
     for table in Table:
@@ -89,7 +68,7 @@ def upgrade(db: TinyDB):
 
 def get(db: TinyDB, table: Table, id_: int):
     """Returns the guild's .
-    
+
     If the guild does not exist, raise exception.
     """
     return db.table(table.name).get(doc_id=id_)
