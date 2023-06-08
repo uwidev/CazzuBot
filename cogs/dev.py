@@ -1,21 +1,16 @@
-"""
-Developer commands for sandbox purposes
-"""
+"""Developer commands for sandbox purposes."""
 import logging
 
-import discord
 from discord.ext import commands
 
 import db_interface as dbi
 from db_interface import Table
-from utility import author_confirm
 
 
 _log = logging.getLogger(__name__)
 
 
 class Dev(commands.Cog):
-
     def __init__(self, bot):
         self.bot = bot
 
@@ -24,7 +19,7 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def test(self, ctx):
-        _log.info('%s is the bot owner.', ctx.author)
+        _log.info("%s is the bot owner.", ctx.author)
 
     @commands.command()
     async def write(self, ctx: commands.Context):

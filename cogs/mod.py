@@ -1,25 +1,20 @@
-"""
-This cog contains the implementation of all things related moderation.
+"""Contains the implementation of all things related moderation.
 
 TODO Create customized user group and permissions
 """
 import logging
 
-import discord
 from discord.ext import commands
 from discord.ext.commands.context import Context
 
-import db_interface as dbi
 import db_settings_aggregator as dsa
-from db_settings_aggregator import Table, Scope
+from db_settings_aggregator import Scope, Table
 
 
 _log = logging.getLogger(__name__)
 
 
-settings = {
-
-}
+settings = {}
 
 
 class Moderation(commands.Cog):
@@ -28,9 +23,7 @@ class Moderation(commands.Cog):
 
     def cog_check(self, ctx: Context) -> bool:
         perms = ctx.channel.permissions_for(ctx.author)
-        return any([perms.moderate_members,
-                    perms.kick_members,
-                    perms.ban_members])
+        return any([perms.moderate_members, perms.kick_members, perms.ban_members])
 
     @commands.command()
     async def mod_check(self, ctx: Context):

@@ -1,5 +1,4 @@
-"""
-Manages the database.
+"""Manages the database.
 
 All calls must explicitly state what table to call to.
 
@@ -9,24 +8,23 @@ speeds up lookup times slightly, but has yet to actually be measured.
 TinyDB Reference: https://tinydb.readthedocs.io/en/latest/index.html
 """
 import logging
-from enum import Enum
 
-from tinydb import TinyDB, Query
+from tinydb import TinyDB
 from tinydb.table import Document
 
-from utility import _log, ReadOnlyDict, update_dict
-import db_settings_aggregator as dsa
-from db_settings_aggregator import Table, Scope
+from db_settings_aggregator import Table
+from utility import update_dict
 
 
 _log = logging.getLogger(__name__)
 
 
 def valid_table(func):
-    """Decorator to ensure table is valid."""
+    """Check to see if the table is valid given a database."""
+
     def check(db: TinyDB, table: Table, id_: int, *args, **kwargs):
         if table not in Table:
-            raise Invalidtable(table)
+            raise InvalidtableError(table)
 
         return func(db, table, id_, *args, **kwargs)
 
@@ -35,7 +33,7 @@ def valid_table(func):
 
 @valid_table
 def insert(db: TinyDB, table: Table, id_: int):
-    """Inserts a new templated entry into the table."""
+    """Insert a table into the given database."""
     db_table = db.table(table.name)
     template = dict(table.value)
     db_table.insert(Document(template, id_))
@@ -43,7 +41,7 @@ def insert(db: TinyDB, table: Table, id_: int):
 
 @valid_table
 def initialize(db: TinyDB, table: Table, id_: int):
-    """Deletes an existing entry and inserts a templated version."""
+    """Delete the table matching the id and insert from template."""
     template = dict(table.value)
 
     db_table = db.table(table.name)
@@ -51,43 +49,45 @@ def initialize(db: TinyDB, table: Table, id_: int):
     db_table.insert(Document(template, id_))
 
 
-def upgrade(db: TinyDB):
-    """Converts ALL table entries to new templates.
+def migrate(db: TinyDB):
+    """Migrate outdated schema to new schema.
 
-    It does this by removing the entry, creating an updated entry, then
+    It does this by removing the document, creating an updated document, then
     re-enters it. It will retain any pre-existing values, delete deprecated
     fields, and add new fields with default values.
     """
     for table in Table:
         db_table = db.table(table.name)
-        for entry in iter(db_table):
-            upgraded = update_dict(entry, dict(table.value), {})
-            db_table.remove(doc_ids=[entry.doc_id])
-            db_table.insert(Document(upgraded, entry.doc_id))
+        for doc in iter(db_table):
+            upgraded = update_dict(doc, dict(table.value), {})
+            db_table.remove(doc_ids=[doc.doc_id])
+            db_table.insert(Document(upgraded, doc.doc_id))
 
 
 def get(db: TinyDB, table: Table, id_: int):
-    """Returns the guild's .
+    """Return docuemnt given the table and id.
 
     If the guild does not exist, raise exception.
     """
     return db.table(table.name).get(doc_id=id_)
 
 
-class Invalidtable(Exception):
+class InvalidtableError(Exception):
     def __init__(self, table: Table):
-        msg = f'Tried inserting data into nonexistant table {table.name}!'
+        msg = f"Tried inserting data into nonexistant table {table.name}!"
         super().__init__(msg)
 
 
-class UniqueIdEnforced(Exception):
+class UniqueIdEnforcedError(Exception):
     def __init__(self, table: Table, id: int):
-        msg = (f'This operation on table {table.name} with id {id} only '
-               f'allows unique id\'s!')
+        msg = (
+            f"This operation on table {table.name} with id {id} only "
+            f"allows unique id's!"
+        )
         super().__init__(msg)
 
 
-class NotRegistered(Exception):
+class NotRegisteredError(Exception):
     def __init__(self, table: Table, id: int):
-        msg = (f'id {id} does not exist in table {table.name}!')
+        msg = f"id {id} does not exist in table {table.name}!"
         super().__init__(msg)
