@@ -12,8 +12,8 @@ import logging
 from tinydb import TinyDB
 from tinydb.table import Document
 
-from db_settings_aggregator import Table
-from utility import update_dict
+from src.db_settings_aggregator import Table
+from src.utility import update_dict
 
 
 _log = logging.getLogger(__name__)

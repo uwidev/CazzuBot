@@ -6,11 +6,13 @@ import discord
 from discord.ext import commands
 from tinydb import TinyDB
 
-from db_interface import Table
 from secret import OWNER_ID, TOKEN
+from src.db_interface import Table
 
 
 DEFAULT_DATABASE_TABLE = Table.USER_EXPERIENCE.name
+EXTENSIONS_IMPORT_PATH = r"src.extensions"
+EXTENSIONS_PATH = r"src/extensions"
 
 
 # Setup logging
@@ -38,10 +40,10 @@ async def on_ready():
 
 
 async def load_extensions():
-    for file in os.listdir("cogs"):
+    for file in os.listdir(EXTENSIONS_PATH):
         if file.endswith(".py"):
             try:
-                await bot.load_extension(f"cogs.{file[:-3]}")
+                await bot.load_extension(f"{EXTENSIONS_IMPORT_PATH}.{file[:-3]}")
                 _log.info("|\t> %s has been loaded!", file[:-3])
             except (
                 commands.ExtensionNotFound,
@@ -61,7 +63,7 @@ async def cog(ctx: commands.Context):
 
 @cog.command()
 async def reload(ctx, *, ext_name):
-    ext = "cogs." + ext_name
+    ext = f"{EXTENSIONS_IMPORT_PATH}.{ext_name}"
     if ext not in bot.extensions:
         await ctx.send(f"❌ cog {ext_name} does not exist")
 
@@ -79,12 +81,12 @@ async def reload(ctx, *, ext_name):
 
 @cog.command()
 async def load(ctx, ext_name):
-    ext = ext_name + ".py"
-    dir_cog = os.listdir("cogs")
+    ext = f"{EXTENSIONS_IMPORT_PATH}.{ext_name}"
+    extensions = os.listdir(EXTENSIONS_PATH)
 
-    if ext in dir_cog:
+    if ext in extensions:
         try:
-            await bot.load_extension("cogs." + ext_name)
+            await bot.load_extension(f"{EXTENSIONS_IMPORT_PATH}.{ext_name}")
             await ctx.send(f"✅ cog {ext_name} has been loaded")
         except (
             commands.ExtensionNotFound,
@@ -99,14 +101,14 @@ async def load(ctx, ext_name):
 
 @cog.command()
 async def unload(ctx, ext_name):
-    ext = "cogs." + ext_name
+    ext = f"{EXTENSIONS_IMPORT_PATH}.{ext_name}"
     if ext not in bot.extensions:
         await ctx.send(f"❌ cog {ext_name} wasn't loaded to begin with!")
 
-    dir_cog = os.listdir("cogs")
-    if ext_name + ".py" in dir_cog:
+    extensions = os.listdir(EXTENSIONS_PATH)
+    if ext_name + ".py" in extensions:
         try:
-            await bot.unload_extension("cogs." + ext_name)
+            await bot.unload_extension(f"{EXTENSIONS_IMPORT_PATH}.{ext_name}")
             await ctx.send(f"✅ cog {ext_name} has been unloaded")
         except (commands.ExtensionNotFound, commands.ExtensionNotLoaded) as err:
             _log.error(err)

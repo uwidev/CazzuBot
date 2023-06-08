@@ -3,8 +3,8 @@ import logging
 
 from discord.ext import commands
 
-import db_interface as dbi
-from db_interface import Table
+import src.db_interface as dbi
+from src.db_interface import Table
 
 
 _log = logging.getLogger(__name__)

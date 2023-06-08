@@ -7,8 +7,8 @@ import logging
 from discord.ext import commands
 from discord.ext.commands.context import Context
 
-import db_settings_aggregator as dsa
-from db_settings_aggregator import Scope, Table
+import src.db_settings_aggregator as dsa
+from src.db_settings_aggregator import Scope, Table
 
 
 _log = logging.getLogger(__name__)
