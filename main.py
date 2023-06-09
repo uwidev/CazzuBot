@@ -81,39 +81,42 @@ async def reload(ctx, *, ext_name):
 
 @cog.command()
 async def load(ctx, ext_name):
-    ext = f"{EXTENSIONS_IMPORT_PATH}.{ext_name}"
     extensions = os.listdir(EXTENSIONS_PATH)
 
-    if ext in extensions:
-        try:
-            await bot.load_extension(f"{EXTENSIONS_IMPORT_PATH}.{ext_name}")
-            await ctx.send(f"✅ cog {ext_name} has been loaded")
-        except (
-            commands.ExtensionNotFound,
-            commands.ExtensionAlreadyLoaded,
-            commands.NoEntryPointError,
-            commands.ExtensionFailed,
-        ) as err:
-            _log.error(err)
-    else:
+    if ext_name not in map(lambda x: x[:-3], extensions):
         await ctx.send(f"❌ cog {ext_name} does not exist")
+        return
+
+    try:
+        await bot.load_extension(f"{EXTENSIONS_IMPORT_PATH}.{ext_name}")
+        await ctx.send(f"✅ cog {ext_name} has been loaded")
+    except (
+        commands.ExtensionNotFound,
+        commands.ExtensionAlreadyLoaded,
+        commands.NoEntryPointError,
+        commands.ExtensionFailed,
+    ) as err:
+        _log.error(err)
 
 
 @cog.command()
 async def unload(ctx, ext_name):
     ext = f"{EXTENSIONS_IMPORT_PATH}.{ext_name}"
+
     if ext not in bot.extensions:
         await ctx.send(f"❌ cog {ext_name} wasn't loaded to begin with!")
+        return
 
     extensions = os.listdir(EXTENSIONS_PATH)
-    if ext_name + ".py" in extensions:
-        try:
-            await bot.unload_extension(f"{EXTENSIONS_IMPORT_PATH}.{ext_name}")
-            await ctx.send(f"✅ cog {ext_name} has been unloaded")
-        except (commands.ExtensionNotFound, commands.ExtensionNotLoaded) as err:
-            _log.error(err)
-    else:
+    if ext_name + ".py" not in extensions:
         await ctx.send(f"❌ cog {ext_name} does not exist")
+        return
+
+    try:
+        await bot.unload_extension(f"{EXTENSIONS_IMPORT_PATH}.{ext_name}")
+        await ctx.send(f"✅ cog {ext_name} has been unloaded")
+    except (commands.ExtensionNotFound, commands.ExtensionNotLoaded) as err:
+        _log.error(err)
 
 
 async def setup():
