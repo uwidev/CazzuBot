@@ -22,7 +22,8 @@ handler_file = logging.FileHandler(
     filename="logs/discord.log", encoding="utf-8", mode="w"
 )
 
-discord.utils.setup_logging(handler=handler_file)
+discord.utils.setup_logging(handler=handler_file, level=logging.DEBUG)
+# debug still shows up on console, needs to be file ONLY
 
 _log = logging.getLogger(__name__)
 

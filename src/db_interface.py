@@ -8,43 +8,45 @@ speeds up lookup times slightly, but has yet to actually be measured.
 TinyDB Reference: https://tinydb.readthedocs.io/en/latest/index.html
 """
 import logging
+from typing import List
 
-from tinydb import TinyDB
+from tinydb import TinyDB, where
 from tinydb.table import Document
 
-from src.db_settings_aggregator import Table
+from src.db_aggregator import Table
 from src.utility import update_dict
 
 
 _log = logging.getLogger(__name__)
 
 
-def valid_table(func):
-    """Check to see if the table is valid given a database."""
+# def valid_table(func):
+#     """Check to see if the table is valid given a database."""
 
-    def check(db: TinyDB, table: Table, id_: int, *args, **kwargs):
-        if table not in Table:
-            raise InvalidtableError(table)
+#     def check(db: TinyDB, table: str, id_: int, *args, **kwargs):
+#         if table not in Table:
+#             raise InvalidtableError(table)
 
-        return func(db, table, id_, *args, **kwargs)
+#         return func(db, table, id_, *args, **kwargs)
 
-    return check
-
-
-@valid_table
-def insert(db: TinyDB, table: Table, id_: int):
-    """Insert a table into the given database."""
-    db_table = db.table(table.name)
-    template = dict(table.value)
-    db_table.insert(Document(template, id_))
+#     return check
 
 
-@valid_table
-def initialize(db: TinyDB, table: Table, id_: int):
+# @valid_table
+def insert_document(db: TinyDB, table: str, data: dict, id_: int = None):
+    """Insert onto the table an entry with doc id as id_."""
+    db_table = db.table(table)
+
+    if id_:
+        db_table.insert(Document(data, id_))
+    else:
+        db_table.insert(data)
+
+
+# @valid_table
+def initialize(db: TinyDB, table: str, template: dict, id_: int = None):
     """Delete the table matching the id and insert from template."""
-    template = dict(table.value)
-
-    db_table = db.table(table.name)
+    db_table = db.table(table)
     db_table.remove(doc_ids=[id_])
     db_table.insert(Document(template, id_))
 
@@ -70,6 +72,11 @@ def get(db: TinyDB, table: Table, id_: int):
     If the guild does not exist, raise exception.
     """
     return db.table(table.name).get(doc_id=id_)
+
+
+def get_guild_modlog(db: TinyDB, gid: int) -> List[Document]:
+    """Return modlogs for a specific guild."""
+    return db.table("MODLOG").search(where("gid") == gid)
 
 
 class InvalidtableError(Exception):

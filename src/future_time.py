@@ -2,15 +2,24 @@
 
 Also supports natural language for absolute date/time.
 
+Bot should always calculate in UCT timezone, only changing timezone when interacing
+with users. This mean that time should always be converted when users input time, and
+when outputting time.
+
 TODO  [ ]   Need to make sure timezone is independent from host. In other words,
             timezone needs to be explicitly set, probably to UTC.
       [ ]   Timezones should be able to be set as a setting for users.
 """
+import logging
 import re
 from typing import Annotated
 
 import parsedatetime
 import pendulum
+from pytz import timezone
+
+
+_log = logging.getLogger(__name__)
 
 
 shorthand_relative_time = re.compile(r"(\d+w|\d+d|\d+h|\d+m|\d+s)(?=\w?)(?=\d|$)")
@@ -38,7 +47,7 @@ def future_time(arg: str) -> pendulum.DateTime:
 
     datetime_obj, parse_status = parsedatetime.Calendar().parseDT(
         transformed_arg,
-        sourceTime=pendulum.now(),
+        sourceTime=pendulum.now(tz=timezone("UTC")),  # Force UCT, ignore local machine
     )
 
     if not parse_status:
@@ -47,9 +56,20 @@ def future_time(arg: str) -> pendulum.DateTime:
     return pendulum.parser.parse(str(datetime_obj))
 
 
+def is_future(past: pendulum.DateTime, future: pendulum.DateTime):
+    """Check if the second argument is a future time of the first."""
+    return past < future
+
+
 class InvalidTimeError(Exception):
     def __init__(self, arg):
         msg = f"{arg} is not a valid time"
+        super().__init__(msg)
+
+
+class NotFutureError(Exception):
+    def __init__(self, arg):
+        msg = f"{arg} is not a time in the future!"
         super().__init__(msg)
 
 

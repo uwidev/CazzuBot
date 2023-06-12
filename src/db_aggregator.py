@@ -5,6 +5,10 @@ Values should be already converted to appropriate types.
 from enum import Enum
 
 
+# Settings are resolved...?
+#
+# Current idea is to almost have this like a chainmap, such that field-values set on
+# narrower scopes have precedent over broader scopes.
 GUILD_TEMPLATE_SETTINGS = {
     "DEFAULT": {},
     "GLOBAL": {},
@@ -13,7 +17,7 @@ GUILD_TEMPLATE_SETTINGS = {
     "USER": {},
 }
 
-
+# Uh... see above.
 USER_TEMPLATE_SETTINGS = {
     "DEFAULT": {},
     "GLOBAL": {},
@@ -21,7 +25,12 @@ USER_TEMPLATE_SETTINGS = {
     "CHANNEL": {},
 }
 
+# Stores a mapping of module -> time to run at -> data
+# Task should contain all data needed to execute the task, which should be defined at
+# the given module.
+TASKS = {}
 
+# Stores a mapping of guild id -> user id -> ModLog
 GUILD_TEMPLATE_MODLOGS = {}
 
 

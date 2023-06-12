@@ -23,8 +23,8 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def write(self, ctx: commands.Context):
-        dbi.insert(self.bot.db, Table.GUILD_SETTINGS, ctx.guild.id)
-        dbi.insert(self.bot.db, Table.GUILD_MODLOGS, ctx.guild.id)
+        dbi.insert_document(self.bot.db, Table.GUILD_SETTINGS, ctx.guild.id)
+        dbi.insert_document(self.bot.db, Table.GUILD_MODLOGS, ctx.guild.id)
 
     @commands.command()
     async def init(self, ctx: commands.Context):
