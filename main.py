@@ -1,16 +1,26 @@
-"""Runs the bot."""
+"""Runs the bot.
+
+TODO: Convert all db operations to asyncio-aware.
+"""
 import logging
 import os
 
 import discord
+from aiotinydb import AIOTinyDB
+from aiotinydb.storage import AIOJSONStorage
 from discord.ext import commands
-from tinydb import TinyDB
 
+import src.task_manager as tmanager
 from secret import OWNER_ID, TOKEN
-from src.db_interface import Table
+from src.aio_middleware_patch import AIOSerializationMiddleware
+from src.serializers import (
+    ModLogStatusSerializer,
+    ModLogtypeSerializer,
+    PDateTimeSerializer,
+)
 
 
-DEFAULT_DATABASE_TABLE = Table.USER_EXPERIENCE.name
+# DEFAULT_DATABASE_TABLE = Table.USER_EXPERIENCE.name
 EXTENSIONS_IMPORT_PATH = r"src.extensions"
 EXTENSIONS_PATH = r"src/extensions"
 
@@ -33,6 +43,14 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot("d!", intents=intents, owner_id=OWNER_ID)
+
+
+# Serializers
+serializers = {
+    PDateTimeSerializer(): "PDateTime",
+    ModLogtypeSerializer(): "ModLogType",
+    ModLogStatusSerializer(): "ModLogStatus",
+}
 
 
 @bot.event
@@ -122,11 +140,20 @@ async def unload(ctx, ext_name):
 
 async def setup():
     _log.info("Loading database...")
-    bot.db = TinyDB("db.json")
-    bot.db.default_table_name = DEFAULT_DATABASE_TABLE
+    serialization = AIOSerializationMiddleware(AIOJSONStorage)
+    for s in serializers.items():
+        serialization.register_serializer(s[0], s[1])
+    bot.db = AIOTinyDB("db.json", storage=serialization)
+    # bot.db.default_table_name = DEFAULT_DATABASE_TABLE
 
     _log.info("Loading extensions...")
     await load_extensions()
+
+    _log.info("Loading tasks...")
+    await tmanager.get_tasks(bot.db)
+
+    _log.info("Resolving tasks...")
+    _log.warning("Task resolution not yet implemented!")
 
 
 if __name__ == "__main__":

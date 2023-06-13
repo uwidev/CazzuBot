@@ -36,7 +36,7 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def get(self, ctx: commands.Context):
-        res = dbi.get(self.bot.db, Table.GUILD_SETTINGS, ctx.guild.id)
+        res = dbi.get_by_id(self.bot.db, Table.GUILD_SETTINGS, ctx.guild.id)
         _log.warning(res)
 
 

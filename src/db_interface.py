@@ -1,9 +1,6 @@
-"""Manages the database.
+"""Defines primative calls to the database.
 
 All calls must explicitly state what table to call to.
-
-The primary key is the document ID, which is mapped to the guild/user id. This
-speeds up lookup times slightly, but has yet to actually be measured.
 
 TinyDB Reference: https://tinydb.readthedocs.io/en/latest/index.html
 """
@@ -20,35 +17,23 @@ from src.utility import update_dict
 _log = logging.getLogger(__name__)
 
 
-# def valid_table(func):
-#     """Check to see if the table is valid given a database."""
-
-#     def check(db: TinyDB, table: str, id_: int, *args, **kwargs):
-#         if table not in Table:
-#             raise InvalidtableError(table)
-
-#         return func(db, table, id_, *args, **kwargs)
-
-#     return check
-
-
-# @valid_table
-def insert_document(db: TinyDB, table: str, data: dict, id_: int = None):
+async def insert_document(db: TinyDB, table: str, data: dict, id_: int = None):
     """Insert onto the table an entry with doc id as id_."""
-    db_table = db.table(table)
+    async with db:
+        db_table = db.table(table)
 
-    if id_:
-        db_table.insert(Document(data, id_))
-    else:
-        db_table.insert(data)
+        if id_:
+            db_table.insert(Document(data, id_))
+        else:
+            db_table.insert(data)
 
 
-# @valid_table
-def initialize(db: TinyDB, table: str, template: dict, id_: int = None):
+async def initialize(db: TinyDB, table: str, template: dict, id_: int = None):
     """Delete the table matching the id and insert from template."""
-    db_table = db.table(table)
-    db_table.remove(doc_ids=[id_])
-    db_table.insert(Document(template, id_))
+    async with db:
+        db_table = db.table(table)
+        db_table.remove(doc_ids=[id_])
+        db_table.insert(Document(template, id_))
 
 
 def migrate(db: TinyDB):
@@ -66,17 +51,31 @@ def migrate(db: TinyDB):
             db_table.insert(Document(upgraded, doc.doc_id))
 
 
-def get(db: TinyDB, table: Table, id_: int):
-    """Return docuemnt given the table and id.
+async def get_by_id(db: TinyDB, table: str, id_: int):
+    """Return document given the table and id.
 
     If the guild does not exist, raise exception.
     """
-    return db.table(table.name).get(doc_id=id_)
+    async with db:
+        return db.table(table).get(doc_id=id_)
 
 
-def get_guild_modlog(db: TinyDB, gid: int) -> List[Document]:
+async def search(db: TinyDB, table: str, query: where):
+    """Return documents from the table that satisfy the query."""
+    async with db:
+        return db.table(table).search(query)
+
+
+async def all(db: TinyDB, table: str):
+    """Return all documents given a table."""
+    async with db:
+        return db.table(table).all()
+
+
+async def get_guild_modlog(db: TinyDB, gid: int) -> List[Document]:
     """Return modlogs for a specific guild."""
-    return db.table("MODLOG").search(where("gid") == gid)
+    async with db:
+        return db.table("MODLOG").search(where("gid") == gid)
 
 
 class InvalidtableError(Exception):

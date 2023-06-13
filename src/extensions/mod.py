@@ -8,14 +8,19 @@ import discord
 import pendulum
 from discord.ext import commands, tasks
 from discord.ext.commands.context import Context
-from discord.utils import format_dt
-from pytz import timezone
 
 import src.db_aggregator as dsa
-import src.db_interface as dbi
 from src.db_aggregator import Scope, Table
 from src.future_time import FutureTime, NotFutureError, is_future
-from src.modlog import LogType, ModLog, get_next_case_id
+from src.modlog import (
+    ModLogEntry,
+    ModLogStatus,
+    ModLogTask,
+    ModLogType,
+    add_modlog,
+    get_next_log_id,
+)
+from src.task_manager import add_task, get_tasks
 
 
 _log = logging.getLogger(__name__)
@@ -27,6 +32,7 @@ settings = {}
 class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.log_expired.start()
 
     def cog_check(self, ctx: Context) -> bool:
         perms = ctx.channel.permissions_for(ctx.author)
@@ -45,7 +51,7 @@ class Moderation(commands.Cog):
         self,
         ctx: Context,
         member: discord.Member,
-        expires_at: FutureTime,
+        expires_on: FutureTime,
         *,
         reason: str,
     ):
@@ -56,26 +62,42 @@ class Moderation(commands.Cog):
 
         A potential feature would be to allow the user store their timezone to use here.
         """
-        now = pendulum.now(timezone("UTC"))
-        if not is_future(now, expires_at):
-            raise NotFutureError(expires_at)
+        now = pendulum.now("UTC")
+        if not is_future(now, expires_on):
+            raise NotFutureError(expires_on)
 
-        case_id = get_next_case_id(self.bot.db, ctx.guild.id)
+        log_id = await get_next_log_id(self.bot.db, ctx.guild.id)
 
-        user_log = ModLog(
-            member.id, ctx.guild.id, case_id, LogType.MUTE, now, expires_at, reason
+        modlog = ModLogEntry(
+            member.id,
+            ctx.guild.id,
+            log_id,
+            ModLogType.MUTE,
+            now,
+            expires_on,
+            reason,
+            ModLogStatus.PARDONED,
         )
-        _log.info(str(user_log.__dict__))
-        await ctx.send(
-            f"Muted on: {format_dt(pendulum.now())}\n"
-            f"Expires on: {format_dt(expires_at.astimezone(timezone('US/Pacific')))}"
-        )
+        task = ModLogTask(ctx.guild.id, member.id, ModLogType.MUTE, expires_on)
 
-        dbi.insert_document(self.bot.db, "MODLOG", user_log.as_dict())
+        await add_modlog(self.bot.db, modlog.__dict__)
+        await add_task(self.bot.db, task.__dict__)  # Add to task to handle
 
-    @tasks.loop(minutes=1)
-    async def case_expired(self):
-        pass
+    @tasks.loop(seconds=30.0)
+    async def log_expired(self):
+        now = pendulum.now(tz="UTC")
+        modlog_tasks = await get_tasks(self.bot.db)
+
+        expired_logs = filter(lambda t: t["expires_on"] < now, modlog_tasks)
+        for log in expired_logs:
+            log_type: ModLogType = log["log_type"]
+            uid: int = log["uid"]
+            _log.info(
+                "%s's has %s expired, reverting infraction actions...",
+                uid,
+                log_type.value,
+            )
+            _log.warning("ModLog resolution has not yet been implemented!")
 
 
 async def setup(bot: commands.Bot):

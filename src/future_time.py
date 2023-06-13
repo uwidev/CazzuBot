@@ -16,7 +16,6 @@ from typing import Annotated
 
 import parsedatetime
 import pendulum
-from pytz import timezone
 
 
 _log = logging.getLogger(__name__)
@@ -47,7 +46,7 @@ def future_time(arg: str) -> pendulum.DateTime:
 
     datetime_obj, parse_status = parsedatetime.Calendar().parseDT(
         transformed_arg,
-        sourceTime=pendulum.now(tz=timezone("UTC")),  # Force UCT, ignore local machine
+        sourceTime=pendulum.now(tz="UTC"),  # Force UCT, ignore local machine
     )
 
     if not parse_status:

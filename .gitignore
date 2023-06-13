@@ -7,5 +7,5 @@ venv/
 db.json
 discord.log
 pylintrc
-sandbox.py
+sandbox/
 secret.py
