@@ -11,6 +11,7 @@ from typing import List
 from tinydb import TinyDB, where
 from tinydb.table import Document
 
+from src.db_templates import GuildSetting
 from src.utility import update_dict
 
 
@@ -34,12 +35,14 @@ async def insert_document(db: TinyDB, table: str, data: dict, id_: int = None):
             db_table.insert(data)
 
 
-async def initialize(db: TinyDB, table: str, template: dict, id_: int = None):
+async def initialize(db: TinyDB, table: str, gid: int):
     """Delete the table matching the id and insert from template."""
     async with db:
         db_table = db.table(table)
-        db_table.remove(doc_ids=[id_])
-        db_table.insert(Document(template, id_))
+        for name, default in GuildSetting.defaults.items():
+            doc = db_table.get((where("name") == name) & (where("gid") == gid))
+            doc.update(default)
+            db_table.update(doc)
 
 
 def migrate(db: TinyDB):
@@ -52,7 +55,7 @@ def migrate(db: TinyDB):
     for table in Table:
         db_table = db.table(table.name)
         for doc in iter(db_table):
-            upgraded = update_dict(doc, dict(table.value), {})
+            upgraded = update_dict(doc, dict(table.value))
             db_table.remove(doc_ids=[doc.doc_id])
             db_table.insert(Document(upgraded, doc.doc_id))
 

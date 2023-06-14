@@ -12,20 +12,21 @@ from discord.ext.commands.context import Context
 import src.db_interface as dbi
 from src.db_templates import (
     GuildSetting,
+    GuildSettingDefault,
     GuildSettingScope,
     ModLogEntry,
     ModLogTaskEntry,
     ModLogType,
-    ModSettingName,
-    mod_defaults,
 )
 from src.future_time import FutureTime, NotFutureError, is_future
 from src.modlog import add_modlog, get_next_log_id
-from src.settings_aggregator import register_settings
+from src.setting_namespace import ModSettingName
 from src.task_manager import get_tasks
 
 
 _log = logging.getLogger(__name__)
+
+_defaults = [GuildSettingDefault({"name": ModSettingName.MUTE_ROLE, "value": None})]
 
 
 class Moderation(commands.Cog):
@@ -107,9 +108,9 @@ class Moderation(commands.Cog):
     @set.command(name="mute")
     async def set_mute(self, ctx, role: discord.Role):
         setting = GuildSetting(
-            ctx.guild.id,
             ModSettingName.MUTE_ROLE,
             role.id,
+            ctx.guild.id,
             GuildSettingScope.GUILD,
         )
 
@@ -121,5 +122,7 @@ class Moderation(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    register_settings(mod_defaults)
+    for default in _defaults:
+        GuildSetting.register_defaults(default)
+
     await bot.add_cog(Moderation(bot))

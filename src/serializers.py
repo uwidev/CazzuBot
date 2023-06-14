@@ -11,10 +11,8 @@ from tinydb_serialization import Serializer
 from src.db_templates import (
     GuildSettingScope,
     ModLogEntry,
-    ModLogStatus,
-    ModLogType,
-    ModSettingName,
 )
+from src.setting_namespace import ModLogStatus, ModLogType, ModSettingName
 
 
 class PDateTimeSerializer(Serializer):

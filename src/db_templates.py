@@ -9,31 +9,17 @@ decode json data back into their proper class.
 TODO Figure out a more elegant solution for creating new settings and their defaults.
 TODO See if you can leverage the Setting class.
 """
-from enum import Enum, Flag, auto
-from typing import Any, Mapping
+import logging
+from dataclasses import dataclass
+from typing import Any, ClassVar, Mapping
 
 from pendulum import DateTime
 
 from src.attributemap import AttributeMap
+from src.setting_namespace import GuildSettingScope, ModLogStatus, ModLogType
 
 
-class ModSettingName(Enum):
-    MUTE_ROLE = "mod.mute_role"
-
-
-mod_defaults = {ModSettingName.MUTE_ROLE: None}
-
-
-class ModLogStatus(Flag):
-    PARDONED = auto()
-    DELETED = auto()
-
-
-class ModLogType(Enum):
-    WARN = "warn"
-    MUTE = "mute"
-    KICK = "kick"
-    BAN = "ban"
+_log = logging.getLogger(__name__)
 
 
 class TaskEntry(AttributeMap):
@@ -89,34 +75,24 @@ class ModLogEntry(AttributeMap):
         self.status = status
 
 
-# setting_name: setting_default_value
-defaults = AttributeMap()
-
-
-# Will need to create a way to resolve scope settings.
-class GuildSettingScope(Enum):
-    DEFAULT = auto()
-    GUILD = auto()
-    CHANNEL = auto()
-    USER = auto()
+class GuildSettingDefault(AttributeMap):
+    def __init__(self, data):
+        self.__dict__[data["name"]] = data
 
 
 # Setings of other extensions should be prefixed.
 # e.g. for the moderation extension
 # setting = mod.mute_role
+@dataclass
 class GuildSetting(AttributeMap):
     """A setting object that is used to insert into the database."""
 
-    gid: int
-    setting: str
+    name: str
     value: Any
-    scope: GuildSettingScope
+    gid: int = None
+    scope: GuildSettingScope = None
+    defaults: ClassVar[dict] = {}
 
-    def __init__(
-        self, gid: int, setting: str, value: Any, scope: GuildSettingScope, **kwargs
-    ) -> None:
-        self.gid = gid
-        self.setting = setting
-        self.value = value
-        self.scope = scope
-        self.__dict__.update(**kwargs)
+    @classmethod
+    def register_defaults(cls, payload: GuildSettingDefault):
+        cls.defaults.update(payload)

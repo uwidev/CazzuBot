@@ -3,6 +3,8 @@ import logging
 
 from discord.ext import commands
 
+import src.db_interface as dbi
+
 
 # import src.db_interface as dbi
 # from src.serializers import TestEnum
@@ -35,9 +37,9 @@ class Dev(commands.Cog):
     #         self.bot.db,
     #     )
 
-    # @commands.command()
-    # async def init(self, ctx: commands.Context):
-    #     dbi.initialize(self.bot.db, Table.GUILD_SETTINGS, ctx.guild.id)
+    @commands.command()
+    async def init(self, ctx: commands.Context):
+        await dbi.initialize(self.bot.db, dbi.Table.GUILD_SETTING.name, ctx.guild.id)
 
     # @commands.command()
     # async def upgrade(self, ctx: commands.Context):

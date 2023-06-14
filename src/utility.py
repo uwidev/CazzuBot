@@ -62,8 +62,8 @@ def author_confirm(
     return commands.check(confirm)
 
 
-def update_dict(old: dict, ref: dict, new: dict = {}) -> dict:
-    """Return a new dict that matches reference dict, retaining values.
+def update_dict(old: dict, ref: dict) -> dict:
+    """Return a new dict that matches reference dict, retaining values recursively.
 
     Does NOT remap fields, and is something that might need to be implemented
     in the future when making restructuring existing fields.
@@ -73,16 +73,17 @@ def update_dict(old: dict, ref: dict, new: dict = {}) -> dict:
         Input
         old = {'a': 3, 'b': {'x': 5}, 'c': 7}
         ref = {'a': 0, 'b': {'y': 0}, 'd': 2}
-        new = {}
 
     Returns:
     -------
         {'a': 3, 'b': {'y': 0}, 'd': 2}
     """
+    new = {}
+
     common_fields = set(old.keys()).intersection(ref.keys())
     for field in common_fields:
         if isinstance(old[field], dict):
-            new[field] = update_dict(old[field], ref[field], {})
+            new[field] = update_dict(old[field], ref[field])
         else:
             new[field] = old[field]
 
