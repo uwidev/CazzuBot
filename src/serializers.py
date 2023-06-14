@@ -8,7 +8,13 @@ you cannot directly pass a class to write into the database.
 from pendulum import DateTime
 from tinydb_serialization import Serializer
 
-from src.modlog import ModLogEntry, ModLogStatus, ModLogType
+from src.db_templates import (
+    GuildSettingScope,
+    ModLogEntry,
+    ModLogStatus,
+    ModLogType,
+    ModSettingName,
+)
 
 
 class PDateTimeSerializer(Serializer):
@@ -39,3 +45,23 @@ class ModLogStatusSerializer(Serializer):
 
     def decode(self, s: str):
         return self.OBJ_CLASS(int(s))
+
+
+class GuildSettingScopeSerializer(Serializer):
+    OBJ_CLASS = GuildSettingScope
+
+    def encode(self, obj):
+        return str(obj.name)
+
+    def decode(self, s):
+        return self.OBJ_CLASS[s]
+
+
+class ModSettingNameSerializer(Serializer):
+    OBJ_CLASS = ModSettingName
+
+    def encode(self, obj: ModSettingName):
+        return str(obj.value)
+
+    def decode(self, s: str):
+        return self.OBJ_CLASS(s)

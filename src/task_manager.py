@@ -11,11 +11,16 @@ from typing import List
 from tinydb import TinyDB, where
 
 import src.db_interface as dbi
+from src.db_templates import TaskEntry
 
 
-class TaskEntry:
-    def __init__(self, module: str):
-        self.module = module
+TEMPLATE = {  # Expected schema of task entries
+    "module": "MODLOG",
+    "gid": None,
+    "uid": None,
+    "expires_on": None,
+    "log_type": None,
+}
 
 
 async def add_task(db: TinyDB, task: TaskEntry):

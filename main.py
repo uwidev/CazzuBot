@@ -10,19 +10,21 @@ from aiotinydb import AIOTinyDB
 from aiotinydb.storage import AIOJSONStorage
 from discord.ext import commands
 
-import src.task_manager as tmanager
 from secret import OWNER_ID, TOKEN
+from src import task_manager as tmanager
 from src.aio_middleware_patch import AIOSerializationMiddleware
 from src.serializers import (
+    GuildSettingScopeSerializer,
     ModLogStatusSerializer,
     ModLogtypeSerializer,
+    ModSettingNameSerializer,
     PDateTimeSerializer,
 )
 
 
 # DEFAULT_DATABASE_TABLE = Table.USER_EXPERIENCE.name
-EXTENSIONS_IMPORT_PATH = r"src.extensions"
-EXTENSIONS_PATH = r"src/extensions"
+EXTENSIONS_IMPORT_PATH = r"ext"
+EXTENSIONS_PATH = r"ext"
 
 
 # Setup logging
@@ -50,6 +52,8 @@ serializers = {
     PDateTimeSerializer(): "PDateTime",
     ModLogtypeSerializer(): "ModLogType",
     ModLogStatusSerializer(): "ModLogStatus",
+    GuildSettingScopeSerializer(): "SettingScope",
+    ModSettingNameSerializer(): "ModSetting",
 }
 
 
@@ -138,13 +142,22 @@ async def unload(ctx, ext_name):
         _log.error(err)
 
 
-async def setup():
-    _log.info("Loading database...")
+def load_serializers():
     serialization = AIOSerializationMiddleware(AIOJSONStorage)
+
     for s in serializers.items():
         serialization.register_serializer(s[0], s[1])
+        _log.info("|\t> %s has been loaded!", s[1])
+
+    return serialization
+
+
+async def setup():
+    _log.info("Loading database serializers...")
+    serialization = load_serializers()
+
+    _log.info("Loading database...")
     bot.db = AIOTinyDB("db.json", storage=serialization)
-    # bot.db.default_table_name = DEFAULT_DATABASE_TABLE
 
     _log.info("Loading extensions...")
     await load_extensions()

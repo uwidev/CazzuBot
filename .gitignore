@@ -4,8 +4,8 @@ venv/
 .python-version
 *.pem
 *.ppk
-db.json
+*db*.json
 discord.log
 pylintrc
-sandbox/
+sandbox*
 secret.py

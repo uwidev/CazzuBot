@@ -5,16 +5,22 @@ All calls must explicitly state what table to call to.
 TinyDB Reference: https://tinydb.readthedocs.io/en/latest/index.html
 """
 import logging
+from enum import Enum, auto
 from typing import List
 
 from tinydb import TinyDB, where
 from tinydb.table import Document
 
-from src.db_aggregator import Table
 from src.utility import update_dict
 
 
 _log = logging.getLogger(__name__)
+
+
+class Table(Enum):
+    TASK = auto()
+    MODLOG = auto()
+    GUILD_SETTING = auto()
 
 
 async def insert_document(db: TinyDB, table: str, data: dict, id_: int = None):

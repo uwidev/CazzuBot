@@ -25,7 +25,7 @@ shorthand_relative_time = re.compile(r"(\d+w|\d+d|\d+h|\d+m|\d+s)(?=\w?)(?=\d|$)
 shorthand_tmr = re.compile(r"tmr")
 
 
-def future_time(arg: str) -> pendulum.DateTime:
+def normalize_time_str(arg: str) -> pendulum.DateTime:
     """Convert a string to a datetime object.
 
     Handles relative and absolute date/time.
@@ -72,4 +72,4 @@ class NotFutureError(Exception):
         super().__init__(msg)
 
 
-FutureTime = Annotated[pendulum.DateTime, future_time]
+FutureTime = Annotated[pendulum.DateTime, normalize_time_str]

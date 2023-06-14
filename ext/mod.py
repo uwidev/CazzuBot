@@ -9,24 +9,23 @@ import pendulum
 from discord.ext import commands, tasks
 from discord.ext.commands.context import Context
 
-import src.db_aggregator as dsa
-from src.db_aggregator import Scope, Table
-from src.future_time import FutureTime, NotFutureError, is_future
-from src.modlog import (
+import src.db_interface as dbi
+from src.db_templates import (
+    GuildSetting,
+    GuildSettingScope,
     ModLogEntry,
-    ModLogStatus,
-    ModLogTask,
+    ModLogTaskEntry,
     ModLogType,
-    add_modlog,
-    get_next_log_id,
+    ModSettingName,
+    mod_defaults,
 )
-from src.task_manager import add_task, get_tasks
+from src.future_time import FutureTime, NotFutureError, is_future
+from src.modlog import add_modlog, get_next_log_id
+from src.settings_aggregator import register_settings
+from src.task_manager import get_tasks
 
 
 _log = logging.getLogger(__name__)
-
-
-settings = {}
 
 
 class Moderation(commands.Cog):
@@ -76,12 +75,14 @@ class Moderation(commands.Cog):
             now,
             expires_on,
             reason,
-            ModLogStatus.PARDONED,
+            # ModLogStatus.PARDONED,
         )
-        task = ModLogTask(ctx.guild.id, member.id, ModLogType.MUTE, expires_on)
+        ModLogTaskEntry(ctx.guild.id, member.id, ModLogType.MUTE, expires_on)
 
-        await add_modlog(self.bot.db, modlog.__dict__)
-        await add_task(self.bot.db, task.__dict__)  # Add to task to handle
+        await add_modlog(self.bot.db, modlog)
+        # await add_task(self.bot.db, task)  # Add to task to handle
+
+        _log.warning("Mute currently does not actually mute!")
 
     @tasks.loop(seconds=30.0)
     async def log_expired(self):
@@ -99,7 +100,26 @@ class Moderation(commands.Cog):
             )
             _log.warning("ModLog resolution has not yet been implemented!")
 
+    @commands.group()
+    async def set(self, ctx):
+        pass
+
+    @set.command(name="mute")
+    async def set_mute(self, ctx, role: discord.Role):
+        setting = GuildSetting(
+            ctx.guild.id,
+            ModSettingName.MUTE_ROLE,
+            role.id,
+            GuildSettingScope.GUILD,
+        )
+
+        await dbi.insert_document(
+            self.bot.db,
+            dbi.Table.GUILD_SETTING.name,
+            setting,
+        )
+
 
 async def setup(bot: commands.Bot):
-    dsa.register_settings(Table.GUILD_SETTINGS, Scope.DEFAULT, settings)
+    register_settings(mod_defaults)
     await bot.add_cog(Moderation(bot))
