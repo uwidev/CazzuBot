@@ -8,9 +8,10 @@ Will work with the database to keep tasks persistent.
 """
 from typing import List
 
-from tinydb import TinyDB, where
+from tinydb import TinyDB
 
 import src.db_interface as dbi
+from src.db_interface import Table
 from src.db_templates import TaskEntry
 
 
@@ -30,4 +31,4 @@ async def add_task(db: TinyDB, task: TaskEntry):
 
 async def get_tasks(db: TinyDB) -> List[dict]:
     """Return a list of tasks."""
-    return await dbi.search(db, "TASK", where("module") == "MODLOG")
+    return await dbi.all(db, Table.TASK.name)

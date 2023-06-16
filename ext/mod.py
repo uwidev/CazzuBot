@@ -21,7 +21,7 @@ from src.db_templates import (
 from src.future_time import FutureTime, NotFutureError, is_future
 from src.modlog import add_modlog, get_next_log_id
 from src.setting_namespace import ModSettingName
-from src.task_manager import get_tasks
+from src.task_manager import add_task, get_tasks
 
 
 _log = logging.getLogger(__name__)
@@ -78,20 +78,21 @@ class Moderation(commands.Cog):
             reason,
             # ModLogStatus.PARDONED,
         )
-        ModLogTaskEntry(ctx.guild.id, member.id, ModLogType.MUTE, expires_on)
+        task = ModLogTaskEntry(ctx.guild.id, member.id, ModLogType.MUTE, expires_on)
 
         await add_modlog(self.bot.db, modlog)
-        # await add_task(self.bot.db, task)  # Add to task to handle
+        await add_task(self.bot.db, task)  # Add to task to handle
 
         _log.warning("Mute currently does not actually mute!")
 
-    @tasks.loop(seconds=30.0)
+    @tasks.loop(seconds=60.0)
     async def log_expired(self):
         now = pendulum.now(tz="UTC")
         modlog_tasks = await get_tasks(self.bot.db)
 
         expired_logs = filter(lambda t: t["expires_on"] < now, modlog_tasks)
         for log in expired_logs:
+            print("EXPIRED LOG")
             log_type: ModLogType = log["log_type"]
             uid: int = log["uid"]
             _log.info(
@@ -100,6 +101,10 @@ class Moderation(commands.Cog):
                 log_type.value,
             )
             _log.warning("ModLog resolution has not yet been implemented!")
+
+    @log_expired.before_loop
+    async def before_log_expired(self):
+        await self.bot.wait_until_ready()
 
     @commands.group()
     async def set(self, ctx):

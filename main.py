@@ -8,8 +8,10 @@ Should be a lot more straight-forward on extending the bot.
 """
 import logging
 import os
+import time
 
 import discord
+import pendulum
 from aiotinydb import AIOTinyDB
 from aiotinydb.storage import AIOJSONStorage
 from discord.ext import commands
@@ -54,6 +56,10 @@ serializers = {
 
 def set_logging():
     """Write info logging to console and debug logging to file."""
+
+    def timetz(*args):
+        return pendulum.now(tz="UTC").timetuple()
+
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
 
@@ -69,11 +75,16 @@ def set_logging():
     file_formatter = logging.Formatter(
         "[{asctime}] [{levelname:<8}] {name}: {message}", dt_fmt, style="{"
     )
-    console_formatter = (
-        _ColourFormatter()
+
+    console_formatter = file_formatter
+    console_formatter = (  # TIME CONVERTER DOES NOT WORK ON _ColourFormatter()
+        _ColourFormatter()  # NEEDS INVESTIGATION
         if stream_supports_colour(console_handler.stream)
         else file_formatter
     )
+
+    console_formatter.converter = time.gmtime
+    file_formatter.converter = time.gmtime
 
     console_handler.setFormatter(console_formatter)
     file_hanndler.setFormatter(file_formatter)
