@@ -1,6 +1,10 @@
 """Runs the bot.
 
-TODO: Convert all db operations to asyncio-aware.
+TODO: Developing a new cog is too powerful when interacting with the dabase.
+db_interface should have dedicated functions for adding a new setting, rather than
+being able to add whatever data onto whatever table.
+
+Should be a lot more straight-forward on extending the bot.
 """
 import logging
 import os
@@ -9,6 +13,7 @@ import discord
 from aiotinydb import AIOTinyDB
 from aiotinydb.storage import AIOJSONStorage
 from discord.ext import commands
+from discord.utils import _ColourFormatter, stream_supports_colour
 
 from secret import OWNER_ID, TOKEN
 from src import task_manager as tmanager
@@ -26,16 +31,6 @@ from src.serializers import (
 EXTENSIONS_IMPORT_PATH = r"ext"
 EXTENSIONS_PATH = r"ext"
 
-
-# Setup logging
-discord.utils.setup_logging()  # Log to console
-
-handler_file = logging.FileHandler(
-    filename="logs/discord.log", encoding="utf-8", mode="w"
-)
-
-discord.utils.setup_logging(handler=handler_file, level=logging.DEBUG)
-# debug still shows up on console, needs to be file ONLY
 
 _log = logging.getLogger(__name__)
 
@@ -55,6 +50,36 @@ serializers = {
     GuildSettingScopeSerializer(): "SettingScope",
     ModSettingNameSerializer(): "ModSetting",
 }
+
+
+def set_logging():
+    """Write info logging to console and debug logging to file."""
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+
+    file_hanndler = logging.FileHandler(
+        filename="logs/discord.log", encoding="utf-8", mode="w"
+    )
+    file_hanndler.setLevel(logging.DEBUG)
+
+    dt_fmt = "%Y-%m-%d %H:%M:%S"
+    file_formatter = logging.Formatter(
+        "[{asctime}] [{levelname:<8}] {name}: {message}", dt_fmt, style="{"
+    )
+    console_formatter = (
+        _ColourFormatter()
+        if stream_supports_colour(console_handler.stream)
+        else file_formatter
+    )
+
+    console_handler.setFormatter(console_formatter)
+    file_hanndler.setFormatter(file_formatter)
+
+    logger.addHandler(console_handler)
+    logger.addHandler(file_hanndler)
 
 
 @bot.event
@@ -170,5 +195,6 @@ async def setup():
 
 
 if __name__ == "__main__":
+    set_logging()
     bot.setup_hook = setup
     bot.run(TOKEN, log_handler=None)  # Ignore built-in logger
