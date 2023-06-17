@@ -9,24 +9,16 @@ import pendulum
 from discord.ext import commands, tasks
 from discord.ext.commands.context import Context
 
-import src.db_interface as dbi
+from src import modlog, settings, task
 from src.db_templates import (
-    GuildSetting,
-    GuildSettingDefault,
-    GuildSettingScope,
     ModLogEntry,
     ModLogTaskEntry,
     ModLogType,
 )
-from src.future_time import FutureTime, NotFutureError, is_future
-from src.modlog import add_modlog, get_next_log_id
-from src.setting_namespace import ModSettingName
-from src.task_manager import add_task, get_tasks
+from src.ntlp import NormalizedTime, NotFutureError, is_future
 
 
 _log = logging.getLogger(__name__)
-
-_defaults = [GuildSettingDefault({"name": ModSettingName.MUTE_ROLE, "value": None})]
 
 
 class Moderation(commands.Cog):
@@ -51,7 +43,7 @@ class Moderation(commands.Cog):
         self,
         ctx: Context,
         member: discord.Member,
-        expires_on: FutureTime,
+        expires_on: NormalizedTime,
         *,
         reason: str,
     ):
@@ -66,9 +58,9 @@ class Moderation(commands.Cog):
         if not is_future(now, expires_on):
             raise NotFutureError(expires_on)
 
-        log_id = await get_next_log_id(self.bot.db, ctx.guild.id)
+        log_id = await modlog.get_unique_id(self.bot.db, ctx.guild.id)
 
-        modlog = ModLogEntry(
+        log = ModLogEntry(
             member.id,
             ctx.guild.id,
             log_id,
@@ -78,21 +70,26 @@ class Moderation(commands.Cog):
             reason,
             # ModLogStatus.PARDONED,
         )
-        task = ModLogTaskEntry(ctx.guild.id, member.id, ModLogType.MUTE, expires_on)
+        tsk = ModLogTaskEntry(
+            "modlog",
+            expires_on,
+            ctx.guild.id,
+            member.id,
+            ModLogType.MUTE,
+        )
 
-        await add_modlog(self.bot.db, modlog)
-        await add_task(self.bot.db, task)  # Add to task to handle
+        await modlog.add(self.bot.db, log)
+        await task.add(self.bot.db, tsk)  # Add to task to handle
 
         _log.warning("Mute currently does not actually mute!")
 
     @tasks.loop(seconds=60.0)
     async def log_expired(self):
         now = pendulum.now(tz="UTC")
-        modlog_tasks = await get_tasks(self.bot.db)
+        modlog_tasks = await task.tag(self.bot.db, "modlog")
+        expired_logs = list(filter(lambda t: t["run_at"] < now, modlog_tasks))
 
-        expired_logs = filter(lambda t: t["expires_on"] < now, modlog_tasks)
         for log in expired_logs:
-            print("EXPIRED LOG")
             log_type: ModLogType = log["log_type"]
             uid: int = log["uid"]
             _log.info(
@@ -107,27 +104,31 @@ class Moderation(commands.Cog):
         await self.bot.wait_until_ready()
 
     @commands.group()
-    async def set(self, ctx):
+    async def set(self, ctx: Context):
         pass
 
     @set.command(name="mute")
-    async def set_mute(self, ctx, role: discord.Role):
-        setting = GuildSetting(
-            ModSettingName.MUTE_ROLE,
-            role.id,
-            ctx.guild.id,
-            GuildSettingScope.GUILD,
+    async def set_mute(self, ctx: Context, *, role: discord.Role):
+        to_set = settings.Settings(
+            "mute_role",
+            {"id": role.id},
         )
 
-        await dbi.insert_document(
-            self.bot.db,
-            dbi.Table.GUILD_SETTING.name,
-            setting,
-        )
+        await settings.write(self.bot.db, ctx.guild.id, to_set)
 
 
 async def setup(bot: commands.Bot):
-    for default in _defaults:
-        GuildSetting.register_defaults(default)
+    """Set up this extension for the bot.
+
+    Default settings for this extension must be defined here.
+    Format should be as follows.
+    Setting()
+    """
+    mod_settings = settings.Settings("mute_role", {"id": None})
+
+    default_mod_settings = settings.Guild({"mod": {}})
+    default_mod_settings.mod = mod_settings
+
+    bot.guild_defaults.update(default_mod_settings)
 
     await bot.add_cog(Moderation(bot))

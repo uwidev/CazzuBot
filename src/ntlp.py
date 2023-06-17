@@ -1,4 +1,6 @@
-"""Converter to parses natural relative date/time language to a future DateTime object.
+"""Natural Time Language Processing (NTLP/ntlp).
+
+Parses natural relative date/time language to a DateTime object.
 
 Also supports natural language for absolute date/time.
 
@@ -72,4 +74,4 @@ class NotFutureError(Exception):
         super().__init__(msg)
 
 
-FutureTime = Annotated[pendulum.DateTime, normalize_time_str]
+NormalizedTime = Annotated[pendulum.DateTime, normalize_time_str]

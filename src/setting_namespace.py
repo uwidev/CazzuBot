@@ -24,7 +24,7 @@ class ModLogType(Enum):
 
 
 # ========================
-# db_templates.py
+# Settings/Permissions
 # ========================
 
 
@@ -32,4 +32,5 @@ class GuildSettingScope(Enum):  # Will need to create a way to resolve scope set
     DEFAULT = auto()
     GUILD = auto()
     CHANNEL = auto()
+    ROLE = auto()
     USER = auto()

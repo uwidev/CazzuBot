@@ -4,19 +4,35 @@ Serializes the values within the document, NOT the document itself, as when inse
 into the database, TinyDB checks to see if the document is a Mapping. In other words,
 you cannot directly pass a class to write into the database.
 """
+import logging
 
 from pendulum import DateTime
 from tinydb_serialization import Serializer
 
 from src.db_templates import (
-    GuildSettingScope,
     ModLogEntry,
 )
-from src.setting_namespace import ModLogStatus, ModLogType, ModSettingName
+from src.setting_namespace import (
+    GuildSettingScope,
+    ModLogStatus,
+    ModLogType,
+    ModSettingName,
+)
+
+
+_log = logging.getLogger(__name__)
+
+
+# class DiscordSerializer(Serializer):
+#     """Include a reference to the bot to decode discord classes."""
+
+#     def __init__(self, bot: Bot):
+#         self.bot = bot
+#         super().__init__()
 
 
 class PDateTimeSerializer(Serializer):
-    OBJ_CLASS = DateTime  # The class this serializer handles
+    OBJ_CLASS = DateTime
 
     def encode(self, obj: DateTime):
         return obj.isoformat()

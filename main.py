@@ -18,7 +18,8 @@ from discord.ext import commands
 from discord.utils import _ColourFormatter, stream_supports_colour
 
 from secret import OWNER_ID, TOKEN
-from src import task_manager as tmanager
+
+# from src import task
 from src.aio_middleware_patch import AIOSerializationMiddleware
 from src.serializers import (
     GuildSettingScopeSerializer,
@@ -27,6 +28,7 @@ from src.serializers import (
     ModSettingNameSerializer,
     PDateTimeSerializer,
 )
+from src.settings import Guild
 
 
 # DEFAULT_DATABASE_TABLE = Table.USER_EXPERIENCE.name
@@ -49,8 +51,8 @@ serializers = {
     PDateTimeSerializer(): "PDateTime",
     ModLogtypeSerializer(): "ModLogType",
     ModLogStatusSerializer(): "ModLogStatus",
-    GuildSettingScopeSerializer(): "SettingScope",
     ModSettingNameSerializer(): "ModSetting",
+    GuildSettingScopeSerializer(): "Scope",
 }
 
 
@@ -195,14 +197,19 @@ async def setup():
     _log.info("Loading database...")
     bot.db = AIOTinyDB("db.json", storage=serialization)
 
+    _log.info("Setting up default settings...")
+    bot.guild_defaults = Guild()
+
     _log.info("Loading extensions...")
     await load_extensions()
 
-    _log.info("Loading tasks...")
-    await tmanager.get_tasks(bot.db)
+    bot.guild_defaults.lock()
 
-    _log.info("Resolving tasks...")
-    _log.warning("Task resolution not yet implemented!")
+    # _log.info("Loading tasks...")
+    # await task.all(bot.db)
+
+    # _log.info("Resolving tasks...")
+    # _log.warning("Task resolution not yet implemented!")
 
 
 if __name__ == "__main__":
