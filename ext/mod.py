@@ -3,12 +3,14 @@
 TODO Create customized user group and permissions
 """
 import logging
+from datetime import timezone
 
 import discord
 import pendulum
 from discord.ext import commands, tasks
 from discord.ext.commands.context import Context
 
+import src.db_interface as dbi
 from src import modlog, settings, task
 from src.db_templates import (
     ModLogEntry,
@@ -27,6 +29,12 @@ class Moderation(commands.Cog):
         self.log_expired.start()
 
     def cog_check(self, ctx: Context) -> bool:
+        """Check to make sure user satisfies 'moderation' permission.
+
+        Currently checks for kick or ban perms, but eventually we want to designate
+        a specific role in the database to as moderator. Potentially expanding to
+        specific users as well, dependinng on on how advance permission management is.
+        """
         perms = ctx.channel.permissions_for(ctx.author)
         return any([perms.moderate_members, perms.kick_members, perms.ban_members])
 
@@ -85,17 +93,19 @@ class Moderation(commands.Cog):
 
     @tasks.loop(seconds=60.0)
     async def log_expired(self):
+        """Handle mute and temp-ban expirations."""
         now = pendulum.now(tz="UTC")
         modlog_tasks = await task.tag(self.bot.db, "modlog")
-        expired_logs = list(filter(lambda t: t["run_at"] < now, modlog_tasks))
+        expired_logs = list(filter(lambda t: t[1] < now, modlog_tasks))
 
         for log in expired_logs:
-            log_type: ModLogType = log["log_type"]
-            uid: int = log["uid"]
+            payload = log[2]
+            log_type: ModLogType = payload["log_type"]
+            uid: int = payload["uid"]
             _log.info(
                 "%s's has %s expired, reverting infraction actions...",
                 uid,
-                log_type.value,
+                log_type,
             )
             _log.warning("ModLog resolution has not yet been implemented!")
 
@@ -109,12 +119,7 @@ class Moderation(commands.Cog):
 
     @set.command(name="mute")
     async def set_mute(self, ctx: Context, *, role: discord.Role):
-        to_set = settings.Settings(
-            "mute_role",
-            {"id": role.id},
-        )
-
-        await settings.write(self.bot.db, ctx.guild.id, to_set)
+        await dbi.set_mute_role(self.bot.db, ctx.guild.id, role.id)
 
 
 async def setup(bot: commands.Bot):

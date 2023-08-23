@@ -14,6 +14,7 @@ Will work with the database to keep tasks persistent.
 
 TODO: Rewrite this docstring...
 """
+import psycopg2.extensions
 from aiotinydb import AIOTinyDB
 from tinydb import where
 from tinydb.table import Document
@@ -23,16 +24,16 @@ from src.db_interface import Table
 from src.db_templates import TaskEntry
 
 
-async def add(db: AIOTinyDB, task: TaskEntry):
+async def add(db: psycopg2.extensions.connection, task: TaskEntry):
     """Add a task to the ongoing todo dict."""
-    await dbi.insert(db, Table.TASK, task)
+    await dbi._insert(db, Table.TASK, task)
 
 
-async def all(db: AIOTinyDB) -> list[Document]:
+async def all(db: psycopg2.extensions.connection) -> list[Document]:
     """Return tasks."""
     return await dbi.all(db, Table.TASK)
 
 
-async def tag(db: AIOTinyDB, module: str) -> list[Document]:
+async def tag(db: psycopg2.extensions.connection, module: str) -> list[Document]:
     """Return tasks for a specific module."""
-    return await dbi.search(db, Table.TASK, where("tag") == module)
+    return await dbi.get_tasks(db, "modlog")

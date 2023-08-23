@@ -94,7 +94,7 @@ async def write(db: AIOTinyDB, gid: int, settings: Guild):
     """
     guild_settings = Guild(gid, settings)
 
-    return await dbi.upsert(
+    return await dbi._upsert(
         db,
         dbi.Table.GUILD_SETTING,
         guild_settings.as_dict(),

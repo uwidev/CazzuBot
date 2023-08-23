@@ -4,6 +4,7 @@ import logging
 from discord.ext import commands
 
 import src.db_interface as dbi
+import src.db_schema
 
 
 # import src.db_interface as dbi
@@ -24,22 +25,20 @@ class Dev(commands.Cog):
     async def owner(self, ctx):
         _log.info("%s is the bot owner.", ctx.author)
 
-    # @commands.command()
-    # async def t1(self, ctx):
-    #     data = {"foo": TestEnum.FOO}
-    #     await dbi.insert_document(self.bot.db, "TEST", data)
-
-    # @commands.command()
-    # async def write(self, ctx: commands.Context):
-    #     dbi.insert_document(self.bot.db, Table.GUILD_SETTINGS, ctx.guild.id)
-    #     dbi.insert_document(self.bot.db, Table.GUILD_MODLOGS, ctx.guild.id)
-    #     dbi.insert_document(
-    #         self.bot.db,
-    #     )
+    @commands.command()
+    async def test(self, ctx: commands.Context):
+        settings = src.db_schema.GuildSettings(ctx.guild.id, None)
+        await dbi._insert(self.bot.db, dbi.Table.GUILD_SETTING, settings)
 
     @commands.command()
-    async def init(self, ctx: commands.Context):
-        await dbi.initialize(self.bot.db, dbi.Table.GUILD_SETTING.name, ctx.guild.id)
+    async def test2(self, ctx: commands.Context):
+        settings = src.db_schema.GuildSettings(ctx.guild.id, 42)
+        await dbi._upsert(self.bot.db, dbi.Table.GUILD_SETTING, settings)
+
+    @commands.command()
+    async def test3(self, ctx: commands.Context):
+        res = await dbi.select(self.bot.db, dbi.Table.GUILD_SETTING, "*", "gid > 1")
+        print(res)
 
     # @commands.command()
     # async def upgrade(self, ctx: commands.Context):

@@ -1,39 +1,36 @@
 """Runs the bot.
 
-TODO: Developing a new cog is too powerful when interacting with the dabase.
+TODO: Developing a new cog is too powerful(?) when interacting with the dabase.
 db_interface should have dedicated functions for adding a new setting, rather than
 being able to add whatever data onto whatever table.
 
 Should be a lot more straight-forward on extending the bot.
 """
+import datetime
+import getpass
 import logging
 import os
+import sys
 import time
 
 import discord
 import pendulum
-from aiotinydb import AIOTinyDB
-from aiotinydb.storage import AIOJSONStorage
+import psycopg2
 from discord.ext import commands
 from discord.utils import _ColourFormatter, stream_supports_colour
 
 from secret import OWNER_ID, TOKEN
 
 # from src import task
-from src.aio_middleware_patch import AIOSerializationMiddleware
-from src.serializers import (
-    GuildSettingScopeSerializer,
-    ModLogStatusSerializer,
-    ModLogtypeSerializer,
-    ModSettingNameSerializer,
-    PDateTimeSerializer,
-)
 from src.settings import Guild
 
 
 # DEFAULT_DATABASE_TABLE = Table.USER_EXPERIENCE.name
 EXTENSIONS_IMPORT_PATH = r"ext"
 EXTENSIONS_PATH = r"ext"
+DATABASE_HOST = "192.168.1.2"
+DATABASE_NAME = "ubuntu"
+DATABASE_USER = "ubuntu"
 
 
 _log = logging.getLogger(__name__)
@@ -44,16 +41,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot("d!", intents=intents, owner_id=OWNER_ID)
-
-
-# Serializers
-serializers = {
-    PDateTimeSerializer(): "PDateTime",
-    ModLogtypeSerializer(): "ModLogType",
-    ModLogStatusSerializer(): "ModLogStatus",
-    ModSettingNameSerializer(): "ModSetting",
-    GuildSettingScopeSerializer(): "Scope",
-}
 
 
 def set_logging():
@@ -80,7 +67,7 @@ def set_logging():
 
     console_formatter = file_formatter
     console_formatter = (  # TIME CONVERTER DOES NOT WORK ON _ColourFormatter()
-        _ColourFormatter()  # NEEDS INVESTIGATION
+        _ColourFormatter()  # NEEDS INVESTIGATION | FIXED, UPDATE TO NEWEST POWERSHELL
         if stream_supports_colour(console_handler.stream)
         else file_formatter
     )
@@ -105,7 +92,7 @@ async def load_extensions():
         if file.endswith(".py"):
             try:
                 await bot.load_extension(f"{EXTENSIONS_IMPORT_PATH}.{file[:-3]}")
-                _log.info("|\t> %s has been loaded!", file[:-3])
+                _log.info("|\t> loaded %s!", file[:-3])
             except (
                 commands.ExtensionNotFound,
                 commands.ExtensionAlreadyLoaded,
@@ -180,22 +167,35 @@ async def unload(ctx, ext_name):
         _log.error(err)
 
 
-def load_serializers():
-    serialization = AIOSerializationMiddleware(AIOJSONStorage)
+def postgre_connect():
+    pw = getpass.getpass()
 
-    for s in serializers.items():
-        serialization.register_serializer(s[0], s[1])
-        _log.info("|\t> %s has been loaded!", s[1])
-
-    return serialization
+    try:
+        conn = psycopg2.connect(
+            dbname=DATABASE_NAME,
+            user=DATABASE_USER,
+            host=DATABASE_HOST,
+            password=pw,
+        )
+    except psycopg2.Error as err:
+        _log.error(err)
+        return None
+    else:
+        _log.info(
+            'Connection to database "%s" as user "%s" at ' 'host "%s" successful!',
+            DATABASE_NAME,
+            DATABASE_USER,
+            DATABASE_HOST,
+        )
+        return conn
 
 
 async def setup():
-    _log.info("Loading database serializers...")
-    serialization = load_serializers()
-
-    _log.info("Loading database...")
-    bot.db = AIOTinyDB("db.json", storage=serialization)
+    _log.info("Connnecting to database...")
+    bot.db = postgre_connect()
+    if not bot.db:
+        _log.error("Unable to connect to database.")
+        sys.exit(1)
 
     _log.info("Setting up default settings...")
     bot.guild_defaults = Guild()
@@ -204,6 +204,8 @@ async def setup():
     await load_extensions()
 
     bot.guild_defaults.lock()
+
+    return 0
 
     # _log.info("Loading tasks...")
     # await task.all(bot.db)
@@ -216,3 +218,7 @@ if __name__ == "__main__":
     set_logging()
     bot.setup_hook = setup
     bot.run(TOKEN, log_handler=None)  # Ignore built-in logger
+    _log.info("Keyboard interrupt detected!")
+    _log.info("Closing the database...")
+    bot.db.close()
+    _log.info("Database closed")

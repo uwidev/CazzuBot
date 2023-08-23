@@ -21,7 +21,7 @@ TEMPLATE = {  # Expected schema for modlogs
 
 
 async def add(db: AIOTinyDB, modlog: ModLogEntry):
-    await dbi.insert(db, Table.MODLOG, modlog)
+    await dbi._insert(db, Table.MODLOG, modlog)
 
 
 async def get_modlogs(db: AIOTinyDB, gid: int) -> list[Document]:
