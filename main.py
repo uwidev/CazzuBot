@@ -22,6 +22,7 @@ from discord.utils import _ColourFormatter, stream_supports_colour
 
 from secret import OWNER_ID, TOKEN
 from src.db_schema import ModlogStatusEnum, ModlogTypeEnum
+from src.json_handler import CustomDecoder, CustomEncoder
 
 # from src import task
 from src.settings import Guild
@@ -91,6 +92,10 @@ class CazzuBot(commands.Bot):
     async def setup_hook(self) -> None:
         _log.info("Loading extensions...")
         await self.load_extensions()
+
+        _log.info("Loading json enconder and decoder...")
+        self.json_encoder = CustomEncoder()
+        self.json_decoder = CustomDecoder()
 
         return 0
 

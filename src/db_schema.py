@@ -6,13 +6,6 @@ from enum import Enum, auto
 import pendulum
 
 
-class PGEnum(Enum):
-    """Force string coversion to convert it's enum name, rather than full."""
-
-    def __str__(self):
-        return self.name
-
-
 class SnowflakeSchema(ABC):
     def columns(self):
         """Return columns to dump into."""
@@ -53,7 +46,7 @@ class GuildSettings(SnowflakeSchema):
         return iter([self.gid, self.mute_role])
 
 
-class ModlogTypeEnum(PGEnum):
+class ModlogTypeEnum(Enum):
     WARN = "warn"
     MUTE = "mute"
     KICK = "kick"
@@ -61,7 +54,7 @@ class ModlogTypeEnum(PGEnum):
     BAN = "ban"
 
 
-class ModlogStatusEnum(PGEnum):
+class ModlogStatusEnum(Enum):
     ACTIVE = "active"
     PARDONED = "pardoned"
     DELETED = "deleted"

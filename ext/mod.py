@@ -5,6 +5,7 @@ TODO Create customized user group and permissions
 import json
 import logging
 from datetime import timezone
+from typing import TYPE_CHECKING
 
 import discord
 import pendulum
@@ -17,12 +18,16 @@ from src.db_schema import Modlog, ModlogStatusEnum, ModlogTypeEnum, Task
 from src.ntlp import NormalizedTime, NotFutureError, is_future
 
 
+if TYPE_CHECKING:
+    from main import CazzuBot
+
+
 _log = logging.getLogger(__name__)
 
 
 class Moderation(commands.Cog):
     def __init__(self, bot):
-        self.bot = bot
+        self.bot: CazzuBot = bot
         self.log_expired.start()
 
     def cog_check(self, ctx: Context) -> bool:
@@ -71,9 +76,13 @@ class Moderation(commands.Cog):
         payload = {
             "gid": ctx.guild.id,
             "uid": member.id,
-            "log_type": ModlogTypeEnum.MUTE.value,
+            "log_type": ModlogTypeEnum.MUTE,
         }
-        tsk = Task(["modlog"], expires_on, json.dumps(payload))
+        tsk = Task(
+            ["modlog"],
+            expires_on,
+            self.bot.json_encoder.encode(payload),
+        )
 
         await modlog.add(self.bot.pool, log)
         await task.add(self.bot.pool, tsk)  # Add to task to handle
@@ -89,7 +98,8 @@ class Moderation(commands.Cog):
 
         for log in expired_logs:
             payload_raw = log[2]
-            payload = json.loads(payload_raw)
+            payload = self.bot.json_decoder.decode(payload_raw)
+            print(f"{payload=}")
             log_type = ModlogTypeEnum(payload["log_type"])
             uid: int = payload["uid"]
             _log.info(

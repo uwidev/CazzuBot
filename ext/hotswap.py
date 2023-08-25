@@ -5,7 +5,9 @@ import os
 
 from discord.ext import commands
 
-from main import EXTENSIONS_IMPORT_PATH, EXTENSIONS_PATH
+
+EXTENSIONS_IMPORT_PATH = r"ext"
+EXTENSIONS_PATH = r"ext"
 
 
 _log = logging.getLogger(__name__)
