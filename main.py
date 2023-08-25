@@ -16,11 +16,12 @@ import time
 import asyncpg
 import discord
 import pendulum
-from asyncpg import Pool
+from asyncpg import Connection, Pool
 from discord.ext import commands
 from discord.utils import _ColourFormatter, stream_supports_colour
 
 from secret import OWNER_ID, TOKEN
+from src.db_schema import ModlogStatusEnum, ModlogTypeEnum
 
 # from src import task
 from src.settings import Guild
@@ -100,7 +101,7 @@ class CazzuBot(commands.Bot):
         # _log.warning("Task resolution not yet implemented!")
 
 
-def set_logging():
+def setup_logging():
     """Write info logging to console and debug logging to file."""
 
     def timetz(*args):
@@ -140,7 +141,7 @@ def set_logging():
 
 
 async def main():
-    set_logging()
+    setup_logging()
 
     # Intents need to be set up to let discord know what we want for request
     intents = discord.Intents.default()
@@ -148,8 +149,21 @@ async def main():
 
     pw = getpass.getpass()
 
+    async def setup_codecs(con: Connection):
+        await con.set_type_codec(
+            "modlog_status_enum", encoder=lambda e: e.value, decoder=ModlogTypeEnum
+        )
+
+        await con.set_type_codec(
+            "modlog_type_enum", encoder=lambda e: e.value, decoder=ModlogStatusEnum
+        )
+
     async with asyncpg.create_pool(
-        database=DATABASE_NAME, user=DATABASE_USER, host=DATABASE_HOST, password=pw
+        database=DATABASE_NAME,
+        user=DATABASE_USER,
+        host=DATABASE_HOST,
+        password=pw,
+        init=setup_codecs,
     ) as pool:
         async with CazzuBot("d!", pool=pool, intents=intents, owner_id=OWNER_ID) as bot:
             await bot.start(TOKEN)  # Ignore built-in logger

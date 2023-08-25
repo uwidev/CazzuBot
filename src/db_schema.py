@@ -86,10 +86,10 @@ class Modlog(SnowflakeSchema):
                 self.gid,
                 self.uid,
                 self.cid,
-                self.log_type.value,
+                self.log_type,
                 self.given_on,
                 self.expires_on,
-                self.status.value,
+                self.status,
             ]
         )
 
