@@ -2,13 +2,17 @@
 
 No other place should require the programmer to write SQL code. This module acts as
 the middleman, the API, w/e, to the database.
+
+Asyncpg follows native PostgreSQL for query arguments $n. In other words, when writing a
+query, you should NOT do a string format on the query. Rather, additional arguments are
+given which will be substituted into the string after internal sanitation.
 """
 import logging
 from enum import Enum, auto
 
-import psycopg2.extensions
+from asyncpg import Connection, Pool
 
-from src.db_schema import SnowflakeSchema
+from src.db_schema import GuildSettings, Modlog, SnowflakeSchema, Task
 from src.utility import update_dict
 
 
@@ -21,115 +25,214 @@ class Table(Enum):
     GUILD_SETTING = "guild_setting"
 
 
-async def get_tasks(db: psycopg2.extensions.connection, module: str):
+async def add_modlog(db: Pool, log: Modlog):
+    """Add modlog into database."""
+    # return await _insert(db, Table.MODLOG, log)
+    async with db.acquire() as con:
+        async with con.transaction():
+            try:
+                await con.execute(
+                    """
+                    INSERT INTO modlog (gid, uid, cid, log_type, given_on, expires_on, status)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """,
+                    *log,
+                )
+            except Exception as err:
+                _log.error(err)
+                return 1
+            else:
+                return 0
+
+
+async def add_task(db: Pool, tsk: Task):
+    """Add task into database."""
+    # return await _insert(db, Table.TASK, tsk)
+    async with db.acquire() as con:
+        async with con.transaction():
+            try:
+                await con.execute(
+                    """
+                    INSERT INTO task (tag, run_at, payload)
+                    VALUES ($1, $2, $3)
+                    """,
+                    *tsk,
+                )
+            except Exception as err:
+                _log.error(err)
+                return 1
+            else:
+                return 0
+
+
+async def get_tasks(db: Pool, module: str):
     """Fetch all tasks that match the module."""
-    return await _select(db, Table.TASK, "*", f"'{module}' = ANY(tag)")
+    # return await _select(db, Table.TASK, "*", f"'{module}' = ANY(tag)")
+    async with db.acquire() as con:
+        async with con.transaction():
+            try:
+                data = await con.fetch(
+                    """
+                    SELECT * FROM task
+                    WHERE $1 = ANY(tag)
+                    """,
+                    module,
+                )
+
+            except Exception as err:
+                _log.error(err)
+                return None
+            else:
+                return data
 
 
 async def set_mute_role(db, gid: int, role: int):
     """Set the mute role on guild settings."""
-    return await _update(db, Table.GUILD_SETTING, f"mute_role = {role}", f"gid = {gid}")
+    # return await (db, Table.GUILD_SETTING, f"mute_role = {role}", f"gid = {gid}")
+    async with db.acquire() as con:
+        async with con.transaction():
+            try:
+                await con.execute(
+                    """
+                    UPDATE guild_setting
+                    SET mute_role = ($1)
+                    WHERE gid = $2
+                    """,
+                    role,
+                    gid,
+                )
+            except Exception as err:
+                _log.error(err)
+                return 1
+            else:
+                return 0
 
 
-async def initialize_guild(db, gid: int, defaults: dict):
+async def initialize_guild(db, gid: int):
     """Insert a new entry into guild settings with default values."""
+    defaults = GuildSettings(gid)
+    # await _insert(db, Table.GUILD_SETTING, defaults)
+    async with db.acquire() as con:
+        async with con.transaction():
+            try:
+                await con.execute(
+                    """
+                    INSERT INTO guild_setting (gid, mute_role)
+                    VALUES ($1, $2)
+                    """,
+                    *defaults,
+                )
+            except Exception as err:
+                _log.error(err)
+                return 1
+            else:
+                return 0
 
 
-def verify_table(func):
-    """Decorate to check to make sure table is a valid table from defined enum."""
+# def verify_table(func):
+#     """Decorate to check to make sure table is a valid table from defined enum."""
 
-    def check(db, table, *args, **kwargs):
-        if not isinstance(table, Table):
-            msg = f"table must be of type {Table}, not {type(table)}"
-            raise TypeError(msg)
-        return func(db, table, *args, **kwargs)
+#     def check(db, table, *args, **kwargs):
+#         if not isinstance(table, Table):
+#             msg = f"table must be of type {Table}, not {type(table)}"
+#             raise TypeError(msg)
+#         return func(db, table, *args, **kwargs)
 
-    return check
+#     return check
 
-
-@verify_table
-async def _insert(
-    db: psycopg2.extensions.connection, table: Table, data: SnowflakeSchema
-):
-    """Write generic data insertion onto any table depending on its schema."""
-    with db.cursor() as curs:
-        try:
-            curs.execute(
-                f"""
-                INSERT INTO {table.value}
-                VALUES {data.dump()}
-                """
-            )
-        except psycopg2.DatabaseError as err:
-            _log.warning(err)
-            db.rollback()
-        else:
-            db.commit()
-
-
-@verify_table
-async def _upsert(
-    db: psycopg2.extensions.connection, table: Table, data: SnowflakeSchema
-):
-    """Upsert generic data into table given a proper schema."""
-    with db.cursor() as curs:
-        try:
-            curs.execute(
-                f"""
-                INSERT INTO {table.value}
-                VALUES {data.dump()}
-                ON CONFLICT {data.conflicts()}
-                DO UPDATE SET {data.upsert()}
-                """
-            )
-        except psycopg2.DatabaseError as err:
-            _log.warning(err)
-            db.rollback()
-        else:
-            db.commit()
+# @verify_table
+# async def _insert(db: Pool, table: Table, data: SnowflakeSchema) -> int:
+#     """Write generic data insertion onto any table depending on its schema."""
+#     async with db.acquire() as con:
+#         async with con.transaction():
+#             try:
+#                 await con.execute(
+#                     """
+#                     INSERT INTO $1 $2
+#                     VALUES $3
+#                     """,
+#                     table.value,
+#                     data.columns(),
+#                     data.values(),
+#                 )
+#             except Exception as err:
+#                 _log.error(err)
+#                 return 1
+#             else:
+#                 return 0
 
 
-@verify_table
-async def _select(
-    db: psycopg2.extensions.connection, table: str, columns: str, query: str
-):
-    """Select genericly from a table given a SQL-compatible condition string."""
-    with db.cursor() as curs:
-        try:
-            curs.execute(
-                f"""
-                SELECT {columns}
-                FROM {table.value}
-                WHERE {query}
-                """
-            )
+# @verify_table
+# async def _upsert(db: Pool, table: Table, data: SnowflakeSchema) -> int:
+#     """Upsert generic data into table given a proper schema."""
+#     async with db.acquire() as con:
+#         async with con.transaction():
+#             try:
+#                 await con.execute(
+#                     """
+#                     INSERT INTO $1 $2
+#                     VALUES $3
+#                     ON CONFLICT $4
+#                     DO UPDATE SET $5
+#                     """,
+#                     (
+#                         table.value,
+#                         data.columns(),
+#                         data.values(),
+#                         data.conflicts(),
+#                         data.upsert(),
+#                     ),
+#                 )
+#             except Exception as err:
+#                 _log.error(err)
+#                 return 1
+#             else:
+#                 return 0
 
-            data = curs.fetchall()
-        except psycopg2.DatabaseError as err:
-            _log.warn(err)
 
-    return data
+# @verify_table
+# async def _select(db: Pool, table: Table, columns: str, query: str) -> dict:
+#     """Select genericly from a table given a SQL-compatible condition string."""
+#     async with db.acquire() as con:
+#         try:
+#             print(f"{columns=}")
+#             print(f"{table.value=}")
+#             print(f"{query=}")
+#             data = await con.fetch(
+#                 """
+#                 SELECT $1
+#                 FROM $2
+#                 WHERE $3
+#                 """,
+#                 columns,
+#                 table.value,
+#                 query,
+#             )
+#         except Exception as err:
+#             _log.warn(err)
+#         else:
+#             return data
 
 
-@verify_table
-async def _update(
-    db: psycopg2.extensions.connection, table: Table, val: str, cond: str
-):
-    """Write generic data insertion onto any table depending on its schema."""
-    with db.cursor() as curs:
-        try:
-            curs.execute(
-                f"""
-                UPDATE {table.value}
-                SET {val}
-                WHERE {cond}
-                """
-            )
-        except psycopg2.DatabaseError as err:
-            _log.warning(err)
-            db.rollback()
-        else:
-            db.commit()
+# @verify_table
+# async def _update(db: Pool, table: Table, val: str, cond: str) -> int:
+#     """Write generic data insertion onto any table depending on its schema."""
+#     async with db.dacquire() as con:
+#         try:
+#             con.execute(
+#                 f"""
+#                 UPDATE {table.value}
+#                 SET {val}
+#                 WHERE {cond}
+#                 """
+#             )
+#         except Exception as err:
+#             _log.warning(err)
+#             db.rollback()
+#             return 1
+#         else:
+#             db.commit()
+#             return 0
 
 
 # @verify_table
@@ -168,12 +271,12 @@ async def _update(
 #             db_table.update(doc)
 
 
-# async def test_db(db: psycopg2.extensions.connection, gid: int):
+# async def test_db(db: asyncpg.extensions.Pool, gid: int):
 #     _log.info("testing database...")
 
-#     with db.cursor() as curs:
+#     with db.dacquire() as con:
 #         try:
-#             curs.execute(
+#             con.execute(
 #                 f"""
 #                 INSERT INTO guild_setting
 #                 VALUES({gid})
@@ -181,7 +284,7 @@ async def _update(
 #                 DO NOTHING
 #                 """
 #             )
-#         except psycopg2.DatabaseError as err:
+#         except asyncpg.DatabaseError as err:
 #             _log.error(err)
 #         else:
 #             db.commit()

@@ -1,10 +1,12 @@
 """Helper management and typing for modlog entry."""
 from aiotinydb import AIOTinyDB
+from asyncpg import connection
 from tinydb import where
 from tinydb.table import Document
 
 import src.db_interface as dbi
 from src.db_interface import Table
+from src.db_schema import Modlog
 from src.db_templates import ModLogEntry
 
 
@@ -20,16 +22,16 @@ TEMPLATE = {  # Expected schema for modlogs
 }
 
 
-async def add(db: AIOTinyDB, modlog: ModLogEntry):
-    await dbi._insert(db, Table.MODLOG, modlog)
+async def add(db: connection, log: Modlog):
+    await dbi.add_modlog(db, log)
 
 
-async def get_modlogs(db: AIOTinyDB, gid: int) -> list[Document]:
+async def get_modlogs(db: connection, gid: int) -> dict:
     """Return modlogs for a specific guild."""
     return await dbi.search(db, Table.MODLOG, where("gid") == gid)
 
 
-async def get_unique_id(db: AIOTinyDB, gid: int):
+async def get_unique_id(db: connection, gid: int) -> int:
     """Return the next unique case id."""
     modlogs = await get_modlogs(db, gid)
     if not modlogs:

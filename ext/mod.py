@@ -2,6 +2,7 @@
 
 TODO Create customized user group and permissions
 """
+import json
 import logging
 from datetime import timezone
 
@@ -12,11 +13,7 @@ from discord.ext.commands.context import Context
 
 import src.db_interface as dbi
 from src import modlog, settings, task
-from src.db_templates import (
-    ModLogEntry,
-    ModLogTaskEntry,
-    ModLogType,
-)
+from src.db_schema import Modlog, ModlogStatusEnum, ModlogTypeEnum, Task
 from src.ntlp import NormalizedTime, NotFutureError, is_future
 
 
@@ -66,28 +63,20 @@ class Moderation(commands.Cog):
         if not is_future(now, expires_on):
             raise NotFutureError(expires_on)
 
-        log_id = await modlog.get_unique_id(self.bot.db, ctx.guild.id)
+        log_id = 0  # NEED TO IMPLEMENT GET LATEST CASE ID
 
-        log = ModLogEntry(
-            member.id,
-            ctx.guild.id,
-            log_id,
-            ModLogType.MUTE,
-            now,
-            expires_on,
-            reason,
-            # ModLogStatus.PARDONED,
+        log = Modlog(
+            ctx.guild.id, member.id, log_id, ModlogTypeEnum.MUTE, now, expires_on
         )
-        tsk = ModLogTaskEntry(
-            "modlog",
-            expires_on,
-            ctx.guild.id,
-            member.id,
-            ModLogType.MUTE,
-        )
+        payload = {
+            "gid": ctx.guild.id,
+            "uid": member.id,
+            "log_type": ModlogTypeEnum.MUTE.value,
+        }
+        tsk = Task(["modlog"], expires_on, json.dumps(payload))
 
-        await modlog.add(self.bot.db, log)
-        await task.add(self.bot.db, tsk)  # Add to task to handle
+        await modlog.add(self.bot.pool, log)
+        await task.add(self.bot.pool, tsk)  # Add to task to handle
 
         _log.warning("Mute currently does not actually mute!")
 
@@ -95,17 +84,18 @@ class Moderation(commands.Cog):
     async def log_expired(self):
         """Handle mute and temp-ban expirations."""
         now = pendulum.now(tz="UTC")
-        modlog_tasks = await task.tag(self.bot.db, "modlog")
+        modlog_tasks = await task.tag(self.bot.pool, "modlog")
         expired_logs = list(filter(lambda t: t[1] < now, modlog_tasks))
 
         for log in expired_logs:
-            payload = log[2]
-            log_type: ModLogType = payload["log_type"]
+            payload_raw = log[2]
+            payload = json.loads(payload_raw)
+            log_type = ModlogTypeEnum(payload["log_type"])
             uid: int = payload["uid"]
             _log.info(
                 "%s's has %s expired, reverting infraction actions...",
                 uid,
-                log_type,
+                log_type.value,
             )
             _log.warning("ModLog resolution has not yet been implemented!")
 
@@ -119,7 +109,7 @@ class Moderation(commands.Cog):
 
     @set.command(name="mute")
     async def set_mute(self, ctx: Context, *, role: discord.Role):
-        await dbi.set_mute_role(self.bot.db, ctx.guild.id, role.id)
+        await dbi.set_mute_role(self.bot.pool, ctx.guild.id, role.id)
 
 
 async def setup(bot: commands.Bot):
@@ -129,11 +119,11 @@ async def setup(bot: commands.Bot):
     Format should be as follows.
     Setting()
     """
-    mod_settings = settings.Settings("mute_role", {"id": None})
+    # mod_settings = settings.Settings("mute_role", {"id": None})
 
-    default_mod_settings = settings.Guild({"mod": {}})
-    default_mod_settings.mod = mod_settings
+    # default_mod_settings = settings.Guild({"mod": {}})
+    # default_mod_settings.mod = mod_settings
 
-    bot.guild_defaults.update(default_mod_settings)
+    # bot.guild_defaults.update(default_mod_settings)
 
     await bot.add_cog(Moderation(bot))

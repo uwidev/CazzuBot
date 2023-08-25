@@ -1,6 +1,7 @@
 """Developer commands for sandbox purposes."""
 import logging
 
+import pendulum
 from discord.ext import commands
 
 import src.db_interface as dbi
@@ -27,26 +28,15 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def test(self, ctx: commands.Context):
-        settings = src.db_schema.GuildSettings(ctx.guild.id, None)
-        await dbi._insert(self.bot.db, dbi.Table.GUILD_SETTING, settings)
-
-    @commands.command()
-    async def test2(self, ctx: commands.Context):
-        settings = src.db_schema.GuildSettings(ctx.guild.id, 42)
-        await dbi._upsert(self.bot.db, dbi.Table.GUILD_SETTING, settings)
-
-    @commands.command()
-    async def test3(self, ctx: commands.Context):
-        res = await dbi.select(self.bot.db, dbi.Table.GUILD_SETTING, "*", "gid > 1")
-        print(res)
+        await dbi.initialize_guild(self.bot.pool, ctx.guild.id)
 
     # @commands.command()
     # async def upgrade(self, ctx: commands.Context):
-    #     dbi.upgrade(self.bot.db)
+    #     dbi.upgrade(self.bot.pool)
 
     # @commands.command()
     # async def get(self, ctx: commands.Context):
-    #     res = dbi.get_by_id(self.bot.db, Table.GUILD_SETTINGS, ctx.guild.id)
+    #     res = dbi.get_by_id(self.bot.pool, Table.GUILD_SETTINGS, ctx.guild.id)
     #     _log.warning(res)
 
 
