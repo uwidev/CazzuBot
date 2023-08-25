@@ -2,9 +2,7 @@
 
 TODO Create customized user group and permissions
 """
-import json
 import logging
-from datetime import timezone
 from typing import TYPE_CHECKING
 
 import discord
@@ -12,9 +10,8 @@ import pendulum
 from discord.ext import commands, tasks
 from discord.ext.commands.context import Context
 
-import src.db_interface as dbi
-from src import modlog, settings, task
-from src.db_schema import Modlog, ModlogStatusEnum, ModlogTypeEnum, Task
+from src.db import modlog, settings, task
+from src.db.schema import ModlogSchema, ModlogTypeEnum, TaskSchema
 from src.ntlp import NormalizedTime, NotFutureError, is_future
 
 
@@ -70,7 +67,7 @@ class Moderation(commands.Cog):
 
         log_id = 0  # NEED TO IMPLEMENT GET LATEST CASE ID
 
-        log = Modlog(
+        log = ModlogSchema(
             ctx.guild.id, member.id, log_id, ModlogTypeEnum.MUTE, now, expires_on
         )
         payload = {
@@ -78,14 +75,14 @@ class Moderation(commands.Cog):
             "uid": member.id,
             "log_type": ModlogTypeEnum.MUTE,
         }
-        tsk = Task(
+        tsk = TaskSchema(
             ["modlog"],
             expires_on,
             self.bot.json_encoder.encode(payload),
         )
 
-        await modlog.add(self.bot.pool, log)
-        await task.add(self.bot.pool, tsk)  # Add to task to handle
+        await modlog.add_modlog(self.bot.pool, log)
+        await task.add_task(self.bot.pool, tsk)  # Add to task to handle
 
         _log.warning("Mute currently does not actually mute!")
 
@@ -93,7 +90,7 @@ class Moderation(commands.Cog):
     async def log_expired(self):
         """Handle mute and temp-ban expirations."""
         now = pendulum.now(tz="UTC")
-        modlog_tasks = await task.tag(self.bot.pool, "modlog")
+        modlog_tasks = await task.get_tasks(self.bot.pool, "modlog")
         expired_logs = list(filter(lambda t: t[1] < now, modlog_tasks))
 
         for log in expired_logs:
@@ -119,7 +116,7 @@ class Moderation(commands.Cog):
 
     @set.command(name="mute")
     async def set_mute(self, ctx: Context, *, role: discord.Role):
-        await dbi.set_mute_role(self.bot.pool, ctx.guild.id, role.id)
+        await settings.set_mute_role(self.bot.pool, ctx.guild.id, role.id)
 
 
 async def setup(bot: commands.Bot):

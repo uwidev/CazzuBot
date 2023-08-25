@@ -9,26 +9,19 @@ Should be a lot more straight-forward on extending the bot.
 import asyncio
 import getpass
 import logging
-import os
-import sys
 import time
 
 import asyncpg
 import discord
 import pendulum
-from asyncpg import Connection, Pool
-from discord.ext import commands
+from asyncpg import Connection
 from discord.utils import _ColourFormatter, stream_supports_colour
 
 from secret import OWNER_ID, TOKEN
-from src.db_schema import ModlogStatusEnum, ModlogTypeEnum
-from src.json_handler import CustomDecoder, CustomEncoder
-
-# from src import task
-from src.settings import Guild
+from src.cazzubot import CazzuBot
+from src.db.schema import ModlogStatusEnum, ModlogTypeEnum
 
 
-EXTENSIONS_IMPORT_PATH = r"ext"
 EXTENSIONS_PATH = r"ext"
 
 # DEFAULT_DATABASE_TABLE = Table.USER_EXPERIENCE.name
@@ -38,72 +31,6 @@ DATABASE_USER = "ubuntu"
 
 
 _log = logging.getLogger(__name__)
-
-
-class CazzuBot(commands.Bot):
-    def __init__(self, *args, pool: Pool, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.pool = pool
-
-    async def on_ready(
-        self,
-    ):
-        _log.info("Logged in as %s", self.user.name)
-
-    async def load_extensions(
-        self,
-    ):
-        for file in os.listdir(EXTENSIONS_PATH):
-            if file.endswith(".py"):
-                try:
-                    await self.load_extension(f"{EXTENSIONS_IMPORT_PATH}.{file[:-3]}")
-                    _log.info("|\t> loaded %s!", file[:-3])
-                except (
-                    commands.ExtensionNotFound,
-                    commands.ExtensionAlreadyLoaded,
-                    commands.NoEntryPointError,
-                    commands.ExtensionFailed,
-                ) as err:
-                    _log.error(err)
-
-    async def postgre_connect(self) -> Pool:
-        pw = getpass.getpass()
-
-        try:
-            pool = await asyncpg.create_pool(
-                database=DATABASE_NAME,
-                user=DATABASE_USER,
-                host=DATABASE_HOST,
-                password=pw,
-            )
-        except Exception as err:
-            _log.error(err)
-            _log.error("Unable to connect to database.")
-            sys.exit(1)
-        else:
-            _log.info(
-                'Connection to database "%s" as user "%s" at host "%s" successful!',
-                DATABASE_NAME,
-                DATABASE_USER,
-                DATABASE_HOST,
-            )
-            return pool
-
-    async def setup_hook(self) -> None:
-        _log.info("Loading extensions...")
-        await self.load_extensions()
-
-        _log.info("Loading json enconder and decoder...")
-        self.json_encoder = CustomEncoder()
-        self.json_decoder = CustomDecoder()
-
-        return 0
-
-        # _log.info("Loading tasks...")
-        # await task.all(bot.pool)
-
-        # _log.info("Resolving tasks...")
-        # _log.warning("Task resolution not yet implemented!")
 
 
 def setup_logging():
@@ -154,13 +81,14 @@ async def main():
 
     pw = getpass.getpass()
 
+    # Codecs for enum conversion here
     async def setup_codecs(con: Connection):
         await con.set_type_codec(
-            "modlog_status_enum", encoder=lambda e: e.value, decoder=ModlogTypeEnum
+            "modlog_status_enum", encoder=lambda e: e.value, decoder=ModlogStatusEnum
         )
 
         await con.set_type_codec(
-            "modlog_type_enum", encoder=lambda e: e.value, decoder=ModlogStatusEnum
+            "modlog_type_enum", encoder=lambda e: e.value, decoder=ModlogTypeEnum
         )
 
     async with asyncpg.create_pool(
@@ -170,7 +98,14 @@ async def main():
         password=pw,
         init=setup_codecs,
     ) as pool:
-        async with CazzuBot("d!", pool=pool, intents=intents, owner_id=OWNER_ID) as bot:
+        async with CazzuBot(
+            "d!",
+            pool=pool,
+            ext_path=EXTENSIONS_PATH,
+            database=(DATABASE_NAME, DATABASE_HOST, DATABASE_USER),
+            intents=intents,
+            owner_id=OWNER_ID,
+        ) as bot:
             await bot.start(TOKEN)  # Ignore built-in logger
 
 

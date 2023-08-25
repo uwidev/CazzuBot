@@ -1,18 +1,15 @@
-"""Handles direct interactions with the database.
+"""Handles general direct interactions with the database.
 
-No other place should require the programmer to write SQL code. This module acts as
-the middleman, the API, w/e, to the database.
+For module-specific queries, see other files in src.db
 
 Asyncpg follows native PostgreSQL for query arguments $n. In other words, when writing a
 query, you should NOT do a string format on the query. Rather, additional arguments are
 given which will be substituted into the string after internal sanitation.
 """
 import logging
-from enum import Enum, auto
+from enum import Enum
 
-from asyncpg import Connection, Pool
-
-from src.db_schema import GuildSettings, Modlog, SnowflakeSchema, Task
+from src.db.schema import GuildSettingsSchema
 from src.utility import update_dict
 
 
@@ -25,70 +22,8 @@ class Table(Enum):
     GUILD_SETTING = "guild_setting"
 
 
-async def add_modlog(db: Pool, log: Modlog):
-    """Add modlog into database."""
-    # return await _insert(db, Table.MODLOG, log)
-    async with db.acquire() as con:
-        async with con.transaction():
-            try:
-                await con.execute(
-                    """
-                    INSERT INTO modlog (gid, uid, cid, log_type, given_on, expires_on, status)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    """,
-                    *log,
-                )
-            except Exception as err:
-                _log.error(err)
-                return 1
-            else:
-                return 0
-
-
-async def add_task(db: Pool, tsk: Task):
-    """Add task into database."""
-    # return await _insert(db, Table.TASK, tsk)
-    async with db.acquire() as con:
-        async with con.transaction():
-            try:
-                await con.execute(
-                    """
-                    INSERT INTO task (tag, run_at, payload)
-                    VALUES ($1, $2, $3)
-                    """,
-                    *tsk,
-                )
-            except Exception as err:
-                _log.error(err)
-                return 1
-            else:
-                return 0
-
-
-async def get_tasks(db: Pool, module: str):
-    """Fetch all tasks that match the module."""
-    # return await _select(db, Table.TASK, "*", f"'{module}' = ANY(tag)")
-    async with db.acquire() as con:
-        async with con.transaction():
-            try:
-                data = await con.fetch(
-                    """
-                    SELECT * FROM task
-                    WHERE $1 = ANY(tag)
-                    """,
-                    module,
-                )
-
-            except Exception as err:
-                _log.error(err)
-                return None
-            else:
-                return data
-
-
 async def set_mute_role(db, gid: int, role: int):
     """Set the mute role on guild settings."""
-    # return await (db, Table.GUILD_SETTING, f"mute_role = {role}", f"gid = {gid}")
     async with db.acquire() as con:
         async with con.transaction():
             try:
@@ -110,8 +45,7 @@ async def set_mute_role(db, gid: int, role: int):
 
 async def initialize_guild(db, gid: int):
     """Insert a new entry into guild settings with default values."""
-    defaults = GuildSettings(gid)
-    # await _insert(db, Table.GUILD_SETTING, defaults)
+    defaults = GuildSettingsSchema(gid)
     async with db.acquire() as con:
         async with con.transaction():
             try:

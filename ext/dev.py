@@ -4,8 +4,8 @@ import logging
 import pendulum
 from discord.ext import commands
 
-import src.db_interface as dbi
-import src.db_schema
+import src.db.schema
+from src.db import modlog
 
 
 # import src.db_interface as dbi
@@ -28,16 +28,7 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def test(self, ctx: commands.Context):
-        await dbi.initialize_guild(self.bot.pool, ctx.guild.id)
-
-    # @commands.command()
-    # async def upgrade(self, ctx: commands.Context):
-    #     dbi.upgrade(self.bot.pool)
-
-    # @commands.command()
-    # async def get(self, ctx: commands.Context):
-    #     res = dbi.get_by_id(self.bot.pool, Table.GUILD_SETTINGS, ctx.guild.id)
-    #     _log.warning(res)
+        pass
 
 
 async def setup(bot: commands.Bot):

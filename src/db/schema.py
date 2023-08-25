@@ -1,7 +1,7 @@
 """Defines schema for databases for autocomplete."""
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from enum import Enum, auto
+from dataclasses import dataclass
+from enum import Enum
 
 import pendulum
 
@@ -35,7 +35,7 @@ class SnowflakeSchema(ABC):
 
 
 @dataclass
-class GuildSettings(SnowflakeSchema):
+class GuildSettingsSchema(SnowflakeSchema):
     gid: int
     mute_role: int = None
 
@@ -61,7 +61,7 @@ class ModlogStatusEnum(Enum):
 
 
 @dataclass
-class Modlog(SnowflakeSchema):
+class ModlogSchema(SnowflakeSchema):
     gid: int
     uid: int
     cid: int
@@ -74,11 +74,11 @@ class Modlog(SnowflakeSchema):
         return "(gid)"
 
     def __iter__(self):
+        """When unpacking, don't use cid since it's serialized (auto-increments)."""
         return iter(
             [
                 self.gid,
                 self.uid,
-                self.cid,
                 self.log_type,
                 self.given_on,
                 self.expires_on,
@@ -88,7 +88,7 @@ class Modlog(SnowflakeSchema):
 
 
 @dataclass
-class Task(SnowflakeSchema):
+class TaskSchema(SnowflakeSchema):
     tag: list
     run_at: pendulum.DateTime
     payload: dict

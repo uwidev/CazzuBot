@@ -1,0 +1,48 @@
+"""Defines SQL queries to make to the database for anything relate to a task."""
+import logging
+
+from asyncpg import Pool
+
+from src.db.schema import TaskSchema
+
+
+_log = logging.getLogger(__name__)
+
+
+async def add_task(db: Pool, tsk: TaskSchema):
+    """Add task into database."""
+    async with db.acquire() as con:
+        async with con.transaction():
+            try:
+                await con.execute(
+                    """
+                    INSERT INTO task (tag, run_at, payload)
+                    VALUES ($1, $2, $3)
+                    """,
+                    *tsk,
+                )
+            except Exception as err:
+                _log.error(err)
+                return 1
+            else:
+                return 0
+
+
+async def get_tasks(db: Pool, module: str):
+    """Fetch all tasks that match the module."""
+    async with db.acquire() as con:
+        async with con.transaction():
+            try:
+                data = await con.fetch(
+                    """
+                    SELECT * FROM task
+                    WHERE $1 = ANY(tag)
+                    """,
+                    module,
+                )
+
+            except Exception as err:
+                _log.error(err)
+                return None
+            else:
+                return data
