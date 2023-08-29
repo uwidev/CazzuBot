@@ -9,6 +9,8 @@ given which will be substituted into the string after internal sanitation.
 import logging
 from enum import Enum
 
+from asyncpg import Pool
+
 from src.db.schema import GuildSettingsSchema
 from src.utility import update_dict
 
@@ -22,9 +24,9 @@ class Table(Enum):
     GUILD_SETTING = "guild_setting"
 
 
-async def set_mute_role(db, gid: int, role: int):
+async def set_mute_id(pool: Pool, gid: int, role: int):
     """Set the mute role on guild settings."""
-    async with db.acquire() as con:
+    async with pool.acquire() as con:
         async with con.transaction():
             try:
                 await con.execute(
@@ -43,10 +45,23 @@ async def set_mute_role(db, gid: int, role: int):
                 return 0
 
 
-async def initialize_guild(db, gid: int):
+async def get_mute_id(pool: Pool, gid: int) -> int:
+    """Get a guild's mute role."""
+    async with pool.acquire() as con:
+        return await con.fetchval(
+            """
+            SELECT mute_role
+            FROM guild_setting
+            WHERE gid = $1
+            """,
+            gid,
+        )
+
+
+async def initialize_guild(pool: Pool, gid: int):
     """Insert a new entry into guild settings with default values."""
     defaults = GuildSettingsSchema(gid)
-    async with db.acquire() as con:
+    async with pool.acquire() as con:
         async with con.transaction():
             try:
                 await con.execute(

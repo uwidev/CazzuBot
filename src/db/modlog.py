@@ -10,7 +10,10 @@ _log = logging.getLogger(__name__)
 
 
 async def add_modlog(db: Pool, log: ModlogSchema):
-    """Add modlog into database."""
+    """Add modlog into database.
+
+    cid is ignored when adding modlog, since cid is serialized per-guild.
+    """
     # return await _insert(db, Table.MODLOG, log)
     async with db.acquire() as con:
         async with con.transaction():
@@ -18,8 +21,8 @@ async def add_modlog(db: Pool, log: ModlogSchema):
                 await con.execute(
                     """
                     INSERT INTO modlog
-                        (gid, uid, log_type, given_on, expires_on, status)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                        (gid, uid, log_type, given_on, status, expires_on, reason)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                     """,
                     *log,
                 )

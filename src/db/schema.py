@@ -67,7 +67,8 @@ class ModlogSchema(SnowflakeSchema):
     cid: int
     log_type: ModlogTypeEnum
     given_on: pendulum.DateTime
-    expires_on: pendulum.DateTime
+    expires_on: pendulum.DateTime = None
+    reason: str = None
     status: ModlogStatusEnum = ModlogStatusEnum.ACTIVE
 
     def conflicts(self) -> str:
@@ -81,8 +82,9 @@ class ModlogSchema(SnowflakeSchema):
                 self.uid,
                 self.log_type,
                 self.given_on,
-                self.expires_on,
                 self.status,
+                self.expires_on,
+                self.reason,
             ]
         )
 
@@ -92,6 +94,7 @@ class TaskSchema(SnowflakeSchema):
     tag: list
     run_at: pendulum.DateTime
     payload: dict
+    id: int = None
 
     def __iter__(self):
         return iter([self.tag, self.run_at, self.payload])

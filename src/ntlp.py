@@ -8,9 +8,7 @@ Bot should always calculate in UCT timezone, only changing timezone when interac
 with users. This mean that time should always be converted when users input time, and
 when outputting time.
 
-TODO  [ ]   Need to make sure timezone is independent from host. In other words,
-            timezone needs to be explicitly set, probably to UTC.
-      [ ]   Timezones should be able to be set as a setting for users.
+TODO  [ ]   Timezones should be able to be set as a setting for users.
 """
 import logging
 import re
@@ -30,7 +28,7 @@ shorthand_tmr = re.compile(r"tmr")
 def normalize_time_str(arg: str) -> pendulum.DateTime:
     """Convert a string to a datetime object.
 
-    Handles relative and absolute date/time.
+    Handles relative AND absolute date/time.
 
     parseDT() is unable to read "4d2h"-like formats, therefore we need to transform them
     to something that can be read, in this case, "4d 2h".
@@ -74,4 +72,5 @@ class NotFutureError(Exception):
         super().__init__(msg)
 
 
+# To support type-hinting and discord.py conversions
 NormalizedTime = Annotated[pendulum.DateTime, normalize_time_str]

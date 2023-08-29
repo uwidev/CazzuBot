@@ -9,9 +9,9 @@ from src.db.schema import TaskSchema
 _log = logging.getLogger(__name__)
 
 
-async def add_task(db: Pool, tsk: TaskSchema):
+async def add_task(pool: Pool, tsk: TaskSchema):
     """Add task into database."""
-    async with db.acquire() as con:
+    async with pool.acquire() as con:
         async with con.transaction():
             try:
                 await con.execute(
@@ -28,9 +28,9 @@ async def add_task(db: Pool, tsk: TaskSchema):
                 return 0
 
 
-async def get_tasks(db: Pool, module: str):
+async def get_tasks(pool: Pool, module: str):
     """Fetch all tasks that match the module."""
-    async with db.acquire() as con:
+    async with pool.acquire() as con:
         async with con.transaction():
             try:
                 data = await con.fetch(
@@ -46,3 +46,19 @@ async def get_tasks(db: Pool, module: str):
                 return None
             else:
                 return data
+
+
+async def drop_task(pool: Pool, id: int):
+    """Drop a task from database, usually after handling it."""
+    async with pool.acquire() as con:
+        async with con.transaction():
+            try:
+                await con.execute(
+                    """
+                    DELETE FROM task
+                    WHERE id = $1
+                    """,
+                    id,
+                )
+            except Exception as err:
+                _log.error(err)

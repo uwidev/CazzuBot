@@ -6,6 +6,7 @@ from discord.ext import commands
 
 import src.db.schema
 from src.db import modlog
+from src.db.settings import initialize_guild
 
 
 # import src.db_interface as dbi
@@ -25,6 +26,10 @@ class Dev(commands.Cog):
     @commands.command()
     async def owner(self, ctx):
         _log.info("%s is the bot owner.", ctx.author)
+
+    @commands.command()
+    async def init(self, ctx):
+        await initialize_guild(self.bot.pool, ctx.guild.id)
 
     @commands.command()
     async def test(self, ctx: commands.Context):

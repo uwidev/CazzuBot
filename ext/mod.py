@@ -12,7 +12,12 @@ from discord.ext.commands.context import Context
 
 from src.db import modlog, settings, task
 from src.db.schema import ModlogSchema, ModlogTypeEnum, TaskSchema
-from src.ntlp import NormalizedTime, NotFutureError, is_future
+from src.ntlp import (
+    InvalidTimeError,
+    NotFutureError,
+    is_future,
+    normalize_time_str,
+)
 
 
 if TYPE_CHECKING:
@@ -43,50 +48,152 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def warn(self, ctx: Context, member: discord.Member, reason: str):
-        _log.info("Member %s was warned: %s", member.name, reason)
+        """Warn the member, creating a modlog and adding it to database."""
+        now = pendulum.now("UTC")
+
+        log = ModlogSchema(
+            ctx.guild.id, member.id, 0, ModlogTypeEnum.WARN, now, reason=reason
+        )
+
+        await modlog.add_modlog(self.bot.pool, log)
 
     @commands.command()
     async def mute(
         self,
         ctx: Context,
         member: discord.Member,
-        expires_on: NormalizedTime,
         *,
-        reason: str,
+        raw: str = None,
     ):
         """Mute the user until the specified time or date.
 
-        Should use relative time when calling, but does accept absolute time/dates. If
-        absolute time/date is used, it should be converted to UTC.
+        Should use relative time when calling, but does accept absolute time/dates. Do
+        note that time is parsed as UTC.
 
         A potential feature would be to allow the user store their timezone to use here.
         """
         now = pendulum.now("UTC")
-        if not is_future(now, expires_on):
-            raise NotFutureError(expires_on)
 
-        log_id = 0  # NEED TO IMPLEMENT GET LATEST CASE ID
+        duration, reason = self.prase_dur_str_mix(raw)
 
+        if duration and not is_future(now, duration):
+            raise NotFutureError(duration)
+
+        # cid is 0 because cid is serialized per-guild
         log = ModlogSchema(
-            ctx.guild.id, member.id, log_id, ModlogTypeEnum.MUTE, now, expires_on
-        )
-        payload = {
-            "gid": ctx.guild.id,
-            "uid": member.id,
-            "log_type": ModlogTypeEnum.MUTE,
-        }
-        tsk = TaskSchema(
-            ["modlog"],
-            expires_on,
-            self.bot.json_encoder.encode(payload),
+            ctx.guild.id,
+            member.id,
+            0,
+            ModlogTypeEnum.MUTE,
+            now,
+            duration,
+            reason,
         )
 
         await modlog.add_modlog(self.bot.pool, log)
-        await task.add_task(self.bot.pool, tsk)  # Add to task to handle
 
-        _log.warning("Mute currently does not actually mute!")
+        # Add to task to handle in future
+        if duration:
+            raw = {
+                "gid": ctx.guild.id,
+                "uid": member.id,
+                "log_type": ModlogTypeEnum.MUTE,
+            }
+            tsk = TaskSchema(
+                ["modlog"],
+                duration,
+                self.bot.json_encoder.encode(raw),
+            )
 
-    @tasks.loop(seconds=60.0)
+            await task.add_task(self.bot.pool, tsk)
+
+        # Actually mute here
+        mute_id = await settings.get_mute_id(self.bot.pool, ctx.guild.id)
+        mute_role = ctx.guild.get_role(mute_id)
+        await member.add_roles(mute_role, reason=reason)
+
+    @commands.command()
+    async def kick(
+        self,
+        ctx: Context,
+        member: discord.Member,
+        *,
+        reason: str = None,
+    ):
+        """Kick a member from the guild, write reason and stuff to database."""
+        now = pendulum.now("UTC")
+
+        # cid is 0 because cid is serialized per-guild
+        log = ModlogSchema(
+            ctx.guild.id,
+            member.id,
+            0,
+            ModlogTypeEnum.KICK,
+            now,
+            reason=reason,
+        )
+
+        await modlog.add_modlog(self.bot.pool, log)
+
+        # Actually ban here
+        await member.kick(reason=reason)
+
+    @commands.command()
+    async def ban(
+        self,
+        ctx: Context,
+        member: discord.Member,
+        *,
+        raw: str = None,
+    ):
+        """Bans the user until the specified time or date. If not provided, forever.
+
+        Should use relative time when calling, but does accept absolute time/dates. Do
+        note that time is parsed as UTC.
+
+        A potential feature would be to allow the user store their timezone to use here.
+        """
+        now = pendulum.now("UTC")
+
+        duration, reason = self.prase_dur_str_mix(raw)
+
+        if duration and not is_future(now, duration):
+            raise NotFutureError(duration)
+
+        ban_type = ModlogTypeEnum.TEMPBAN if duration else ModlogTypeEnum.BAN
+
+        # cid is 0 because cid is serialized per-guild
+        log = ModlogSchema(
+            ctx.guild.id,
+            member.id,
+            0,
+            ban_type,
+            now,
+            duration,
+            reason,
+        )
+
+        await modlog.add_modlog(self.bot.pool, log)
+
+        # Add to task to handle in future
+        if duration:
+            raw = {
+                "gid": ctx.guild.id,
+                "uid": member.id,
+                "log_type": ban_type,
+            }
+            tsk = TaskSchema(
+                ["modlog"],
+                duration,
+                self.bot.json_encoder.encode(raw),
+            )
+
+            await task.add_task(self.bot.pool, tsk)
+
+        # Actually ban here
+        await member.ban(reason=reason)
+
+    @tasks.loop(seconds=5.0)
     async def log_expired(self):
         """Handle mute and temp-ban expirations."""
         now = pendulum.now(tz="UTC")
@@ -96,15 +203,38 @@ class Moderation(commands.Cog):
         for log in expired_logs:
             payload_raw = log[2]
             payload = self.bot.json_decoder.decode(payload_raw)
-            print(f"{payload=}")
             log_type = ModlogTypeEnum(payload["log_type"])
             uid: int = payload["uid"]
-            _log.info(
-                "%s's has %s expired, reverting infraction actions...",
-                uid,
-                log_type.value,
-            )
-            _log.warning("ModLog resolution has not yet been implemented!")
+            gid: int = payload["gid"]
+
+            if log_type == ModlogTypeEnum.MUTE:
+                guild = self.bot.get_guild(gid)
+                mute_id = await settings.get_mute_id(self.bot.pool, gid)
+                mute_role = guild.get_role(mute_id)
+
+                member = await guild.fetch_member(uid)
+                await member.remove_roles(mute_role, reason="Mute expired.")
+                await task.drop_task(self.bot.pool, log["id"])
+
+                _log.info(
+                    "%s's has %s expired, reverting infraction actions...",
+                    uid,
+                    log_type.value,
+                )
+
+            if log_type == ModlogTypeEnum.TEMPBAN:
+                guild = self.bot.get_guild(gid)
+                user = await self.bot.fetch_user(uid)
+                await guild.unban(user, reason="Tempban expired.")
+                await task.drop_task(self.bot.pool, log["id"])
+
+                _log.info(
+                    "%s's has %s expired, reverting infraction actions...",
+                    uid,
+                    log_type.value,
+                )
+
+            # _log.warning("ModLog resolution has not yet been implemented!")
 
     @log_expired.before_loop
     async def before_log_expired(self):
@@ -116,7 +246,31 @@ class Moderation(commands.Cog):
 
     @set.command(name="mute")
     async def set_mute(self, ctx: Context, *, role: discord.Role):
-        await settings.set_mute_role(self.bot.pool, ctx.guild.id, role.id)
+        await settings.set_mute_id(self.bot.pool, ctx.guild.id, role.id)
+
+    def prase_dur_str_mix(self, raw) -> tuple[pendulum.DateTime, str]:
+        """Transform a time string mix.
+
+        Time is optional, and must come first.
+
+        ==== Examples of expected output =====
+        DateTime dur 2h, "foo bar barz"         "2h foo bar barz"
+        None, "foo bar barz"                    "2h foo bar barz"
+        None, "foo 2h bar barz"                 "foo 2h bar barz"
+        """
+        time = None
+        s = raw
+        if raw:
+            if raw.find(" ") != -1:
+                dur_raw, s = raw.split(" ", 1)
+            else:
+                dur_raw = raw
+            try:
+                time = normalize_time_str(dur_raw)
+            except InvalidTimeError:
+                s = raw
+
+        return time, s
 
 
 async def setup(bot: commands.Bot):

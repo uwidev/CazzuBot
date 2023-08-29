@@ -1,11 +1,4 @@
-"""Runs the bot.
-
-TODO: Developing a new cog is too powerful(?) when interacting with the dabase.
-db_interface should have dedicated functions for adding a new setting, rather than
-being able to add whatever data onto whatever table.
-
-Should be a lot more straight-forward on extending the bot.
-"""
+"""Runs the bot."""
 import asyncio
 import getpass
 import logging
