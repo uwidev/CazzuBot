@@ -3,13 +3,13 @@ import logging
 
 from asyncpg import Pool
 
-from src.db.schema import TaskSchema
+from . import schema
 
 
 _log = logging.getLogger(__name__)
 
 
-async def add_task(pool: Pool, tsk: TaskSchema):
+async def add_task(pool: Pool, tsk: schema.TaskSchema):
     """Add task into database."""
     async with pool.acquire() as con:
         async with con.transaction():

@@ -5,8 +5,9 @@ import pendulum
 from discord.ext import commands
 
 import src.db.schema
+from src import db
 from src.db import modlog
-from src.db.settings import initialize_guild
+from src.db.guild import add_guild
 
 
 # import src.db_interface as dbi
@@ -29,7 +30,7 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def init(self, ctx):
-        await initialize_guild(self.bot.pool, ctx.guild.id)
+        await add_guild(self.bot.pool, db.GuildSchema(ctx.guild.id))
 
     @commands.command()
     async def test(self, ctx: commands.Context):

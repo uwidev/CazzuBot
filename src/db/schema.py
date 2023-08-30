@@ -35,7 +35,7 @@ class SnowflakeSchema(ABC):
 
 
 @dataclass
-class GuildSettingsSchema(SnowflakeSchema):
+class GuildSchema(SnowflakeSchema):
     gid: int
     mute_role: int = None
 
@@ -98,3 +98,25 @@ class TaskSchema(SnowflakeSchema):
 
     def __iter__(self):
         return iter([self.tag, self.run_at, self.payload])
+
+
+@dataclass
+class MemberSchema(SnowflakeSchema):
+    uid: int  # REFERENCES user.uid
+    gid: int  # REFERNECES guild.gid
+    exp: int = 0
+    exp_cdr: pendulum.DateTime = None
+    frog: int = 0
+
+    def __iter__(self):
+        """Unpacking for inserting new row."""
+        return iter([self.uid, self.gid])
+
+
+@dataclass
+class UserSchema(SnowflakeSchema):
+    uid: int
+
+    def __iter__(self):
+        """Unpacking for inserting new row."""
+        return iter([self.uid])

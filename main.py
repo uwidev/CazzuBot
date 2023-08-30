@@ -65,6 +65,16 @@ def setup_logging():
     logger.addHandler(file_hanndler)
 
 
+async def setup_codecs(con: Connection):
+    await con.set_type_codec(
+        "modlog_status_enum", encoder=lambda e: e.value, decoder=ModlogStatusEnum
+    )
+
+    await con.set_type_codec(
+        "modlog_type_enum", encoder=lambda e: e.value, decoder=ModlogTypeEnum
+    )
+
+
 async def main():
     setup_logging()
 
@@ -75,14 +85,6 @@ async def main():
     pw = getpass.getpass()
 
     # Codecs for enum conversion here
-    async def setup_codecs(con: Connection):
-        await con.set_type_codec(
-            "modlog_status_enum", encoder=lambda e: e.value, decoder=ModlogStatusEnum
-        )
-
-        await con.set_type_codec(
-            "modlog_type_enum", encoder=lambda e: e.value, decoder=ModlogTypeEnum
-        )
 
     async with asyncpg.create_pool(
         database=DATABASE_NAME,

@@ -3,19 +3,25 @@ import logging
 
 from asyncpg import Pool
 
-from src.db.schema import ModlogSchema
+from . import guild, schema, user
 
 
 _log = logging.getLogger(__name__)
 
 
-async def add_modlog(db: Pool, log: ModlogSchema):
+async def add_modlog(pool: Pool, log: schema.ModlogSchema):
     """Add modlog into database.
 
     cid is ignored when adding modlog, since cid is serialized per-guild.
     """
-    # return await _insert(db, Table.MODLOG, log)
-    async with db.acquire() as con:
+    # Foreign constraint dependencies
+    if not await user.get_user(pool, log.uid):
+        await user.add_user(pool, schema.UserSchema(log.uid))
+
+    if not await guild.get_guild(pool, log.gid):
+        await guild.add_guild(pool, schema.GuildSchema(log.gid))
+
+    async with pool.acquire() as con:
         async with con.transaction():
             try:
                 await con.execute(

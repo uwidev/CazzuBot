@@ -10,9 +10,9 @@ import logging
 from enum import Enum
 
 from asyncpg import Pool
+from discord.ext import commands
 
-from src.db.schema import GuildSettingsSchema
-from src.utility import update_dict
+from . import schema
 
 
 _log = logging.getLogger(__name__)
@@ -21,7 +21,19 @@ _log = logging.getLogger(__name__)
 class Table(Enum):
     TASK = "task"
     MODLOG = "modlog"
-    GUILD_SETTING = "guild_setting"
+    GUILD_SETTING = "guild"
+
+
+def req_mute_id():
+    """Decorate to ensure mute role id is set."""
+
+    async def predicate(ctx):
+        if not await get_mute_id(ctx.bot.pool, ctx.guild.id):
+            return False
+
+        return True
+
+    return commands.check(predicate)
 
 
 async def set_mute_id(pool: Pool, gid: int, role: int):
@@ -31,7 +43,7 @@ async def set_mute_id(pool: Pool, gid: int, role: int):
             try:
                 await con.execute(
                     """
-                    UPDATE guild_setting
+                    UPDATE guild
                     SET mute_role = ($1)
                     WHERE gid = $2
                     """,
@@ -51,31 +63,47 @@ async def get_mute_id(pool: Pool, gid: int) -> int:
         return await con.fetchval(
             """
             SELECT mute_role
-            FROM guild_setting
+            FROM guild
             WHERE gid = $1
             """,
             gid,
         )
 
 
-async def initialize_guild(pool: Pool, gid: int):
+async def add_guild(pool: Pool, guild: schema.GuildSchema):
     """Insert a new entry into guild settings with default values."""
-    defaults = GuildSettingsSchema(gid)
     async with pool.acquire() as con:
         async with con.transaction():
             try:
                 await con.execute(
                     """
-                    INSERT INTO guild_setting (gid, mute_role)
-                    VALUES ($1, $2)
+                    INSERT INTO guild (gid)
+                    VALUES ($1)
                     """,
-                    *defaults,
+                    guild.gid,
                 )
             except Exception as err:
                 _log.error(err)
                 return 1
             else:
                 return 0
+
+
+async def get_guild(pool: Pool, gid: int):
+    async with pool.acquire() as con:
+        try:
+            res = await con.fetchrow(
+                """
+                SELECT *
+                FROM guild
+                WHERE gid = $1
+                """,
+                gid,
+            )
+        except Exception as err:
+            _log.error(err)
+        else:
+            return res
 
 
 # def verify_table(func):
@@ -90,7 +118,7 @@ async def initialize_guild(pool: Pool, gid: int):
 #     return check
 
 # @verify_table
-# async def _insert(db: Pool, table: Table, data: SnowflakeSchema) -> int:
+# async def _insert(db: Pool, tabl  hema) -> int:
 #     """Write generic data insertion onto any table depending on its schema."""
 #     async with db.acquire() as con:
 #         async with con.transaction():

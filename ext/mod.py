@@ -10,7 +10,7 @@ import pendulum
 from discord.ext import commands, tasks
 from discord.ext.commands.context import Context
 
-from src.db import modlog, settings, task
+from src import db
 from src.db.schema import ModlogSchema, ModlogTypeEnum, TaskSchema
 from src.ntlp import (
     InvalidTimeError,
@@ -55,9 +55,10 @@ class Moderation(commands.Cog):
             ctx.guild.id, member.id, 0, ModlogTypeEnum.WARN, now, reason=reason
         )
 
-        await modlog.add_modlog(self.bot.pool, log)
+        await db.modlog.add_modlog(self.bot.pool, log)
 
     @commands.command()
+    @db.guild.req_mute_id()
     async def mute(
         self,
         ctx: Context,
@@ -90,7 +91,7 @@ class Moderation(commands.Cog):
             reason,
         )
 
-        await modlog.add_modlog(self.bot.pool, log)
+        await db.modlog.add_modlog(self.bot.pool, log)
 
         # Add to task to handle in future
         if duration:
@@ -105,10 +106,10 @@ class Moderation(commands.Cog):
                 self.bot.json_encoder.encode(raw),
             )
 
-            await task.add_task(self.bot.pool, tsk)
+            await db.task.add_task(self.bot.pool, tsk)
 
         # Actually mute here
-        mute_id = await settings.get_mute_id(self.bot.pool, ctx.guild.id)
+        mute_id = await db.guild.get_mute_id(self.bot.pool, ctx.guild.id)
         mute_role = ctx.guild.get_role(mute_id)
         await member.add_roles(mute_role, reason=reason)
 
@@ -133,7 +134,7 @@ class Moderation(commands.Cog):
             reason=reason,
         )
 
-        await modlog.add_modlog(self.bot.pool, log)
+        await db.modlog.add_modlog(self.bot.pool, log)
 
         # Actually ban here
         await member.kick(reason=reason)
@@ -173,7 +174,7 @@ class Moderation(commands.Cog):
             reason,
         )
 
-        await modlog.add_modlog(self.bot.pool, log)
+        await db.modlog.add_modlog(self.bot.pool, log)
 
         # Add to task to handle in future
         if duration:
@@ -188,7 +189,7 @@ class Moderation(commands.Cog):
                 self.bot.json_encoder.encode(raw),
             )
 
-            await task.add_task(self.bot.pool, tsk)
+            await db.task.add_task(self.bot.pool, tsk)
 
         # Actually ban here
         await member.ban(reason=reason)
@@ -197,7 +198,7 @@ class Moderation(commands.Cog):
     async def log_expired(self):
         """Handle mute and temp-ban expirations."""
         now = pendulum.now(tz="UTC")
-        modlog_tasks = await task.get_tasks(self.bot.pool, "modlog")
+        modlog_tasks = await db.task.get_tasks(self.bot.pool, "modlog")
         expired_logs = list(filter(lambda t: t[1] < now, modlog_tasks))
 
         for log in expired_logs:
@@ -209,12 +210,12 @@ class Moderation(commands.Cog):
 
             if log_type == ModlogTypeEnum.MUTE:
                 guild = self.bot.get_guild(gid)
-                mute_id = await settings.get_mute_id(self.bot.pool, gid)
+                mute_id = await db.guild.get_mute_id(self.bot.pool, gid)
                 mute_role = guild.get_role(mute_id)
 
                 member = await guild.fetch_member(uid)
                 await member.remove_roles(mute_role, reason="Mute expired.")
-                await task.drop_task(self.bot.pool, log["id"])
+                await db.task.drop_task(self.bot.pool, log["id"])
 
                 _log.info(
                     "%s's has %s expired, reverting infraction actions...",
@@ -226,7 +227,7 @@ class Moderation(commands.Cog):
                 guild = self.bot.get_guild(gid)
                 user = await self.bot.fetch_user(uid)
                 await guild.unban(user, reason="Tempban expired.")
-                await task.drop_task(self.bot.pool, log["id"])
+                await db.task.drop_task(self.bot.pool, log["id"])
 
                 _log.info(
                     "%s's has %s expired, reverting infraction actions...",
@@ -246,7 +247,7 @@ class Moderation(commands.Cog):
 
     @set.command(name="mute")
     async def set_mute(self, ctx: Context, *, role: discord.Role):
-        await settings.set_mute_id(self.bot.pool, ctx.guild.id, role.id)
+        await db.guild.set_mute_id(self.bot.pool, ctx.guild.id, role.id)
 
     def prase_dur_str_mix(self, raw) -> tuple[pendulum.DateTime, str]:
         """Transform a time string mix.
