@@ -8,6 +8,7 @@ import asyncpg
 from asyncpg import Pool
 from discord.ext import commands
 
+import src.levels_helper
 from src.json_handler import CustomDecoder, CustomEncoder
 
 

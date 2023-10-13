@@ -9,7 +9,7 @@ import pendulum
 from discord.ext import commands
 from discord.ext.commands.context import Context
 
-from src import db
+from src import db, levels_helper
 
 
 _log = logging.getLogger(__name__)
@@ -67,6 +67,9 @@ class Experience(commands.Cog):
         if message.author.id == self.bot.user.id:  # ignore self
             return
 
+        if message.author.id != 92664421553307648:  # debug, only see usara
+            return
+
         now = pendulum.now("UTC")
         uid = message.author.id
         gid = message.guild.id
@@ -82,12 +85,14 @@ class Experience(commands.Cog):
         if member_db and now < member_db.get("exp_cdr"):
             return  # Cooldown has not yet expired, do nothing
 
+        old_exp = member_db.get("exp_lifetime")  # Needed to determine if level up
+
         msg_cnt = member_db.get("exp_msg_cnt") + 1
         exp_gain = _EXP_BASE + _calc_exp(msg_cnt)
-        new_exp = member_db.get("exp_lifetime") + exp_gain
+        new_exp = old_exp + exp_gain
         offset_cooldown = now + pendulum.duration(seconds=_EXP_COOLDOWN)
 
-        _log.info(f"Granting {exp_gain} exp to {message.author}")
+        _log.info("Granting %s exp to %s", exp_gain, message.author)
         # For guild lifetime
         member_updated = db.table.Member(gid, uid, new_exp, msg_cnt, offset_cooldown)
         await db.member.update_exp(self.bot.pool, member_updated)
@@ -96,6 +101,15 @@ class Experience(commands.Cog):
         await db.member_exp_log.add(
             self.bot.pool, db.table.MemberExpLog(gid, uid, exp_gain, now)
         )
+
+        # Calculations if level up
+        old_level = levels_helper.level_from_exp(old_exp)
+        new_level = levels_helper.level_from_exp(new_exp)
+
+        if new_level > old_level:
+            _log.info(
+                f"{message.author} has leveled up from {old_level} to {new_level}!"
+            )
 
     @commands.group(aliases=["xp"], invoke_without_command=True)
     async def exp(self, ctx: Context, *, user: discord.Member = None):

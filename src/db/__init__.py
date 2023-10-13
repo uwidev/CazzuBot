@@ -6,6 +6,7 @@ needs to define in order to operate.
 from . import (  # noqa: F401
     guild,
     internal,
+    levels,
     member,
     member_exp_log,
     modlog,
