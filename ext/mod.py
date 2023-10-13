@@ -11,7 +11,7 @@ from discord.ext import commands, tasks
 from discord.ext.commands.context import Context
 
 from src import db
-from src.db.schema import ModlogSchema, ModlogTypeEnum, TaskSchema
+from src.db.table import Modlog, ModlogTypeEnum, Task
 from src.ntlp import (
     InvalidTimeError,
     NotFutureError,
@@ -20,7 +20,7 @@ from src.ntlp import (
 )
 
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # magical?? shit that helps with type checking
     from main import CazzuBot
 
 
@@ -51,11 +51,11 @@ class Moderation(commands.Cog):
         """Warn the member, creating a modlog and adding it to database."""
         now = pendulum.now("UTC")
 
-        log = ModlogSchema(
+        log = Modlog(
             ctx.guild.id, member.id, 0, ModlogTypeEnum.WARN, now, reason=reason
         )
 
-        await db.modlog.add_modlog(self.bot.pool, log)
+        await db.modlog.add(self.bot.pool, log)
 
     @commands.command()
     @db.guild.req_mute_id()
@@ -81,7 +81,7 @@ class Moderation(commands.Cog):
             raise NotFutureError(duration)
 
         # cid is 0 because cid is serialized per-guild
-        log = ModlogSchema(
+        log = Modlog(
             ctx.guild.id,
             member.id,
             0,
@@ -91,7 +91,7 @@ class Moderation(commands.Cog):
             reason,
         )
 
-        await db.modlog.add_modlog(self.bot.pool, log)
+        await db.modlog.add(self.bot.pool, log)
 
         # Add to task to handle in future
         if duration:
@@ -100,13 +100,13 @@ class Moderation(commands.Cog):
                 "uid": member.id,
                 "log_type": ModlogTypeEnum.MUTE,
             }
-            tsk = TaskSchema(
+            tsk = Task(
                 ["modlog"],
                 duration,
                 self.bot.json_encoder.encode(raw),
             )
 
-            await db.task.add_task(self.bot.pool, tsk)
+            await db.task.add(self.bot.pool, tsk)
 
         # Actually mute here
         mute_id = await db.guild.get_mute_id(self.bot.pool, ctx.guild.id)
@@ -125,7 +125,7 @@ class Moderation(commands.Cog):
         now = pendulum.now("UTC")
 
         # cid is 0 because cid is serialized per-guild
-        log = ModlogSchema(
+        log = Modlog(
             ctx.guild.id,
             member.id,
             0,
@@ -134,7 +134,7 @@ class Moderation(commands.Cog):
             reason=reason,
         )
 
-        await db.modlog.add_modlog(self.bot.pool, log)
+        await db.modlog.add(self.bot.pool, log)
 
         # Actually ban here
         await member.kick(reason=reason)
@@ -164,7 +164,7 @@ class Moderation(commands.Cog):
         ban_type = ModlogTypeEnum.TEMPBAN if duration else ModlogTypeEnum.BAN
 
         # cid is 0 because cid is serialized per-guild
-        log = ModlogSchema(
+        log = Modlog(
             ctx.guild.id,
             member.id,
             0,
@@ -174,7 +174,7 @@ class Moderation(commands.Cog):
             reason,
         )
 
-        await db.modlog.add_modlog(self.bot.pool, log)
+        await db.modlog.add(self.bot.pool, log)
 
         # Add to task to handle in future
         if duration:
@@ -183,13 +183,13 @@ class Moderation(commands.Cog):
                 "uid": member.id,
                 "log_type": ban_type,
             }
-            tsk = TaskSchema(
+            tsk = Task(
                 ["modlog"],
                 duration,
                 self.bot.json_encoder.encode(raw),
             )
 
-            await db.task.add_task(self.bot.pool, tsk)
+            await db.task.add(self.bot.pool, tsk)
 
         # Actually ban here
         await member.ban(reason=reason)
@@ -198,7 +198,7 @@ class Moderation(commands.Cog):
     async def log_expired(self):
         """Handle mute and temp-ban expirations."""
         now = pendulum.now(tz="UTC")
-        modlog_tasks = await db.task.get_tasks(self.bot.pool, "modlog")
+        modlog_tasks = await db.task.get(self.bot.pool, "modlog")
         expired_logs = list(filter(lambda t: t[1] < now, modlog_tasks))
 
         for log in expired_logs:
@@ -215,7 +215,7 @@ class Moderation(commands.Cog):
 
                 member = await guild.fetch_member(uid)
                 await member.remove_roles(mute_role, reason="Mute expired.")
-                await db.task.drop_task(self.bot.pool, log["id"])
+                await db.task.drop(self.bot.pool, log["id"])
 
                 _log.info(
                     "%s's has %s expired, reverting infraction actions...",
@@ -227,7 +227,7 @@ class Moderation(commands.Cog):
                 guild = self.bot.get_guild(gid)
                 user = await self.bot.fetch_user(uid)
                 await guild.unban(user, reason="Tempban expired.")
-                await db.task.drop_task(self.bot.pool, log["id"])
+                await db.task.drop(self.bot.pool, log["id"])
 
                 _log.info(
                     "%s's has %s expired, reverting infraction actions...",

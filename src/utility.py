@@ -13,10 +13,12 @@ class ReadOnlyDict(dict):
     """Safeguard to prevent writing to DB templates."""
 
     def __setitem__(self, key, value):
-        raise TypeError("read-only dictionary, " "setting values is not supported")
+        msg = "read-only dictionary, setting values is not supported"
+        raise TypeError(msg)
 
     def __delitem__(self, key):
-        raise TypeError("read-only dict, " "deleting values is not supported")
+        msg = "read-only dict, deleting values is not supported"
+        raise TypeError(msg)
 
 
 def author_confirm(
@@ -24,7 +26,12 @@ def author_confirm(
 ):
     """Force author to confirm that they want to run the command.
 
-    Meant to be used as a decorator.
+    Meant to be used as a decorator like so:
+
+    @author_confirm(**kwargs)
+    @command.command()
+    async def command(ctx):
+        ...
     """
 
     async def confirm(ctx: commands.Context) -> bool:

@@ -1,12 +1,12 @@
 """Defines schema for databases for autocomplete."""
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 import pendulum
 
 
-class SnowflakeSchema(ABC):
+class SnowflakeTable(ABC):
     def columns(self):
         """Return columns to dump into."""
         return "(" + ", ".join(self.__dict__.keys()) + ")"
@@ -35,9 +35,10 @@ class SnowflakeSchema(ABC):
 
 
 @dataclass
-class GuildSchema(SnowflakeSchema):
+class Guild(SnowflakeTable):
     gid: int
     mute_role: int = None
+    ranks: dict = field(default_factory=dict)
 
     def conflicts(self) -> str:
         return "(gid)"
@@ -61,7 +62,7 @@ class ModlogStatusEnum(Enum):
 
 
 @dataclass
-class ModlogSchema(SnowflakeSchema):
+class Modlog(SnowflakeTable):
     gid: int
     uid: int
     cid: int
@@ -90,7 +91,7 @@ class ModlogSchema(SnowflakeSchema):
 
 
 @dataclass
-class TaskSchema(SnowflakeSchema):
+class Task(SnowflakeTable):
     tag: list
     run_at: pendulum.DateTime
     payload: dict
@@ -101,22 +102,55 @@ class TaskSchema(SnowflakeSchema):
 
 
 @dataclass
-class MemberSchema(SnowflakeSchema):
-    uid: int  # REFERENCES user.uid
+class Member(SnowflakeTable):
     gid: int  # REFERNECES guild.gid
-    exp: int = 0
+    uid: int  # REFERENCES user.uid
+    exp_lifetime: int = 0
+    exp_msg_cnt: int = 0
     exp_cdr: pendulum.DateTime = None
-    frog: int = 0
 
     def __iter__(self):
         """Unpacking for inserting new row."""
-        return iter([self.uid, self.gid])
+        return iter(
+            [self.gid, self.uid, self.exp_lifetime, self.exp_msg_cnt, self.exp_cdr]
+        )
 
 
 @dataclass
-class UserSchema(SnowflakeSchema):
+class User(SnowflakeTable):
     uid: int
 
     def __iter__(self):
         """Unpacking for inserting new row."""
         return iter([self.uid])
+
+
+@dataclass
+class MemberExpLog(SnowflakeTable):
+    gid: int  # REFERENCES guild.gid
+    uid: int  # REFERENCES user.uid
+    exp: int
+    at: pendulum.DateTime
+
+    def __iter__(self):
+        return iter([self.gid, self.uid, self.exp, self.at])
+
+
+@dataclass
+class Rank(SnowflakeTable):
+    gid: int  # REFERENCES guild.gid
+    rid: int
+    threshold: int
+
+    def __iter__(self):
+        return iter([self.gid, self.rid, self.threshold])
+
+
+@dataclass
+class MemberRank(SnowflakeTable):
+    gid: int  # REFERENCES guild.gid
+    uid: int  # REFERENCES user.uid
+    rid: int
+
+    def __iter__(self):
+        return iter([self.gid, self.uid, self.rid])

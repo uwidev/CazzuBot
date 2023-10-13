@@ -1,0 +1,88 @@
+"""Manages everything related to logging the raw events of experience gain.
+
+Exp is stored per-message rather than added to a running value. They are also given a
+timestamp. This allows for flexible queries and design of leaderboards, but requires
+additional computation to calculate each member's cumulative experience per time-window.
+
+There may potentially be a "lifetime" exp stored on the member, which can speed things.
+
+If query performance is slow, consider building and keeping an internal cache of
+pre-computed experiences.
+"""
+import contextlib
+import logging
+
+import pendulum
+from asyncpg import InvalidObjectDefinitionError, Pool, Record
+
+from . import guild, table, user
+
+
+_log = logging.getLogger(__name__)
+
+
+async def add(pool: Pool, payload: table.MemberExpLog):
+    """Log expereience gain entry."""
+    await create_partition(pool, payload.gid)
+
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                INSERT INTO member_exp_log (gid, uid, exp, at)
+                VALUES ($1, $2, $3, $4)
+                """,
+                *payload,
+            )
+
+
+async def create_partition(pool: Pool, gid: int):
+    """Partition member exp log as needed."""
+    now = pendulum.now()
+    start = pendulum.datetime(now.year, now.month, 1)
+    end = start.add(months=1)
+
+    await create_partition_monthly(pool, start, end)
+    await create_partition_gid(pool, gid, start)
+
+
+async def create_partition_monthly(
+    pool: Pool, start: pendulum.DateTime, end: pendulum.DateTime
+):
+    """Parition the experience log database by this month.
+
+    Only creates the parition if it doesn't yet exist.
+    """
+    start_str = f"{start.year}_{start.month}"
+
+    async with pool.acquire() as con:
+        async with con.transaction():
+            with contextlib.suppress(InvalidObjectDefinitionError):  # Already exists
+                await con.execute(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS exp_log_{start_str}
+                        PARTITION OF member_exp_log
+                        FOR VALUES FROM ('{start.to_date_string()}') TO ('{end.to_date_string()}')
+                    PARTITION BY LIST(gid)
+                    ;
+                    """
+                )
+
+
+async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime):
+    """Parition the experience log database by gid.
+
+    Only creates the parition if it doesn't yet exist.
+    """
+    start_str = f"{date.year}_{date.month}"
+
+    async with pool.acquire() as con:
+        async with con.transaction():
+            with contextlib.suppress(InvalidObjectDefinitionError):  # Already exists
+                await con.execute(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS exp_log_{start_str}_{gid}
+                        PARTITION OF exp_log_{start_str}
+                        FOR VALUES IN ({gid});
+                    """
+                )

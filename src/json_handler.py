@@ -8,7 +8,7 @@ import json
 import logging
 from enum import Enum
 
-from src.db.schema import ModlogStatusEnum, ModlogTypeEnum
+from src.db.table import ModlogStatusEnum, ModlogTypeEnum
 
 
 _log = logging.getLogger(__name__)

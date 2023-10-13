@@ -4,10 +4,10 @@ import logging
 import pendulum
 from discord.ext import commands
 
-import src.db.schema
+import src.db.table
 from src import db
-from src.db import modlog
-from src.db.guild import add_guild
+from src.db import member_exp_log, modlog
+from src.db.guild import add
 
 
 # import src.db_interface as dbi
@@ -30,11 +30,11 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def init(self, ctx):
-        await add_guild(self.bot.pool, db.GuildSchema(ctx.guild.id))
+        await add(self.bot.pool, db.GuildSchema(ctx.guild.id))
 
     @commands.command()
     async def test(self, ctx: commands.Context):
-        pass
+        await member_exp_log.create_partition_gid(self.bot.pool)
 
 
 async def setup(bot: commands.Bot):

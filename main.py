@@ -12,7 +12,7 @@ from discord.utils import _ColourFormatter, stream_supports_colour
 
 from secret import OWNER_ID, TOKEN
 from src.cazzubot import CazzuBot
-from src.db.schema import ModlogStatusEnum, ModlogTypeEnum
+from src.db.table import ModlogStatusEnum, ModlogTypeEnum
 
 
 EXTENSIONS_PATH = r"ext"
