@@ -67,8 +67,8 @@ class Experience(commands.Cog):
         if message.author.id == self.bot.user.id:  # ignore self
             return
 
-        if message.author.id != 92664421553307648:  # debug, only see usara
-            return
+        # if message.author.id != 92664421553307648:  # debug, only see usara
+        #     return
 
         now = pendulum.now("UTC")
         uid = message.author.id
