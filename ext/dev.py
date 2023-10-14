@@ -36,8 +36,9 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def test(self, ctx: commands.Context):
-        level = await db.levels.get_lifetime_level(
-            self.bot.pool, ctx.guild.id, ctx.author.id
+        now = pendulum.now()
+        level = await db.levels.get_level_seasonal(
+            self.bot.pool, ctx.guild.id, ctx.author.id, now.year, 0
         )
         _log.info(f"{level=}")
 

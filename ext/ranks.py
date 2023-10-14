@@ -1,4 +1,7 @@
-"""Per-guild ranked roles based on experience."""
+"""Per-guild ranked roles based on levels.
+
+Remember that levels also based on experience.
+"""
 import json
 import logging
 from typing import TYPE_CHECKING
@@ -32,11 +35,16 @@ class Ranks(commands.Cog):
         pass
 
     @rank.command()
-    async def add(self, ctx: Context, threshold: int, role: discord.Role):
+    async def add(self, ctx: Context, level: int, role: discord.Role):
         """Add the rank into the guild's settings at said threshold."""
+        if level <= 0 or level > 999:
+            msg = "Level must be between 1-999."
+            await ctx.send(msg)
+            return
+
         gid = ctx.guild.id
         rid = role.id
-        await db.rank.add(self.bot.pool, db.table.Rank(gid, rid, threshold))
+        await db.rank.add(self.bot.pool, db.table.Rank(gid, rid, level))
 
     @rank.command(aliases=["del"])
     async def remove(self, ctx: Context, role: discord.Role):

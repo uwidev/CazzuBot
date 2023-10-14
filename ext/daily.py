@@ -39,6 +39,8 @@ class Daily(commands.Cog):
 
     async def reset(self):
         """Reset dailies."""
+        _log.info("Running daily reset")
+
         # Reset all message counts and cdr
         await member.reset_all_msg_cnt(self.bot.pool)
         await member.reset_all_cdr(self.bot.pool)
@@ -57,6 +59,9 @@ async def setup(bot: commands.Bot):
 
     last_daily_raw = await internal.get_last_daily(bot.pool)
     last_daily = pendulum.parser.parse(last_daily_raw)
+    _log.info(f"{now=}")
+    _log.info(f"{last_daily=}")
+
     force_reset = False
 
     if not last_daily:  # Bot has never resetted dailies before, or db fucked

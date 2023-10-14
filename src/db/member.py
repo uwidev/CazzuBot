@@ -136,7 +136,7 @@ async def reset_all_msg_cnt(pool: Pool):
             await con.execute(
                 """
                 UPDATE member
-                SET msg_cnt = 1
+                SET exp_msg_cnt = 1
                 """
             )
 
@@ -148,6 +148,6 @@ async def reset_all_cdr(pool: Pool):
             await con.execute(
                 """
                     UPDATE member
-                    SET cdr = NOW()
+                    SET exp_cdr = NOW()
                     """
             )

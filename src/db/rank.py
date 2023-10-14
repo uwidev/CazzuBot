@@ -2,7 +2,7 @@
 import logging
 
 import pendulum
-from asyncpg import Pool, exceptions
+from asyncpg import Pool, Record, exceptions
 
 from . import table
 
@@ -20,6 +20,19 @@ async def add(pool: Pool, rank: table.Rank):
                 """,
                 *rank
             )
+
+
+async def get(pool: Pool, gid: int) -> list[Record]:
+    async with pool.acquire() as con:
+        return await con.fetch(
+            """
+            SELECT rid, threshold
+            FROM rank
+            WHERE gid = $1
+            ORDER BY threshold
+            """,
+            gid,
+        )
 
 
 async def delete(pool: Pool, gid: int, arg: int):

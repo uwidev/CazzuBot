@@ -9,19 +9,18 @@ _log = logging.getLogger(__name__)
 CYCLES = 10
 SKEW = 0
 
-UP_X_INIT = 0.6
-UP_Y_LIM = 1
-UP_Y_APPROACH = 3
+_UP_X_INIT = 0.6
+_UP_Y_LIM = 1
+_UP_Y_APPROACH = 3
 
-LOW_X_INIT = 0.4
-LOW_Y_LIM = 0.8
-LOW_Y_APPROACH = 2
+_LOW_X_INIT = 0.4
+_LOW_Y_LIM = 0.8
+_LOW_Y_APPROACH = 2
 
-X_SCALE = 100
-Y_SCALE = 500
+_X_SCALE = 100
+_Y_SCALE = 500
 
 _levels_exp_memo = {0: 0}
-_levels_exp_memo_r = {0: 0}  # Reversed dict
 
 
 class BoundingType(Enum):
@@ -29,7 +28,7 @@ class BoundingType(Enum):
     LOWER = auto()
 
 
-def cum_exp_to(n: int):
+def exp_to_level_cum(n: int):
     """Calculate the cumulative exp requirement from level 0 to level n.
 
     This is iteratively memoized to prevent wasteful recomputing of lower levels.
@@ -45,8 +44,7 @@ def cum_exp_to(n: int):
     last_key = list(_levels_exp_memo)[-1] if list(_levels_exp_memo)[-1] else 1
 
     for i in range(last_key, n + 1):
-        _levels_exp_memo[i] = exp_to(i) + _levels_exp_memo[i - 1]
-        _levels_exp_memo_r[_levels_exp_memo[i]] = i  # Add into reversed dict
+        _levels_exp_memo[i] = exp_to_level(i) + _levels_exp_memo[i - 1]
 
     return _levels_exp_memo[n]
 
@@ -57,11 +55,11 @@ def level_from_exp(exp: int):
     If a lower bin for levels is not found, double the pre-computed memo since it's
     possible to we may need more queries within this double range.
     """
-    if exp <= 0:
+    if not exp or exp <= 0:
         return 0
 
     while True:
-        res = _binary_lower_bin(list(_levels_exp_memo_r), exp)
+        res = _bin_up(list(_levels_exp_memo.values()), exp)
 
         if res != -1:
             return res
@@ -71,12 +69,12 @@ def level_from_exp(exp: int):
             "Doubling memoized levels to %s",
             last_level * 2,
         )
-        cum_exp_to(last_level * 2)
+        exp_to_level_cum(last_level * 2)
 
 
-def exp_to(n: int):
+def exp_to_level(n: int):
     """Calcuate the exp required to level up from n-1 to n."""
-    return Y_SCALE * _combined(n / X_SCALE)
+    return _Y_SCALE * _combined(n / _X_SCALE)
 
 
 def _base(x):
@@ -90,9 +88,9 @@ def _bound(x, x_0, y_inf, y_rate):
 
 def _bound_by(x, mode: BoundingType):
     if mode == BoundingType.UPPER:
-        return _bound(x, UP_X_INIT, UP_Y_LIM, UP_Y_APPROACH)
+        return _bound(x, _UP_X_INIT, _UP_Y_LIM, _UP_Y_APPROACH)
 
-    return _bound(x, LOW_X_INIT, LOW_Y_LIM, LOW_Y_APPROACH)
+    return _bound(x, _LOW_X_INIT, _LOW_Y_LIM, _LOW_Y_APPROACH)
 
 
 def _combined(x):
@@ -103,20 +101,27 @@ def _combined(x):
 
 
 def _get_last_memo():
-    """Return a (level,exp) of the last last memo."""
-    return list(_levels_exp_memo)[-1], list(_levels_exp_memo_r)[-1]
+    """Return a [level,exp] of the last last memo."""
+    return list(_levels_exp_memo.items())[-1]
 
 
-def _binary_lower_bin(arr, target):
-    """Return the index i in which the target fits in i and i+1.
+def _bin_up(arr, target):
+    """Return the index i in which the target fits in i and i+1 through binary search.
 
-    If the target does not fit in between, and is instead on the edge index n or 0,
-    return -1.
+    arr is supposed to be an 'infinite' memoized series. We want to find the index in
+    which target is greater than arr[i], but less than arr[i+1]. If we are at arr[n], we
+    cannot check for arr[n+1] because that's out of index. We want to return -1, and the
+    caller should expand arr and call this function again to try to find the index.
     """
     left, right = 0, len(arr) - 1
 
-    while left < right:
+    while left <= right:
         mid = left + (right - left) // 2
+
+        # If checking forward is out of scope, break and return -1
+        # to generate more levels to look up.
+        if mid + 1 >= len(arr):
+            break
 
         if arr[mid] <= target and target < arr[mid + 1]:
             return mid
@@ -126,4 +131,4 @@ def _binary_lower_bin(arr, target):
         else:
             right = mid - 1
 
-    return -1
+    return -1  #
