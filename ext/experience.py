@@ -3,14 +3,11 @@
 See member_exp_log.py for details on how exp is stored and summed.
 """
 import logging
-import time
 from typing import TYPE_CHECKING
 
 import discord
 import pendulum
 from asyncpg import Record
-from asyncstdlib.builtins import list as alist
-from asyncstdlib.builtins import map as amap
 from discord.ext import commands
 from discord.ext.commands.context import Context
 
