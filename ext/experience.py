@@ -175,14 +175,19 @@ class Experience(commands.Cog):
         ranks, uids, exps = zip(*window_raw)
         levels = [levels_helper.level_from_exp(e) for e in exps]
 
-        # Annoying bug to learn from.
+        # Annoying bug to learn from, and python programming misunderstanding.
         #
-        # We want members as a list, so we surround the comprehension with [].
-        # We do NOT surround it with () and cast it to a list().
+        # List Comprehension (speculative, but sound) seems to execute expressions
+        # immediately to build the list; there is no generator formed and casted to
+        # list.
         #
-        # If we did the latter, we call the synchronous-list casting with an
-        # asynchronous generator (beacuse we have await), resulting in 'async generator'
-        # object is not iterable because you can't call async in sync.
+        # Generator Comprehension, when there's an await, will return an async
+        # generator. When immediately passed into list() to cast it, it won't work
+        # because its implementaion is only for synchronous iterators, not async.
+        # In other words, do not list(await x for x in arr), instead, do list comp.
+        #
+        # Even if the expression may stall, since they are await'ed, it shouldn't stall
+        # the loop. So for generator purposes, there's no purpose to use asyncstdlib.
         members = [
             utility.else_if_none(
                 ctx.guild.get_member(id),
@@ -222,12 +227,12 @@ class Experience(commands.Cog):
         percentile = (total_members - rank) / (total_members - 1) * 100.0
 
         embed.set_author(
-            name=f"{ctx.author.display_name}'s Club Membership Card",
+            name=f"{user.display_name}'s Club Membership Card",
             icon_url=_SCOREBOARD_STAMP,
         )
-        embed.set_thumbnail(url=ctx.author.avatar.url)
+        embed.set_thumbnail(url=user.avatar.url)
         embed.description = f"""
-        Rank: {role.mention}
+        Rank: {role.mention if role else '`None`'}
         Level: **`{lvl}`**
         Experience: **`{exp}`**
 
