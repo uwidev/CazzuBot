@@ -56,7 +56,7 @@ class Ranks(commands.Cog):
         rid = role.id
         await db.rank.delete(self.bot.pool, gid, rid)
 
-    @author_confirm()
+    # @author_confirm()
     @rank.command(aliases=["purge", "drop"])
     async def clear(self, ctx: Context):
         gid = ctx.guild.id

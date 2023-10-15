@@ -81,6 +81,7 @@ async def main():
     # Intents need to be set up to let discord know what we want for request
     intents = discord.Intents.default()
     intents.message_content = True
+    intents.members = True
 
     pw = getpass.getpass()
 

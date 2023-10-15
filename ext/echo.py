@@ -44,4 +44,5 @@ class Echo(commands.Cog):
 # All cogs MUST have this on the bottom. Make sure
 # you swap Echo to whatever your cog name is.
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Echo(bot))
+    # await bot.add_cog(Echo(bot))
+    pass  # Commented out for dev and testing

@@ -86,3 +86,82 @@ async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime):
                         FOR VALUES IN ({gid});
                     """
                 )
+
+
+async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> int:
+    """Fetch a member's sum exp from the specified month."""
+    date = pendulum.datetime(year, month, 1)
+    date_str = f"{date.year}_{date.month}"
+
+    async with pool.acquire() as con:
+        return await con.fetchval(
+            f"""
+            SELECT sum(exp)
+            FROM exp_log_{date_str}
+            WHERE gid = $1 AND uid = $2
+            """,
+            gid,
+            uid,
+        )
+
+
+async def get_seasonal(pool: Pool, gid: int, uid: int, year: int, season: int) -> int:
+    """Fetch a member's sum experience based on season.
+
+    Seasons start from 0 and go to to 3. If you have a month, pass month // 3.
+    """
+    if season < 0 or season > 3:  # noqa: PLR2004
+        msg = "Seasons must be in the range of 0-3"
+        _log.error(msg)
+        raise ValueError(msg)
+
+    start_month = 1 + 3 * season  # season months start 1 4 7 10
+    interval = [pendulum.datetime(year, start_month, 1)]
+    interval.append(interval[0] + pendulum.duration(months=3))  # [from, to]
+
+    async with pool.acquire() as con:
+        return await con.fetchval(
+            """
+            SELECT sum(exp)
+            FROM member_exp_log
+            WHERE gid = $1 AND uid = $2 AND at BETWEEN $3 AND $4
+            """,
+            gid,
+            uid,
+            interval[0],
+            interval[1],
+        )
+
+
+async def get_seasonal_bulk_ranked(pool: Pool, gid: int, year: int, season: int) -> int:
+    """Fetch exp and ranks them of a guild's members.
+
+    Seasons start from 0 and go to to 3.
+
+    Return records are 'formatted' as records [[rank, uid, exp]]
+    """
+    if season < 0 or season > 3:  # noqa: PLR2004
+        msg = "Seasons must be in the range of 0-3"
+        _log.error(msg)
+        raise ValueError(msg)
+
+    start_month = 1 + 3 * season  # season months start 1 4 7 10
+    interval = [pendulum.datetime(year, start_month, 1)]
+    interval.append(interval[0] + pendulum.duration(months=3))  # [from, to]
+
+    async with pool.acquire() as con:
+        return await con.fetch(
+            """
+            SELECT RANK() OVER (ORDER BY exp DESC) AS rank, uid, exp
+            FROM (SELECT uid, gid, sum(exp) as exp
+                FROM member_exp_log
+                WHERE gid = $1 AND at BETWEEN $2 AND $3
+                GROUP BY uid, gid
+                ) as source
+            WHERE gid = $1
+            ORDER BY exp DESC
+            """,
+            gid,
+            interval[0],
+            interval[1],
+        )

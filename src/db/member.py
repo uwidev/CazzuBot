@@ -4,7 +4,7 @@ import logging
 import pendulum
 from asyncpg import Pool, Record, exceptions
 
-from . import guild, table, user
+from . import guild, member_exp_log, table, user
 
 
 _log = logging.getLogger(__name__)
@@ -96,7 +96,10 @@ async def create_partition_gid(pool: Pool, gid: int):
 
 
 async def get_all_member_exp(pool: Pool, gid: int) -> list[Record]:
-    """Get all experience from given gid."""
+    """Get all experience from given gid ordered descending.
+
+    Currently deprecated
+    """
     async with pool.acquire() as con:
         return await con.fetch(
             """
@@ -109,8 +112,11 @@ async def get_all_member_exp(pool: Pool, gid: int) -> list[Record]:
         )
 
 
-async def get_rank_exp(pool: Pool, gid: int, uid: int) -> Record:
-    """Get all experience from given gid."""
+async def get_exp_rankings(pool: Pool, gid: int, uid: int) -> Record:
+    """Get all experience from given gid.
+
+    Currently deprecated
+    """
     async with pool.acquire() as con:
         return await con.fetchrow(
             """
@@ -150,4 +156,22 @@ async def reset_all_cdr(pool: Pool):
                     UPDATE member
                     SET exp_cdr = NOW()
                     """
+            )
+
+
+async def sync_with_exp_logs(pool: Pool):
+    """Sum exp per member from message exp logs and set to lifetime."""
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                UPDATE member
+                SET exp_lifetime = source.exp
+                FROM (
+                    SELECT uid, gid, sum(exp) as exp
+                    FROM member_exp_log
+                    GROUP BY uid, gid
+                    ) as source
+                WHERE member.uid = source.uid and member.gid = source.gid
+                """
             )

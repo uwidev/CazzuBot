@@ -9,10 +9,10 @@ given which will be substituted into the string after internal sanitation.
 import logging
 from enum import Enum
 
-from asyncpg import Pool
+from asyncpg import Pool, Record
 from discord.ext import commands
 
-from . import table
+from . import member_exp_log, table
 
 
 _log = logging.getLogger(__name__)
@@ -87,3 +87,13 @@ async def get(pool: Pool, gid: int):
             """,
             gid,
         )
+
+
+async def get_members_exp_seasonal(
+    pool: Pool, gid: int, year: int, season: int
+) -> list[Record]:
+    """Fetch exp and ranks them of all guild members.
+
+    Acts more of an alias for more intuitive design.
+    """
+    return await member_exp_log.get_seasonal_bulk_ranked(pool, gid, year, season)

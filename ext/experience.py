@@ -3,15 +3,18 @@
 See member_exp_log.py for details on how exp is stored and summed.
 """
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import discord
 import pendulum
 from asyncpg import Record
+from asyncstdlib.builtins import list as alist
+from asyncstdlib.builtins import map as amap
 from discord.ext import commands
 from discord.ext.commands.context import Context
 
-from src import db, levels_helper
+from src import db, levels_helper, utility
 
 
 _log = logging.getLogger(__name__)
@@ -28,6 +31,8 @@ _UNTIL_MSG = 77
 _DECAY_FACTOR = 2
 _EXP_COOLDOWN = 15  # seconds
 _EXP_BUFF_RESET = 1440  # mins    |   1440m = 24h
+
+_SCOREBOARD_STAMP = "https://cdn.discordapp.com/emojis/695126165756837999.webp?size=160&quality=lossless"
 
 
 def _from_msg(msg: int):
@@ -127,17 +132,6 @@ class Experience(commands.Cog):
 
         return new_level
 
-    def _calc_min_rank(self, rank_thresholds: list[Record], level) -> tuple[int, int]:
-        """Naively determine rank based on level from list of records."""
-        if level < rank_thresholds[0]["threshold"]:
-            return None, None
-
-        for i in range(1, len(rank_thresholds)):
-            if level < rank_thresholds[i]["threshold"]:
-                return rank_thresholds[i - 1]["rid"], i - 1
-
-        return rank_thresholds[-1]["rid"], len(rank_thresholds) - 1
-
     async def _on_msg_handle_ranks(self, message: discord.Message, level: int):
         """Handle potential rank ups from level ups.
 
@@ -147,7 +141,7 @@ class Experience(commands.Cog):
         if not ranks:
             return
 
-        rid, index = self._calc_min_rank(ranks, level)
+        rid, index = utility.calc_min_rank(ranks, level)
 
         if not rid:  # not even high enough level for any ranks
             return
@@ -165,94 +159,87 @@ class Experience(commands.Cog):
 
     @commands.group(aliases=["xp"], invoke_without_command=True)
     async def exp(self, ctx: Context, *, user: discord.Member = None):
-        """Show your experience points and the leaderboards."""
+        """Show season's experience and leaderboards."""
         if user is None:
             user = ctx.message.author
 
+        now = pendulum.now()
         uid = user.id
         gid = ctx.guild.id
 
-        # this_user = await member_exp.get(self.bot.pool, gid, uid)
-        all_users = await db.member.get_all_member_exp(self.bot.pool, gid)
-        rank, exp = await db.member.get_rank_exp(self.bot.pool, gid, uid)
+        rows = await db.guild.get_members_exp_seasonal(
+            self.bot.pool, gid, now.year, now.month // 3
+        )
 
-        # _log.info(f"{rank} || {exp}")
-        # _log.info(f"{all_users=}")
+        # Prepare zip to generate scoreboard
+        uid_index = [r["uid"] for r in rows].index(uid)
+        window_raw, user_window_index = utility.focus_list(rows, uid_index)
 
-        # title = f"{user.display_name}'s Club Membership Card"
+        ranks, uids, exps = zip(*window_raw)
+        levels = [levels_helper.level_from_exp(e) for e in exps]
 
-        # rank_id = this_user["rank"]
-        # rank = ctx.guild.get_role(rank_id)
-        # level = this_user["level"]
-        # exp = this_user["exp"]
+        # Annoying bug to learn from.
+        #
+        # We want members as a list, so we surround the comprehension with [].
+        # We do NOT surround it with () and cast it to a list().
+        #
+        # If we did the latter, we call the synchronous-list casting with an
+        # asynchronous generator (beacuse we have await), resulting in 'async generator'
+        # object is not iterable because you can't call async in sync.
+        members = [
+            utility.else_if_none(
+                ctx.guild.get_member(id),
+                self.bot.get_user(id),
+                await self.bot.fetch_user(id),
+                id,
+            )
+            for id in uids
+        ]
 
-        # data = (
-        #     f"Rank: {rank.mention}\nLevel: **`{level}`**\nExperience: **`{int(exp)}`**"
-        # )
-        # report = "{user} are ranked **`#{place}`** out of **`{total}`**!".format(
-        #     user="You" if ctx.message.author == user else user.mention,
-        #     place=rank + 1,
-        #     total=len(all_users),
-        # )
+        names = [member.display_name for member in members]
 
-        # compare = "```py\n{place:8}{mode:<8}{user:20}\n".format(
-        #     place="Place", mode="Exp", user="User"
-        # )
-        # for i in range(max(0, rank - 2), min(rank + 3, len(all_users))):
-        #     try:
-        #         if i == rank:
-        #             compare += "{place:.<8}{count:.<8}{user:20}\n".format(
-        #                 place="@" + str(i + 1),
-        #                 count=int(all_users[i]["exp"]),
-        #                 user=self.bot.get_user(all_users[i]["id"]).display_name,
-        #             )
-        #         elif i % 2:
-        #             compare += "{place:<8}{count:<8}{user:20}\n".format(
-        #                 place=str(i + 1),
-        #                 count=int(all_users[i]["exp"]),
-        #                 user=self.bot.get_user(all_users[i]["id"]).display_name,
-        #             )
-        #         else:
-        #             compare += "{place:.<8}{count:.<8}{user:20}\n".format(
-        #                 place=str(i + 1),
-        #                 count=int(all_users[i]["exp"]),
-        #                 user=self.bot.get_user(all_users[i]["id"]).display_name,
-        #             )
-        #     except AttributeError:
-        #         if i == rank:
-        #             compare += "{place:.<8}{count:.<8}{user:20}\n".format(
-        #                 place="@" + str(i + 1),
-        #                 count=int(all_users[i]["exp"]),
-        #                 user=(
-        #                     await self.bot.fetch_user(all_users[i]["id"])
-        #                 ).display_name,
-        #             )
-        #         elif i % 2:
-        #             compare += "{place:<8}{count:<8}{user:20}\n".format(
-        #                 place=str(i + 1),
-        #                 count=int(all_users[i]["exp"]),
-        #                 user=(
-        #                     await self.bot.fetch_user(all_users[i]["id"])
-        #                 ).display_name,
-        #             )
-        #         else:
-        #             compare += "{place:.<8}{count:.<8}{user:20}\n".format(
-        #                 place=str(i + 1),
-        #                 count=int(all_users[i]["exp"]),
-        #                 user=(
-        #                     await self.bot.fetch_user(all_users[i]["id"])
-        #                 ).display_name,
-        #             )
-        # compare += "```"
+        # Generate Scoreboard
+        window = list(zip(ranks, exps, levels, names))
 
-        # desc = data + "\n\n" + report + "\n" + compare
+        raw_scoreboard, paddings = utility.generate_scoreboard(
+            window,
+            ["Rank", "Exp", "Level", "User"],
+            ["<", ">", ">", ">"],
+        )
 
-        # embed = make_simple_embed_t(title, desc)
-        # embed.set_thumbnail(url=user.avatar_url)
+        utility.highlight_scoreboard(raw_scoreboard, user_window_index, paddings[0])
+        scoreboard_s = "\n".join(raw_scoreboard)
 
-        # await ctx.send(embed=embed)
+        # Other Preparation
+        gid = ctx.guild.id
+        rid = await db.rank.of_member(self.bot.pool, gid, uid)
+        role: discord.Role = ctx.guild.get_role(rid)
 
-        # # await ctx.send('Your current exp is **`{exp}`** with an exp factor of **`x{factor:.2f}`**.'.format(exp=int(exp), factor=factor))
+        # Generate Embed
+        embed = discord.Embed()
+        lvl = levels[user_window_index]
+        exp = exps[user_window_index]
+        rank = ranks[user_window_index]
+
+        total_members = ctx.guild.member_count
+        percentile = (total_members - rank) / (total_members - 1) * 100.0
+
+        embed.set_author(
+            name=f"{ctx.author.display_name}'s Club Membership Card",
+            icon_url=_SCOREBOARD_STAMP,
+        )
+        embed.set_thumbnail(url=ctx.author.avatar.url)
+        embed.description = f"""
+        Rank: {role.mention}
+        Level: **`{lvl}`**
+        Experience: **`{exp}`**
+
+        You currently the `{percentile:.2f}%` percetile of all members!
+        ```py\n{scoreboard_s}```"""
+
+        embed.color = discord.Color.from_str("#a2dcf7")
+
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):

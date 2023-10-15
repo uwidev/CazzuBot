@@ -27,20 +27,8 @@ class Dev(commands.Cog):
         return ctx.author.id == self.bot.owner_id
 
     @commands.command()
-    async def owner(self, ctx):
-        _log.info("%s is the bot owner.", ctx.author)
-
-    @commands.command()
-    async def init(self, ctx):
-        await db.guild.add(self.bot.pool, db.GuildSchema(ctx.guild.id))
-
-    @commands.command()
     async def test(self, ctx: commands.Context):
-        now = pendulum.now()
-        level = await db.levels.get_level_seasonal(
-            self.bot.pool, ctx.guild.id, ctx.author.id, now.year, 0
-        )
-        _log.info(f"{level=}")
+        await ctx.reply(ctx.guild.get_member(648965826514518017))
 
 
 async def setup(bot: commands.Bot):

@@ -7,7 +7,7 @@ import logging
 import pendulum
 from discord.ext import commands, tasks
 
-from src.db import internal, member
+from src import db
 
 
 _log = logging.getLogger(__name__)
@@ -42,13 +42,16 @@ class Daily(commands.Cog):
         _log.info("Running daily reset")
 
         # Reset all message counts and cdr
-        await member.reset_all_msg_cnt(self.bot.pool)
-        await member.reset_all_cdr(self.bot.pool)
+        await db.member.reset_all_msg_cnt(self.bot.pool)
+        await db.member.reset_all_cdr(self.bot.pool)
 
         # Log the time this daily reset was done
         now = pendulum.now("UTC")
         this_daily = now.set(hour=0, minute=0, second=0, microsecond=0)
-        await internal.set_last_daily(self.bot.pool, str(this_daily))
+        await db.internal.set_last_daily(self.bot.pool, str(this_daily))
+
+        # Resync message logs exp with lifetime exp
+        await db.member.sync_with_exp_logs(self.bot.pool)
 
 
 async def setup(bot: commands.Bot):
@@ -57,11 +60,8 @@ async def setup(bot: commands.Bot):
     # we need to reset to accomodate the previous daily.
     now = pendulum.now("UTC")
 
-    last_daily_raw = await internal.get_last_daily(bot.pool)
+    last_daily_raw = await db.internal.get_last_daily(bot.pool)
     last_daily = pendulum.parser.parse(last_daily_raw)
-    _log.info(f"{now=}")
-    _log.info(f"{last_daily=}")
-
     force_reset = False
 
     if not last_daily:  # Bot has never resetted dailies before, or db fucked
