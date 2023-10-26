@@ -2,7 +2,9 @@
 import logging
 from typing import TYPE_CHECKING
 
+import discord
 import pendulum
+from asyncstdlib.builtins import list as alist
 from discord.ext import commands
 
 from src import db
@@ -28,7 +30,18 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def test(self, ctx: commands.Context):
-        await ctx.reply(ctx.guild.get_member(648965826514518017))
+        if ctx.author.id == 338486462519443461:
+            ctx.author.edit()
+
+    # @commands.Cog.listener()
+    # async def on_member_update(self, before: discord.Member, after: discord.Member):
+    #     if before.id == 338486462519443461:
+    #         _log.info(f"{before.pending=}")
+    #         _log.info(f"{before.flags.started_onboarding=}")
+    #         _log.info(f"{before.flags.completed_onboarding=}")
+    #         _log.info(f"{after.pending=}")
+    #         _log.info(f"{after.flags.started_onboarding=}")
+    #         _log.info(f"{after.flags.completed_onboarding=}")
 
 
 async def setup(bot: commands.Bot):

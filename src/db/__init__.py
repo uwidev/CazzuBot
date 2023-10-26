@@ -6,12 +6,14 @@ needs to define in order to operate.
 from . import (  # noqa: F401
     guild,
     internal,
-    levels,
+    level,
     member,
     member_exp_log,
     modlog,
     rank,
+    rank_threshold,
     table,
     task,
     user,
+    welcome,
 )

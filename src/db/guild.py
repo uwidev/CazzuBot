@@ -12,7 +12,7 @@ from enum import Enum
 from asyncpg import Pool, Record
 from discord.ext import commands
 
-from . import member_exp_log, table
+from . import member, member_exp_log, table
 
 
 _log = logging.getLogger(__name__)
@@ -97,3 +97,11 @@ async def get_members_exp_seasonal(
     Acts more of an alias for more intuitive design.
     """
     return await member_exp_log.get_seasonal_bulk_ranked(pool, gid, year, season)
+
+
+async def get_members_exp(pool: Pool, gid: int) -> list[Record]:
+    """Fetch lifetime exp and ranks them of all guild members.
+
+    Acts more of an alias for more intuitive design.
+    """
+    return await member.get_exp_bulk(pool, gid)

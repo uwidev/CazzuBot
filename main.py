@@ -1,4 +1,5 @@
 """Runs the bot."""
+import argparse
 import asyncio
 import getpass
 import logging
@@ -21,6 +22,8 @@ EXTENSIONS_PATH = r"ext"
 DATABASE_HOST = "192.168.1.2"
 DATABASE_NAME = "ubuntu"
 DATABASE_USER = "ubuntu"
+
+DEBUG_USERS = [92664421553307648, 338486462519443461]  # usara, gegi
 
 
 _log = logging.getLogger(__name__)
@@ -76,6 +79,10 @@ async def setup_codecs(con: Connection):
 
 
 async def main():
+    parser = argparse.ArgumentParser(prog="CazzuBot")
+    parser.add_argument("-d", "--debug", action="store_true")
+    debug = parser.parse_args().debug
+
     setup_logging()
 
     # Intents need to be set up to let discord know what we want for request
@@ -101,6 +108,8 @@ async def main():
             database=(DATABASE_NAME, DATABASE_HOST, DATABASE_USER),
             intents=intents,
             owner_id=OWNER_ID,
+            debug=debug,
+            debug_users=DEBUG_USERS,
         ) as bot:
             await bot.start(TOKEN)  # Ignore built-in logger
 

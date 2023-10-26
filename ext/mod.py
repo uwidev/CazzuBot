@@ -203,7 +203,7 @@ class Moderation(commands.Cog):
 
         for log in expired_logs:
             payload_raw = log[2]
-            payload = self.bot.json_decoder.decode(payload_raw)
+            payload: dict = self.bot.json_decoder.decode(payload_raw)
             log_type = ModlogTypeEnum(payload["log_type"])
             uid: int = payload["uid"]
             gid: int = payload["gid"]

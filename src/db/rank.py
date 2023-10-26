@@ -1,90 +1,90 @@
-"""For setting ranked roles per-guild in database."""
+"""For managing ranked role operations.
+
+For specific operations on the rannked role list themselves, see db.ranked_thresholds.
+"""
 import logging
+from collections.abc import Callable
 
 import pendulum
 from asyncpg import Pool, Record, exceptions
 
-from . import levels, table
+from . import guild, level, table, utility
 
 
 _log = logging.getLogger(__name__)
 
 
 async def add(pool: Pool, rank: table.Rank):
+    """Add a Rank object into the database."""
+    if not await guild.get(pool, rank.gid):  # guild not yet init, foreign key
+        await guild.add(pool, rank.gid)
+
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
                 """
-                INSERT INTO rank (gid, rid, threshold)
-                VALUES ($1, $2, $3)
+                INSERT INTO rank (gid, message)
+                VALUES ($1, $2)
                 """,
-                *rank
+                *rank,
             )
 
 
-async def get(pool: Pool, gid: int) -> list[Record]:
-    async with pool.acquire() as con:
-        return await con.fetch(
-            """
-            SELECT rid, threshold
-            FROM rank
-            WHERE gid = $1
-            ORDER BY threshold
-            """,
-            gid,
-        )
+async def init(pool: Pool, gid: int, *_):
+    """Initialize the minimal for operational database queries."""
+    if not await guild.get(pool, gid):  # guild not yet init, foreign key
+        await guild.add(pool, gid)
 
-
-async def delete(pool: Pool, gid: int, arg: int):
-    """Delete rank in db, first looking for rid then by threshold."""
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
                 """
-                DELETE FROM rank
-                WHERE rid = $1 OR threshold = $1
-                """,
-                arg,
-            )
-
-
-async def drop(pool: Pool, gid: int):
-    """Delete all ranks associated with gid."""
-    async with pool.acquire() as con:
-        async with con.transaction():
-            await con.execute(
-                """
-                DELETE FROM rank
-                WHERE gid = $1
+                INSERT INTO rank (gid)
+                VALUES ($1)
                 """,
                 gid,
             )
 
 
-def _calc_min_rank(rank_thresholds: list[Record], level) -> tuple[int, int]:
-    """Naively determine rank based on level from list of records.
-
-    This is the same function as utility.calc_min_rank (or at least should be).
-    The only difference is that it doesn't return the index.
-    """
-    if level < rank_thresholds[0]["threshold"]:
-        return None, None
-
-    for i in range(1, len(rank_thresholds)):
-        if level < rank_thresholds[i]["threshold"]:
-            return rank_thresholds[i - 1]["rid"]
-
-    return rank_thresholds[-1]["rid"]
+@utility.retry(on_none=init)
+async def get(pool: Pool, gid: int) -> list[Record]:
+    async with pool.acquire() as con:
+        return await con.fetch(
+            """
+            SELECT *
+            FROM rank
+            WHERE gid = $1
+            """,
+            gid,
+        )
 
 
-async def of_member(pool: Pool, gid: int, uid: int) -> int:
-    """Return the rank of a member, None if no role rank.
+@utility.retry(on_none=init)
+async def set_message(pool: Pool, gid: int, encoded_json: str):
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                UPDATE rank
+                SET message = $2
+                WHERE gid = $1
+                """,
+                gid,
+                encoded_json,
+            )
 
-    Is based on seasonal experience.
-    """
-    ranks_raw = await get(pool, gid)
 
-    now = pendulum.now()
-    lvl = await levels.get_seasonal(pool, gid, uid, now.year, now.month // 3)
+@utility.retry(on_none=init)
+async def get_message(pool: Pool, gid: int) -> list[Record]:
+    # if not await guild.get(pool, level.gid):  # guild not yet init
+    #     await guild.add(pool, level.gid)
 
-    return _calc_min_rank(ranks_raw, lvl)
+    async with pool.acquire() as con:
+        return await con.fetchval(
+            """
+            SELECT message
+            FROM rank
+            WHERE gid = $1
+            """,
+            gid,
+        )

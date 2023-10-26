@@ -3,6 +3,7 @@ import getpass
 import logging
 import os
 import sys
+import traceback
 
 import asyncpg
 from asyncpg import Pool
@@ -16,7 +17,16 @@ _log = logging.getLogger(__name__)
 
 
 class CazzuBot(commands.Bot):
-    def __init__(self, *args, pool: Pool, ext_path: str, database: tuple, **kwargs):
+    def __init__(  # noqa: PLR0913
+        self,
+        *args,
+        pool: Pool,
+        ext_path: str,
+        database: tuple,
+        debug=False,
+        debug_users: list = [],
+        **kwargs,
+    ):
         """Assign the database pool, hotswap path, and database.
 
         Database should be a tuple of (name, host, user).
@@ -26,6 +36,8 @@ class CazzuBot(commands.Bot):
         self.pool = pool
         self.ext_path = ext_path
         self._db_name, self._db_host, self._db_user = database
+        self.debug = debug
+        self.debug_users = debug_users
 
     async def on_ready(self):
         _log.info("Logged in as %s", self.user.name)

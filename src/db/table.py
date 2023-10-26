@@ -137,7 +137,7 @@ class MemberExpLog(SnowflakeTable):
 
 
 @dataclass
-class Rank(SnowflakeTable):
+class RankThreshold(SnowflakeTable):
     gid: int  # REFERENCES guild.gid
     rid: int
     threshold: int
@@ -147,10 +147,18 @@ class Rank(SnowflakeTable):
 
 
 @dataclass
-class MemberRank(SnowflakeTable):
+class Rank(SnowflakeTable):
     gid: int  # REFERENCES guild.gid
-    uid: int  # REFERENCES user.uid
-    rid: int
+    message: str  # encoded json, default already set in db
 
     def __iter__(self):
-        return iter([self.gid, self.uid, self.rid])
+        return iter([self.gid, self.message])
+
+
+@dataclass
+class Level(SnowflakeTable):
+    gid: int  # REFERENCES guild.gid
+    message: str  # encoded json, default already set in db
+
+    def __iter__(self):
+        return iter([self.gid])

@@ -9,9 +9,9 @@ import discord
 import pendulum
 from asyncpg import Record
 from discord.ext import commands
-from discord.ext.commands.context import Context
 
-from src import db, levels_helper, utility
+from main import CazzuBot
+from src import db, level, levels_helper, rank, utility
 
 
 _log = logging.getLogger(__name__)
@@ -56,13 +56,9 @@ for i in range(2, _UNTIL_MSG + 1):
     RE_MSG_EXP_CUMULATIVE[i] = RE_MSG_EXP_CUMULATIVE[i - 1] + _BASE + _from_msg(i - 1)
 
 
-if TYPE_CHECKING:  # magical?? shit that helps with type checking
-    from main import CazzuBot
-
-
 class Experience(commands.Cog):
-    def __init__(self, bot):
-        self.bot: CazzuBot = bot
+    def __init__(self, bot: CazzuBot):
+        self.bot = bot
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -71,6 +67,9 @@ class Experience(commands.Cog):
         Also checks for potential level ups. Level ups are CURRENTLY based on lifetime
         exp, and should eventually be switched to seasonal experience.
         """
+        if self.bot.debug and message.author.id not in self.bot.debug_users:
+            return
+
         if message.author.bot:  # ignore other bots
             return
 
@@ -112,68 +111,55 @@ class Experience(commands.Cog):
             self.bot.pool, db.table.MemberExpLog(gid, uid, exp_gain, now)
         )
 
-        level = await self._on_msg_handle_levels(message, old_exp, new_exp)
-        await self._on_msg_handle_ranks(message, level)
-
-    async def _on_msg_handle_levels(
-        self, message: discord.Message, old_exp: int, new_exp: int
-    ):
-        """Handle potential level ups from experience gain."""
-        old_level = levels_helper.level_from_exp(old_exp)
-        new_level = levels_helper.level_from_exp(new_exp)
-
-        if new_level > old_level:
-            _log.info(
-                f"{message.author} has leveled up from {old_level} to {new_level}!"
-            )
-
-        return new_level
-
-    async def _on_msg_handle_ranks(self, message: discord.Message, level: int):
-        """Handle potential rank ups from level ups.
-
-        Also keeps rank integrity regardless of level up.
-        """
-        ranks = await db.rank.get(self.bot.pool, message.guild.id)
-        if not ranks:
-            return
-
-        rid, index = utility.calc_min_rank(ranks, level)
-
-        if not rid:  # not even high enough level for any ranks
-            return
-
-        member = message.author
-        role = message.guild.get_role(rid)
-        await member.add_roles(role, reason="Rank up")
-
-        # remove all other roles than applied, convert to role, only remove existing
-        ranks.pop(index)
-        del_roles = list(map(message.guild.get_role, (r["rid"] for r in ranks)))
-        del_roles = filter(lambda r: r in member.roles, del_roles)
-        if del_roles:
-            await member.remove_roles(*del_roles)
+        lvl = await level.on_msg_handle_levels(self.bot, message, old_exp, new_exp)
+        await rank.on_msg_handle_ranks(self.bot, message, lvl)
 
     @commands.group(aliases=["xp"], invoke_without_command=True)
-    async def exp(self, ctx: Context, *, user: discord.Member = None):
+    async def exp(self, ctx: commands.Context, *, user: discord.Member = None):
         """Show season's experience and leaderboards."""
         if user is None:
             user = ctx.message.author
 
         now = pendulum.now()
-        uid = user.id
         gid = ctx.guild.id
 
         rows = await db.guild.get_members_exp_seasonal(
             self.bot.pool, gid, now.year, now.month // 3
         )
 
+        embed = await self._prepare_scoreboard_embed(ctx, user, rows)
+
+        await ctx.send(embed=embed)
+
+    @exp.command(name="lifetime")
+    async def exp_lifetime(self, ctx: commands.Context, *, user: discord.Member = None):
+        """Lifetime experience variant."""
+        if user is None:
+            user = ctx.message.author
+
+        gid = ctx.guild.id
+
+        rows = await db.guild.get_members_exp(self.bot.pool, gid)
+
+        embed = await self._prepare_scoreboard_embed(ctx, user, rows)
+
+        await ctx.send(embed=embed)
+
+    async def _prepare_scoreboard_embed(
+        self, ctx: commands.Command, user: discord.Member, entries: list[Record]
+    ):
+        """Return the embed of scoreboard Club Membership Card.
+
+        entiries: the raw result from query, containing (rank, uid, exp) in that order
+        """
+        uid = user.id
+
         # Prepare zip to generate scoreboard
-        uid_index = [r["uid"] for r in rows].index(uid)
-        window_raw, user_window_index = utility.focus_list(rows, uid_index)
+        uid_index = [r["uid"] for r in entries].index(uid)
+        window_raw, user_window_index = utility.focus_list(entries, uid_index)
 
         ranks, uids, exps = zip(*window_raw)
-        levels = [levels_helper.level_from_exp(e) for e in exps]
+        lvls = [levels_helper.level_from_exp(e) for e in exps]
 
         # Annoying bug to learn from, and python programming misunderstanding.
         #
@@ -201,12 +187,13 @@ class Experience(commands.Cog):
         names = [member.display_name for member in members]
 
         # Generate Scoreboard
-        window = list(zip(ranks, exps, levels, names))
+        window = list(zip(ranks, exps, lvls, names))
 
         raw_scoreboard, paddings = utility.generate_scoreboard(
             window,
-            ["Rank", "Exp", "Level", "User"],
+            ["Rank", "Exp", "Lv", "User"],
             ["<", ">", ">", ">"],
+            max_padding=[0, 0, 0, 16],
         )
 
         utility.highlight_scoreboard(raw_scoreboard, user_window_index, paddings[0])
@@ -214,12 +201,12 @@ class Experience(commands.Cog):
 
         # Other Preparation
         gid = ctx.guild.id
-        rid = await db.rank.of_member(self.bot.pool, gid, uid)
+        rid = await db.rank_threshold.of_member(self.bot.pool, gid, uid)
         role: discord.Role = ctx.guild.get_role(rid)
 
         # Generate Embed
         embed = discord.Embed()
-        lvl = levels[user_window_index]
+        lvl = lvls[user_window_index]
         exp = exps[user_window_index]
         rank = ranks[user_window_index]
 
@@ -236,12 +223,12 @@ class Experience(commands.Cog):
         Level: **`{lvl}`**
         Experience: **`{exp}`**
 
-        You currently the `{percentile:.2f}%` percetile of all members!
+        You currently the `{percentile:.2f}` percetile of all members!
         ```py\n{scoreboard_s}```"""
 
         embed.color = discord.Color.from_str("#a2dcf7")
 
-        await ctx.send(embed=embed)
+        return embed
 
 
 async def setup(bot: commands.Bot):

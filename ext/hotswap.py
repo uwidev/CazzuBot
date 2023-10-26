@@ -3,6 +3,7 @@
 import logging
 import os
 
+import discord
 from discord.ext import commands
 
 
@@ -12,6 +13,15 @@ _log = logging.getLogger(__name__)
 class HotSwap(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    async def cog_command_error(self, ctx: commands.Context, err: Exception) -> None:
+        if isinstance(err, commands.errors.MissingPermissions):
+            return
+        raise err
+
+    async def cog_before_invoke(self, ctx: commands.Context) -> None:
+        if not ctx.author.guild_permissions.administrator:
+            raise commands.errors.MissingPermissions(["administrator"])
 
     @commands.group()
     async def cog(self, ctx: commands.Context):

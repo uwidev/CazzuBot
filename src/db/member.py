@@ -11,17 +11,17 @@ _log = logging.getLogger(__name__)
 
 
 async def add(pool: Pool, member: table.Member):
+    # Foreign constraint dependencies
+    if not await user.get(pool, member.uid):
+        await user.add(pool, table.User(member.uid))
+
+    if not await guild.get(pool, member.gid):
+        await guild.add(pool, table.Guild(member.gid))
+
+    # Create guild partition if not exists
+    await create_partition_gid(pool, member.gid)
+
     async with pool.acquire() as con:
-        # Foreign constraint dependencies
-        if not await user.get(pool, member.uid):
-            await user.add(pool, table.User(member.uid))
-
-        if not await guild.get(pool, member.gid):
-            await guild.add(pool, table.Guild(member.gid))
-
-        # Create guild partition if not exists
-        await create_partition_gid(pool, member.gid)
-
         async with con.transaction():
             try:
                 await con.execute(
@@ -95,43 +95,17 @@ async def create_partition_gid(pool: Pool, gid: int):
             )
 
 
-async def get_all_member_exp(pool: Pool, gid: int) -> list[Record]:
-    """Get all experience from given gid ordered descending.
-
-    Currently deprecated
-    """
+async def get_exp_bulk(pool: Pool, gid: int) -> list[Record]:
+    """Get lifetime experience from given gid ordered descending."""
     async with pool.acquire() as con:
         return await con.fetch(
             """
-            SELECT RANK() OVER (ORDER BY exp DESC) AS rank, uid, exp
+            SELECT RANK() OVER (ORDER BY exp_lifetime DESC) AS rank, uid, exp_lifetime
             FROM member
             WHERE gid = $1
-            ORDER BY exp DESC
+            ORDER BY exp_lifetime DESC
             """,
             gid,
-        )
-
-
-async def get_exp_rankings(pool: Pool, gid: int, uid: int) -> Record:
-    """Get all experience from given gid.
-
-    Currently deprecated
-    """
-    async with pool.acquire() as con:
-        return await con.fetchrow(
-            """
-            SELECT rank, exp
-            FROM (
-                SELECT RANK() OVER (ORDER BY exp DESC) AS rank, uid, exp
-                FROM member
-                WHERE gid = $1
-                ORDER BY exp DESC
-            ) AS members_ranked
-            WHERE UID = $2
-            LIMIT 1;
-            """,
-            gid,
-            uid,
         )
 
 
