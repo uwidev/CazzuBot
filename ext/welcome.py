@@ -11,7 +11,7 @@ from asyncpg import Record
 from discord.ext import commands
 
 from main import CazzuBot
-from src import db, levels_helper, utility
+from src import db, levels_helper, user_json, utility
 
 
 _log = logging.getLogger(__name__)
@@ -66,8 +66,6 @@ class Welcome(commands.Cog):
             if role:
                 await after.add_roles(role)
 
-            _log.info("gegi has completed onboarding.")
-
     class WelcomeMisconfigutationError(Exception):
         """Raised when guild configuations are invalid."""
 
@@ -75,17 +73,14 @@ class Welcome(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def welcome(self, ctx: commands.Context):
         """Entry command for welcome settings."""
-        _log.info("welcome")
 
     @welcome.group(name="set")
     async def welcome_set(self, ctx: commands.Context):
         """Set command entry."""
-        _log.info("set")
 
     @welcome_set.command(name="enabled")
     async def welcome_set_enabled(self, ctx: commands.Context, enabled: bool):
         """Enables welcoming or not."""
-        _log.info("enabled")
         gid = ctx.guild.id
         await db.welcome.set_enabled(self.bot.pool, gid, enabled)
 
@@ -122,7 +117,7 @@ class Welcome(commands.Cog):
         Note that content AND embed must be present.
         MAKE SURE YOU USE CHANNEL EMBED, NOT WEBHOOK!
         """
-        decoded = await utility.verify_json(
+        decoded = await user_json.verify(
             self.bot, ctx, message, self._formatter, member=ctx.author
         )
 
@@ -143,7 +138,7 @@ class Welcome(commands.Cog):
         member = ctx.author
         utility.deep_map(decoded, self._formatter, member=member)
 
-        content, embed, embeds = utility.prepare_message(decoded)
+        content, embed, embeds = user_json.prepare(decoded)
         await ctx.send(content, embed=embed, embeds=embeds)
 
     def _formatter(self, s: str, *, member):

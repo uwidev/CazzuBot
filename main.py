@@ -3,6 +3,7 @@ import argparse
 import asyncio
 import getpass
 import logging
+import os
 import time
 
 import asyncpg
@@ -79,6 +80,8 @@ async def setup_codecs(con: Connection):
 
 
 async def main():
+    os.system("cls" if os.name == "nt" else "clear")
+
     parser = argparse.ArgumentParser(prog="CazzuBot")
     parser.add_argument("-d", "--debug", action="store_true")
     debug = parser.parse_args().debug

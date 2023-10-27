@@ -11,7 +11,7 @@ from asyncpg import Record
 from discord.ext import commands
 from discord.ext.commands.context import Context
 
-from src import db, utility
+from src import db, rank, user_json, utility
 
 
 if TYPE_CHECKING:
@@ -69,7 +69,7 @@ class Ranks(commands.Cog):
 
     @rank_set.command(name="message", aliases=["msg"])
     async def rank_set_message(self, ctx: commands.Context, *, message):
-        decoded = await utility.verify_json(
+        decoded = await user_json.verify(
             self.bot, ctx, message, self._formatter, member=ctx.author
         )
 
@@ -85,29 +85,10 @@ class Ranks(commands.Cog):
         decoded = self.bot.json_decoder.decode(payload)
 
         member = ctx.author
-        utility.deep_map(decoded, self._formatter, member=member)
+        utility.deep_map(decoded, rank.formatter, member=member)
 
-        content, embed, embeds = utility.prepare_message(decoded)
+        content, embed, embeds = user_json.prepare(decoded)
         await ctx.send(content, embed=embed, embeds=embeds)
-
-    def _formatter(self, s: str, *, member, old_rank=None, new_rank=None):
-        """Format string with rank-related placeholders.
-
-        {avatar}
-        {name} -> display_name
-        {mention}
-        {id}
-        {old} -> previous rank
-        {new} -> new rank
-        """
-        return s.format(
-            avatar=member.avatar.url,
-            name=member.display_name,
-            mention=member.mention,
-            id=member.id,
-            old=old_rank,
-            new=new_rank,
-        )
 
 
 async def setup(bot: commands.Bot):

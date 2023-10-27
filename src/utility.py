@@ -282,7 +282,7 @@ def author_confirm(
 def calc_min_rank(rank_thresholds: list[Record], level) -> tuple[int, int]:
     """Naively determine rank based on level from list of records.
 
-    Returns the rank id, and the index at which the rank is.
+    Returns (rank_id, rank_index). (None, None) if not high enough for any rank.
     """
     if level < rank_thresholds[0]["threshold"]:
         return None, None
@@ -326,48 +326,8 @@ def update_dict(old: dict, ref: dict) -> dict:
     return new
 
 
-def fix_timestamps_iterable(embed: dict):
-    """Convert key timestamp to isoformat for database."""
-    timestamp = embed.get("timestamp", None)
-    if timestamp:
-        embed["timestamp"] = pendulum.parser.parse(timestamp).isoformat()
-
-
-def prepare_message(decoded: dict) -> tuple[str, dict, list]:
-    """Parse dictionary to embed objects, return as tuple for sending message."""
-    content = decoded.get("content", None)
-    embed = embed_from_decoding(decoded)
-    embeds = embeds_from_decoding(decoded)
-
-    return content, embed, embeds
-
-
-def embeds_from_decoding(d: dict):
-    """Return a list of embed objects from a json.
-
-    None if empty.
-    """
-    embeds = d.get("embeds", None)
-    if not embeds:
-        return None
-
-    return [discord.Embed.from_dict(embed) for embed in embeds]
-
-
-def embed_from_decoding(d: dict):
-    """Return an embed object from json.
-
-    None if doesn't exist.
-    """
-    embed = d.get("embed", None)
-    if not embed:
-        return None
-
-    return discord.Embed.from_dict(embed)
-
-
 def deep_map(d: dict, formatter: Callable, **kwarg: dict):
-    """Walk the iterable and applies calls formatter to all strings.
+    """Walk the iterable IN PLACE and applies calls formatter to all strings.
 
     The formatter function should take s as an positional argument, and require keyword
     arguments for anything else it needs.
@@ -404,50 +364,3 @@ def deep_map(d: dict, formatter: Callable, **kwarg: dict):
                 walk_iterable(d[k])
 
     walk_dict(d)
-
-
-async def verify_json(
-    bot,
-    ctx,
-    message: str,
-    formatter: Callable = None,
-    **kwarg,
-):
-    """Verify if a user's provided json argument is valid.
-
-    Return its decoded dict if valid, None if not.
-
-    If formatter is given, it will call that formatter and pass all kwargs to it. This
-    formatter will be called on all str objects in the json. The returned dict is
-    the pre-formatted version.
-    """
-    decoded = None
-    try:
-        decoded: dict = bot.json_decoder.decode(message)  # decode to verify valid json
-
-        fix_timestamps_iterable(decoded)
-
-        # send embed to verify valid embed
-        demo = copy.deepcopy(decoded)
-
-        if formatter:
-            deep_map(demo, formatter, **kwarg)
-
-        content, embed, embeds = prepare_message(demo)
-
-        await ctx.reply(
-            content=content,
-            embed=embed,
-            embeds=embeds,
-        )
-
-    except json.decoder.JSONDecodeError as err:
-        msg = "Embed is not valid JSON object"
-        raise commands.BadArgument(msg) from err
-
-    except discord.errors.HTTPException as err:
-        msg = "Embed is not a valid embed object"
-        raise commands.BadArgument(msg) from err
-
-    else:
-        return decoded

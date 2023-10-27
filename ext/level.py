@@ -9,7 +9,7 @@ import logging
 import discord
 from discord.ext import commands
 
-from src import db, utility
+from src import db, level, user_json, utility
 from src.cazzubot import CazzuBot
 
 
@@ -32,8 +32,8 @@ class Level(commands.Cog):
 
     @level_set.command(name="message", aliases=["msg"])
     async def level_set_message(self, ctx: commands.Context, *, message):
-        decoded = await utility.verify_json(
-            self.bot, ctx, message, self._formatter, member=ctx.author
+        decoded = await user_json.verify(
+            self.bot, ctx, message, level.formatter, member=ctx.author
         )
 
         gid = ctx.guild.id
@@ -48,29 +48,10 @@ class Level(commands.Cog):
         decoded = self.bot.json_decoder.decode(payload)
 
         member = ctx.author
-        utility.deep_map(decoded, self._formatter, member=member)
+        utility.deep_map(decoded, level.formatter, member=member)
 
-        content, embed, embeds = utility.prepare_message(decoded)
+        content, embed, embeds = user_json.prepare(decoded)
         await ctx.send(content, embed=embed, embeds=embeds)
-
-    def _formatter(self, s: str, *, member, old_level=None, new_level=None):
-        """Format string with rank-related placeholders.
-
-        {avatar}
-        {name} -> display_name
-        {mention}
-        {id}
-        {old} -> previous level
-        {new} -> new level
-        """
-        return s.format(
-            avatar=member.avatar.url,
-            name=member.display_name,
-            mention=member.mention,
-            id=member.id,
-            old=old_level,
-            new=new_level,
-        )
 
 
 async def setup(bot: commands.Bot):

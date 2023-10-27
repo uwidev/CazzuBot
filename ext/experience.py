@@ -94,25 +94,44 @@ class Experience(commands.Cog):
         if member_db and now < member_db.get("exp_cdr"):
             return  # Cooldown has not yet expired, do nothing
 
-        old_exp = member_db.get("exp_lifetime")  # Needed to determine if level up
+        # Prepare variables
         msg_cnt = member_db.get("exp_msg_cnt") + 1
         exp_gain = _from_msg(msg_cnt)
-        new_exp = old_exp + exp_gain
+
+        year = now.year
+        month = now.month
+        seasonal_exp_old = await db.member_exp_log.get_seasonal_by_month(
+            self.bot.pool, gid, uid, year, month
+        )
+        seasonal_exp_new = seasonal_exp_old + exp_gain
+
+        lifetime_exp_new = member_db.get("exp_lifetime") + exp_gain
+
         offset_cooldown = now + pendulum.duration(seconds=_EXP_COOLDOWN)
 
         _log.info("Granting %s exp to %s", exp_gain, message.author)  # for dev purposes
 
         # Add to member's lifetime exp
-        member_updated = db.table.Member(gid, uid, new_exp, msg_cnt, offset_cooldown)
+        member_updated = db.table.Member(
+            gid, uid, lifetime_exp_new, msg_cnt, offset_cooldown
+        )
         await db.member.update_exp(self.bot.pool, member_updated)
 
-        # Add to loggings for future calculations (e.g. seasonal, monthly, etc.)
+        # Add to loggings for seasonal (and weekly, monthly, etc.)
         await db.member_exp_log.add(
             self.bot.pool, db.table.MemberExpLog(gid, uid, exp_gain, now)
         )
 
-        lvl = await level.on_msg_handle_levels(self.bot, message, old_exp, new_exp)
-        await rank.on_msg_handle_ranks(self.bot, message, lvl)
+        # Deal with potential level up
+        seasonal_level_old, seasonal_level_new = await level.on_msg_handle_levels(
+            self.bot, message, seasonal_exp_old, seasonal_exp_new
+        )
+
+        # Deal with potential rank up
+        # We do not check for level up because we still want to have rank integrity
+        await rank.on_msg_handle_ranks(
+            self.bot, message, seasonal_level_old, seasonal_level_new
+        )
 
     @commands.group(aliases=["xp"], invoke_without_command=True)
     async def exp(self, ctx: commands.Context, *, user: discord.Member = None):

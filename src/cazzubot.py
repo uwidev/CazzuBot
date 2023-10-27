@@ -42,6 +42,15 @@ class CazzuBot(commands.Bot):
     async def on_ready(self):
         _log.info("Logged in as %s", self.user.name)
 
+    async def on_command_error(
+        self, ctx: commands.Context, err: commands.CommandError, /
+    ) -> None:
+        if isinstance(err, commands.BadArgument):
+            await ctx.reply(err)
+            return
+
+        await super().on_command_error(ctx, err)
+
     async def _load_extensions(self):
         for file in os.listdir(self.ext_path):
             if file.endswith(".py"):
@@ -54,7 +63,8 @@ class CazzuBot(commands.Bot):
                     commands.NoEntryPointError,
                     commands.ExtensionFailed,
                 ) as err:
-                    _log.error(err)
+                    # _log.error(err)
+                    _log.error(traceback.format_exc())
 
     async def setup_hook(self) -> None:
         _log.info("Loading extensions...")

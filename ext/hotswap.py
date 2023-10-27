@@ -14,14 +14,8 @@ class HotSwap(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def cog_command_error(self, ctx: commands.Context, err: Exception) -> None:
-        if isinstance(err, commands.errors.MissingPermissions):
-            return
-        raise err
-
-    async def cog_before_invoke(self, ctx: commands.Context) -> None:
-        if not ctx.author.guild_permissions.administrator:
-            raise commands.errors.MissingPermissions(["administrator"])
+    def cog_check(self, ctx):
+        return ctx.author.id == self.bot.owner_id
 
     @commands.group()
     async def cog(self, ctx: commands.Context):

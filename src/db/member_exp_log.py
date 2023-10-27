@@ -105,10 +105,15 @@ async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> 
         )
 
 
+async def get_seasonal_by_month(pool: Pool, gid: int, uid: int, year: int, month: int):
+    """Call get_season() when season is as a month rather than season."""
+    return await get_seasonal(pool, gid, uid, year, month // 3)
+
+
 async def get_seasonal(pool: Pool, gid: int, uid: int, year: int, season: int) -> int:
     """Fetch a member's sum experience based on season.
 
-    Seasons start from 0 and go to to 3. If you have a month, pass month // 3.
+    Seasons start from 0 and go to to 3.
     """
     if season < 0 or season > 3:  # noqa: PLR2004
         msg = "Seasons must be in the range of 0-3"

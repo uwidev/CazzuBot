@@ -13,12 +13,12 @@ _UP_X_INIT = 0.6
 _UP_Y_LIM = 1
 _UP_Y_APPROACH = 3
 
-_LOW_X_INIT = 0.4
+_LOW_X_INIT = 0.5
 _LOW_Y_LIM = 0.8
 _LOW_Y_APPROACH = 2
 
 _X_SCALE = 100
-_Y_SCALE = 500
+_Y_SCALE = 450
 
 _levels_exp_memo = {0: 0}
 

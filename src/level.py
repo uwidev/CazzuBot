@@ -3,7 +3,7 @@ import logging
 
 import discord
 
-from src import levels_helper
+from src import db, levels_helper, rank, user_json, utility
 from src.cazzubot import CazzuBot
 
 
@@ -15,12 +15,49 @@ async def on_msg_handle_levels(
 ):
     """Handle potential level ups from experience gain.
 
-    Called from ext.experience.
+    Called from ext.experience. Returns (old, new) level
     """
-    old_level = levels_helper.level_from_exp(old_exp)
-    new_level = levels_helper.level_from_exp(new_exp)
+    level_old = levels_helper.level_from_exp(old_exp)
+    level_new = levels_helper.level_from_exp(new_exp)
 
-    if new_level > old_level:
-        _log.info(f"{message.author} has leveled up from {old_level} to {new_level}!")
+    if level_new > level_old:
+        gid = message.guild.id
 
-    return new_level
+        # If we ranked up, do not send level up, since rank up trumps level up.
+        if not await rank.get_ranked_from_levels(bot, level_old, level_new, gid):
+            raw_json = await db.level.get_message(bot.pool, gid)
+            embed_json = bot.json_decoder.decode(raw_json)
+
+            member = message.author
+
+            utility.deep_map(
+                embed_json,
+                formatter,
+                member=member,
+                level_old=level_old,
+                level_new=level_new,
+            )
+            content, embed, embeds = user_json.prepare(embed_json)
+            await message.channel.send(content, embed=embed, embeds=embeds)
+
+    return level_old, level_new
+
+
+def formatter(s: str, *, member, old_level=None, new_level=None):
+    """Format string with rank-related placeholders.
+
+    {avatar}
+    {name} -> display_name
+    {mention}
+    {id}
+    {level_old} -> previous level
+    {level_new} -> new level
+    """
+    return s.format(
+        avatar=member.avatar.url,
+        name=member.display_name,
+        mention=member.mention,
+        id=member.id,
+        level_old=old_level,
+        level_new=new_level,
+    )
