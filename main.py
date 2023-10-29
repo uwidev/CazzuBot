@@ -4,6 +4,7 @@ import asyncio
 import getpass
 import logging
 import os
+import termios
 import time
 
 import asyncpg
@@ -12,7 +13,7 @@ import pendulum
 from asyncpg import Connection
 from discord.utils import _ColourFormatter, stream_supports_colour
 
-from secret import OWNER_ID, TOKEN
+from secret_bot import OWNER_ID, TOKEN
 from src.cazzubot import CazzuBot
 from src.db.table import ModlogStatusEnum, ModlogTypeEnum
 
@@ -93,7 +94,10 @@ async def main():
     intents.message_content = True
     intents.members = True
 
+    # try:
     pw = getpass.getpass()
+    # except (termios.error, EOFError):
+    #     pw = ""
 
     # Codecs for enum conversion here
 

@@ -6,6 +6,7 @@ trivially be derived from experience. We don't the junction table.
 import logging
 
 import discord
+from asyncpg import Record
 
 from src import db, user_json, utility
 from src.cazzubot import CazzuBot
@@ -34,6 +35,10 @@ async def on_msg_handle_ranks(
     rid_old, index_old, rid_new, index_new = has_ranked
 
     rank_new = message.guild.get_role(rid_new)
+    if not rank_new:  # role was deleted from guild
+        err_msg = "On rank up, role was not found. Please contact an admin."
+        await message.channel.send(err_msg)
+        return
 
     if rid_new != rid_old:
         rank_old = message.guild.get_role(rid_old)
@@ -68,6 +73,21 @@ async def on_msg_handle_ranks(
         await member.remove_roles(*del_roles)
 
 
+def calc_min_rank(rank_thresholds: list[Record], level) -> tuple[int, int]:
+    """Naively determine rank based on level from list of records.
+
+    Returns (rank_id, rank_index). (None, None) if not high enough for any rank.
+    """
+    if level < rank_thresholds[0]["threshold"]:
+        return None, None
+
+    for i in range(1, len(rank_thresholds)):
+        if level < rank_thresholds[i]["threshold"]:
+            return rank_thresholds[i - 1]["rid"], i - 1
+
+    return rank_thresholds[-1]["rid"], len(rank_thresholds) - 1
+
+
 def ranked_from_levels(
     bot: CazzuBot, level_old: int, level_new: int, rids: list[int] = None
 ) -> tuple | bool:
@@ -87,11 +107,11 @@ def ranked_from_levels(
     if not rids:
         return False
 
-    rid_new, index_new = utility.calc_min_rank(rids, level_new)
+    rid_new, index_new = calc_min_rank(rids, level_new)
     if not rid_new:  # not even high enough level for any ranks
         return False
 
-    rid_old, index_old = utility.calc_min_rank(rids, level_old)
+    rid_old, index_old = calc_min_rank(rids, level_old)
     if rid_new != rid_old:
         return rid_old, index_old, rid_new, index_new
 

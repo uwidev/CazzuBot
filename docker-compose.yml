@@ -1,0 +1,36 @@
+services:  
+  database:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/pgpw
+      POSTGRES_USER: cazzubot
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    secrets:
+      - pgpw
+  
+  database-gui:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: test@email.com
+      PGADMIN_DEFAULT_PASSWORD: password
+    ports:
+      - "8080:80"
+    depends_on:
+      - database
+
+  webapp:
+    image: cazzubot
+    stdin_open: true
+    tty: true
+    depends_on:
+      - database
+
+volumes:
+  pgdata:
+
+secrets:
+  pgpw:
+    file: ./secret_db

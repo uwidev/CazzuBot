@@ -95,7 +95,7 @@ async def create_partition_gid(pool: Pool, gid: int):
             )
 
 
-async def get_exp_bulk(pool: Pool, gid: int) -> list[Record]:
+async def get_exp_bulk_ranked(pool: Pool, gid: int) -> list[Record]:
     """Get lifetime experience from given gid ordered descending."""
     async with pool.acquire() as con:
         return await con.fetch(

@@ -39,129 +39,6 @@ def else_if_none(*args, raise_err=True):
     return None
 
 
-def max_width(
-    entries: list[list], headers: list[str] = None, max_padding: list[int] = None
-) -> list[int]:
-    """Return the max length of strings per column.
-
-    Also takes into account commas in large numbers and a header if given.
-
-    entires is [row1[col1, col2], ...]
-    """
-    padding = []
-
-    if not headers:
-        headers = [""] * len(entries)
-
-    if not max_padding:
-        max_padding = [999] * len(headers)
-
-    for col in range(len(entries[0])):
-        if isinstance(entries[0][col], str):
-            entire_col = list(entries[row][col] for row in range(len(entries)))
-        else:  # is a number, take into account comma
-            entire_col = list(f"{entries[row][col]:,}" for row in range(len(entries)))
-        widest_val = len(sorted(entire_col, key=len)[-1])
-        width = max(widest_val, len(headers[col]))
-        width_trunc = min(width, max_padding[col])
-        padding.append(width_trunc)
-
-    return padding
-
-
-def highlight_scoreboard(
-    scoreboard: list[str],
-    index: int,
-    col1_padding: int,
-    *,
-    header: bool = True,
-):
-    """Modify the scoreboard to add an @ in front of the row on the text-scoreboard.
-
-    We do some disgusting string splicing. In order for this to work consistently, there
-    needs to be some minmal padding. We will move column 1 of index to the right by
-    1, and to do that, we need a little bit of padding so we don't cross over into
-    column 2.
-    """
-    this_rank = scoreboard[index + int(header)][0:col1_padding]
-    scoreboard[index + 1] = (
-        "@" + this_rank + scoreboard[index + int(header)][col1_padding + 1 :]
-    )
-    return scoreboard
-
-
-def generate_scoreboard(
-    entries: list,
-    headers: list,
-    align: list,
-    *,
-    fill: str = ".",
-    spacing: int = 2,
-    max_padding: list = [],
-) -> list[list[str], list[int]]:
-    """Format and return a text-based scoreboard with dynamic alignment.
-
-    Returned is a list of strings. You will need to join with newline.
-    Also returns calculated padding for any further transformation.
-
-    rows: the format of [row1[col1, col2, col3], row2[col1, col2, col3], ...]
-    header: a list of the names of columns header[col1, col2, col3]
-    align: a list of how to pad e.g. <, ^, >
-    fill: character used for filling
-    spacing: always put fill (if applicable) padding between columns
-    max_padding: the max padding a column can have, if 0, "infinite" for that col
-    """
-    max_padding = [x if x else 999 for x in max_padding]  # if pad 0, set 999
-    padding = max_width(entries, headers, max_padding)
-
-    header_format = "{val:{align}{pad}}"
-    headers_s = f"{' ' * spacing}".join(
-        header_format.format(val=headers[i], align=align[i], pad=padding[i])
-        for i in range(len(padding))
-    )
-
-    rows_s = []
-    form = "{val:{fill}{align}{pad}{comma}}"
-    for row in range(len(entries)):
-        row_raw = []
-        for col in range(len(entries[row])):
-            row_raw.append(
-                form.format(
-                    val=entries[row][col],
-                    fill="" if row % 2 else fill,
-                    align=align[col],
-                    pad=padding[col],
-                    comma="" if isinstance(entries[row][col], str) else ",",
-                )
-            )
-        rows_s.append(f"{(' ' if row % 2 else fill) * spacing}".join(row_raw))
-
-    return [headers_s, *rows_s], padding
-
-
-def focus_list(rows: list, focus_index: int, size: int = 5):
-    """Create a sub-list of a bigger list, creating a window with a certain size.
-
-    If the focus index is on edges, will still return the correct size.
-
-    Also returns the 'corrected focus' as the second value.
-    """
-    extends = (size - 1) // 2
-    corrected_center = min(max(extends, focus_index), len(rows) - 1 - extends)
-
-    if focus_index <= extends:  # focus too front
-        corrected_focus = focus_index
-    elif focus_index > len(rows) - 1 - extends:  # focus too end
-        corrected_focus = focus_index - corrected_center
-    else:  # just right
-        corrected_focus = extends
-
-    return (
-        rows[corrected_center - extends : corrected_center + extends + 1],
-        corrected_focus,
-    )
-
-
 def binary_search(arr, target):
     """Return the index of target in arr, None if not found."""
     left, right = 0, len(arr) - 1
@@ -192,23 +69,6 @@ def get_key_structure(d: dict):
     return keys
 
 
-valid_embed_structure = [
-    "title",
-    "type",
-    "description",
-    "url",
-    "color",
-    "timestamp",
-    "thumbnail",
-    "video",
-    "provider",
-    "author",
-    "fields",
-    "image",
-    "footer",
-]
-
-
 def is_subset_r(sub, main):
     """Compare two iterables and recursively checks if sub is a subset of main."""
     for item in sub:
@@ -222,10 +82,6 @@ def is_subset_r(sub, main):
 
         return True
     return None
-
-
-def verify_embed_structure(embed_dict: dict):
-    """Check to see if embed dict only has attributes related to embed."""
 
 
 def author_confirm(
@@ -277,21 +133,6 @@ def author_confirm(
         return True
 
     return commands.check(confirm)
-
-
-def calc_min_rank(rank_thresholds: list[Record], level) -> tuple[int, int]:
-    """Naively determine rank based on level from list of records.
-
-    Returns (rank_id, rank_index). (None, None) if not high enough for any rank.
-    """
-    if level < rank_thresholds[0]["threshold"]:
-        return None, None
-
-    for i in range(1, len(rank_thresholds)):
-        if level < rank_thresholds[i]["threshold"]:
-            return rank_thresholds[i - 1]["rid"], i - 1
-
-    return rank_thresholds[-1]["rid"], len(rank_thresholds) - 1
 
 
 def update_dict(old: dict, ref: dict) -> dict:
@@ -364,3 +205,16 @@ def deep_map(d: dict, formatter: Callable, **kwarg: dict):
                 walk_iterable(d[k])
 
     walk_dict(d)
+
+
+def ordinal(n: int) -> str:
+    """Return the number with it's original suffix as a string.
+
+    Source: https://leancrew.com/all-this/2020/06/ordinals-in-python/
+    """
+    s = ("th", "st", "nd", "rd") + ("th",) * 10
+    v = n % 100
+    if v > 13:  # noqa: PLR2004
+        return f"{n}{s[v%10]}"
+
+    return f"{n}{s[v]}"

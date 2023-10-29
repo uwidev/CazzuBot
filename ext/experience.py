@@ -3,6 +3,7 @@
 See member_exp_log.py for details on how exp is stored and summed.
 """
 import logging
+from math import trunc
 from typing import TYPE_CHECKING
 
 import discord
@@ -11,7 +12,7 @@ from asyncpg import Record
 from discord.ext import commands
 
 from main import CazzuBot
-from src import db, level, levels_helper, rank, utility
+from src import db, leaderboard, level, levels_helper, rank, utility
 
 
 _log = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ class Experience(commands.Cog):
 
         offset_cooldown = now + pendulum.duration(seconds=_EXP_COOLDOWN)
 
-        _log.info("Granting %s exp to %s", exp_gain, message.author)  # for dev purposes
+        # _log.info("Granting %s exp to %s", exp_gain, message.author)
 
         # Add to member's lifetime exp
         member_updated = db.table.Member(
@@ -146,7 +147,7 @@ class Experience(commands.Cog):
             self.bot.pool, gid, now.year, now.month // 3
         )
 
-        embed = await self._prepare_scoreboard_embed(ctx, user, rows)
+        embed = await self._prepare_personal_summary(ctx, user, rows)
 
         await ctx.send(embed=embed)
 
@@ -157,15 +158,13 @@ class Experience(commands.Cog):
             user = ctx.message.author
 
         gid = ctx.guild.id
-
-        rows = await db.guild.get_members_exp(self.bot.pool, gid)
-
-        embed = await self._prepare_scoreboard_embed(ctx, user, rows)
+        rows = await db.guild.get_members_exp_ranked(self.bot.pool, gid)
+        embed = await self._prepare_personal_summary(ctx, user, rows)
 
         await ctx.send(embed=embed)
 
-    async def _prepare_scoreboard_embed(
-        self, ctx: commands.Command, user: discord.Member, entries: list[Record]
+    async def _prepare_personal_summary(
+        self, ctx: commands.Context, user: discord.Member, entries: list[Record]
     ):
         """Return the embed of scoreboard Club Membership Card.
 
@@ -173,10 +172,11 @@ class Experience(commands.Cog):
         """
         uid = user.id
 
-        # Prepare zip to generate scoreboard
+        # Prepare leaderboard window
         uid_index = [r["uid"] for r in entries].index(uid)
-        window_raw, user_window_index = utility.focus_list(entries, uid_index)
+        window_raw, user_window_index = leaderboard.create_window(entries, uid_index)
 
+        # Transpose for per-column transformations
         ranks, uids, exps = zip(*window_raw)
         lvls = [levels_helper.level_from_exp(e) for e in exps]
 
@@ -205,18 +205,19 @@ class Experience(commands.Cog):
 
         names = [member.display_name for member in members]
 
-        # Generate Scoreboard
+        # Transpose back to prepare to generate
         window = list(zip(ranks, exps, lvls, names))
 
-        raw_scoreboard, paddings = utility.generate_scoreboard(
+        # Generate leaderboard
+        raw_scoreboard, paddings = leaderboard.generate(
             window,
             ["Rank", "Exp", "Lv", "User"],
             ["<", ">", ">", ">"],
             max_padding=[0, 0, 0, 16],
         )
 
-        utility.highlight_scoreboard(raw_scoreboard, user_window_index, paddings[0])
-        scoreboard_s = "\n".join(raw_scoreboard)
+        leaderboard.highlight_user(raw_scoreboard, user_window_index, paddings[0])
+        scoreboard_s = "\n".join(raw_scoreboard)  # Final step to join.
 
         # Other Preparation
         gid = ctx.guild.id
@@ -229,8 +230,13 @@ class Experience(commands.Cog):
         exp = exps[user_window_index]
         rank = ranks[user_window_index]
 
-        total_members = ctx.guild.member_count
-        percentile = (total_members - rank) / (total_members - 1) * 100.0
+        now = pendulum.now()
+        year = now.year
+        month = now.month
+        seasonal_count = await db.member_exp_log.get_seasonal_count_by_month(
+            self.bot.pool, gid, year, month
+        )
+        percentile = (seasonal_count - rank) / (seasonal_count - 1) * 100.0
 
         embed.set_author(
             name=f"{user.display_name}'s Club Membership Card",
@@ -242,7 +248,7 @@ class Experience(commands.Cog):
         Level: **`{lvl}`**
         Experience: **`{exp}`**
 
-        You currently the `{percentile:.2f}` percetile of all members!
+        You currently the `{utility.ordinal(trunc(percentile))}` percetile of all members!
         ```py\n{scoreboard_s}```"""
 
         embed.color = discord.Color.from_str("#a2dcf7")

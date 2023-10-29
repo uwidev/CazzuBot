@@ -170,3 +170,37 @@ async def get_seasonal_bulk_ranked(pool: Pool, gid: int, year: int, season: int)
             interval[0],
             interval[1],
         )
+
+
+async def get_seasonal_count(pool: Pool, gid: int, year: int, season: int) -> int:
+    """Return the count of all participants this season."""
+    if season < 0 or season > 3:  # noqa: PLR2004
+        msg = "Seasons must be in the range of 0-3"
+        _log.error(msg)
+        raise ValueError(msg)
+
+    start_month = 1 + 3 * season  # season months start 1 4 7 10
+    interval = [pendulum.datetime(year, start_month, 1)]
+    interval.append(interval[0] + pendulum.duration(months=3))  # [from, to]
+
+    async with pool.acquire() as con:
+        return await con.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT uid
+                FROM member_exp_log
+                WHERE gid = $1 AND at BETWEEN $2 AND $3
+                GROUP BY uid
+            ) as seasonal_uids
+            """,
+            gid,
+            interval[0],
+            interval[1],
+        )
+
+
+async def get_seasonal_count_by_month(
+    pool: Pool, gid: int, year: int, month: int
+) -> int:
+    return await get_seasonal_count(pool, gid, year, month // 3)

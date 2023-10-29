@@ -51,6 +51,19 @@ async def delete(pool: Pool, gid: int, arg: int):
             )
 
 
+async def batch_delete(pool: Pool, gid: int, rids: list):
+    """Delete a batch of rids from database."""
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                DELETE FROM rank_threshold
+                WHERE rid = ANY($1)
+                """,
+                rids,
+            )
+
+
 async def drop(pool: Pool, gid: int):
     """Delete all ranks associated with gid."""
     async with pool.acquire() as con:
@@ -67,7 +80,7 @@ async def drop(pool: Pool, gid: int):
 def _calc_min_rank(rank_threshold: list[Record], level) -> tuple[int, int]:
     """Naively determine rank based on level from list of records.
 
-    This is the same function as utility.calc_min_rank (or at least should be).
+    This is the same function as rank.calc_min_rank (or at least should be).
     The only difference is that it doesn't return the index.
     """
     if not rank_threshold:

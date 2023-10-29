@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 import discord
 from asyncpg import Record
 from discord.ext import commands
-from discord.ext.commands.context import Context
 
 from src import db, rank, user_json, utility
 
@@ -25,16 +24,16 @@ class Ranks(commands.Cog):
     def __init__(self, bot):
         self.bot: CazzuBot = bot
 
-    async def cog_check(self, ctx: Context) -> bool:
+    async def cog_check(self, ctx: commands.Context) -> bool:
         perms = ctx.channel.permissions_for(ctx.author)
         return any([perms.administrator])
 
     @commands.group(alias="ranks")
-    async def rank(self, ctx: Context):
+    async def rank(self, ctx: commands.Context):
         pass
 
     @rank.command(name="add")
-    async def rank_add(self, ctx: Context, level: int, role: discord.Role):
+    async def rank_add(self, ctx: commands.Context, level: int, role: discord.Role):
         """Add the rank into the guild's settings at said threshold."""
         if level <= 0 or level > 999:
             msg = "Level must be between 1-999."
@@ -48,18 +47,25 @@ class Ranks(commands.Cog):
         )
 
     @rank.command(name="remove", aliases=["del"])
-    async def rank_remove(self, ctx: Context, role: discord.Role):
-        """Remove the rank from the guild by role.
-
-        Later implementation could do by role OR threshold.
-        """
+    async def rank_remove(self, ctx: commands.Context, arg: discord.Role | int):
+        """Remove the rank from the guild by role or level."""
         gid = ctx.guild.id
-        rid = role.id
-        await db.rank_threshold.delete(self.bot.pool, gid, rid)
+        payload = arg if isinstance(arg, int) else arg.id
+        await db.rank_threshold.delete(self.bot.pool, gid, payload)
+
+    @rank.command(name="clean")
+    async def rank_clean(self, ctx: commands.Context):
+        """Remove ranks which can no longer be referenced because they were deleted."""
+        gid = ctx.guild.id
+        payload = await db.rank_threshold.get(self.bot.pool, gid)
+        rank_ids = [p.get("rid") for p in payload]
+        roles = [ctx.guild.get_role(rid) for rid in rank_ids]
+        removed_rids = [rank_ids[i] for i in range(len(roles)) if not roles[i]]
+        await db.rank_threshold.batch_delete(self.bot.pool, gid, removed_rids)
 
     # @author_confirm()
     @rank.command(name="clear", aliases=["purge", "drop"])
-    async def rank_clear(self, ctx: Context):
+    async def rank_clear(self, ctx: commands.Context):
         gid = ctx.guild.id
         await db.rank_threshold.drop(self.bot.pool, gid)
 

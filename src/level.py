@@ -43,7 +43,7 @@ async def on_msg_handle_levels(
     return level_old, level_new
 
 
-def formatter(s: str, *, member, old_level=None, new_level=None):
+def formatter(s: str, *, member, level_old=None, level_new=None):
     """Format string with rank-related placeholders.
 
     {avatar}
@@ -58,6 +58,6 @@ def formatter(s: str, *, member, old_level=None, new_level=None):
         name=member.display_name,
         mention=member.mention,
         id=member.id,
-        level_old=old_level,
-        level_new=new_level,
+        level_old=level_old,
+        level_new=level_new,
     )

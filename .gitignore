@@ -8,4 +8,5 @@ venv/
 discord.log
 pylintrc
 sandbox*
-secret.py
+secret*
+test/
