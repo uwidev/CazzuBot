@@ -25,12 +25,11 @@ async def on_msg_handle_ranks(
     Called from ext.experience
     """
     gid = message.guild.id
-    rank_ids = await db.rank_threshold.get(bot.pool, gid)
+    rank_payload = await db.rank_threshold.get(bot.pool, gid)
     member = message.author
-    rids = await db.rank_threshold.get(bot.pool, gid)
 
     rid_old, index_old, rid_new, index_new = rank_difference(
-        bot, level_old, level_new, rids
+        bot, level_old, level_new, rank_payload
     )
 
     if rid_new is None:
@@ -64,13 +63,12 @@ async def on_msg_handle_ranks(
         await member.add_roles(rank_new, reason="Rank up")
 
     # remove all other roles than applied, convert to role, only remove existing
-    rank_ids.pop(index_new)
+    rank_payload.pop(index_new)
 
-    del_roles = [
-        await member.guild.get_role(rank_id)
-        for rank_id in rank_ids
-        if rank_id in member.roles
-    ]
+    rids = [rank.get("rid") for rank in rank_payload]
+    member_rids = [role.id for role in member.roles]
+    del_roles = [member.guild.get_role(rid) for rid in rids if rid in member_rids]
+
     if del_roles:
         await member.remove_roles(*del_roles)
 
