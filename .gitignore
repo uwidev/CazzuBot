@@ -1,12 +1,10 @@
 .vscode
 __pycache__
 venv/
-.python-version
 *.pem
 *.ppk
 *db*.json
-discord.log
-pylintrc
+*.log
 sandbox*
 secret*
 test/

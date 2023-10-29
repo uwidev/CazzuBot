@@ -1,4 +1,9 @@
-"""Runs the bot."""
+"""Runs the bot.
+
+Bot grabs API key from secret_bot.py.
+
+Docker sets fresh database password from secret_db
+"""
 import argparse
 import asyncio
 import getpass
@@ -13,17 +18,13 @@ import pendulum
 from asyncpg import Connection
 from discord.utils import _ColourFormatter, stream_supports_colour
 
-from secret_bot import OWNER_ID, TOKEN
+from secret_setup import DATABASE_HOST, DATABASE_NAME, DATABASE_USER, OWNER_ID, TOKEN
 from src.cazzubot import CazzuBot
 from src.db.table import ModlogStatusEnum, ModlogTypeEnum
 
 
 EXTENSIONS_PATH = r"ext"
 
-# DEFAULT_DATABASE_TABLE = Table.USER_EXPERIENCE.name
-DATABASE_HOST = "192.168.1.2"
-DATABASE_NAME = "ubuntu"
-DATABASE_USER = "ubuntu"
 
 DEBUG_USERS = [92664421553307648, 338486462519443461]  # usara, gegi
 
