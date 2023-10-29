@@ -11,7 +11,7 @@ from asyncpg import Record
 from discord.ext import commands
 
 from main import CazzuBot
-from src import db, levels_helper, user_json, utility
+from src import db, levels_helper, user_json, utility, welcome
 
 
 _log = logging.getLogger(__name__)
@@ -59,8 +59,8 @@ class Welcome(commands.Cog):
                 raise self.WelcomeMisconfigutationError(msg)
 
             decoded = self.bot.json_decoder.decode(message)
-            self.format_decoded(decoded, after)
-            content, embed, embeds = self.prepare_message(decoded)
+            utility.deep_map(decoded, welcome.formatter, member=after)
+            content, embed, embeds = user_json.prepare(decoded)
             await channel.send(content, embed=embed, embeds=embeds)
 
             if role:
@@ -118,7 +118,7 @@ class Welcome(commands.Cog):
         MAKE SURE YOU USE CHANNEL EMBED, NOT WEBHOOK!
         """
         decoded = await user_json.verify(
-            self.bot, ctx, message, self._formatter, member=ctx.author
+            self.bot, ctx, message, welcome.formatter, member=ctx.author
         )
 
         gid = ctx.guild.id
@@ -136,27 +136,10 @@ class Welcome(commands.Cog):
         decoded: dict = self.bot.json_decoder.decode(payload)
 
         member = ctx.author
-        utility.deep_map(decoded, self._formatter, member=member)
+        utility.deep_map(decoded, welcome.formatter, member=member)
 
         content, embed, embeds = user_json.prepare(decoded)
         await ctx.send(content, embed=embed, embeds=embeds)
-
-    def _formatter(self, s: str, *, member):
-        """Format a string with member-related placeholders.
-
-        Available placeholders are as follows.
-        {avatar}
-        {name} -> display_name
-        {mention}
-        {id}
-        """
-        # member = kwargs.get("member")
-        return s.format(
-            avatar=member.avatar.url,
-            name=member.display_name,
-            mention=member.mention,
-            id=member.id,
-        )
 
 
 async def setup(bot: CazzuBot):

@@ -98,7 +98,7 @@ async def verify(
     message: str,
     formatter: Callable = None,
     **kwarg,
-):
+) -> dict:
     """Verify if a user's provided json argument is valid.
 
     Return its decoded dict if valid, None if not.
