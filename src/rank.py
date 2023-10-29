@@ -29,10 +29,9 @@ async def on_msg_handle_ranks(
     member = message.author
     rids = await db.rank_threshold.get(bot.pool, gid)
 
-    has_ranked = ranked_from_levels(bot, level_old, level_new, rids)
-    if not has_ranked:
-        return  # no rank up if both return
-    rid_old, index_old, rid_new, index_new = has_ranked
+    rid_old, index_old, rid_new, index_new = rank_difference(
+        bot, level_old, level_new, rids
+    )
 
     rank_new = message.guild.get_role(rid_new)
     if not rank_new:  # role was deleted from guild
@@ -58,7 +57,7 @@ async def on_msg_handle_ranks(
         content, embed, embeds = user_json.prepare(embed_json)
         await message.channel.send(content, embed=embed, embeds=embeds)
 
-    if rank_new not in member.roles:
+    if rank_new not in member.roles:  # Does not send rank up when correcting roles!
         await member.add_roles(rank_new, reason="Rank up")
 
     # remove all other roles than applied, convert to role, only remove existing
@@ -88,14 +87,12 @@ def calc_min_rank(rank_thresholds: list[Record], level) -> tuple[int, int]:
     return rank_thresholds[-1]["rid"], len(rank_thresholds) - 1
 
 
-def ranked_from_levels(
-    bot: CazzuBot, level_old: int, level_new: int, rids: list[int] = None
+def rank_difference(
+    bot: CazzuBot, level_old: int, level_new: int, rids: list[Record]
 ) -> tuple | bool:
-    """Return a tuple of rid info if different levels results in new rank.
+    """Return ranks corrosponding to given levels with their index to rids.
 
     (rid_old, index_old, rid_new, index_new)
-
-    Returns False ranks not different.
 
     Call this if you need to keep a reference to role ids, as the caller will need to
     pass this to this function. If you don't, consider the get_ranked_from_levels().
@@ -104,18 +101,10 @@ def ranked_from_levels(
         msg = f"rids must be a list, not of type {type(rids)}"
         raise TypeError(msg)
 
-    if not rids:
-        return False
-
     rid_new, index_new = calc_min_rank(rids, level_new)
-    if not rid_new:  # not even high enough level for any ranks
-        return False
-
     rid_old, index_old = calc_min_rank(rids, level_old)
-    if rid_new != rid_old:
-        return rid_old, index_old, rid_new, index_new
 
-    return False
+    return rid_old, index_old, rid_new, index_new
 
 
 async def get_ranked_from_levels(
@@ -131,7 +120,7 @@ async def get_ranked_from_levels(
         raise TypeError(msg)
 
     rids = await db.rank_threshold.get(bot.pool, gid)
-    return ranked_from_levels(bot, level_old, level_new, rids)
+    return rank_difference(bot, level_old, level_new, rids)
 
 
 def formatter(
