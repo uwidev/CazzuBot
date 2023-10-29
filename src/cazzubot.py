@@ -6,6 +6,7 @@ import sys
 import traceback
 
 import asyncpg
+import discord
 from asyncpg import Pool
 from discord.ext import commands
 
@@ -17,12 +18,11 @@ _log = logging.getLogger(__name__)
 
 
 class CazzuBot(commands.Bot):
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         *args,
         pool: Pool,
         ext_path: str,
-        database: tuple,
         debug=False,
         debug_users: list = [],
         **kwargs,
@@ -35,7 +35,6 @@ class CazzuBot(commands.Bot):
         super().__init__(*args, **kwargs)
         self.pool = pool
         self.ext_path = ext_path
-        self._db_name, self._db_host, self._db_user = database
         self.debug = debug
         self.debug_users = debug_users
 
@@ -47,6 +46,8 @@ class CazzuBot(commands.Bot):
     ) -> None:
         if isinstance(err, commands.BadArgument):
             await ctx.reply(err)
+            return
+        if isinstance(err, discord.Forbidden):
             return
 
         await super().on_command_error(ctx, err)

@@ -76,7 +76,7 @@ class Ranks(commands.Cog):
     @rank_set.command(name="message", aliases=["msg"])
     async def rank_set_message(self, ctx: commands.Context, *, message):
         decoded = await user_json.verify(
-            self.bot, ctx, message, self._formatter, member=ctx.author
+            self.bot, ctx, message, rank.formatter, member=ctx.author
         )
 
         gid = ctx.guild.id

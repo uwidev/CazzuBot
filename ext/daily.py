@@ -3,10 +3,12 @@
 import asyncio
 import datetime
 import logging
+from typing import TYPE_CHECKING
 
 import pendulum
 from discord.ext import commands, tasks
 
+from main import CazzuBot
 from src import db
 
 
@@ -54,20 +56,20 @@ class Daily(commands.Cog):
         await db.member.sync_with_exp_logs(self.bot.pool)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: CazzuBot):
     # Check when the last time daily resets were ran.
     # This is because if it's been +24 since the last reset,
     # we need to reset to accomodate the previous daily.
     now = pendulum.now("UTC")
-
-    last_daily_raw = await db.internal.get_last_daily(bot.pool)
-    last_daily = pendulum.parser.parse(last_daily_raw)
     force_reset = False
 
-    if not last_daily:  # Bot has never resetted dailies before, or db fucked
+    last_daily_raw = await db.internal.get_last_daily(bot.pool)
+    if not last_daily_raw:  # Bot has never resetted dailies before, or db fucked
         _log.warning("There was no last time since the bot has done daily resets...")
-
-    if not last_daily or now > last_daily + pendulum.duration(days=1):
         force_reset = True
+    else:
+        last_daily = pendulum.parser.parse(last_daily_raw)
+        if not last_daily or now > last_daily + pendulum.duration(days=1):
+            force_reset = True
 
     await bot.add_cog(Daily(bot, force_reset=force_reset))

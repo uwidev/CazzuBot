@@ -15,7 +15,7 @@ import logging
 import pendulum
 from asyncpg import InvalidObjectDefinitionError, Pool, Record
 
-from . import guild, table, user
+from . import guild, table, user, utility
 
 
 _log = logging.getLogger(__name__)

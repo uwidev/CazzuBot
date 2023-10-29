@@ -2,24 +2,29 @@ services:
   database:
     image: postgres
     environment:
-      POSTGRES_PASSWORD_FILE: /run/secrets/pgpw
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_pw
       POSTGRES_USER: cazzubot
+      POSTGRES_DB: main
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     secrets:
-      - pgpw
+      - db_pw
   
   database-gui:
     image: dpage/pgadmin4
     environment:
-      PGADMIN_DEFAULT_EMAIL: test@email.com
-      PGADMIN_DEFAULT_PASSWORD: password
+      PGADMIN_DEFAULT_EMAIL: cazzubot@email.com
+      PGADMIN_DEFAULT_PASSWORD_FILE: /run/secrets/db_pw
+      PGADMIN_SERVER_JSON_FILE: /run/secrets/db_connect
     ports:
       - "8080:80"
     depends_on:
       - database
+    secrets:
+      - db_pw
+      - db_connect
 
   webapp:
     image: cazzubot
@@ -32,5 +37,7 @@ volumes:
   pgdata:
 
 secrets:
-  pgpw:
-    file: ./secret_db
+  db_pw:
+    file: ./secret/db_pw
+  db_connect:
+    file: ./secret/db_connect.json

@@ -29,7 +29,7 @@ class ReadOnlyDict(dict):
 
 def else_if_none(*args, raise_err=True):
     for arg in args:
-        if arg:
+        if arg is not None:
             return arg
 
     if raise_err:

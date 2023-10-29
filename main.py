@@ -1,30 +1,36 @@
 """Runs the bot.
 
-Bot grabs API key from secret_bot.py.
+Bot grabs API key from secret/setup.py.
 
-Docker sets fresh database password from secret_db
+Docker sets fresh database password from secret/db
 """
 import argparse
 import asyncio
 import getpass
 import logging
 import os
-import termios
 import time
 
+import aiofiles
 import asyncpg
 import discord
 import pendulum
 from asyncpg import Connection
 from discord.utils import _ColourFormatter, stream_supports_colour
 
-from secret_setup import DATABASE_HOST, DATABASE_NAME, DATABASE_USER, OWNER_ID, TOKEN
+from secret.setup import (
+    DATABASE_HOST,
+    DATABASE_NAME,
+    DATABASE_PW_DIR,
+    DATABASE_USER,
+    OWNER_ID,
+    TOKEN,
+)
 from src.cazzubot import CazzuBot
 from src.db.table import ModlogStatusEnum, ModlogTypeEnum
 
 
 EXTENSIONS_PATH = r"ext"
-
 
 DEBUG_USERS = [92664421553307648, 338486462519443461]  # usara, gegi
 
@@ -95,12 +101,8 @@ async def main():
     intents.message_content = True
     intents.members = True
 
-    # try:
-    pw = getpass.getpass()
-    # except (termios.error, EOFError):
-    #     pw = ""
-
-    # Codecs for enum conversion here
+    async with aiofiles.open(DATABASE_PW_DIR, mode="r") as file:
+        pw = await file.readline()
 
     async with asyncpg.create_pool(
         database=DATABASE_NAME,
@@ -113,7 +115,6 @@ async def main():
             "d!",
             pool=pool,
             ext_path=EXTENSIONS_PATH,
-            database=(DATABASE_NAME, DATABASE_HOST, DATABASE_USER),
             intents=intents,
             owner_id=OWNER_ID,
             debug=debug,

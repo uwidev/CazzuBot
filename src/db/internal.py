@@ -14,7 +14,8 @@ async def get_last_daily(pool: Pool):
     async with pool.acquire() as con:
         return await con.fetchval(
             """
-                SELECT value FROM internal
+                SELECT value
+                FROM internal
                 WHERE field = 'last_daily'
                 """
         )
@@ -23,11 +24,12 @@ async def get_last_daily(pool: Pool):
 async def set_last_daily(pool: Pool, timestamp: pendulum.DateTime):
     async with pool.acquire() as con:
         async with con.transaction():
-            await con.execute(
+            await con.execute(  # does upsert
                 """
-                UPDATE internal
-                SET value = $1
-                WHERE field = 'last_daily'
+                INSERT INTO internal (field, value)
+                VALUES ('last_daily', $1)
+                ON CONFLICT (field) DO UPDATE SET
+                    value = EXCLUDED.value
                 """,
                 timestamp,
             )

@@ -30,8 +30,8 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def test(self, ctx: commands.Context):
-        if ctx.author.id == 338486462519443461:
-            ctx.author.edit()
+        res = await db.internal.get_last_daily(self.bot.pool)
+        _log.info(f"{res=}")
 
     # @commands.Cog.listener()
     # async def on_member_update(self, before: discord.Member, after: discord.Member):
