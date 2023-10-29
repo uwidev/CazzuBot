@@ -33,6 +33,9 @@ async def on_msg_handle_ranks(
         bot, level_old, level_new, rids
     )
 
+    if rid_new is None:
+        return
+
     rank_new = message.guild.get_role(rid_new)
     if not rank_new:  # role was deleted from guild
         err_msg = "On rank up, role was not found. Please contact an admin."
