@@ -8,6 +8,8 @@ There may potentially be a "lifetime" exp stored on the member, which can speed 
 
 If query performance is slow, consider building and keeping an internal cache of
 pre-computed experiences.
+
+Patitioning is done by timestamp, and then timestamp is partitioned by gid.
 """
 import contextlib
 import logging

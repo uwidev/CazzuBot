@@ -46,6 +46,8 @@ class Ranks(commands.Cog):
             self.bot.pool, db.table.RankThreshold(gid, rid, level)
         )
 
+        await ctx.message.add_reaction("👍")
+
     @rank.command(name="remove", aliases=["del"])
     async def rank_remove(self, ctx: commands.Context, arg: discord.Role | int):
         """Remove the rank from the guild by role or level."""

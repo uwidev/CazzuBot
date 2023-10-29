@@ -138,7 +138,7 @@ class Experience(commands.Cog):
             self.bot, message, seasonal_level_old, seasonal_level_new
         )
 
-    @commands.group(aliases=["xp"], invoke_without_command=True)
+    @commands.group(aliases=["xp", "experience"], invoke_without_command=True)
     async def exp(self, ctx: commands.Context, *, user: discord.Member = None):
         """Show season's experience and leaderboards."""
         if user is None:

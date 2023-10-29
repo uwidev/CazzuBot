@@ -24,7 +24,8 @@ from secret.setup import (
     DATABASE_PW_DIR,
     DATABASE_USER,
     OWNER_ID,
-    TOKEN,
+    TOKEN_DEV,
+    TOKEN_PRODUCTION,
 )
 from src.cazzubot import CazzuBot
 from src.db.table import ModlogStatusEnum, ModlogTypeEnum
@@ -92,7 +93,9 @@ async def main():
 
     parser = argparse.ArgumentParser(prog="CazzuBot")
     parser.add_argument("-d", "--debug", action="store_true")
+    parser.add_argument("-p", "--develop", action="store_true")
     debug = parser.parse_args().debug
+    develop = parser.parse_args().develop
 
     setup_logging()
 
@@ -112,7 +115,7 @@ async def main():
         init=setup_codecs,
     ) as pool:
         async with CazzuBot(
-            "d!",
+            "d!" if develop else "c!",
             pool=pool,
             ext_path=EXTENSIONS_PATH,
             intents=intents,
@@ -120,7 +123,9 @@ async def main():
             debug=debug,
             debug_users=DEBUG_USERS,
         ) as bot:
-            await bot.start(TOKEN)  # Ignore built-in logger
+            await bot.start(
+                TOKEN_DEV if develop else TOKEN_PRODUCTION
+            )  # Ignore built-in logger
 
 
 if __name__ == "__main__":
