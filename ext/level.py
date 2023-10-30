@@ -22,6 +22,10 @@ class Level(commands.Cog):
     def __init__(self, bot: CazzuBot):
         self.bot = bot
 
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        perms = ctx.channel.permissions_for(ctx.author)
+        return any([perms.administrator])
+
     @commands.group(name="level", aliases=["lvl"])
     async def level(self, ctx: commands.Context):
         pass
