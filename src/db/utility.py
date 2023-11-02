@@ -18,7 +18,7 @@ def retry(*, on_none: Callable):
     def decorator(func):
         async def wrapper(*args, **kwargs):
             res = await func(*args, **kwargs)
-            if res:
+            if res is not None:
                 return res
 
             await on_none(*args, **kwargs)

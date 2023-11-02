@@ -76,6 +76,7 @@ async def set_message(pool: Pool, gid: int, encoded_json: str):
                 gid,
                 encoded_json,
             )
+            return 0
 
 
 @utility.retry(on_none=init)
@@ -91,6 +92,7 @@ async def set_enabled(pool: Pool, gid: int, val: bool):
                 gid,
                 val,
             )
+            return 0
 
 
 @utility.retry(on_none=init)
@@ -106,6 +108,7 @@ async def set_keep_old(pool: Pool, gid: int, val: bool):
                 gid,
                 val,
             )
+            return 0
 
 
 @utility.retry(on_none=init)
