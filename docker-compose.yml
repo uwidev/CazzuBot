@@ -18,9 +18,13 @@ services:
     tty: true
     depends_on:
       - database
+    volumes:
+      - botlog:/mnt/bot_log
+    command: 
 
 volumes:
   pgdata:
+  botlog:
 
 secrets:
   db_pw:

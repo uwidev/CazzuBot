@@ -26,6 +26,7 @@ async def add(pool: Pool, rank: table.RankThreshold):
 
 
 async def get(pool: Pool, gid: int) -> list[Record]:
+    """Return rank thresholds as a list of records."""
     async with pool.acquire() as con:
         return await con.fetch(
             """

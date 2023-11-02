@@ -80,6 +80,9 @@ class Experience(commands.Cog):
         # if message.author.id != 92664421553307648:  # debug, only see usara
         #     return
 
+        _log.debug("Received message from %s", message.author)
+        _log.debug("%s", message)
+
         now = pendulum.now("UTC")
         uid = message.author.id
         gid = message.guild.id
@@ -113,8 +116,6 @@ class Experience(commands.Cog):
         lifetime_exp_new = member_db.get("exp_lifetime") + exp_gain
 
         offset_cooldown = now + pendulum.duration(seconds=_EXP_COOLDOWN)
-
-        # _log.info("Granting %s exp to %s", exp_gain, message.author)
 
         # Add to member's lifetime exp
         member_updated = db.table.Member(

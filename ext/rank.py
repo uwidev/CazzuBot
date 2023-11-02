@@ -75,6 +75,16 @@ class Ranks(commands.Cog):
     async def rank_set(self, ctx):
         pass
 
+    @rank_set.command(name="enabled")
+    async def rank_set_enabled(self, ctx: commands.Context, val: bool):
+        gid = ctx.guild.id
+        await db.rank.set_enabled(self.bot.pool, gid, val)
+
+    @rank_set.command(name="keepOld")
+    async def rank_set_keep_old(self, ctx: commands.Context, val: bool):
+        gid = ctx.guild.id
+        await db.rank.set_keep_old(self.bot.pool, gid, val)
+
     @rank_set.command(name="message", aliases=["msg"])
     async def rank_set_message(self, ctx: commands.Context, *, message):
         decoded = await user_json.verify(

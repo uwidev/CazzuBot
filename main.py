@@ -24,6 +24,7 @@ from secret.setup import (
     DATABASE_NAME,
     DATABASE_PW_DIR,
     DATABASE_USER,
+    LOG_PATH,
     OWNER_ID,
     TOKEN_DEV,
     TOKEN_PRODUCTION,
@@ -40,7 +41,7 @@ DEBUG_USERS = [92664421553307648, 338486462519443461]  # usara, gegi
 _log = logging.getLogger(__name__)
 
 
-def setup_logging():
+def setup_logging(log_path: str, debug: bool = False):
     """Write info logging to console and debug logging to file."""
 
     def timetz(*args):
@@ -50,10 +51,10 @@ def setup_logging():
     logger.setLevel(logging.DEBUG)
 
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.DEBUG if debug else logging.INFO)
 
     file_hanndler = logging.FileHandler(
-        filename="logs/discord.log", encoding="utf-8", mode="w"
+        filename=f"{log_path}/discord.log", encoding="utf-8", mode="w+"
     )
     file_hanndler.setLevel(logging.DEBUG)
 
@@ -96,7 +97,15 @@ async def main():
     debug = parser.parse_args().debug
     production = parser.parse_args().production
 
-    setup_logging()
+    setup_logging(LOG_PATH, debug)
+
+    if debug:
+        _log.info("RUNNNING IN DEBUG MODE")
+
+    _log.info(f"Bot running in {'PRODUCTION' if production else 'DEVELOP'} mode")
+
+    prefix = "c!" if production else "d!"
+    _log.info(f"Prefix is set to: {prefix}")
 
     # Intents need to be set up to let discord know what we want for request
     intents = discord.Intents.default()
@@ -114,7 +123,7 @@ async def main():
         init=setup_codecs,
     ) as pool:
         async with CazzuBot(
-            "c!" if production else "p!",
+            prefix,
             pool=pool,
             ext_path=EXTENSIONS_PATH,
             intents=intents,

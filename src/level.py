@@ -24,7 +24,7 @@ async def on_msg_handle_levels(
         gid = message.guild.id
 
         # If we ranked up, do not send level up, since rank up trumps level up.
-        if not await rank.get_ranked_from_levels(bot, level_old, level_new, gid):
+        if not await rank.get_ranked_up(bot, level_old, level_new, gid):
             raw_json = await db.level.get_message(bot.pool, gid)
             embed_json = bot.json_decoder.decode(raw_json)
 

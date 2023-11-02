@@ -47,11 +47,15 @@ async def init(pool: Pool, gid: int, *_):
 
 
 @utility.retry(on_none=init)
-async def get(pool: Pool, gid: int) -> list[Record]:
+async def get(pool: Pool, gid: int) -> Record:
+    """Return rank row in a specific order for unpacking and else.
+
+    Less overhead than individually calling for each column.
+    """
     async with pool.acquire() as con:
-        return await con.fetch(
+        return await con.fetchrow(
             """
-            SELECT *
+            SELECT gid, enabled, keep_old, message
             FROM rank
             WHERE gid = $1
             """,
@@ -75,14 +79,69 @@ async def set_message(pool: Pool, gid: int, encoded_json: str):
 
 
 @utility.retry(on_none=init)
-async def get_message(pool: Pool, gid: int) -> list[Record]:
-    # if not await guild.get(pool, level.gid):  # guild not yet init
-    #     await guild.add(pool, level.gid)
+async def set_enabled(pool: Pool, gid: int, val: bool):
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                UPDATE rank
+                SET enabled = $2
+                WHERE gid = $1
+                """,
+                gid,
+                val,
+            )
 
+
+@utility.retry(on_none=init)
+async def set_keep_old(pool: Pool, gid: int, val: bool):
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                UPDATE rank
+                SET keep_old = $2
+                WHERE gid = $1
+                """,
+                gid,
+                val,
+            )
+
+
+@utility.retry(on_none=init)
+async def get_message(pool: Pool, gid: int) -> list[Record]:
     async with pool.acquire() as con:
         return await con.fetchval(
             """
             SELECT message
+            FROM rank
+            WHERE gid = $1
+            """,
+            gid,
+        )
+
+
+@utility.retry(on_none=init)
+async def get_enabled(pool: Pool, gid: int) -> list[Record]:
+    """Return if ranks are enabled."""
+    async with pool.acquire() as con:
+        return await con.fetchval(
+            """
+            SELECT enabled
+            FROM rank
+            WHERE gid = $1
+            """,
+            gid,
+        )
+
+
+@utility.retry(on_none=init)
+async def get_keep_old(pool: Pool, gid: int) -> list[Record]:
+    """Return if older ranks should be retained."""
+    async with pool.acquire() as con:
+        return await con.fetchval(
+            """
+            SELECT keep_old
             FROM rank
             WHERE gid = $1
             """,

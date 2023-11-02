@@ -25,25 +25,39 @@ async def on_msg_handle_ranks(
     Called from ext.experience
     """
     gid = message.guild.id
-    rank_payload = await db.rank_threshold.get(bot.pool, gid)
+
+    raw_rank_payload = await db.rank.get(bot.pool, gid)
+    _, enabled, keep_old, raw_json = raw_rank_payload.values()
+
+    if not enabled:
+        return
+
+    rank_threshold_payload = await db.rank_threshold.get(bot.pool, gid)
     member = message.author
 
     rid_old, index_old, rid_new, index_new = rank_difference(
-        bot, level_old, level_new, rank_payload
+        bot, level_old, level_new, rank_threshold_payload
     )
+    rids = [p.get("rid") for p in rank_threshold_payload]
+    ranks = [message.guild.get_role(rid) for rid in rids]
 
-    if rid_new is None:
-        return
+    if rid_new is None:  # member isn't high enough for any ranks
+        _log.info("Not high enough for ranks")
+        ranks_to_remove = [rank for rank in ranks if rank in member.roles]
+        if ranks_to_remove:
+            _log.debug("Rank_Integrity::Removing ranks %s", ranks_to_remove)
+            await member.remove_roles(*ranks_to_remove, reason="Rank-role integrity")
+        return  # to ensure rank-role integrity
 
     rank_new = message.guild.get_role(rid_new)
-    if not rank_new:  # role was deleted from guild
-        err_msg = "On rank up, role was not found. Please contact an admin."
-        await message.channel.send(err_msg)
-        return
+    if not rank_new:
+        return  # rank-role was deleted from guild
 
-    if rid_new != rid_old:
+    if keep_old and not all(ranks):
+        return  # rank-role was deleted from the guild
+
+    if rid_new != rid_old:  # if rank up, send rank message
         rank_old = message.guild.get_role(rid_old)
-        raw_json = await db.rank.get_message(bot.pool, gid)
         embed_json = bot.json_decoder.decode(raw_json)
 
         utility.deep_map(
@@ -59,18 +73,53 @@ async def on_msg_handle_ranks(
         content, embed, embeds = user_json.prepare(embed_json)
         await message.channel.send(content, embed=embed, embeds=embeds)
 
-    if rank_new not in member.roles:  # Does not send rank up when correcting roles!
+    # Ensure rank-role integreity
+    if keep_old:
+        await add_up_to_rank(bot, member, ranks, index_new)
+        await remove_beyond_rank(bot, member, ranks, index_new)
+    else:
+        _log.debug("Rank_Integrity::Adding ranks %s", [rank_new])
         await member.add_roles(rank_new, reason="Rank up")
+        await remove_ranks_except(bot, member, ranks, index_new)
 
-    # remove all other roles than applied, convert to role, only remove existing
-    rank_payload.pop(index_new)
 
-    rids = [rank.get("rid") for rank in rank_payload]
-    member_rids = [role.id for role in member.roles]
-    del_roles = [member.guild.get_role(rid) for rid in rids if rid in member_rids]
+async def add_up_to_rank(
+    bot: CazzuBot, member: discord.Member, ranks: list[discord.Role], rank_ind: int
+):
+    """Add ranks to member from rid index 0 to rank_ind."""
+    ranks_to_add = ranks[: rank_ind + 1]
+    ranks_to_add = [rank for rank in ranks_to_add if rank not in member.roles]
 
-    if del_roles:
-        await member.remove_roles(*del_roles)
+    if ranks_to_add:
+        _log.debug("Rank_Integrity::Adding ranks %s", ranks_to_add)
+        await member.add_roles(*ranks_to_add, reason="Rank up/Rank-role integrity")
+
+
+async def remove_beyond_rank(
+    bot: CazzuBot, member: discord.Member, ranks: list[discord.Role], rank_ind: int
+):
+    """Remove ranks from rank_ind+1 to -1."""
+    if rank_ind >= len(ranks) - 1:
+        return  # member is maxed rank, no need to remove other ranks
+    ranks_to_remove = ranks[rank_ind + 1 :]
+    ranks_to_remove = [rank for rank in ranks_to_remove if rank in member.roles]
+
+    if ranks_to_remove:
+        _log.debug("Rank_Integrity::Removing ranks %s", ranks_to_remove)
+        await member.remove_roles(*ranks_to_remove)
+
+
+async def remove_ranks_except(
+    bot: CazzuBot, member: discord.Member, ranks: list[discord.Role], rank_ind: int
+):
+    """Remove all ranks except rank_ind."""
+    ranks_to_remove = ranks.copy()
+    ranks_to_remove.pop(rank_ind)
+    ranks_to_remove = [rank for rank in ranks_to_remove if rank in member.roles]
+
+    if ranks_to_remove:
+        _log.debug(f"Rank_Integrity::Removing ranks {ranks_to_remove}")
+        await member.remove_roles(*ranks_to_remove)
 
 
 def calc_min_rank(rank_thresholds: list[Record], level) -> tuple[int, int]:
@@ -108,9 +157,24 @@ def rank_difference(
     return rid_old, index_old, rid_new, index_new
 
 
-async def get_ranked_from_levels(
+def ranked_up(bot: CazzuBot, level_old: int, level_new: int, rids: list[Record]):
+    """Return true if going from level_old to level_new would result in a new rank.
+
+    Requires that you've already made a database call to get the ranked ids. If you
+    haven't made a database call, consider get_ranked_up().
+    """
+    payload = rank_difference(bot, level_old, level_new, rids)
+
+    if not payload:
+        return False  # admin has yet to set up ranks
+
+    _, index_old, _, index_new = payload
+    return index_new != index_old
+
+
+async def get_rank_difference(
     bot: CazzuBot, level_old: int, level_new: int, gid: int
-) -> tuple | bool:
+) -> tuple:
     """Fetch ranks from db, then call ranked_from_levels.
 
     Call this if you don't need to keep an internal reference to rids, and just need to
@@ -121,7 +185,25 @@ async def get_ranked_from_levels(
         raise TypeError(msg)
 
     rids = await db.rank_threshold.get(bot.pool, gid)
+
+    if not rids:
+        return None  # admin has yet to set up ranks
+
     return rank_difference(bot, level_old, level_new, rids)
+
+
+async def get_ranked_up(bot: CazzuBot, level_old: int, level_new: int, gid: int):
+    """Return true if going from level_old to level_new would result in a new rank.
+
+    This is a database call. If you've already called the database, consider rank)
+    """
+    payload = await get_rank_difference(bot, level_old, level_new, gid)
+
+    if not payload:
+        return False  # admin has yet to set up ranks
+
+    _, index_old, _, index_new = payload
+    return index_new != index_old
 
 
 def formatter(
