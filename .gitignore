@@ -8,3 +8,4 @@ venv/
 sandbox*
 secret*
 test/
+docker-compose-pi.yml
