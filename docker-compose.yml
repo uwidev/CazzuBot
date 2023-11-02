@@ -1,3 +1,6 @@
+include:
+  - docker-compose-pi.yml
+
 services:  
   database:
     image: postgres
