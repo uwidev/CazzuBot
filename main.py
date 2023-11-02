@@ -19,7 +19,8 @@ from asyncpg import Connection
 from discord.utils import _ColourFormatter, stream_supports_colour
 
 from secret.setup import (
-    DATABASE_HOST,
+    DATABASE_HOST_DEV,
+    DATABASE_HOST_PRODUCTION,
     DATABASE_NAME,
     DATABASE_PW_DIR,
     DATABASE_USER,
@@ -89,13 +90,11 @@ async def setup_codecs(con: Connection):
 
 
 async def main():
-    os.system("cls" if os.name == "nt" else "clear")
-
     parser = argparse.ArgumentParser(prog="CazzuBot")
     parser.add_argument("-d", "--debug", action="store_true")
-    parser.add_argument("-p", "--develop", action="store_true")
+    parser.add_argument("-p", "--production", action="store_true")
     debug = parser.parse_args().debug
-    develop = parser.parse_args().develop
+    production = parser.parse_args().production
 
     setup_logging()
 
@@ -110,12 +109,12 @@ async def main():
     async with asyncpg.create_pool(
         database=DATABASE_NAME,
         user=DATABASE_USER,
-        host=DATABASE_HOST,
+        host=DATABASE_HOST_PRODUCTION if production else DATABASE_HOST_DEV,
         password=pw,
         init=setup_codecs,
     ) as pool:
         async with CazzuBot(
-            "d!" if develop else "c!",
+            "c!" if production else "p!",
             pool=pool,
             ext_path=EXTENSIONS_PATH,
             intents=intents,
@@ -124,9 +123,10 @@ async def main():
             debug_users=DEBUG_USERS,
         ) as bot:
             await bot.start(
-                TOKEN_DEV if develop else TOKEN_PRODUCTION
+                TOKEN_PRODUCTION if production else TOKEN_DEV
             )  # Ignore built-in logger
 
 
 if __name__ == "__main__":
+    os.system("cls" if os.name == "nt" else "clear")
     asyncio.run(main())
