@@ -1,5 +1,5 @@
 include:
-  - docker-compose-pi.yml
+  - docker-compose-pi.yaml
 
 services:  
   database:
