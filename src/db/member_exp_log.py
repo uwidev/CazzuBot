@@ -15,7 +15,7 @@ import contextlib
 import logging
 
 import pendulum
-from asyncpg import InvalidObjectDefinitionError, Pool, Record
+from asyncpg import DuplicateTableError, InvalidObjectDefinitionError, Pool, Record
 
 from . import guild, table, user, utility
 
@@ -45,7 +45,7 @@ async def create_partition(pool: Pool, gid: int):
     end = start.add(months=1)
 
     await create_partition_monthly(pool, start, end)
-    await create_partition_gid(pool, gid, start)
+    await create_index_on_date(pool, start)
 
 
 async def create_partition_monthly(
@@ -75,6 +75,10 @@ async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime):
     """Parition the experience log database by gid.
 
     Only creates the parition if it doesn't yet exist.
+
+    2023-11-2: Partitioning doesn't seem to increase performance, and perhaps seems to
+        bloat design. Partitioning by month makes sense, but partitioning by month and
+        gid? I think an index would be better suited for gid lookups...
     """
     start_str = f"{date.year}_{date.month}"
 
@@ -86,6 +90,21 @@ async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime):
                     CREATE TABLE IF NOT EXISTS exp_log_{start_str}_{gid}
                         PARTITION OF exp_log_{start_str}
                         FOR VALUES IN ({gid});
+                    """
+                )
+
+
+async def create_index_on_date(pool: Pool, date: pendulum.DateTime):
+    """Index the selected partition."""
+    start_str = f"{date.year}_{date.month}"
+
+    async with pool.acquire() as con:
+        async with con.transaction():
+            with contextlib.suppress(DuplicateTableError):  # Already exists
+                await con.execute(
+                    f"""
+                    CREATE INDEX idx_exp_log_{start_str}
+                    ON exp_log_{start_str} (gid, uid)
                     """
                 )
 
