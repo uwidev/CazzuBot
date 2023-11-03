@@ -18,9 +18,6 @@ async def add(pool: Pool, member: table.Member):
     if not await guild.get(pool, member.gid):
         await guild.add(pool, table.Guild(member.gid))
 
-    # Create guild partition if not exists
-    await create_partition_gid(pool, member.gid)
-
     async with pool.acquire() as con:
         async with con.transaction():
             try:
@@ -83,6 +80,8 @@ async def create_partition_gid(pool: Pool, gid: int):
     """Parition the experience database by gid.
 
     Only creates the table if it doesn't yet exist.
+
+    2023-02-11: Guild partitions are probably not that effective, using indexes instead.
     """
     async with pool.acquire() as con:
         async with con.transaction():
