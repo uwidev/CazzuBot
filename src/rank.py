@@ -42,7 +42,6 @@ async def on_msg_handle_ranks(
     ranks = [message.guild.get_role(rid) for rid in rids]
 
     if rid_new is None:  # member isn't high enough for any ranks
-        _log.info("Not high enough for ranks")
         ranks_to_remove = [rank for rank in ranks if rank in member.roles]
         if ranks_to_remove:
             _log.debug("Rank_Integrity::Removing ranks %s", ranks_to_remove)
