@@ -84,14 +84,13 @@ async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime):
 
     async with pool.acquire() as con:
         async with con.transaction():
-            with contextlib.suppress(InvalidObjectDefinitionError):  # Already exists
-                await con.execute(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS exp_log_{start_str}_{gid}
-                        PARTITION OF exp_log_{start_str}
-                        FOR VALUES IN ({gid});
-                    """
-                )
+            await con.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS exp_log_{start_str}_{gid}
+                    PARTITION OF exp_log_{start_str}
+                    FOR VALUES IN ({gid});
+                """
+            )
 
 
 async def create_index_on_date(pool: Pool, date: pendulum.DateTime):
@@ -100,13 +99,12 @@ async def create_index_on_date(pool: Pool, date: pendulum.DateTime):
 
     async with pool.acquire() as con:
         async with con.transaction():
-            with contextlib.suppress(DuplicateTableError):  # Already exists
-                await con.execute(
-                    f"""
-                    CREATE INDEX idx_exp_log_{start_str}
-                    ON exp_log_{start_str} (gid, uid)
-                    """
-                )
+            await con.execute(
+                f"""
+                CREATE INDEX IF NOT EXISTS idx_exp_log_{start_str}
+                ON exp_log_{start_str} (gid, uid)
+                """
+            )
 
 
 async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> int:
