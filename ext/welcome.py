@@ -32,7 +32,7 @@ class Welcome(commands.Cog):
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
         """Welcome said user."""
-        if before.pending != after.pending and before.id == 338486462519443461:
+        if before.pending != after.pending:
             guild = before.guild
             gid = guild.id
 
