@@ -8,4 +8,5 @@ venv/
 sandbox*
 secret*
 test/
-docker-compose-pi.yml
+docker-compose*.y*ml
+!docker-compose-template.y*ml
