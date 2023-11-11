@@ -1,7 +1,7 @@
 include:
   - docker-compose-pi.yaml
 
-services:  
+services:
   database:
     image: postgres
     environment:
@@ -23,7 +23,7 @@ services:
       - database
     volumes:
       - botlog:/mnt/bot_log
-    command: 
+    command:
 
 volumes:
   pgdata:
