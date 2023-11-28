@@ -31,8 +31,18 @@ class Welcome(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        """Welcome said user."""
-        if before.pending != after.pending:
+        """Welcome said user.
+
+        Checking for pending seems to at times welcome a member multiple times in
+        quick succession. This would imply that this method is being called several
+        times, each with before and after having different pendings (duh). But as to
+        why this happens, no idea.
+
+        If completed_onboarding still triggers multiple welcomess, the next option is to
+        use an internal cache and not welcome users who are already in the cache.
+        """
+        # if before.pending != after.pending:
+        if before.flags.completed_onboarding != after.flags.completed_onboarding:
             guild = before.guild
             gid = guild.id
 
