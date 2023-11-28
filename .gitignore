@@ -10,3 +10,4 @@ secret*
 test/
 docker-compose*.y*ml
 !docker-compose-template.y*ml
+.python-version
