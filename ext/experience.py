@@ -253,7 +253,7 @@ class Experience(commands.Cog):
         Level: **`{lvl}`**
         Experience: **`{exp}`**
 
-        You currently the `{utility.ordinal(trunc(percentile))}` percetile of all members!
+        You currently the `{utility.ordinal(trunc(percentile))}` percentile of all members!
         ```py\n{scoreboard_s}```"""
 
         embed.color = discord.Color.from_str("#a2dcf7")
