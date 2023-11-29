@@ -50,7 +50,7 @@ class Ranks(commands.Cog):
         gid = ctx.guild.id
         rid = role.id
         await db.rank_threshold.add(
-            self.bot.pool, db.table.RankThreshold(gid, rid, level, mode)
+            self.bot.pool, db.table.RankThreshold(gid, rid, level, mode=mode)
         )
 
         await ctx.message.add_reaction("👍")
@@ -65,19 +65,20 @@ class Ranks(commands.Cog):
         """Remove the rank from the guild by role or level."""
         gid = ctx.guild.id
         payload = arg if isinstance(arg, int) else arg.id
-        await db.rank_threshold.delete(self.bot.pool, gid, payload, mode)
+        await db.rank_threshold.delete(self.bot.pool, gid, payload)
 
     @rank.command(name="clean")
     async def rank_clean(self, ctx: commands.Context):
         """Remove ranks which can no longer be referenced because they were deleted."""
         gid = ctx.guild.id
-        payload = await db.rank_threshold.get(self.bot.pool, gid)
-        rank_ids = [p.get("rid") for p in payload]
-        roles = [ctx.guild.get_role(rid) for rid in rank_ids]
-        removed_rids = [rank_ids[i] for i in range(len(roles)) if not roles[i]]
+        rids = []
+        payload = await db.rank_threshold.get_all_windows(self.bot.pool, gid)
+
+        rids += [p.get("rid") for p in payload]
+        roles = [ctx.guild.get_role(rid) for rid in rids]
+        removed_rids = [rids[i] for i in range(len(roles)) if not roles[i]]
         await db.rank_threshold.batch_delete(self.bot.pool, gid, removed_rids)
 
-    # @author_confirm()
     @rank.command(
         name="clear",
         aliases=["purge", "drop"],
@@ -95,30 +96,62 @@ class Ranks(commands.Cog):
         pass
 
     @rank_set.command(name="enabled")
-    async def rank_set_enabled(self, ctx: commands.Context, val: bool):
+    async def rank_set_enabled(
+        self, ctx: commands.Context, val: bool, mode: WindowEnum = WindowEnum.SEASONAL
+    ):
         gid = ctx.guild.id
-        await db.rank.set_enabled(self.bot.pool, gid, val)
+        await db.rank.set_enabled(self.bot.pool, gid, val, mode=mode)
 
     @rank_set.command(name="keepOld")
-    async def rank_set_keep_old(self, ctx: commands.Context, val: bool):
+    async def rank_set_keep_old(
+        self, ctx: commands.Context, val: bool, mode: WindowEnum = WindowEnum.SEASONAL
+    ):
         gid = ctx.guild.id
-        await db.rank.set_keep_old(self.bot.pool, gid, val)
+        await db.rank.set_keep_old(self.bot.pool, gid, val, mode=mode)
 
     @rank_set.command(name="message", aliases=["msg"])
-    async def rank_set_message(self, ctx: commands.Context, *, message):
+    async def rank_set_message(
+        self,
+        ctx: commands.Context,
+        *,
+        message: str,
+        mode: WindowEnum = WindowEnum.SEASONAL,
+    ):
+        """Set the message sent when a user ranks up.
+
+        By default, sets the message for seasonanl ranks. However, you can specificy the
+        rank type at the end of the command due to manual parsing.
+
+        The way discord parses commands, the first keyword argument will consume the
+        entire message, meaning None will be passed to mode, which it will then use the
+        default argument.
+        """
+        last_closing_bracker_index = len(message) - 1 - message[::-1].find("}")
+        parsed_mode = message[last_closing_bracker_index + 1 :].strip().lower()
+        message = message[: last_closing_bracker_index + 1]
+
+        if parsed_mode:
+            try:
+                mode = WindowEnum(parsed_mode)
+            except TypeError as err:
+                msg = f"Unable to convert mode {parsed_mode} to type WindowEnum"
+                raise commands.BadArgument(msg) from err
+
         decoded = await user_json.verify(
             self.bot, ctx, message, rank.formatter, member=ctx.author
         )
 
         gid = ctx.guild.id
         await db.rank.set_message(
-            self.bot.pool, gid, self.bot.json_encoder.encode(decoded)
+            self.bot.pool, gid, self.bot.json_encoder.encode(decoded), mode=mode
         )
 
     @rank.command(name="demo")
-    async def rank_demo(self, ctx: commands.Context):
+    async def rank_demo(
+        self, ctx: commands.Context, mode: WindowEnum = WindowEnum.SEASONAL
+    ):
         gid = ctx.guild.id
-        payload = await db.rank.get_message(self.bot.pool, gid)
+        payload = await db.rank.get_message(self.bot.pool, gid, mode=mode)
         decoded = self.bot.json_decoder.decode(payload)
 
         member = ctx.author
@@ -126,6 +159,14 @@ class Ranks(commands.Cog):
 
         content, embed, embeds = user_json.prepare(decoded)
         await ctx.send(content, embed=embed, embeds=embeds)
+
+    @rank.command(name="raw")
+    async def rank_raw(
+        self, ctx: commands.Context, mode: WindowEnum = WindowEnum.SEASONAL
+    ):
+        gid = ctx.guild.id
+        payload = await db.rank.get_message(self.bot.pool, gid, mode=mode)
+        await ctx.send(f"```{payload}```")
 
 
 async def setup(bot: commands.Bot):

@@ -156,9 +156,10 @@ class RankThreshold(SnowflakeTable):
 class Rank(SnowflakeTable):
     gid: int  # REFERENCES guild.gid
     message: str  # encoded json, default already set in db
+    mode: WindowEnum
 
     def __iter__(self):
-        return iter([self.gid, self.message])
+        return iter([self.gid, self.message, self.mode])
 
 
 @dataclass

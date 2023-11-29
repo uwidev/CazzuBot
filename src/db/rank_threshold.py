@@ -16,6 +16,7 @@ _log = logging.getLogger(__name__)
 async def add(
     pool: Pool,
     rank: table.RankThreshold,
+    *,
     mode: table.WindowEnum = table.WindowEnum.SEASONAL,
 ):
     async with pool.acquire() as con:
@@ -25,13 +26,14 @@ async def add(
                 INSERT INTO rank_threshold (gid, rid, threshold, mode)
                 VALUES ($1, $2, $3, $4)
                 """,
-                *rank
+                *rank,
             )
 
 
 async def get(
     pool: Pool,
     gid: int,
+    *,
     mode: table.WindowEnum = table.WindowEnum.SEASONAL,
 ) -> list[Record]:
     """Return rank thresholds as a list of records."""
@@ -48,11 +50,27 @@ async def get(
         )
 
 
+async def get_all_windows(
+    pool: Pool,
+    gid: int,
+) -> list[Record]:
+    """Return rank thresholds as a list of records."""
+    async with pool.acquire() as con:
+        return await con.fetch(
+            """
+            SELECT rid, threshold
+            FROM rank_threshold
+            WHERE gid = $1
+            ORDER BY threshold
+            """,
+            gid,
+        )
+
+
 async def delete(
     pool: Pool,
     gid: int,
     arg: int,
-    mode: table.WindowEnum = table.WindowEnum.SEASONAL,
 ):
     """Delete rank in db, first looking for rid then by threshold."""
     async with pool.acquire() as con:
@@ -60,11 +78,10 @@ async def delete(
             await con.execute(
                 """
                 DELETE FROM rank_threshold
-                WHERE (rid = $2 OR threshold = $2) and mode = $3 and gid = $1
+                WHERE (rid = $2 OR threshold = $2) and gid = $1
                 """,
                 gid,
                 arg,
-                mode,
             )
 
 
@@ -72,27 +89,31 @@ async def batch_delete(
     pool: Pool,
     gid: int,
     rids: list,
-    mode: table.WindowEnum = table.WindowEnum.SEASONAL,
 ):
-    """Delete a batch of rids from database."""
+    """Delete a batch of rids from database.
+
+    Doesn't need to worry about mode, because there can never be a guild with the same
+    role on different modes of rank thresholds.
+    """
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
                 """
                 DELETE FROM rank_threshold
-                WHERE rid = ANY($1) and mode = $2
+                WHERE gid= $1 and rid = ANY($2)
                 """,
+                gid,
                 rids,
-                mode,
             )
 
 
 async def drop(
     pool: Pool,
     gid: int,
+    *,
     mode: table.WindowEnum = table.WindowEnum.SEASONAL,
 ):
-    """Delete all ranks associated with gid."""
+    """Delete all ranks associated with gid for a particular mode."""
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
@@ -128,13 +149,14 @@ async def of_member(
     pool: Pool,
     gid: int,
     uid: int,
+    *,
     mode: table.WindowEnum = table.WindowEnum.SEASONAL,
 ) -> int:
     """Return the rank of a member, None if no role rank.
 
     Is based on seasonal experience.
     """
-    ranks_raw = await get(pool, gid, mode)
+    ranks_raw = await get(pool, gid, mode=mode)
 
     now = pendulum.now()
     lvl = await level.get_seasonal(pool, gid, uid, now.year, now.month // 3)
