@@ -18,7 +18,7 @@ from asyncpg import Connection
 from discord.utils import _ColourFormatter, stream_supports_colour
 
 from src.cazzubot import CazzuBot
-from src.db.table import ModlogStatusEnum, ModlogTypeEnum
+from src.db.table import ModlogStatusEnum, ModlogTypeEnum, WindowEnum
 
 
 EXTENSIONS_PATH = r"ext"
@@ -75,6 +75,10 @@ async def setup_codecs(con: Connection):
 
     await con.set_type_codec(
         "modlog_type_enum", encoder=lambda e: e.value, decoder=ModlogTypeEnum
+    )
+
+    await con.set_type_codec(
+        "window_enum", encoder=lambda e: e.value, decoder=WindowEnum
     )
 
 

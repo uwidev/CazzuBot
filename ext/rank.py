@@ -11,6 +11,7 @@ from asyncpg import Record
 from discord.ext import commands
 
 from src import db, rank, user_json, utility
+from src.db.table import WindowEnum
 
 
 if TYPE_CHECKING:
@@ -33,7 +34,13 @@ class Ranks(commands.Cog):
         pass
 
     @rank.command(name="add")
-    async def rank_add(self, ctx: commands.Context, level: int, role: discord.Role):
+    async def rank_add(
+        self,
+        ctx: commands.Context,
+        level: int,
+        role: discord.Role,
+        mode: WindowEnum = WindowEnum.SEASONAL,
+    ):
         """Add the rank into the guild's settings at said threshold."""
         if level <= 0 or level > 999:
             msg = "Level must be between 1-999."
@@ -43,17 +50,22 @@ class Ranks(commands.Cog):
         gid = ctx.guild.id
         rid = role.id
         await db.rank_threshold.add(
-            self.bot.pool, db.table.RankThreshold(gid, rid, level)
+            self.bot.pool, db.table.RankThreshold(gid, rid, level, mode)
         )
 
         await ctx.message.add_reaction("👍")
 
     @rank.command(name="remove", aliases=["del"])
-    async def rank_remove(self, ctx: commands.Context, arg: discord.Role | int):
+    async def rank_remove(
+        self,
+        ctx: commands.Context,
+        arg: discord.Role | int,
+        mode: WindowEnum = WindowEnum.SEASONAL,
+    ):
         """Remove the rank from the guild by role or level."""
         gid = ctx.guild.id
         payload = arg if isinstance(arg, int) else arg.id
-        await db.rank_threshold.delete(self.bot.pool, gid, payload)
+        await db.rank_threshold.delete(self.bot.pool, gid, payload, mode)
 
     @rank.command(name="clean")
     async def rank_clean(self, ctx: commands.Context):
@@ -66,10 +78,17 @@ class Ranks(commands.Cog):
         await db.rank_threshold.batch_delete(self.bot.pool, gid, removed_rids)
 
     # @author_confirm()
-    @rank.command(name="clear", aliases=["purge", "drop"])
-    async def rank_clear(self, ctx: commands.Context):
+    @rank.command(
+        name="clear",
+        aliases=["purge", "drop"],
+    )
+    async def rank_clear(
+        self,
+        ctx: commands.Context,
+        mode: WindowEnum = WindowEnum.SEASONAL,
+    ):
         gid = ctx.guild.id
-        await db.rank_threshold.drop(self.bot.pool, gid)
+        await db.rank_threshold.drop(self.bot.pool, gid, mode)
 
     @rank.group(name="set")
     async def rank_set(self, ctx):

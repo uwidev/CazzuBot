@@ -191,7 +191,9 @@ async def get_seasonal_bulk_ranked(pool: Pool, gid: int, year: int, season: int)
         )
 
 
-async def get_seasonal_count(pool: Pool, gid: int, year: int, season: int) -> int:
+async def get_seasonal_total_members(
+    pool: Pool, gid: int, year: int, season: int
+) -> int:
     """Return the count of all participants this season."""
     if season < 0 or season > 3:  # noqa: PLR2004
         msg = "Seasons must be in the range of 0-3"
@@ -219,7 +221,26 @@ async def get_seasonal_count(pool: Pool, gid: int, year: int, season: int) -> in
         )
 
 
-async def get_seasonal_count_by_month(
+async def get_seasonal_total_members_by_month(
     pool: Pool, gid: int, year: int, month: int
 ) -> int:
-    return await get_seasonal_count(pool, gid, year, month // 3)
+    return await get_seasonal_total_members(pool, gid, year, month // 3)
+
+
+async def get_total_members(
+    pool: Pool,
+    gid: int,
+) -> int:
+    async with pool.acquire() as con:
+        return await con.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT uid
+                FROM member_exp_log
+                WHERE gid = $1
+                GROUP BY uid
+            ) as seasonal_uids
+            """,
+            gid,
+        )

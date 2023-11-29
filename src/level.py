@@ -11,20 +11,17 @@ _log = logging.getLogger(__name__)
 
 
 async def on_msg_handle_levels(
-    bot: CazzuBot, message: discord.Message, old_exp: int, new_exp: int
+    bot: CazzuBot, message: discord.Message, level: utility.OldNew
 ):
     """Handle potential level ups from experience gain.
 
     Called from ext.experience. Returns (old, new) level
     """
-    level_old = levels_helper.level_from_exp(old_exp)
-    level_new = levels_helper.level_from_exp(new_exp)
-
-    if level_new > level_old:
+    if level.new > level.old:
         gid = message.guild.id
 
         # If we ranked up, do not send level up, since rank up trumps level up.
-        if not await rank.get_ranked_up(bot, level_old, level_new, gid):
+        if not await rank.get_ranked_up(bot, level, gid):
             raw_json = await db.level.get_message(bot.pool, gid)
             embed_json = bot.json_decoder.decode(raw_json)
 
@@ -34,13 +31,11 @@ async def on_msg_handle_levels(
                 embed_json,
                 formatter,
                 member=member,
-                level_old=level_old,
-                level_new=level_new,
+                level_old=level.old,
+                level_new=level.new,
             )
             content, embed, embeds = user_json.prepare(embed_json)
             await message.channel.send(content, embed=embed, embeds=embeds)
-
-    return level_old, level_new
 
 
 def formatter(s: str, *, member, level_old=None, level_new=None):

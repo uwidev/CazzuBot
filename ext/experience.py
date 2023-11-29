@@ -3,8 +3,9 @@
 See member_exp_log.py for details on how exp is stored and summed.
 """
 import logging
+from enum import Enum, auto
 from math import trunc
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import discord
 import pendulum
@@ -98,7 +99,7 @@ class Experience(commands.Cog):
         if member_db and now < member_db.get("exp_cdr"):
             return  # Cooldown has not yet expired, do nothing
 
-        # Prepare variables
+        # Prepare and pack variables
         msg_cnt = member_db.get("exp_msg_cnt") + 1
         exp_gain = _from_msg(msg_cnt)
 
@@ -110,16 +111,25 @@ class Experience(commands.Cog):
             ),
             0,
         )
-
         seasonal_exp_new = seasonal_exp_old + exp_gain
+        seasonal_exp = utility.OldNew(seasonal_exp_old, seasonal_exp_new)
 
-        lifetime_exp_new = member_db.get("exp_lifetime") + exp_gain
+        lifetime_exp_old = member_db.get("exp_lifetime")
+        lifetime_exp_new = lifetime_exp_old + exp_gain
+        lifetime_exp = utility.OldNew(lifetime_exp_old, lifetime_exp_new)
 
-        offset_cooldown = now + pendulum.duration(seconds=_EXP_COOLDOWN)
+        seasonal_level_old = levels_helper.level_from_exp(seasonal_exp_old)
+        seasonal_level_new = levels_helper.level_from_exp(seasonal_exp_new)
+        seasonal_level = utility.OldNew(seasonal_level_old, seasonal_level_new)
+
+        lifetime_level_old = levels_helper.level_from_exp(lifetime_exp_old)
+        lifetime_level_new = levels_helper.level_from_exp(lifetime_exp_new)
+        lifetime_level = utility.OldNew(lifetime_level_old, lifetime_level_new)
 
         # Add to member's lifetime exp
+        offset_cooldown = now + pendulum.duration(seconds=_EXP_COOLDOWN)
         member_updated = db.table.Member(
-            gid, uid, lifetime_exp_new, msg_cnt, offset_cooldown
+            gid, uid, lifetime_exp.new, msg_cnt, offset_cooldown
         )
         await db.member.update_exp(self.bot.pool, member_updated)
 
@@ -129,14 +139,12 @@ class Experience(commands.Cog):
         )
 
         # Deal with potential level up
-        seasonal_level_old, seasonal_level_new = await level.on_msg_handle_levels(
-            self.bot, message, seasonal_exp_old, seasonal_exp_new
-        )
+        await level.on_msg_handle_levels(self.bot, message, seasonal_level)
 
         # Deal with potential rank up
         # We do not check for level up because we still want to have rank integrity
         await rank.on_msg_handle_ranks(
-            self.bot, message, seasonal_level_old, seasonal_level_new
+            self.bot, message, seasonal_level, lifetime_level
         )
 
     @commands.group(aliases=["xp", "experience"], invoke_without_command=True)
@@ -164,12 +172,18 @@ class Experience(commands.Cog):
 
         gid = ctx.guild.id
         rows = await db.guild.get_members_exp_ranked(self.bot.pool, gid)
-        embed = await self._prepare_personal_summary(ctx, user, rows)
+        embed = await self._prepare_personal_summary(
+            ctx, user, rows, db.table.WindowEnum.LIFETIME
+        )
 
         await ctx.send(embed=embed)
 
     async def _prepare_personal_summary(
-        self, ctx: commands.Context, user: discord.Member, entries: list[Record]
+        self,
+        ctx: commands.Context,
+        user: discord.Member,
+        entries: list[Record],
+        mode: db.table.WindowEnum = db.table.WindowEnum.SEASONAL,
     ):
         """Return the embed of scoreboard Club Membership Card.
 
@@ -226,7 +240,7 @@ class Experience(commands.Cog):
 
         # Other Preparation
         gid = ctx.guild.id
-        rid = await db.rank_threshold.of_member(self.bot.pool, gid, uid)
+        rid = await db.rank_threshold.of_member(self.bot.pool, gid, uid, mode)
         role: discord.Role = ctx.guild.get_role(rid)
 
         # Generate Embed
@@ -235,13 +249,22 @@ class Experience(commands.Cog):
         exp = exps[user_window_index]
         rank = ranks[user_window_index]
 
-        now = pendulum.now()
-        year = now.year
-        month = now.month
-        seasonal_count = await db.member_exp_log.get_seasonal_count_by_month(
-            self.bot.pool, gid, year, month
-        )
-        percentile = (seasonal_count - rank) / (seasonal_count - 1) * 100.0
+        if mode is db.table.WindowEnum.SEASONAL:
+            now = pendulum.now()
+            year = now.year
+            month = now.month
+
+            total_member_count = (
+                await db.member_exp_log.get_seasonal_total_members_by_month(
+                    self.bot.pool, gid, year, month
+                )
+            )
+        elif mode is db.table.WindowEnum.LIFETIME:
+            total_member_count = await db.member_exp_log.get_total_members(
+                self.bot.pool, gid
+            )
+
+        percentile = (total_member_count - rank) / (total_member_count - 1) * 100.0
 
         embed.set_author(
             name=f"{user.display_name}'s Club Membership Card",
@@ -250,8 +273,8 @@ class Experience(commands.Cog):
         embed.set_thumbnail(url=user.avatar.url)
         embed.description = f"""
         Rank: {role.mention if role else '`None`'}
-        Level: **`{lvl}`**
-        Experience: **`{exp}`**
+        Level: **`{lvl:,}`**
+        Experience: **`{exp:,}`**
 
         You currently the `{utility.ordinal(trunc(percentile))}` percentile of all members!
         ```py\n{scoreboard_s}```"""

@@ -61,6 +61,11 @@ class ModlogStatusEnum(Enum):
     DELETED = "deleted"
 
 
+class WindowEnum(Enum):
+    SEASONAL = "seasonal"
+    LIFETIME = "lifetime"
+
+
 @dataclass
 class Modlog(SnowflakeTable):
     gid: int
@@ -141,9 +146,10 @@ class RankThreshold(SnowflakeTable):
     gid: int  # REFERENCES guild.gid
     rid: int
     threshold: int
+    mode: WindowEnum
 
     def __iter__(self):
-        return iter([self.gid, self.rid, self.threshold])
+        return iter([self.gid, self.rid, self.threshold, self.mode])
 
 
 @dataclass

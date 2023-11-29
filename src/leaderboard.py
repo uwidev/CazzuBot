@@ -79,7 +79,7 @@ def generate(
                     fill="" if row % 2 else fill,
                     align=align[col],
                     pad=padding[col],
-                    comma="" if isinstance(entries[row][col], str) else ",",
+                    comma="" if isinstance(entries[row][col], str) else ",",  # else int
                 )
             )
         rows_s.append(f"{(' ' if row % 2 else fill) * spacing}".join(row_raw))

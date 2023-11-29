@@ -4,6 +4,7 @@ import copy
 import json
 import logging
 from collections.abc import Callable
+from typing import NamedTuple
 
 import discord
 import pendulum
@@ -13,6 +14,13 @@ from discord.ext import commands
 
 _log = logging.getLogger("discord")
 _log.setLevel(logging.INFO)
+
+
+class OldNew(NamedTuple):
+    """Just a packer for old and new."""
+
+    old: int
+    new: int
 
 
 class ReadOnlyDict(dict):
