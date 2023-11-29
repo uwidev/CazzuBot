@@ -62,13 +62,13 @@ async def _on_msg_handle_ranks(
     """
     gid = message.guild.id
 
-    raw_rank_payload = await db.rank.get(bot.pool, gid)
+    raw_rank_payload = await db.rank.get(bot.pool, gid, mode=mode)
     _, enabled, keep_old, raw_json = raw_rank_payload.values()
 
     if not enabled:
         return ([None], [None])
 
-    rank_threshold_payload = await db.rank_threshold.get(bot.pool, gid, mode)
+    rank_threshold_payload = await db.rank_threshold.get(bot.pool, gid, mode=mode)
 
     if len(rank_threshold_payload) == 0:  # no threshold ranks set yet
         return ([None], [None])
@@ -177,7 +177,13 @@ def ranked_up(bot: CazzuBot, level: utility.OldNew, rids: list[Record]):
     return index.new != index.old
 
 
-async def get_rank_difference(bot: CazzuBot, level: utility.OldNew, gid: int) -> tuple:
+async def get_rank_difference(
+    bot: CazzuBot,
+    level: utility.OldNew,
+    gid: int,
+    *,
+    mode: WindowEnum = WindowEnum.SEASONAL,
+) -> tuple:
     """Fetch ranks from db, then call ranked_from_levels.
 
     Call this if you don't need to keep an internal reference to rids, and just need to
@@ -187,7 +193,7 @@ async def get_rank_difference(bot: CazzuBot, level: utility.OldNew, gid: int) ->
         msg = f"gid must be a int, not of type {type(gid)}"
         raise TypeError(msg)
 
-    rids = await db.rank_threshold.get(bot.pool, gid)
+    rids = await db.rank_threshold.get(bot.pool, gid, mode=mode)
 
     if not rids:
         return None  # admin has yet to set up ranks
