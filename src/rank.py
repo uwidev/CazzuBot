@@ -192,7 +192,7 @@ async def get_rank_difference(bot: CazzuBot, level: utility.OldNew, gid: int) ->
     if not rids:
         return None  # admin has yet to set up ranks
 
-    return rank_difference(bot, level.old, level.new, rids)
+    return rank_difference(bot, level, rids)
 
 
 async def get_ranked_up(bot: CazzuBot, level: utility.OldNew, gid: int):
@@ -200,7 +200,7 @@ async def get_ranked_up(bot: CazzuBot, level: utility.OldNew, gid: int):
 
     This is a database call. If you've already called the database, consider rank)
     """
-    payload = await get_rank_difference(bot, level.old, level.new, gid)
+    payload = await get_rank_difference(bot, level, gid)
 
     if not payload:
         return False  # admin has yet to set up ranks
