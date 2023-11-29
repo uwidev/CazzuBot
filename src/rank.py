@@ -205,8 +205,8 @@ async def get_ranked_up(bot: CazzuBot, level: utility.OldNew, gid: int):
     if not payload:
         return False  # admin has yet to set up ranks
 
-    _, index_old, _, index_new = payload
-    return index_new != index_old
+    rid, index = payload
+    return index.new != index.old
 
 
 def formatter(
