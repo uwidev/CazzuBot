@@ -6,7 +6,6 @@ Docker sets fresh database password from secret/db
 """
 import argparse
 import asyncio
-import getpass
 import logging
 import os
 import time
@@ -18,17 +17,6 @@ import pendulum
 from asyncpg import Connection
 from discord.utils import _ColourFormatter, stream_supports_colour
 
-from secret.setup import (
-    DATABASE_HOST_DEV,
-    DATABASE_HOST_PRODUCTION,
-    DATABASE_NAME,
-    DATABASE_PW_DIR,
-    DATABASE_USER,
-    LOG_PATH,
-    OWNER_ID,
-    TOKEN_DEV,
-    TOKEN_PRODUCTION,
-)
 from src.cazzubot import CazzuBot
 from src.db.table import ModlogStatusEnum, ModlogTypeEnum
 
@@ -41,7 +29,7 @@ DEBUG_USERS = [92664421553307648, 338486462519443461]  # usara, gegi
 _log = logging.getLogger(__name__)
 
 
-def setup_logging(log_path: str, debug: bool = False):
+def setup_logging(log_path: str, *, debug: bool = False):
     """Write info logging to console and debug logging to file."""
 
     def timetz(*args):
@@ -91,34 +79,58 @@ async def setup_codecs(con: Connection):
 
 
 async def main():
+    # Environment parsing
     parser = argparse.ArgumentParser(prog="CazzuBot")
     parser.add_argument("-d", "--debug", action="store_true")
     parser.add_argument("-p", "--production", action="store_true")
     debug = parser.parse_args().debug
     production = parser.parse_args().production
 
-    setup_logging(LOG_PATH, debug)
+    postgres_db = os.getenv("POSTGRES_DB")
+    postgres_user = os.getenv("POSTGRES_USER")
+    postgres_password_file = os.getenv("POSTGRES_PASSWORD_FILE")
+    postgres_ip = os.getenv("POSTGRES_IP")
+    postgres_port = os.getenv("POSTGRES_PORT")
+    token_file = os.getenv("TOKEN_FILE")
+    owner_id = os.getenv("OWNER_ID")
+    log_path = os.getenv("LOG_PATH")
+
+    # For development purposes
+    postgres_ip_dev = os.getenv("POSTGRES_IP_DEV")
+    token_file_dev = os.getenv("TOKEN_FILE_DEV")
+
+    # Read secret files
+    async with aiofiles.open(postgres_password_file, mode="r") as file:
+        pw = await file.readline()
+
+    async with aiofiles.open(token_file, mode="r") as file:
+        token = await file.readline()
+
+    async with aiofiles.open(token_file_dev, mode="r") as file:
+        token_dev = await file.readline()
+
+    setup_logging(log_path, debug=debug)
 
     if debug:
         _log.info("RUNNNING IN DEBUG MODE")
 
-    _log.info(f"Bot running in {'PRODUCTION' if production else 'DEVELOP'} mode")
+    mode = "PRODUCTION" if production else "DEVELOP"
+    _log.info(f"Bot running in {mode} mode")
 
     prefix = "c!" if production else "d!"
     _log.info(f"Prefix is set to: {prefix}")
 
+    # Bot setup and run
     # Intents need to be set up to let discord know what we want for request
     intents = discord.Intents.default()
     intents.message_content = True
     intents.members = True
 
-    async with aiofiles.open(DATABASE_PW_DIR, mode="r") as file:
-        pw = await file.readline()
-
     async with asyncpg.create_pool(
-        database=DATABASE_NAME,
-        user=DATABASE_USER,
-        host=DATABASE_HOST_PRODUCTION if production else DATABASE_HOST_DEV,
+        database=postgres_db,
+        user=postgres_user,
+        host=postgres_ip if production else postgres_ip_dev,
+        port=postgres_port,
         password=pw,
         init=setup_codecs,
     ) as pool:
@@ -127,12 +139,12 @@ async def main():
             pool=pool,
             ext_path=EXTENSIONS_PATH,
             intents=intents,
-            owner_id=OWNER_ID,
+            owner_id=owner_id,
             debug=debug,
             debug_users=DEBUG_USERS,
         ) as bot:
             await bot.start(
-                TOKEN_PRODUCTION if production else TOKEN_DEV
+                token if production else token_dev
             )  # Ignore built-in logger
 
 
