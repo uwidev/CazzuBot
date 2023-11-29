@@ -240,7 +240,7 @@ class Experience(commands.Cog):
 
         # Other Preparation
         gid = ctx.guild.id
-        rid = await db.rank_threshold.of_member(self.bot.pool, gid, uid, mode)
+        rid = await db.rank_threshold.of_member(self.bot.pool, gid, uid, mode=mode)
         role: discord.Role = ctx.guild.get_role(rid)
 
         # Generate Embed
