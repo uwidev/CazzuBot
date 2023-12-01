@@ -99,6 +99,17 @@ async def get_members_exp_seasonal(
     return await member_exp_log.get_seasonal_bulk_ranked(pool, gid, year, season)
 
 
+async def get_members_exp_seasonal_by_month(
+    pool: Pool, gid: int, year: int, month: int
+) -> list[Record]:
+    """Fetch exp and ranks them of all guild members.
+
+    Acts more of an alias for more intuitive design.
+    """
+    zero_indexed_month = month - 1
+    return await get_members_exp_seasonal(pool, gid, year, zero_indexed_month // 3)
+
+
 async def get_members_exp_ranked(pool: Pool, gid: int) -> list[Record]:
     """Fetch lifetime exp and ranks them of all guild members.
 

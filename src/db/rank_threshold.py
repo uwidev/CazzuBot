@@ -159,6 +159,7 @@ async def of_member(
     ranks_raw = await get(pool, gid, mode=mode)
 
     now = pendulum.now()
-    lvl = await level.get_seasonal(pool, gid, uid, now.year, now.month // 3)
+    lvl = await level.get_seasonal_by_month(pool, gid, uid, now.year, now.month)
+    # month needs to be zero indexed to properly bin into seasons
 
     return _calc_min_rank(ranks_raw, lvl)

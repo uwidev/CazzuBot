@@ -105,5 +105,16 @@ async def get_seasonal(pool: Pool, gid: int, uid: int, year: int, season: int) -
 
     Seasons start from 0 and go to to 3.
     """
-    exp = await member_exp_log.get_seasonal(pool, gid, uid, year, season=season)
+    exp = await member_exp_log.get_seasonal(pool, gid, uid, year, season)
+    return levels_helper.level_from_exp(exp)
+
+
+async def get_seasonal_by_month(
+    pool: Pool, gid: int, uid: int, year: int, month: int
+) -> int:
+    """Fetch and calculate level from a member's experience based on season.
+
+    Connverts natural counting month to zero indexed, then bins it.
+    """
+    exp = await member_exp_log.get_seasonal_by_month(pool, gid, uid, year, month)
     return levels_helper.level_from_exp(exp)

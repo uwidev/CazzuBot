@@ -65,7 +65,6 @@ async def create_partition_monthly(
                     CREATE TABLE IF NOT EXISTS exp_log_{start_str}
                         PARTITION OF member_exp_log
                         FOR VALUES FROM ('{start.to_date_string()}') TO ('{end.to_date_string()}')
-                    PARTITION BY LIST(gid)
                     ;
                     """
                 )
@@ -125,8 +124,18 @@ async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> 
 
 
 async def get_seasonal_by_month(pool: Pool, gid: int, uid: int, year: int, month: int):
-    """Call get_season() when season is as a month rather than season."""
-    return await get_seasonal(pool, gid, uid, year, month // 3)
+    """Call get_season() when season is as a month rather than season.
+
+    Passed argument should still be natural counting, starting from 1.
+
+    For the month to bucket into seasons, it must be zero indexed for floor division.
+    0-2  -> 0
+    3-5  -> 1
+    6-8  -> 2
+    9-11 -> 3
+    """
+    zero_indexed_month = month - 1
+    return await get_seasonal(pool, gid, uid, year, zero_indexed_month // 3)
 
 
 async def get_seasonal(pool: Pool, gid: int, uid: int, year: int, season: int) -> int:
@@ -224,7 +233,8 @@ async def get_seasonal_total_members(
 async def get_seasonal_total_members_by_month(
     pool: Pool, gid: int, year: int, month: int
 ) -> int:
-    return await get_seasonal_total_members(pool, gid, year, month // 3)
+    zero_indexed_month = month - 1
+    return await get_seasonal_total_members(pool, gid, year, zero_indexed_month // 3)
 
 
 async def get_total_members(

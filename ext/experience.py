@@ -156,9 +156,9 @@ class Experience(commands.Cog):
         now = pendulum.now()
         gid = ctx.guild.id
 
-        rows = await db.guild.get_members_exp_seasonal(
-            self.bot.pool, gid, now.year, now.month // 3
-        )
+        rows = await db.guild.get_members_exp_seasonal_by_month(
+            self.bot.pool, gid, now.year, now.month
+        )  # month needs to be zero indexed to properly bin into seasons
 
         embed = await self._prepare_personal_summary(ctx, user, rows)
 
