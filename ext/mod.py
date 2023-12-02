@@ -273,6 +273,22 @@ class Moderation(commands.Cog):
 
         return time, s
 
+    @commands.command()
+    async def slowmode(
+        self, ctx: Context, cooldown: int = 0, channel: discord.TextChannel = None
+    ):
+        if channel is None:
+            channel = ctx.channel
+
+        await channel.edit(slowmode_delay=cooldown)
+
+        if cooldown == 0:
+            await ctx.send("Slowmode has been turned **off**.")
+        else:
+            await ctx.send(
+                f"Slowmode has been turned **on** with a {cooldown} delay per message."
+            )
+
 
 async def setup(bot: commands.Bot):
     """Set up this extension for the bot.
