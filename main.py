@@ -96,7 +96,7 @@ async def main():
     postgres_ip = os.getenv("POSTGRES_IP")
     postgres_port = os.getenv("POSTGRES_PORT")
     token_file = os.getenv("TOKEN_FILE")
-    owner_id = os.getenv("OWNER_ID")
+    owner_id = int(os.getenv("OWNER_ID"))
     log_path = os.getenv("LOG_PATH")
 
     # For development purposes
