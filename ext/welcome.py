@@ -20,6 +20,7 @@ _log = logging.getLogger(__name__)
 class Welcome(commands.Cog):
     def __init__(self, bot: CazzuBot):
         self.bot = bot
+        self.last_welcomed_id = None
 
     async def cog_command_error(self, ctx: commands.Context, err: Exception) -> None:
         if isinstance(err, commands.errors.MissingPermissions):
@@ -33,6 +34,7 @@ class Welcome(commands.Cog):
     async def on_member_update(self, before: discord.Member, after: discord.Member):
         """Welcome said user.
 
+        2023-11-28
         Checking for pending seems to at times welcome a member multiple times in
         quick succession. This would imply that this method is being called several
         times, each with before and after having different pendings (duh). But as to
@@ -40,9 +42,17 @@ class Welcome(commands.Cog):
 
         If completed_onboarding still triggers multiple welcomess, the next option is to
         use an internal cache and not welcome users who are already in the cache.
+
+        2023-12-05
+        It didn't work. So we're just going to have a last_welcomed_id and use that to
+        prevent welcoming multiple times.
         """
         # if before.pending != after.pending:
-        if before.flags.completed_onboarding != after.flags.completed_onboarding:
+        if (
+            before.flags.completed_onboarding != after.flags.completed_onboarding
+            and after.id != self.last_welcomed_id
+        ):
+            self.last_welcomed_id = after.id  # Placed here to prevent race conditions
             guild = before.guild
             gid = guild.id
 
