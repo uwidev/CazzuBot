@@ -46,12 +46,14 @@ class Welcome(commands.Cog):
         2023-12-05
         It didn't work. So we're just going to have a last_welcomed_id and use that to
         prevent welcoming multiple times.
+
+        2023-12-22
+        For some reason, when checking member flags, onboarding is complete for any
+        onboarding step... which means users can get welcomed multiple times for each
+        completed welcoming task. Changed to pending instead.
         """
         # if before.pending != after.pending:
-        if (
-            before.flags.completed_onboarding != after.flags.completed_onboarding
-            and after.id != self.last_welcomed_id
-        ):
+        if before.pending != after.pending and after.id != self.last_welcomed_id:
             self.last_welcomed_id = after.id  # Placed here to prevent race conditions
             guild = before.guild
             gid = guild.id
