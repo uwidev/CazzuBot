@@ -91,7 +91,7 @@ async def get_lifetime_level(pool: Pool, gid: int, uid: int) -> int:
             uid,
         )
 
-    return levels_helper.exp_to_level_cum(exp)
+    return levels_helper.level_from_exp(exp)
 
 
 async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> int:
