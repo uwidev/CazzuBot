@@ -3,6 +3,7 @@
 import logging
 import os
 import random
+from asyncio import TimeoutError
 from typing import TYPE_CHECKING
 
 import discord
@@ -11,7 +12,7 @@ from discord.ext import commands, tasks
 from pendulum import DateTime
 
 from main import CazzuBot
-from src.db import frog, table, task
+from src import db
 from src.ntlp import InvalidTimeError, normalize_time_str, parse_duration
 
 
@@ -43,7 +44,7 @@ class Frog(commands.Cog):
         # _log.info("Checking if frog can spawn...")
 
         now = pendulum.now("UTC")
-        records: list[Record] = await task.get(self.bot.pool, tag=["frog"])
+        records: list[Record] = await db.task.get(self.bot.pool, tag=["frog"])
         # _log.info(f"{records=}")
 
         if not records:
@@ -51,18 +52,22 @@ class Frog(commands.Cog):
 
         expired: list[Record] = [item for item in records if item["run_at"] < now]
 
-        frogs: list[table.Task] = [table.Task(**ex) for ex in expired]
+        frogs: list[db.table.Task] = [db.table.Task(**ex) for ex in expired]
         # for frog in frogs:  # Decode payload string to json dictionary object
         # frog.payload = self.bot.json_decoder.decode(frog.payload)
         # _log.info(frog.payload)
 
         # _log.info(frogs)
 
+        for record in frogs:  # would be better to batch so only 1 db call
+            await db.task.drop_one(self.bot.pool, record.id)
+
         for frog in frogs:
             _log.info("Spawning frog...")
             gid = frog.payload["gid"]
             cid = frog.payload["cid"]
             interval = frog.payload["interval"]
+            persist = frog.payload["persist"]
             fuzzy = frog.payload["fuzzy"]
             id = frog.id
             # _log.info(f"Frog will spawn in {gid}:{cid}")
@@ -71,11 +76,34 @@ class Frog(commands.Cog):
             # _log.info(guild)
             channel = guild.get_channel(cid)
             # _log.info(channel)
-            await channel.send("🥔")
+            msg = await channel.send("🥔")
+            await msg.add_reaction("🍆")
 
-            # Only roll and update run_at
+            def check(reaction: discord.Reaction, user: discord.User):
+                return (
+                    reaction.message.id == msg.id
+                    and str(reaction.emoji) == "🍆"
+                    and not user.bot
+                )
+
+            reaction: discord.Reaction
+            catcher: discord.User
+            try:
+                reaction, catcher = await self.bot.wait_for(
+                    "reaction_add", timeout=persist, check=check
+                )
+                uid = catcher.id
+                await db.member.modify_frog(self.bot.pool, gid, uid, 1)
+            except TimeoutError:
+                pass
+            finally:
+                await msg.delete()
+
+            # Roll next spawna and update run_at
+            now = pendulum.now()
             run_at = self.roll_future_frog(now, interval, fuzzy)
-            await task.frog_update_run(self.bot.pool, id, run_at)
+            frog.run_at = run_at
+            await db.task.add(self.bot.pool, frog)
 
     @check_spawn_frog.before_loop
     async def before_check_frog_spawn(self):
@@ -90,7 +118,7 @@ class Frog(commands.Cog):
         self,
         ctx: commands.Context,
         interval: str,
-        persist: int = 30,
+        persist: str = "30s",
         fuzzy: float = 0.3,
         channel: discord.TextChannel = None,
     ):
@@ -107,14 +135,6 @@ class Frog(commands.Cog):
         if channel is None:
             channel = ctx.channel
 
-        # if fuzzy < 0 or fuzzy > 1:
-        #     msg = "Fuzzy must be between 0 and 1."
-        #     raise commands.BadArgument(msg)
-
-        # if persist < 3 or persist > 120:
-        #     msg = "Persist must be between 3 and 120 seconds."
-        #     raise commands.BadArgument(msg)
-
         cid = channel.id
         gid = ctx.guild.id
 
@@ -129,14 +149,28 @@ class Frog(commands.Cog):
         #     raise commands.BadArgument(msg)
         # End argument checking
 
+        try:
+            persist = parse_duration(persist).in_seconds()
+        except InvalidTimeError as err:
+            msg = f"Persist {persist} is not a valid time."
+            raise commands.BadArgument(msg) from err
+
+        # if persist < 3 or persist > 120:
+        #     msg = "Persist must be between 3 and 120 seconds."
+        #     raise commands.BadArgument(msg)
+
+        # if fuzzy < 0 or fuzzy > 1:
+        #     msg = "Fuzzy must be between 0 and 1."
+        #     raise commands.BadArgument(msg)
+
         # Update per-guild frog settngs.
-        fg = table.Frog(gid, cid, interval, persist, fuzzy)
-        await frog.upsert(self.bot.pool, fg)
+        fg = db.table.Frog(gid, cid, interval, persist, fuzzy)
+        await db.frog.upsert(self.bot.pool, fg)
 
         # Now we need to update any ongoing tasks, and if not, create it.
         # Not only do we need to reroll run_at, but we need to update payload.
         payload = self.generate_payload(gid, cid, interval, persist, fuzzy)
-        record = await task.get_one(
+        record = await db.task.get_one(
             self.bot.pool,
             payload={"gid": gid, "cid": cid},
             tag=["frog"],
@@ -147,7 +181,7 @@ class Frog(commands.Cog):
             run_at = self.roll_future_frog(now, interval, fuzzy)
 
             # payload = self.bot.json_encoder.encode(payload)
-            await task.frog_update(self.bot.pool, id, run_at, payload)
+            await db.task.frog_update(self.bot.pool, id, run_at, payload)
         else:  # If task not already exists
             await self.add_frog_task(payload)
 
@@ -160,8 +194,8 @@ class Frog(commands.Cog):
         Also stops frog tasks for this guild.
         """
         gid = ctx.guild.id
-        await frog.clear(self.bot.pool, gid)
-        await task.drop(self.bot.pool, tag=["frog"], payload={"gid": gid})
+        await db.frog.clear(self.bot.pool, gid)
+        await db.task.drop(self.bot.pool, tag=["frog"], payload={"gid": gid})
         await ctx.message.add_reaction("👍")
 
     async def add_frog_task(self, payload: dict):
@@ -179,9 +213,9 @@ class Frog(commands.Cog):
         run_at = self.roll_future_frog(now, interval, fuzzy)
 
         payload = payload
-        tsk = table.Task(["frog"], run_at, payload)
+        tsk = db.table.Task(["frog"], run_at, payload)
 
-        await task.add(self.bot.pool, tsk)
+        await db.task.add(self.bot.pool, tsk)
 
     def generate_payload(
         self, gid: int, cid: int, interval: int, persist: int, fuzzy: float
@@ -198,7 +232,7 @@ class Frog(commands.Cog):
         self, id: int, now: DateTime, interval: int, fuzzy: float
     ):
         run_at = self.roll_future_frog(now, interval, fuzzy)
-        await task.frog_update_run(self.bot.pool, id, run_at)
+        await db.task.frog_update_run(self.bot.pool, id, run_at)
 
     def roll_fuzzy(self, fuzzy: float):
         return ((random.random() - 0.5) * 2) * fuzzy

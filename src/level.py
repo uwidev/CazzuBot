@@ -1,4 +1,5 @@
 """All things related to ext.levels which is to be public."""
+
 import logging
 
 import discord
@@ -22,8 +23,7 @@ async def on_msg_handle_levels(
 
         # If we ranked up, do not send level up, since rank up trumps level up.
         if not await rank.get_ranked_up(bot, level, gid):
-            raw_json = await db.level.get_message(bot.pool, gid)
-            embed_json = bot.json_decoder.decode(raw_json)
+            embed_json = await db.level.get_message(bot.pool, gid)
 
             member = message.author
 

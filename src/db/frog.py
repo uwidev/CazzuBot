@@ -20,7 +20,7 @@ async def add(pool: Pool, frog: table.Frog):
         async with con.transaction():
             await con.execute(
                 """
-                INSERT INTO frog (gid, cid, interval, duration)
+                INSERT INTO frog (gid, cid, interval, persist)
                 VALUES ($1, $2, $3, $4, $5)
                 """,
                 *frog
@@ -35,11 +35,11 @@ async def upsert(pool: Pool, frog: table.Frog):
         async with con.transaction():
             await con.execute(
                 """
-                INSERT INTO frog (gid, cid, interval, duration, fuzzy)
+                INSERT INTO frog (gid, cid, interval, persist, fuzzy)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (gid, cid) DO UPDATE SET
                     interval = EXCLUDED.interval,
-                    duration = EXCLUDED.duration
+                    persist = EXCLUDED.persist
                 """,
                 *frog
             )

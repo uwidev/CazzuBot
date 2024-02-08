@@ -22,15 +22,16 @@ import pendulum
 _log = logging.getLogger(__name__)
 
 
-shorthand_relative_time = re.compile(r"(\d+w|\d+d|\d+h|\d+m|\d+s)(?=\w?)(?=\d|$)")
+any_shorthand_time = re.compile(r"(\d+w|\d+d|\d+h|\d+m|\d+s)(?=\w?)(?=\d|$)")
 shorthand_tmr = re.compile(r"tmr")
 shorhand_patterns = {
-    "years": r"(\d+)\s*(year|y)",
-    "months": r"(\d+)\s*(month|M)",
-    "days": r"(\d+)\s*(day|d)",
-    "hours": r"(\d+)\s*(hour|h)",
-    "minutes": r"(\d+)\s*(minute|m)",
-    "seconds": r"(\d+)\s*(second|s)",
+    "years": r"(\d+)\s*(year[s]|y)",
+    "months": r"(\d+)\s*(month[s]|M)",
+    "weeks": r"(\d+)\s*(week[s]|w)",
+    "days": r"(\d+)\s*(day[s]|d)",
+    "hours": r"(\d+)\s*(hour[s]|h)",
+    "minutes": r"(\d+)\s*(minute[s]|m)",
+    "seconds": r"(\d+)\s*(second[s]|s)?$",
 }
 
 for k in shorhand_patterns:  # compile for efficiency
@@ -48,7 +49,7 @@ def normalize_time_str(s: str) -> pendulum.DateTime:
     Also does other transformations for more short-hand writing.
     """
     sub_filters = {
-        (shorthand_relative_time.sub, r"\g<1> "),  # add the space
+        (any_shorthand_time.sub, r"\g<1> "),  # add the space
         (shorthand_tmr.sub, r"tomorrow"),
     }
 

@@ -95,7 +95,7 @@ MESSAGE_SCHEMA = {
 async def verify(
     bot,
     ctx: commands.Context,
-    message: str,
+    json_dict: dict,
     formatter: Callable = None,
     **kwarg,
 ) -> dict:
@@ -107,14 +107,12 @@ async def verify(
     formatter will be called on all str objects in the json. The returned dict is
     the pre-formatted version.
     """
-    decoded = None
+    json_dict = None
     try:
-        decoded: dict = bot.json_decoder.decode(message)  # decode to verify valid json
-
-        fix_timestamps(decoded)
+        fix_timestamps(json_dict)
 
         # send embed to verify valid embed
-        demo = copy.deepcopy(decoded)
+        demo = copy.deepcopy(json_dict)
 
         if formatter:
             utility.deep_map(demo, formatter, **kwarg)
@@ -142,7 +140,7 @@ async def verify(
         raise commands.BadArgument(msg) from err
 
     else:
-        return decoded
+        return json_dict
 
 
 def fix_timestamps(embed: dict):

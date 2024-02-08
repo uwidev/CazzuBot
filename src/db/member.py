@@ -1,4 +1,5 @@
 """Manages all queries about guilds."""
+
 import logging
 
 import pendulum
@@ -147,4 +148,19 @@ async def sync_with_exp_logs(pool: Pool):
                     ) as source
                 WHERE member.uid = source.uid and member.gid = source.gid
                 """
+            )
+
+
+async def modify_frog(pool: Pool, gid: int, uid: int, amount: int):
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                UPDATE member
+                SET frog = frog + $3
+                WHERE gid = $1 AND uid = $2
+                """,
+                gid,
+                uid,
+                amount,
             )
