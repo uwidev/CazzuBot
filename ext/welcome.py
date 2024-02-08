@@ -163,6 +163,13 @@ class Welcome(commands.Cog):
         content, embed, embeds = user_json.prepare(decoded)
         await ctx.send(content, embed=embed, embeds=embeds)
 
+    @welcome.command(name="raw")
+    async def welcome_raw(self, ctx: commands.Context):
+        """Return the welcome message in the raw json form."""
+        gid = ctx.guild.id
+        payload = await db.welcome.get_message(self.bot.pool, gid)
+        await ctx.send(f"```{json.dumps(payload)}```")
+
 
 async def setup(bot: CazzuBot):
     await bot.add_cog(Welcome(bot))

@@ -4,6 +4,7 @@ A user's level is derived from a user's experience points. Because of this, leve
 not actually need to be stored internally.
 """
 
+import json
 import logging
 
 import discord
@@ -54,6 +55,12 @@ class Level(commands.Cog):
 
         content, embed, embeds = user_json.prepare(decoded)
         await ctx.send(content, embed=embed, embeds=embeds)
+
+    @level.command(name="raw")
+    async def rank_raw(self, ctx: commands.Context):
+        gid = ctx.guild.id
+        payload = await db.level.get_message(self.bot.pool, gid)
+        await ctx.send(f"```{json.dumps(payload)}```")
 
 
 async def setup(bot: commands.Bot):

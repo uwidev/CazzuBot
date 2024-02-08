@@ -165,7 +165,7 @@ class Ranks(commands.Cog):
     ):
         gid = ctx.guild.id
         payload = await db.rank.get_message(self.bot.pool, gid, mode=mode)
-        await ctx.send(f"```{payload}```")
+        await ctx.send(f"```{json.dumps(payload)}```")
 
 
 async def setup(bot: commands.Bot):
