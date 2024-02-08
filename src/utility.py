@@ -1,4 +1,5 @@
 """General-purpose functions."""
+
 import asyncio
 import copy
 import json
@@ -10,6 +11,11 @@ import discord
 import pendulum
 from asyncpg import Record
 from discord.ext import commands
+
+from src.ntlp import (
+    InvalidTimeError,
+    normalize_time_str,
+)
 
 
 _log = logging.getLogger("discord")
@@ -226,3 +232,28 @@ def ordinal(n: int) -> str:
         return f"{n}{s[v%10]}"
 
     return f"{n}{s[v]}"
+
+
+def prase_dur_str_mix(self, raw) -> tuple[pendulum.DateTime, str]:
+    """Transform a time string mix.
+
+    Time is optional, and must come first.
+
+    ==== Examples of expected output =====
+    DateTime dur 2h, "foo bar barz"         "2h foo bar barz"
+    None, "foo bar barz"                    "2h foo bar barz"
+    None, "foo 2h bar barz"                 "foo 2h bar barz"
+    """
+    time = None
+    s = raw
+    if raw:
+        if raw.find(" ") != -1:
+            dur_raw, s = raw.split(" ", 1)
+        else:
+            dur_raw = raw
+        try:
+            time = normalize_time_str(dur_raw)
+        except InvalidTimeError:
+            s = raw
+
+    return time, s

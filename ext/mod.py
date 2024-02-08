@@ -2,6 +2,7 @@
 
 TODO Create customized user group and permissions
 """
+
 import logging
 from typing import TYPE_CHECKING
 
@@ -10,7 +11,7 @@ import pendulum
 from discord.ext import commands, tasks
 from discord.ext.commands.context import Context
 
-from src import db
+from src import db, utility
 from src.db.table import Modlog, ModlogTypeEnum, Task
 from src.ntlp import (
     InvalidTimeError,
@@ -31,6 +32,9 @@ class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot: CazzuBot = bot
         self.log_expired.start()
+
+    def cog_unload(self):
+        self.log_expired.cancel()
 
     def cog_check(self, ctx: Context) -> bool:
         """Check to make sure user satisfies 'moderation' permission.
@@ -198,7 +202,11 @@ class Moderation(commands.Cog):
     async def log_expired(self):
         """Handle mute and temp-ban expirations."""
         now = pendulum.now(tz="UTC")
-        modlog_tasks = await db.task.get(self.bot.pool, "modlog")
+        modlog_tasks = await db.task.get(self.bot.pool, tag=["modlog"])
+
+        if not modlog_tasks:
+            return  # no modlogs to handle
+
         expired_logs = list(filter(lambda t: t[1] < now, modlog_tasks))
 
         for log in expired_logs:
@@ -215,7 +223,7 @@ class Moderation(commands.Cog):
 
                 member = await guild.fetch_member(uid)
                 await member.remove_roles(mute_role, reason="Mute expired.")
-                await db.task.drop(self.bot.pool, log["id"])
+                await db.task.drop_one(self.bot.pool, log["id"])
 
                 _log.info(
                     "%s's has %s expired, reverting infraction actions...",
@@ -227,7 +235,7 @@ class Moderation(commands.Cog):
                 guild = self.bot.get_guild(gid)
                 user = await self.bot.fetch_user(uid)
                 await guild.unban(user, reason="Tempban expired.")
-                await db.task.drop(self.bot.pool, log["id"])
+                await db.task.drop_one(self.bot.pool, log["id"])
 
                 _log.info(
                     "%s's has %s expired, reverting infraction actions...",
@@ -249,8 +257,24 @@ class Moderation(commands.Cog):
     async def set_mute(self, ctx: Context, *, role: discord.Role):
         await db.guild.set_mute_id(self.bot.pool, ctx.guild.id, role.id)
 
+    @commands.command()
+    async def slowmode(
+        self, ctx: Context, cooldown: int = 0, channel: discord.TextChannel = None
+    ):
+        if channel is None:
+            channel = ctx.channel
+
+        await channel.edit(slowmode_delay=cooldown)
+
+        if cooldown == 0:
+            await ctx.send("Slowmode has been turned **off**.")
+        else:
+            await ctx.send(
+                f"Slowmode has been turned **on** with a {cooldown} delay per message."
+            )
+
     def prase_dur_str_mix(self, raw) -> tuple[pendulum.DateTime, str]:
-        """Transform a time string mix.
+        """Parse a duration and else string mixed together; separates and return.
 
         Time is optional, and must come first.
 
@@ -272,22 +296,6 @@ class Moderation(commands.Cog):
                 s = raw
 
         return time, s
-
-    @commands.command()
-    async def slowmode(
-        self, ctx: Context, cooldown: int = 0, channel: discord.TextChannel = None
-    ):
-        if channel is None:
-            channel = ctx.channel
-
-        await channel.edit(slowmode_delay=cooldown)
-
-        if cooldown == 0:
-            await ctx.send("Slowmode has been turned **off**.")
-        else:
-            await ctx.send(
-                f"Slowmode has been turned **on** with a {cooldown} delay per message."
-            )
 
 
 async def setup(bot: commands.Bot):

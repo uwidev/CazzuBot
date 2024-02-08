@@ -6,6 +6,7 @@ Asyncpg follows native PostgreSQL for query arguments $n. In other words, when w
 query, you should NOT do a string format on the query. Rather, additional arguments are
 given which will be substituted into the string after internal sanitation.
 """
+
 import logging
 from enum import Enum
 
@@ -18,10 +19,10 @@ from . import member, member_exp_log, table
 _log = logging.getLogger(__name__)
 
 
-class Table(Enum):
-    TASK = "task"
-    MODLOG = "modlog"
-    GUILD_SETTING = "guild"
+# class Table(Enum):
+#     TASK = "task"
+#     MODLOG = "modlog"
+#     GUILD_SETTING = "guild"
 
 
 def req_mute_id():

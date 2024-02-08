@@ -1,4 +1,5 @@
 """Defines schema for databases for autocomplete."""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -169,3 +170,15 @@ class Level(SnowflakeTable):
 
     def __iter__(self):
         return iter([self.gid])
+
+
+@dataclass
+class Frog(SnowflakeTable):
+    gid: int
+    cid: int
+    interval: int
+    duration: int
+    fuzzy: float
+
+    def __iter__(self):
+        return iter([self.gid, self.cid, self.interval, self.duration, self.fuzzy])
