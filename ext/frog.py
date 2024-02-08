@@ -138,7 +138,7 @@ class Frog(commands.Cog):
         payload = self.generate_payload(gid, cid, interval, persist, fuzzy)
         record = await task.get_one(
             self.bot.pool,
-            payload="{" + f'"gid":{gid}, "cid": {cid}' + "}",
+            payload={"gid": gid, "cid": cid},
             tag=["frog"],
         )
 
