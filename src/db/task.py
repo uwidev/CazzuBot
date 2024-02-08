@@ -44,7 +44,7 @@ async def add(pool: Pool, tsk: table.Task):
 #             )
 
 
-async def get(pool: Pool, *, payload: dict = "{}", tag: list[str] = []):
+async def get(pool: Pool, *, payload: dict = {}, tag: list[str] = []):
     """Find matching rows whose tags and payload are a superset of provided.
 
     No payload or tag returns all tasks.
@@ -60,7 +60,7 @@ async def get(pool: Pool, *, payload: dict = "{}", tag: list[str] = []):
         )
 
 
-async def get_one(pool: Pool, *, payload: dict = "{}", tag: list[str] = []):
+async def get_one(pool: Pool, *, payload: dict = {}, tag: list[str] = []):
     """Find one matching rows whose tags and payload are a superset of provided.
 
     No payload or tag returns all tasks.
@@ -89,7 +89,7 @@ async def drop_one(pool: Pool, id: int):
             )
 
 
-async def drop(pool: Pool, *, payload: dict = "{}", tag: list[str] = []):
+async def drop(pool: Pool, *, payload: dict = {}, tag: list[str] = []):
     """Delete all tasks whoses tags and payload is a superset of provided.
 
     Dangerous, make sure you know what you're doing.

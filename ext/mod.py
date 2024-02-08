@@ -107,7 +107,7 @@ class Moderation(commands.Cog):
             tsk = Task(
                 ["modlog"],
                 duration,
-                self.bot.json_encoder.encode(raw),
+                raw,
             )
 
             await db.task.add(self.bot.pool, tsk)
@@ -190,7 +190,7 @@ class Moderation(commands.Cog):
             tsk = Task(
                 ["modlog"],
                 duration,
-                self.bot.json_encoder.encode(raw),
+                raw,
             )
 
             await db.task.add(self.bot.pool, tsk)
@@ -211,7 +211,7 @@ class Moderation(commands.Cog):
 
         for log in expired_logs:
             payload_raw = log[2]
-            payload: dict = self.bot.json_decoder.decode(payload_raw)
+            payload: dict = payload_raw
             log_type = ModlogTypeEnum(payload["log_type"])
             uid: int = payload["uid"]
             gid: int = payload["gid"]

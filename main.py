@@ -4,6 +4,7 @@ Bot grabs API key from secret/setup.py.
 
 Docker sets fresh database password from secret/db
 """
+
 import argparse
 import asyncio
 import logging
@@ -19,6 +20,7 @@ from discord.utils import _ColourFormatter, stream_supports_colour
 
 from src.cazzubot import CazzuBot
 from src.db.table import ModlogStatusEnum, ModlogTypeEnum, WindowEnum
+from src.json_handler import dumps, loads
 
 
 EXTENSIONS_PATH = r"ext"
@@ -80,6 +82,10 @@ async def setup_codecs(con: Connection):
     await con.set_type_codec(
         "window_enum", encoder=lambda e: e.value, decoder=WindowEnum
     )
+
+    await con.set_type_codec("json", encoder=dumps, decoder=loads, schema="pg_catalog")
+
+    await con.set_type_codec("jsonb", encoder=dumps, decoder=loads, schema="pg_catalog")
 
 
 async def main():

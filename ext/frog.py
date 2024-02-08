@@ -44,6 +44,7 @@ class Frog(commands.Cog):
 
         now = pendulum.now("UTC")
         records: list[Record] = await task.get(self.bot.pool, tag=["frog"])
+        # _log.info(f"{records=}")
 
         if not records:
             return  # no frogs to handle
@@ -51,12 +52,14 @@ class Frog(commands.Cog):
         expired: list[Record] = [item for item in records if item["run_at"] < now]
 
         frogs: list[table.Task] = [table.Task(**ex) for ex in expired]
-        for frog in frogs:  # Decode payload string to json dictionary object
-            frog.payload = self.bot.json_decoder.decode(frog.payload)
+        # for frog in frogs:  # Decode payload string to json dictionary object
+        # frog.payload = self.bot.json_decoder.decode(frog.payload)
+        # _log.info(frog.payload)
 
         # _log.info(frogs)
 
         for frog in frogs:
+            _log.info("Spawning frog...")
             gid = frog.payload["gid"]
             cid = frog.payload["cid"]
             interval = frog.payload["interval"]
@@ -143,7 +146,7 @@ class Frog(commands.Cog):
             id = record["id"]
             run_at = self.roll_future_frog(now, interval, fuzzy)
 
-            payload = self.bot.json_encoder.encode(payload)
+            # payload = self.bot.json_encoder.encode(payload)
             await task.frog_update(self.bot.pool, id, run_at, payload)
         else:  # If task not already exists
             await self.add_frog_task(payload)
@@ -158,11 +161,7 @@ class Frog(commands.Cog):
         """
         gid = ctx.guild.id
         await frog.clear(self.bot.pool, gid)
-        await task.drop(
-            self.bot.pool,
-            tag=["frog"],
-            payload=self.bot.json_encoder.encode({"gid": gid}),
-        )
+        await task.drop(self.bot.pool, tag=["frog"], payload={"gid": gid})
         await ctx.message.add_reaction("👍")
 
     async def add_frog_task(self, payload: dict):
@@ -179,7 +178,7 @@ class Frog(commands.Cog):
 
         run_at = self.roll_future_frog(now, interval, fuzzy)
 
-        payload = self.bot.json_encoder.encode(payload)
+        payload = payload
         tsk = table.Task(["frog"], run_at, payload)
 
         await task.add(self.bot.pool, tsk)

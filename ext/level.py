@@ -41,15 +41,13 @@ class Level(commands.Cog):
         )
 
         gid = ctx.guild.id
-        await db.level.set_message(
-            self.bot.pool, gid, self.bot.json_encoder.encode(decoded)
-        )
+        await db.level.set_message(self.bot.pool, gid, decoded)
 
     @level.command(name="demo")
     async def level_demo(self, ctx: commands.Context):
         gid = ctx.guild.id
         payload = await db.level.get_message(self.bot.pool, gid)
-        decoded = self.bot.json_decoder.decode(payload)
+        decoded = payload
 
         member = ctx.author
         utility.deep_map(decoded, level.formatter, member=member)
