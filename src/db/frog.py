@@ -12,7 +12,7 @@ from . import guild, table
 _log = logging.getLogger(__name__)
 
 
-async def add(pool: Pool, frog: table.Frog):
+async def add(pool: Pool, frog: table.Frog) -> None:
     if not await guild.get(pool, frog.gid):  # guild not yet init, foreign key
         await guild.add(pool, frog.gid)
 
@@ -27,7 +27,7 @@ async def add(pool: Pool, frog: table.Frog):
             )
 
 
-async def upsert(pool: Pool, frog: table.Frog):
+async def upsert(pool: Pool, frog: table.Frog) -> None:
     if not await guild.get(pool, frog.gid):  # guild not yet init, foreign key
         await guild.add(pool, frog.gid)
 
@@ -45,7 +45,7 @@ async def upsert(pool: Pool, frog: table.Frog):
             )
 
 
-async def clear(pool: Pool, gid: int):
+async def clear(pool: Pool, gid: int) -> None:
     """Remove all frog settings for this guild,."""
     if not await guild.get(pool, gid):  # guild not yet init, foreign key
         await guild.add(pool, gid)
@@ -55,8 +55,20 @@ async def clear(pool: Pool, gid: int):
         async with con.transaction():
             await con.execute(
                 """
-                DELETE FROM frog
+                DELETE
+                FROM frog
                 WHERE gid = $1
                 """,
                 gid,
             )
+
+
+async def get_all(pool: Pool) -> list[Record]:
+    """Get all frog settings."""
+    async with pool.acquire() as con:
+        return await con.fetch(
+            """
+            SELECT *
+            FROM frog
+            """
+        )

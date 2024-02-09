@@ -28,7 +28,10 @@ class Frog(commands.Cog):
         self.bot: CazzuBot = bot
         self.check_spawn_frog.start()
 
-    def cog_unload(self):
+    async def cog_load(self):
+        await self._reset_frog_tasks()
+
+    async def cog_unload(self):
         self.check_spawn_frog.cancel()
 
     def cog_check(self, ctx):
@@ -109,6 +112,26 @@ class Frog(commands.Cog):
     async def before_check_frog_spawn(self):
         await self.bot.wait_until_ready()
 
+    async def _reset_frog_tasks(self):
+        await db.task.drop(self.bot.pool, tag=["frog"])
+        records = await db.frog.get_all(self.bot.pool)
+        frog_registers: list[db.table.Frog] = [
+            db.table.Frog(*record) for record in records
+        ]
+
+        now = pendulum.now()
+        run_ats = [
+            self.roll_future_frog(now, frog.interval, frog.fuzzy)
+            for frog in frog_registers
+        ]
+
+        task_rows = [
+            db.table.Task(["frog"], run_ats[i], frog_registers[i].__dict__)
+            for i in range(len(frog_registers))
+        ]
+
+        await db.task.add_many(self.bot.pool, task_rows)
+
     @commands.group()
     async def frog(self, ctx):
         pass
@@ -118,7 +141,7 @@ class Frog(commands.Cog):
         self,
         ctx: commands.Context,
         interval: str,
-        persist: str = "30s",
+        persist: str = "30",
         fuzzy: float = 0.3,
         channel: discord.TextChannel = None,
     ):
@@ -238,8 +261,8 @@ class Frog(commands.Cog):
         return ((random.random() - 0.5) * 2) * fuzzy
 
     def roll_future_frog(self, now: DateTime, interval: int, fuzzy: float):
-        fuzzy_duration = interval * (1 + self.roll_fuzzy(fuzzy))
-        return now + pendulum.duration(seconds=fuzzy_duration)
+        fuzzy_persist = interval * (1 + self.roll_fuzzy(fuzzy))
+        return now + pendulum.duration(seconds=fuzzy_persist)
 
 
 async def setup(bot: commands.Bot):

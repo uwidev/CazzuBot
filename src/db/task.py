@@ -2,7 +2,7 @@
 
 import logging
 
-from asyncpg import Pool
+from asyncpg import Pool, Record
 from pendulum import DateTime
 
 from . import table
@@ -11,7 +11,7 @@ from . import table
 _log = logging.getLogger(__name__)
 
 
-async def add(pool: Pool, tsk: table.Task):
+async def add(pool: Pool, tsk: table.Task) -> None:
     """Add task into database."""
     async with pool.acquire() as con:
         async with con.transaction():
@@ -21,6 +21,21 @@ async def add(pool: Pool, tsk: table.Task):
                 VALUES ($1, $2, $3)
                 """,
                 *tsk,
+            )
+
+
+async def add_many(pool: Pool, tsks: list[table.Task]) -> None:
+    """Add many tasks into database."""
+    tsks = [(*tsk,) for tsk in tsks]
+
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.executemany(
+                """
+                INSERT INTO task (tag, run_at, payload)
+                VALUES ($1, $2, $3)
+                """,
+                tsks,
             )
 
 
@@ -44,7 +59,7 @@ async def add(pool: Pool, tsk: table.Task):
 #             )
 
 
-async def get(pool: Pool, *, payload: dict = {}, tag: list[str] = []):
+async def get(pool: Pool, *, payload: dict = {}, tag: list[str] = []) -> list[Record]:
     """Find matching rows whose tags and payload are a superset of provided.
 
     No payload or tag returns all tasks.
@@ -60,7 +75,7 @@ async def get(pool: Pool, *, payload: dict = {}, tag: list[str] = []):
         )
 
 
-async def get_one(pool: Pool, *, payload: dict = {}, tag: list[str] = []):
+async def get_one(pool: Pool, *, payload: dict = {}, tag: list[str] = []) -> Record:
     """Find one matching rows whose tags and payload are a superset of provided.
 
     No payload or tag returns all tasks.
@@ -76,7 +91,7 @@ async def get_one(pool: Pool, *, payload: dict = {}, tag: list[str] = []):
         )
 
 
-async def drop_one(pool: Pool, id: int):
+async def drop_one(pool: Pool, id: int) -> None:
     """Drop a task from database, usually after handling it."""
     async with pool.acquire() as con:
         async with con.transaction():
@@ -89,7 +104,7 @@ async def drop_one(pool: Pool, id: int):
             )
 
 
-async def drop(pool: Pool, *, payload: dict = {}, tag: list[str] = []):
+async def drop(pool: Pool, *, payload: dict = {}, tag: list[str] = []) -> None:
     """Delete all tasks whoses tags and payload is a superset of provided.
 
     Dangerous, make sure you know what you're doing.
@@ -106,21 +121,7 @@ async def drop(pool: Pool, *, payload: dict = {}, tag: list[str] = []):
             )
 
 
-# async def drop_frog(pool: Pool, gid: int, cid: int):
-#     """Drop frog tasks given a gid and cid."""
-#     async with pool.acquire() as con:
-#         async with con.transaction():
-#             await con.execute(
-#                 """
-#                 DELETE FROM task
-#                 WHERE ('{"gid": ' || $1 || '}')::jsonb <@ payload::jsonb AND ('{"cid": ' || $2 || '}')::jsonb <@ payload::jsonb
-#                 """,
-#                 str(gid),
-#                 str(cid),
-#             )
-
-
-async def frog_update_run(pool: Pool, id: int, run_at: DateTime):
+async def frog_update_run(pool: Pool, id: int, run_at: DateTime) -> None:
     """Update run_at interval on a frog task,."""
     async with pool.acquire() as con:
         async with con.transaction():
@@ -135,7 +136,7 @@ async def frog_update_run(pool: Pool, id: int, run_at: DateTime):
             )
 
 
-async def frog_update(pool: Pool, id: int, run_at: DateTime, payload: dict):
+async def frog_update(pool: Pool, id: int, run_at: DateTime, payload: dict) -> None:
     """Update all run_at and payload.
 
     Does not update tag, so might be slightly misleading.

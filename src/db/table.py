@@ -177,8 +177,8 @@ class Frog(SnowflakeTable):
     gid: int
     cid: int
     interval: int
-    duration: int
+    persist: int
     fuzzy: float
 
     def __iter__(self):
-        return iter([self.gid, self.cid, self.interval, self.duration, self.fuzzy])
+        return iter([self.gid, self.cid, self.interval, self.persist, self.fuzzy])
