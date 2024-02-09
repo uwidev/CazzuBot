@@ -85,6 +85,7 @@ async def get_one(pool: Pool, *, payload: dict = {}, tag: list[str] = []) -> Rec
             """
             SELECT * FROM task
             WHERE $1::character varying[] <@ tag AND $2::jsonb <@ payload::jsonb
+            LIMIT 1
             """,
             tag,
             payload,

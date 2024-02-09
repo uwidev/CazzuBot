@@ -2,6 +2,7 @@
 
 See member_exp_log.py for details on how exp is stored and summed.
 """
+
 import logging
 from enum import Enum, auto
 from math import trunc
@@ -88,19 +89,19 @@ class Experience(commands.Cog):
         uid = message.author.id
         gid = message.guild.id
 
-        member_db = await db.member.get(self.bot.pool, gid, uid)
+        member_db = await db.member_exp.get_one(self.bot.pool, gid, uid)
         if not member_db:  # Member not found, insert and try again.
-            await db.member.add(
+            await db.member_exp.add(
                 self.bot.pool,
-                db.table.Member(gid, uid, 0, 0, now.subtract(hours=1)),
+                db.table.MemberExp(gid, uid, 0, 0, now.subtract(hours=1)),
             )
-            member_db = await db.member.get(self.bot.pool, gid, uid)
+            member_db = await db.member_exp.get_one(self.bot.pool, gid, uid)
 
-        if member_db and now < member_db.get("exp_cdr"):
+        if member_db and now < member_db.get("cdr"):
             return  # Cooldown has not yet expired, do nothing
 
         # Prepare and pack variables
-        msg_cnt = member_db.get("exp_msg_cnt") + 1
+        msg_cnt = member_db.get("msg_cnt") + 1
         exp_gain = _from_msg(msg_cnt)
 
         year = now.year
@@ -114,7 +115,7 @@ class Experience(commands.Cog):
         seasonal_exp_new = seasonal_exp_old + exp_gain
         seasonal_exp = utility.OldNew(seasonal_exp_old, seasonal_exp_new)
 
-        lifetime_exp_old = member_db.get("exp_lifetime")
+        lifetime_exp_old = member_db.get("lifetime")
         lifetime_exp_new = lifetime_exp_old + exp_gain
         lifetime_exp = utility.OldNew(lifetime_exp_old, lifetime_exp_new)
 
@@ -128,10 +129,10 @@ class Experience(commands.Cog):
 
         # Add to member's lifetime exp
         offset_cooldown = now + pendulum.duration(seconds=_EXP_COOLDOWN)
-        member_updated = db.table.Member(
+        member_updated = db.table.MemberExp(
             gid, uid, lifetime_exp.new, msg_cnt, offset_cooldown
         )
-        await db.member.update_exp(self.bot.pool, member_updated)
+        await db.member_exp.update_exp(self.bot.pool, member_updated)
 
         # Add to loggings for seasonal (and weekly, monthly, etc.)
         await db.member_exp_log.add(

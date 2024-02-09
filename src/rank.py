@@ -29,10 +29,10 @@ async def on_msg_handle_ranks(
 
     Called from ext.experience
     """
-    seasonal_add, seasonal_remove = await _on_msg_handle_ranks(
+    seasonal_add, seasonal_remove = await _determine_rank_changes(
         bot, message, seasonal_level, notify=True
     )
-    lifetime_add, lifetime_remove = await _on_msg_handle_ranks(
+    lifetime_add, lifetime_remove = await _determine_rank_changes(
         bot, message, lifetime_level, WindowEnum.LIFETIME
     )
 
@@ -49,7 +49,7 @@ async def on_msg_handle_ranks(
         await member.remove_roles(*ranks_to_remove)
 
 
-async def _on_msg_handle_ranks(
+async def _determine_rank_changes(
     bot: CazzuBot,
     message: discord.Message,
     level: utility.OldNew,

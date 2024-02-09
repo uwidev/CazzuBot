@@ -44,8 +44,8 @@ class Daily(commands.Cog):
         _log.info("Running daily reset")
 
         # Reset all message counts and cdr
-        await db.member.reset_all_msg_cnt(self.bot.pool)
-        await db.member.reset_all_cdr(self.bot.pool)
+        await db.member_exp.reset_all_msg_cnt(self.bot.pool)
+        await db.member_exp.reset_all_cdr(self.bot.pool)
 
         # Log the time this daily reset was done
         now = pendulum.now("UTC")
@@ -53,7 +53,7 @@ class Daily(commands.Cog):
         await db.internal.set_last_daily(self.bot.pool, str(this_daily))
 
         # Resync message logs exp with lifetime exp
-        await db.member.sync_with_exp_logs(self.bot.pool)
+        await db.member_exp.sync_with_exp_logs(self.bot.pool)
 
 
 async def setup(bot: CazzuBot):

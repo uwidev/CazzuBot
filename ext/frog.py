@@ -96,7 +96,7 @@ class Frog(commands.Cog):
                     "reaction_add", timeout=persist, check=check
                 )
                 uid = catcher.id
-                await db.member.modify_frog(self.bot.pool, gid, uid, 1)
+                await db.member_exp.modify_frog(self.bot.pool, gid, uid, 1)
             except TimeoutError:
                 pass
             finally:

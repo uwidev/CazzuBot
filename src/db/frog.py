@@ -68,7 +68,7 @@ async def get_all(pool: Pool) -> list[Record]:
     async with pool.acquire() as con:
         return await con.fetch(
             """
-            SELECT *
+            SELECT gid, cid, interval, persist, fuzzy
             FROM frog
             """
         )

@@ -1,4 +1,5 @@
 """Debug access for owner."""
+
 import logging
 from typing import TYPE_CHECKING
 
@@ -40,7 +41,7 @@ class Owner(commands.Cog):
     @utility.author_confirm()
     async def resync_exp(self, ctx: commands.Context):
         _log.info(f"{ctx.author} called for resync of member lifetime exp")
-        await db.member.sync_with_exp_logs(self.bot.pool)
+        await db.member_exp.sync_with_exp_logs(self.bot.pool)
 
     @commands.group()
     async def calc(self, ctx: commands.Context):

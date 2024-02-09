@@ -13,7 +13,7 @@ from enum import Enum
 from asyncpg import Pool, Record
 from discord.ext import commands
 
-from . import member, member_exp_log, table
+from . import member_exp, member_exp_log, table
 
 
 _log = logging.getLogger(__name__)
@@ -116,4 +116,4 @@ async def get_members_exp_ranked(pool: Pool, gid: int) -> list[Record]:
 
     Acts more of an alias for more intuitive design.
     """
-    return await member.get_exp_bulk_ranked(pool, gid)
+    return await member_exp.get_exp_bulk_ranked(pool, gid)

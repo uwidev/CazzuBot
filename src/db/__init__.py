@@ -9,7 +9,7 @@ from . import (  # noqa: F401
     guild,
     internal,
     level,
-    member,
+    member_exp,
     member_exp_log,
     modlog,
     rank,

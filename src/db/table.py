@@ -108,38 +108,12 @@ class Task(SnowflakeTable):
 
 
 @dataclass
-class Member(SnowflakeTable):
-    gid: int  # REFERNECES guild.gid
-    uid: int  # REFERENCES user.uid
-    exp_lifetime: int = 0
-    exp_msg_cnt: int = 0
-    exp_cdr: pendulum.DateTime = None
-
-    def __iter__(self):
-        """Unpacking for inserting new row."""
-        return iter(
-            [self.gid, self.uid, self.exp_lifetime, self.exp_msg_cnt, self.exp_cdr]
-        )
-
-
-@dataclass
 class User(SnowflakeTable):
     uid: int
 
     def __iter__(self):
         """Unpacking for inserting new row."""
         return iter([self.uid])
-
-
-@dataclass
-class MemberExpLog(SnowflakeTable):
-    gid: int  # REFERENCES guild.gid
-    uid: int  # REFERENCES user.uid
-    exp: int
-    at: pendulum.DateTime
-
-    def __iter__(self):
-        return iter([self.gid, self.uid, self.exp, self.at])
 
 
 @dataclass
@@ -182,3 +156,40 @@ class Frog(SnowflakeTable):
 
     def __iter__(self):
         return iter([self.gid, self.cid, self.interval, self.persist, self.fuzzy])
+
+
+@dataclass
+class MemberFrog(SnowflakeTable):
+    gid: int  # references guild (gid)
+    uid: int  # references user (uid)
+    frog: int = 0
+
+    def __iter__(self):
+        """Unpacking for inserting new row."""
+        return iter([self.gid, self.gid, self.gid, self.frog])
+
+
+@dataclass
+class MemberExp(SnowflakeTable):
+    gid: int  # references guild (gid)
+    uid: int  # references user (uid)
+    lifetime: int = 0
+    msg_cnt: int = 0
+    cdr: pendulum.DateTime = None
+
+    def __iter__(self):
+        """Unpacking for inserting new row."""
+        return iter(
+            [self.gid, self.gid, self.gid, self.lifetime, self.msg_cnt, self.cdr]
+        )
+
+
+@dataclass
+class MemberExpLog(SnowflakeTable):
+    gid: int  # REFERENCES guild.gid
+    uid: int  # REFERENCES user.uid
+    exp: int
+    at: pendulum.DateTime
+
+    def __iter__(self):
+        return iter([self.gid, self.uid, self.exp, self.at])
