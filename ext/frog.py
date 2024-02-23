@@ -13,7 +13,8 @@ from pendulum import DateTime
 
 from main import CazzuBot
 from src import db
-from src.ntlp import InvalidTimeError, normalize_time_str, parse_duration
+from src.custom_converters import PositiveInt
+from src.ntlp import InvalidTimeError, parse_duration
 
 
 if TYPE_CHECKING:
@@ -96,7 +97,9 @@ class Frog(commands.Cog):
                     "reaction_add", timeout=persist, check=check
                 )
                 uid = catcher.id
-                await db.member_exp.modify_frog(self.bot.pool, gid, uid, 1)
+                await db.member_frog.upsert_modify_frog(
+                    self.bot.pool, db.table.MemberFrog(gid, uid, 1), 1
+                )
             except TimeoutError:
                 pass
             finally:
@@ -220,6 +223,32 @@ class Frog(commands.Cog):
         await db.frog.clear(self.bot.pool, gid)
         await db.task.drop(self.bot.pool, tag=["frog"], payload={"gid": gid})
         await ctx.message.add_reaction("👍")
+
+    @frog.command(name="consume")
+    async def frog_consume(self, ctx: commands.Context, amount: PositiveInt = 1):
+        if amount < 1:
+            msg = "Amount of frogs consume must be greater than 0."
+            raise commands.BadArgument(msg)
+
+        gid = ctx.guild.id
+        uid = ctx.author.id
+
+        member_frogs = await db.member_frog.get_amount(self.bot.pool, gid, uid)
+        if member_frogs is not None and member_frogs - amount < 0:
+            msg = f"Member does not have enough frogs ({member_frogs}) to consume."
+            raise commands.BadArgument(msg)
+
+        now = pendulum.now()
+        exp_amount = 10
+
+        exp_payload = db.table.MemberExpLog(
+            gid, uid, exp_amount, now, db.table.MemberExpLogSource.FROG
+        )
+        await db.member_exp_log.add(self.bot.pool, exp_payload)
+
+        await db.member_frog.upsert_modify_frog(
+            self.bot.pool, db.table.MemberFrog(gid, uid), -amount
+        )
 
     async def add_frog_task(self, payload: dict):
         """Add the task for frog future spawn.

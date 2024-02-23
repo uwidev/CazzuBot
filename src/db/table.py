@@ -35,19 +35,6 @@ class SnowflakeTable(ABC):
         """
 
 
-@dataclass
-class Guild(SnowflakeTable):
-    gid: int
-    mute_role: int = None
-    ranks: dict = field(default_factory=dict)
-
-    def conflicts(self) -> str:
-        return "(gid)"
-
-    def __iter__(self):
-        return iter([self.gid, self.mute_role])
-
-
 class ModlogTypeEnum(Enum):
     WARN = "warn"
     MUTE = "mute"
@@ -67,11 +54,75 @@ class WindowEnum(Enum):
     LIFETIME = "lifetime"
 
 
+class MemberExpLogSource(Enum):
+    MESSAGE = "message"
+    FROG = "frog"
+
+
+@dataclass
+class Task(SnowflakeTable):
+    tag: list
+    run_at: pendulum.DateTime
+    payload: dict
+    id: int = None
+
+    def __iter__(self):
+        return iter([self.tag, self.run_at, self.payload])
+
+
+@dataclass
+class Guild(SnowflakeTable):
+    gid: int
+    mute_role: int = None
+
+    def conflicts(self) -> str:
+        return "(gid)"
+
+    def __iter__(self):
+        return iter([self.gid, self.mute_role])
+
+
+@dataclass
+class User(SnowflakeTable):
+    uid: int
+
+    def __iter__(self):
+        """Unpacking for inserting new row."""
+        return iter([self.uid])
+
+
+@dataclass
+class Channel(SnowflakeTable):
+    gid: int  # references guild.gid
+    cid: int
+
+    def __iter__(self):
+        return iter([self.gid, self.cid])
+
+
+@dataclass
+class Role(SnowflakeTable):
+    gid: int  # references guild.gid
+    rid: int
+
+    def __iter__(self):
+        return iter([self.gid, self.rid])
+
+
+@dataclass
+class Member(SnowflakeTable):
+    gid: int  # references guild.gid
+    uid: int  # references user.uid
+
+    def __iter__(self):
+        return iter([self.gid, self.uid])
+
+
 @dataclass
 class Modlog(SnowflakeTable):
-    gid: int
-    uid: int
-    cid: int
+    gid: int  # references member.gid
+    uid: int  # references member.uid
+    case: int
     log_type: ModlogTypeEnum
     given_on: pendulum.DateTime
     expires_on: pendulum.DateTime = None
@@ -97,29 +148,9 @@ class Modlog(SnowflakeTable):
 
 
 @dataclass
-class Task(SnowflakeTable):
-    tag: list
-    run_at: pendulum.DateTime
-    payload: dict
-    id: int = None
-
-    def __iter__(self):
-        return iter([self.tag, self.run_at, self.payload])
-
-
-@dataclass
-class User(SnowflakeTable):
-    uid: int
-
-    def __iter__(self):
-        """Unpacking for inserting new row."""
-        return iter([self.uid])
-
-
-@dataclass
 class RankThreshold(SnowflakeTable):
-    gid: int  # REFERENCES guild.gid
-    rid: int
+    gid: int  # references role.gid
+    rid: int  # references role.rid
     threshold: int
     mode: WindowEnum
 
@@ -129,7 +160,7 @@ class RankThreshold(SnowflakeTable):
 
 @dataclass
 class Rank(SnowflakeTable):
-    gid: int  # REFERENCES guild.gid
+    gid: int  # references guild.id
     message: str  # encoded json, default already set in db
     mode: WindowEnum
 
@@ -139,7 +170,7 @@ class Rank(SnowflakeTable):
 
 @dataclass
 class Level(SnowflakeTable):
-    gid: int  # REFERENCES guild.gid
+    gid: int  # references guild.id
     message: str  # encoded json, default already set in db
 
     def __iter__(self):
@@ -148,8 +179,8 @@ class Level(SnowflakeTable):
 
 @dataclass
 class Frog(SnowflakeTable):
-    gid: int
-    cid: int
+    gid: int  # references channel.gid
+    cid: int  # references channel.cid
     interval: int
     persist: int
     fuzzy: float
@@ -160,8 +191,8 @@ class Frog(SnowflakeTable):
 
 @dataclass
 class MemberFrog(SnowflakeTable):
-    gid: int  # references guild (gid)
-    uid: int  # references user (uid)
+    gid: int  # references member.gid
+    uid: int  # references member.uid
     frog: int = 0
 
     def __iter__(self):
@@ -171,25 +202,24 @@ class MemberFrog(SnowflakeTable):
 
 @dataclass
 class MemberExp(SnowflakeTable):
-    gid: int  # references guild (gid)
-    uid: int  # references user (uid)
+    gid: int  # references member.gid
+    uid: int  # references member.uid
     lifetime: int = 0
     msg_cnt: int = 0
     cdr: pendulum.DateTime = None
 
     def __iter__(self):
         """Unpacking for inserting new row."""
-        return iter(
-            [self.gid, self.gid, self.gid, self.lifetime, self.msg_cnt, self.cdr]
-        )
+        return iter([self.gid, self.uid, self.lifetime, self.msg_cnt, self.cdr])
 
 
 @dataclass
 class MemberExpLog(SnowflakeTable):
-    gid: int  # REFERENCES guild.gid
-    uid: int  # REFERENCES user.uid
+    gid: int  # REFERENCES member.gid
+    uid: int  # REFERENCES member.uid
     exp: int
     at: pendulum.DateTime
+    source: MemberExpLogSource = MemberExpLogSource.MESSAGE
 
     def __iter__(self):
-        return iter([self.gid, self.uid, self.exp, self.at])
+        return iter([self.gid, self.uid, self.exp, self.at, self.source])

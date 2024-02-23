@@ -24,7 +24,7 @@ from . import guild, table, user, utility
 _log = logging.getLogger(__name__)
 
 
-async def add(pool: Pool, payload: table.MemberExpLog):
+async def add(pool: Pool, payload: table.MemberExpLog) -> None:
     """Log expereience gain entry."""
     await create_partition(pool, payload.gid)
 
@@ -32,14 +32,14 @@ async def add(pool: Pool, payload: table.MemberExpLog):
         async with con.transaction():
             await con.execute(
                 """
-                INSERT INTO member_exp_log (gid, uid, exp, at)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO member_exp_log (gid, uid, exp, at, source)
+                VALUES ($1, $2, $3, $4, $5)
                 """,
                 *payload,
             )
 
 
-async def create_partition(pool: Pool, gid: int):
+async def create_partition(pool: Pool, gid: int) -> None:
     """Partition member exp log as needed."""
     now = pendulum.now()
     start = pendulum.datetime(now.year, now.month, 1)
@@ -51,7 +51,7 @@ async def create_partition(pool: Pool, gid: int):
 
 async def create_partition_monthly(
     pool: Pool, start: pendulum.DateTime, end: pendulum.DateTime
-):
+) -> None:
     """Parition the experience log database by this month.
 
     Only creates the parition if it doesn't yet exist.
@@ -71,7 +71,7 @@ async def create_partition_monthly(
                 )
 
 
-async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime):
+async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime) -> None:
     """Parition the experience log database by gid.
 
     Only creates the parition if it doesn't yet exist.
@@ -93,7 +93,7 @@ async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime):
             )
 
 
-async def create_index_on_date(pool: Pool, date: pendulum.DateTime):
+async def create_index_on_date(pool: Pool, date: pendulum.DateTime) -> None:
     """Index the selected partition."""
     start_str = f"{date.year}_{date.month}"
 
@@ -124,7 +124,9 @@ async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> 
         )
 
 
-async def get_seasonal_by_month(pool: Pool, gid: int, uid: int, year: int, month: int):
+async def get_seasonal_by_month(
+    pool: Pool, gid: int, uid: int, year: int, month: int
+) -> int:
     """Call get_season() when season is as a month rather than season.
 
     Passed argument should still be natural counting, starting from 1.

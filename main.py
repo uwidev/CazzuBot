@@ -19,7 +19,12 @@ from asyncpg import Connection
 from discord.utils import _ColourFormatter, stream_supports_colour
 
 from src.cazzubot import CazzuBot
-from src.db.table import ModlogStatusEnum, ModlogTypeEnum, WindowEnum
+from src.db.table import (
+    MemberExpLogSource,
+    ModlogStatusEnum,
+    ModlogTypeEnum,
+    WindowEnum,
+)
 from src.json_handler import dumps, loads
 
 
@@ -81,6 +86,12 @@ async def setup_codecs(con: Connection):
 
     await con.set_type_codec(
         "window_enum", encoder=lambda e: e.value, decoder=WindowEnum
+    )
+
+    await con.set_type_codec(
+        "member_exp_log_source_enum",
+        encoder=lambda e: e.value,
+        decoder=MemberExpLogSource,
     )
 
     await con.set_type_codec("json", encoder=dumps, decoder=loads, schema="pg_catalog")

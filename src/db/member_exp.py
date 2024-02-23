@@ -5,53 +5,38 @@ import logging
 import pendulum
 from asyncpg import Pool, Record, exceptions
 
-from . import guild, member_exp_log, table, user
+from . import guild, member_exp_log, table, user, utility
 
 
 _log = logging.getLogger(__name__)
 
 
+@utility.fkey_member
 async def add(pool: Pool, member_exp: table.MemberExp) -> None:
     # Foreign constraint dependencies
-    if not await user.get(pool, member_exp.uid):
-        await user.add(pool, table.User(member_exp.uid))
-
-    if not await guild.get(pool, member_exp.gid):
-        await guild.add(pool, table.Guild(member_exp.gid))
-
     async with pool.acquire() as con:
         async with con.transaction():
-            try:
-                await con.execute(
-                    """
-                    INSERT INTO member_exp (gid, uid, lifetime, msg_cnt, cdr)
-                    VALUES ($1, $2, $3, $4, $5)
-                    """,
-                    *member_exp,
-                )
-            except Exception as err:
-                _log.error(err)
-            else:
-                return 0
+            await con.execute(
+                """
+                INSERT INTO member_exp (gid, uid, lifetime, msg_cnt, cdr)
+                VALUES ($1, $2, $3, $4, $5)
+                """,
+                *member_exp,
+            )
 
 
 async def get_one(pool: Pool, gid: int, uid: int) -> Record:
     async with pool.acquire() as con:
-        try:
-            res = await con.fetchrow(
-                """
-                SELECT *
-                FROM member_exp
-                WHERE uid = $1 AND gid = $2
-                LIMIT 1
-                """,
-                uid,
-                gid,
-            )
-        except Exception as err:
-            _log.error(err)
-        else:
-            return res
+        return await con.fetchrow(
+            """
+            SELECT *
+            FROM member_exp
+            WHERE uid = $1 AND gid = $2
+            LIMIT 1
+            """,
+            uid,
+            gid,
+        )
 
 
 async def update_exp(pool: Pool, member_exp: table.MemberExp) -> None:

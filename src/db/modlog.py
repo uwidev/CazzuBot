@@ -1,4 +1,5 @@
 """All direct database interactions related to modlogs."""
+
 import logging
 
 from asyncpg import Pool
@@ -47,17 +48,17 @@ async def get(db: Pool, gid: int) -> dict:
             )
 
 
-async def create_partition_gid(pool: Pool, gid: int):
-    """Parition the experience database by gid.
+# async def create_partition_gid(pool: Pool, gid: int):
+#     """Parition the experience database by gid.
 
-    Only creates the table if it doesn't yet exist.
-    """
-    async with pool.acquire() as con:
-        async with con.transaction():
-            await con.execute(
-                f"""
-                CREATE TABLE IF NOT EXISTS modlog_{gid}
-                    PARTITION OF modlog
-                FOR VALUES IN ({gid});
-                """
-            )
+#     Only creates the table if it doesn't yet exist.
+#     """
+#     async with pool.acquire() as con:
+#         async with con.transaction():
+#             await con.execute(
+#                 f"""
+#                 CREATE TABLE IF NOT EXISTS modlog_{gid}
+#                     PARTITION OF modlog
+#                 FOR VALUES IN ({gid});
+#                 """
+#             )

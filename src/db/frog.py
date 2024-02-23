@@ -3,19 +3,17 @@
 import logging
 from enum import Enum
 
-from asyncpg import Pool, Record
+from asyncpg import Pool, Record, exceptions
 from discord.ext import commands
 
-from . import guild, table
+from . import guild, table, utility
 
 
 _log = logging.getLogger(__name__)
 
 
+@utility.fkey_channel
 async def add(pool: Pool, frog: table.Frog) -> None:
-    if not await guild.get(pool, frog.gid):  # guild not yet init, foreign key
-        await guild.add(pool, frog.gid)
-
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
@@ -27,10 +25,8 @@ async def add(pool: Pool, frog: table.Frog) -> None:
             )
 
 
+@utility.fkey_channel
 async def upsert(pool: Pool, frog: table.Frog) -> None:
-    if not await guild.get(pool, frog.gid):  # guild not yet init, foreign key
-        await guild.add(pool, frog.gid)
-
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(

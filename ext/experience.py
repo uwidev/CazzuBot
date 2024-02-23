@@ -90,7 +90,7 @@ class Experience(commands.Cog):
         gid = message.guild.id
 
         member_db = await db.member_exp.get_one(self.bot.pool, gid, uid)
-        if not member_db:  # Member not found, insert and try again.
+        if member_db is None:  # Member not found, insert and try again.
             await db.member_exp.add(
                 self.bot.pool,
                 db.table.MemberExp(gid, uid, 0, 0, now.subtract(hours=1)),
