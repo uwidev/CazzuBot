@@ -9,7 +9,10 @@ There may potentially be a "lifetime" exp stored on the member, which can speed 
 If query performance is slow, consider building and keeping an internal cache of
 pre-computed experiences.
 
-Patitioning is done by timestamp, and then timestamp is partitioned by gid.
+Partitioned by gid, indexed by date.
+
+We index the date to allow for speedy variable range searches. Partition by gid since
+we will always bucket logs into a particular gid.
 """
 
 import contextlib
@@ -188,14 +191,10 @@ async def get_seasonal_bulk_ranked(pool: Pool, gid: int, year: int, season: int)
     async with pool.acquire() as con:
         return await con.fetch(
             """
-            SELECT RANK() OVER (ORDER BY exp DESC) AS rank, uid, exp
-            FROM (SELECT uid, gid, sum(exp) as exp
-                FROM member_exp_log
-                WHERE gid = $1 AND at BETWEEN $2 AND $3
-                GROUP BY uid, gid
-                ) as source
-            WHERE gid = $1
-            ORDER BY exp DESC
+            SELECT RANK() OVER (ORDER BY exp DESC) AS rank, uid, sum(exp) as exp
+            FROM member_exp_log
+            WHERE gid = $1 AND at BETWEEN $2 AND $3
+            group by (gid, uid)
             """,
             gid,
             interval[0],
