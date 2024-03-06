@@ -36,10 +36,8 @@ class Level(commands.Cog):
         pass
 
     @level_set.command(name="message", aliases=["msg"])
-    async def level_set_message(self, ctx: commands.Context, *, message):
-        decoded = await user_json.verify(
-            self.bot, ctx, message, level.formatter, member=ctx.author
-        )
+    async def level_set_message(self, ctx: commands.Context, *, message: str):
+        decoded = await user_json.verify(self.bot, ctx, message)
 
         gid = ctx.guild.id
         await db.level.set_message(self.bot.pool, gid, decoded)

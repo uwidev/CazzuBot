@@ -218,7 +218,7 @@ async def get_ranked_up(bot: CazzuBot, level: utility.OldNew, gid: int):
 def formatter(
     s: str,
     *,
-    member,
+    member: discord.Member,
     rank_old: discord.Role = None,
     rank_new: discord.Role = None,
     level_old: int = None,

@@ -1,5 +1,6 @@
 """Allows the hotswapping of extensions/cogs."""
 
+import json
 import logging
 import os
 import random
@@ -12,7 +13,7 @@ from discord.ext import commands, tasks
 from pendulum import DateTime
 
 from main import CazzuBot
-from src import db
+from src import db, frog, user_json, utility
 from src.custom_converters import PositiveInt
 from src.ntlp import InvalidTimeError, parse_duration
 
@@ -66,20 +67,18 @@ class Frog(commands.Cog):
         for record in frogs:  # would be better to batch so only 1 db call
             await db.task.drop_one(self.bot.pool, record.id)
 
-        for frog in frogs:
-            _log.info("Spawning frog...")
-            gid = frog.payload["gid"]
-            cid = frog.payload["cid"]
-            interval = frog.payload["interval"]
-            persist = frog.payload["persist"]
-            fuzzy = frog.payload["fuzzy"]
-            id = frog.id
-            # _log.info(f"Frog will spawn in {gid}:{cid}")
+        for fg in frogs:
+            gid = fg.payload["gid"]
+            cid = fg.payload["cid"]
+            interval = fg.payload["interval"]
+            persist = fg.payload["persist"]
+            fuzzy = fg.payload["fuzzy"]
+            id = fg.id
 
             guild = self.bot.get_guild(gid)
-            # _log.info(guild)
             channel = guild.get_channel(cid)
-            # _log.info(channel)
+
+            _log.debug(f"Spawning frog in {guild.name=}, {channel.name=}...")
             msg = await channel.send("🥔")
             await msg.add_reaction("🍆")
 
@@ -88,18 +87,34 @@ class Frog(commands.Cog):
                     reaction.message.id == msg.id
                     and str(reaction.emoji) == "🍆"
                     and not user.bot
-                )
+                ) or (self.bot.debug and user.id == self.bot.owner_id)
 
             reaction: discord.Reaction
             catcher: discord.User
             try:
                 reaction, catcher = await self.bot.wait_for(
                     "reaction_add", timeout=persist, check=check
-                )
+                )  # wait for catch, if caught continue
                 uid = catcher.id
                 await db.member_frog.upsert_modify_frog(
                     self.bot.pool, db.table.MemberFrog(gid, uid, 1), 1
                 )
+                embed_json = await db.frog.get_message(self.bot.pool, gid)
+                member_frog = await db.member_frog.get_amount(self.bot.pool, gid, uid)
+                _log.info(f"{embed_json=}")
+                utility.deep_map(
+                    embed_json,
+                    frog.formatter,
+                    member=catcher,
+                    frog_old=member_frog - 1,
+                    frog_new=member_frog,
+                )
+
+                content, embed, embeds = user_json.prepare(embed_json)
+
+                _log.info(f"{embed_json=}")
+
+                await channel.send(content, embed=embed, embeds=embeds)
             except TimeoutError:
                 pass
             finally:
@@ -108,18 +123,20 @@ class Frog(commands.Cog):
             # Roll next spawna and update run_at
             now = pendulum.now()
             run_at = self.roll_future_frog(now, interval, fuzzy)
-            frog.run_at = run_at
-            await db.task.add(self.bot.pool, frog)
+            fg.run_at = run_at
+            await db.task.add(self.bot.pool, fg)
 
     @check_spawn_frog.before_loop
     async def before_check_frog_spawn(self):
         await self.bot.wait_until_ready()
 
     async def _reset_frog_tasks(self):
+        """Clear all frog tasks and re-inserts new tasks per all guild settings."""
+        _log.info("Cleaning and preparing up frog spawn tasks...")
         await db.task.drop(self.bot.pool, tag=["frog"])
-        records = await db.frog.get_all(self.bot.pool)
-        frog_registers: list[db.table.Frog] = [
-            db.table.Frog(*record) for record in records
+        records = await db.frog_spawn.get_all(self.bot.pool)
+        frog_registers: list[db.table.FrogSpawn] = [
+            db.table.FrogSpawn(*record) for record in records
         ]
 
         now = pendulum.now()
@@ -135,8 +152,17 @@ class Frog(commands.Cog):
 
         await db.task.add_many(self.bot.pool, task_rows)
 
-    @commands.group()
-    async def frog(self, ctx):
+    @commands.group(invoke_without_command=True)
+    async def frog(self, ctx, *, member: discord.Member = None):
+        """Show this user's current frog profile."""
+        if member is None:
+            member = ctx.message.author
+
+        gid = ctx.guild.gid
+        uid = member.id
+        member_frog = await db.member_frog.get_amount(self.bot.pool, gid, uid)
+
+    async def _prepare_personal_summary(ctx, user, rows):
         pass
 
     @frog.command(name="register")
@@ -170,9 +196,9 @@ class Frog(commands.Cog):
             msg = f"Interval {interval} is not a valid time."
             raise commands.BadArgument(msg) from err
 
-        # if interval < 60:
-        #     msg = "Inverval must be greater than 60 seconds."
-        #     raise commands.BadArgument(msg)
+        if not self.bot.debug or interval < 60:
+            msg = "Inverval must be greater than 60 seconds."
+            raise commands.BadArgument(msg)
         # End argument checking
 
         try:
@@ -181,17 +207,17 @@ class Frog(commands.Cog):
             msg = f"Persist {persist} is not a valid time."
             raise commands.BadArgument(msg) from err
 
-        # if persist < 3 or persist > 120:
-        #     msg = "Persist must be between 3 and 120 seconds."
-        #     raise commands.BadArgument(msg)
+        if self.bot.debug or persist < 3 or persist > 120:
+            msg = "Persist must be between 3 and 120 seconds."
+            raise commands.BadArgument(msg)
 
-        # if fuzzy < 0 or fuzzy > 1:
-        #     msg = "Fuzzy must be between 0 and 1."
-        #     raise commands.BadArgument(msg)
+        if self.bot.debug or fuzzy < 0 or fuzzy > 1:
+            msg = "Fuzzy must be between 0 and 1."
+            raise commands.BadArgument(msg)
 
         # Update per-guild frog settngs.
-        fg = db.table.Frog(gid, cid, interval, persist, fuzzy)
-        await db.frog.upsert(self.bot.pool, fg)
+        fg = db.table.FrogSpawn(gid, cid, interval, persist, fuzzy)
+        await db.frog_spawn.upsert(self.bot.pool, fg)
 
         # Now we need to update any ongoing tasks, and if not, create it.
         # Not only do we need to reroll run_at, but we need to update payload.
@@ -220,7 +246,7 @@ class Frog(commands.Cog):
         Also stops frog tasks for this guild.
         """
         gid = ctx.guild.id
-        await db.frog.clear(self.bot.pool, gid)
+        await db.frog_spawn.clear(self.bot.pool, gid)
         await db.task.drop(self.bot.pool, tag=["frog"], payload={"gid": gid})
         await ctx.message.add_reaction("👍")
 
@@ -249,6 +275,41 @@ class Frog(commands.Cog):
         await db.member_frog.upsert_modify_frog(
             self.bot.pool, db.table.MemberFrog(gid, uid), -amount
         )
+
+    @frog.group(name="set")
+    @commands.has_permissions(administrator=True)
+    async def frog_set(self, ctx):
+        pass
+
+    @frog_set.command(name="message", aliases=["msg"])
+    async def frog_set_message(self, ctx: commands.Context, *, message: str):
+        decoded = await user_json.verify(self.bot, ctx, message)
+
+        gid = ctx.guild.id
+        await db.frog.set_message(self.bot.pool, gid, decoded)
+
+    @frog_set.command(name="enabled", aliases=["on"])
+    async def frog_set_enabled(self, ctx: commands.Context, val: bool):
+        gid = ctx.guild.id
+        await db.frog.set_enabled(self.bot.pool, gid, val)
+
+    @frog.command(name="demo")
+    async def frog_demo(self, ctx: commands.Context):
+        gid = ctx.guild.id
+        payload = await db.frog.get_message(self.bot.pool, gid)
+        decoded = payload
+
+        member = ctx.author
+        utility.deep_map(decoded, frog.formatter, member=member)
+
+        content, embed, embeds = user_json.prepare(decoded)
+        await ctx.send(content, embed=embed, embeds=embeds)
+
+    @frog.command(name="raw")
+    async def frog_raw(self, ctx: commands.Context):
+        gid = ctx.guild.id
+        payload = await db.frog.get_message(self.bot.pool, gid)
+        await ctx.send(f"```{json.dumps(payload)}```")
 
     async def add_frog_task(self, payload: dict):
         """Add the task for frog future spawn.

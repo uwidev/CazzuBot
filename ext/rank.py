@@ -142,6 +142,8 @@ class Ranks(commands.Cog):
             self.bot, ctx, message, rank.formatter, member=ctx.author
         )
 
+        _log.info(f"{decoded=}")
+
         gid = ctx.guild.id
         await db.rank.set_message(self.bot.pool, gid, decoded, mode=mode)
 

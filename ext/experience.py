@@ -265,7 +265,8 @@ class Experience(commands.Cog):
                 self.bot.pool, gid
             )
 
-        percentile = (total_member_count - rank) / (total_member_count - 1) * 100.0
+        # rank + 1 so that #1 rank is 100% percentile
+        percentile = (total_member_count - rank + 1) / (total_member_count) * 100.0
 
         embed.set_author(
             name=f"{user.display_name}'s Club Membership Card",

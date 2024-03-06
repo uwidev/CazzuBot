@@ -6,6 +6,7 @@ needs to define in order to operate.
 
 from . import (  # noqa: F401
     frog,
+    frog_spawn,
     guild,
     internal,
     level,

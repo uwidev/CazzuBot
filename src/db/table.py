@@ -178,7 +178,7 @@ class Level(SnowflakeTable):
 
 
 @dataclass
-class Frog(SnowflakeTable):
+class FrogSpawn(SnowflakeTable):
     gid: int  # references channel.gid
     cid: int  # references channel.cid
     interval: int
@@ -187,6 +187,16 @@ class Frog(SnowflakeTable):
 
     def __iter__(self):
         return iter([self.gid, self.cid, self.interval, self.persist, self.fuzzy])
+
+
+@dataclass
+class Frog(SnowflakeTable):
+    gid: int  # references guild.gid
+    message: dict
+    enabled: bool
+
+    def __iter__(self):
+        return iter([self.gid, self.message, self.enabled])
 
 
 @dataclass

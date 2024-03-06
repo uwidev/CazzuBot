@@ -5,10 +5,12 @@ to work properly.
 """
 
 import functools
+
+# import inspect
 import logging
 from collections.abc import Callable
 
-from asyncpg import ForeignKeyViolationError
+from asyncpg import ForeignKeyViolationError, UniqueViolationError
 
 from . import table
 
@@ -56,26 +58,51 @@ def fkey_gid(original_func):
     need to update the gid value of a row, ever.
 
     This also requires that the structure of the function is as follows.
-        def function(pool, payload)
+        def function(pool, payload) OR
+        def function(pool, gid, ...)
     where payload is some db.table.SnowflakeTable containing gid.
     """
 
     @functools.wraps(original_func)
     async def wrapper(*args, **kwargs):
-
-        if not hasattr(args[1], "gid"):
-            msg = "Provided payload object does not have attribute gid"
-            raise AttributeError(msg)
-
         try:
             await original_func(*args, **kwargs)
-
         except ForeignKeyViolationError:
             pool = args[0]
-            gid = args[1].gid
+
+            # Below was a LBYL approach, but it seems overly complex.
+            # Now we do a more EAFP... but it's rigid since functions still must be
+            # written in a specific formatting.
+            #
+            # It's possible to have a more robust system that inspects the signature and
+            # grabs the passed positional argument using inspect signlature... but this
+            # will work for now. Shhould be faster as well.
+            #
+            # signature = inspect.signature(original_func)
+            # parameter_names = [p.name for p in signature.parameters.values()]
+
+            # if function follows payload format
+            # if not hasattr(args[1], "gid"):
+            #     msg = "Provided payload object does not have attribute gid"
+            #     raise AttributeError(msg) from err
+            # else:
+            #     signature = inspect.signature(original_func)
+            #     parameter_names = [p.name for p in signature.parameters.values()]
+            #     if "gid" not in parameter_names:
+            #         msg = "Function parameters is missing 'gid'"
+            #         raise ParameterError(msg) from err
+
+            gid = getattr(args[1], "gid", args[1])
             await insert_gid(pool, table.Guild(gid))
 
             await original_func(*args, **kwargs)
+        except UniqueViolationError:
+            # Sometimes, when we call the original function, it may fail because it's
+            # missing keys from OTHER tables. For exmaple, member requires gid and uid.
+            # When we decorate fkey_member, it requires keys from both guild and user
+            # tables, and will not know which one is missing until it tries it. If the
+            # key already exists, this exception is raised, in which we just continue.
+            pass
 
     return wrapper
 
@@ -85,53 +112,59 @@ def fkey_uid(original_func):
 
     See fkey_gid for more details.
 
-    Function structure is the same, but must have uid instead of gid.
+    Function structure is the similar, but
+        def function(pool, payload) OR
+        def function(pool, gid, uid, ...)
     """
 
     @functools.wraps(original_func)
     async def wrapper(*args, **kwargs):
-        if not hasattr(args[1], "uid"):
-            msg = "Provided payload object does not have attribute uid"
-            raise AttributeError(msg)
+        # if not hasattr(args[1], "uid"):
+        #     msg = "Provided payload object does not have attribute uid"
+        #     raise AttributeError(msg)
 
         try:
             await original_func(*args, **kwargs)
 
         except ForeignKeyViolationError:
             pool = args[0]
-            uid = args[1].uid
+            uid = getattr(args[1], "uid", args[2])
             await insert_uid(pool, table.User(uid))
 
             await original_func(*args, **kwargs)
+        except UniqueViolationError:
+            pass
 
     return wrapper
 
 
-def fkey_cid(original_func):
-    """Ensure the cid passed exists on the channel table. If not create it.
+# def fkey_cid(original_func):
+#     """Ensure the cid passed exists on the channel table. If not create it.
 
-    See fkey_gid for more details.
+#     See fkey_gid for more details.
 
-    Function structure is the same, but must have cid instead of gid.
-    """
+#     Function structure is the similar, but
+#         def function(pool, payload) OR
+#         def function(pool, gid, cid, ...)
+#     """
 
-    @functools.wraps(original_func)
-    async def wrapper(*args, **kwargs):
-        if not hasattr(args[1], "cid"):
-            msg = "Provided payload object does not have attribute cid"
-            raise AttributeError(msg)
+#     @functools.wraps(original_func)
+#     async def wrapper(*args, **kwargs):
+#         # if not hasattr(args[1], "cid"):
+#         #     msg = "Provided payload object does not have attribute cid"
+#         #     raise AttributeError(msg)
 
-        try:
-            await original_func(*args, **kwargs)
+#         try:
+#             await original_func(*args, **kwargs)
 
-        except ForeignKeyViolationError:
-            pool = args[0]
-            cid = args[1].cid
-            await insert_cid(pool, table.User(cid))
+#         except ForeignKeyViolationError:
+#             pool = args[0]
+#             cid = getattr(args[1], "cid", args[2])
+#             await insert_cid(pool, table.User(cid))
 
-            await original_func(*args, **kwargs)
+#             await original_func(*args, **kwargs)
 
-    return wrapper
+#     return wrapper
 
 
 def fkey_member(original_func):
@@ -141,30 +174,34 @@ def fkey_member(original_func):
 
     See fkey_gid for more details.
 
-    Function structure is the same, but must have gid and uid.
+    Function structure is the similar, but
+        def function(pool, payload) OR
+        def function(pool, gid, uid, ...)
     """
 
     @fkey_gid
     @fkey_uid
     @functools.wraps(original_func)
     async def wrapper(*args, **kwargs):
-        if not hasattr(args[1], "gid"):
-            msg = "Provided payload object does not have attribute gid"
-            raise AttributeError(msg)
-        if not hasattr(args[1], "uid"):
-            msg = "Provided payload object does not have attribute uid"
-            raise AttributeError(msg)
+        # if not hasattr(args[1], "gid"):
+        #     msg = "Provided payload object does not have attribute gid"
+        #     raise AttributeError(msg)
+        # if not hasattr(args[1], "uid"):
+        #     msg = "Provided payload object does not have attribute uid"
+        #     raise AttributeError(msg)
 
         try:
             await original_func(*args, **kwargs)
 
         except ForeignKeyViolationError:
             pool = args[0]
-            gid = args[1].gid
-            uid = args[1].uid
+            gid = getattr(args[1], "gid", args[1])
+            uid = getattr(args[1], "uid", args[2])
             await insert_member(pool, table.Member(gid, uid))
 
             await original_func(*args, **kwargs)
+        except UniqueViolationError:
+            pass
 
     return wrapper
 
@@ -176,7 +213,9 @@ def fkey_channel(original_func):
 
     See fkey_gid for more details.
 
-    Function structure is the same, but must have gid and cid.
+    Function structure is the similar, but
+        def function(pool, payload) OR
+        def function(pool, gid, cid, ...)
     """
 
     @fkey_gid
@@ -194,10 +233,16 @@ def fkey_channel(original_func):
 
         except ForeignKeyViolationError:
             pool = args[0]
-            gid = args[1].gid
-            cid = args[1].cid
+            gid = getattr(args[1], "gid", args[1])
+            cid = getattr(args[1], "cid", args[2])
             await insert_cid(pool, table.Channel(gid, cid))
 
             await original_func(*args, **kwargs)
+        except UniqueViolationError:
+            pass
 
     return wrapper
+
+
+class ParameterError(Exception):
+    pass

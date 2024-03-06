@@ -1,4 +1,4 @@
-"""Handle frog settings."""
+"""Handle the database for per-guild global frog settings."""
 
 import logging
 from enum import Enum
@@ -12,59 +12,71 @@ from . import guild, table, utility
 _log = logging.getLogger(__name__)
 
 
-@utility.fkey_channel
-async def add(pool: Pool, frog: table.Frog) -> None:
+@utility.fkey_gid
+async def add(pool: Pool, payload: table.Frog) -> None:
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
                 """
-                INSERT INTO frog (gid, cid, interval, persist)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO frog (gid)
+                VALUES ($1)
                 """,
-                *frog
+                *payload
             )
 
 
-@utility.fkey_channel
-async def upsert(pool: Pool, frog: table.Frog) -> None:
+@utility.fkey_gid
+async def set_message(pool: Pool, gid: int, json_d: dict):
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
                 """
-                INSERT INTO frog (gid, cid, interval, persist, fuzzy)
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (gid, cid) DO UPDATE SET
-                    interval = EXCLUDED.interval,
-                    persist = EXCLUDED.persist
-                """,
-                *frog
-            )
-
-
-async def clear(pool: Pool, gid: int) -> None:
-    """Remove all frog settings for this guild,."""
-    if not await guild.get(pool, gid):  # guild not yet init, foreign key
-        await guild.add(pool, gid)
-        return  # impossible for there to be frogs
-
-    async with pool.acquire() as con:
-        async with con.transaction():
-            await con.execute(
-                """
-                DELETE
-                FROM frog
-                WHERE gid = $1
+                INSERT INTO frog (gid, message)
+                VALUES($1, $2)
+                ON CONFLICT (gid) DO UPDATE SET
+                    message = EXCLUDED.message
                 """,
                 gid,
+                json_d,
             )
 
 
-async def get_all(pool: Pool) -> list[Record]:
-    """Get all frog settings."""
+@utility.fkey_gid
+async def set_enabled(pool: Pool, gid: int, val: bool):
     async with pool.acquire() as con:
-        return await con.fetch(
+        async with con.transaction():
+            await con.execute(
+                """
+                INSERT INTO frog (gid, enabled)
+                VALUES($1, $2)
+                ON CONFLICT (gid) DO UPDATE SET
+                    enabled = EXCLUDED.enabled
+                """,
+                gid,
+                val,
+            )
+
+
+async def get_message(pool: Pool, gid: int) -> list[Record]:
+    async with pool.acquire() as con:
+        return await con.fetchval(
             """
-            SELECT gid, cid, interval, persist, fuzzy
+            SELECT message
             FROM frog
+            WHERE gid = $1
+            """,
+            gid,
+        )
+
+
+async def get_enabled(pool: Pool, gid: int) -> list[Record]:
+    """Return if frog spawns are enabled."""
+    async with pool.acquire() as con:
+        return await con.fetchval(
             """
+            SELECT enabled
+            FROM frog
+            WHERE gid = $1
+            """,
+            gid,
         )
