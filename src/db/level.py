@@ -83,8 +83,8 @@ async def get_lifetime_level(pool: Pool, gid: int, uid: int) -> int:
     async with pool.acquire() as con:
         exp = await con.fetchval(
             """
-            SELECT exp_lifetime
-            FROM member
+            SELECT lifetime
+            FROM member_exp
             WHERE gid = $1 AND uid = $2
             """,
             gid,
