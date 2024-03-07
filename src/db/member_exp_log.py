@@ -218,13 +218,9 @@ async def get_seasonal_total_members(
     async with pool.acquire() as con:
         return await con.fetchval(
             """
-            SELECT COUNT(*)
-            FROM (
-                SELECT uid
-                FROM member_exp_log
-                WHERE gid = $1 AND at BETWEEN $2 AND $3
-                GROUP BY uid
-            ) as seasonal_uids
+            SELECT COUNT(DISTINCT uid)
+            FROM member_exp_log
+            WHERE gid = $1 AND at BETWEEN $2 AND $3
             """,
             gid,
             interval[0],
