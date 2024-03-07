@@ -95,24 +95,37 @@ class Frog(commands.Cog):
                 reaction, catcher = await self.bot.wait_for(
                     "reaction_add", timeout=persist, check=check
                 )  # wait for catch, if caught continue
+                now = pendulum.now()
                 uid = catcher.id
+
+                log = db.table.MemberFrogLog(
+                    gid, uid, db.table.FrogTypeEnum.NORMAL, now
+                )
+
                 await db.member_frog.upsert_modify_frog(
                     self.bot.pool, db.table.MemberFrog(gid, uid, 1), 1
                 )
+                await db.member_frog_log.add(self.bot.pool, log)
+
                 embed_json = await db.frog.get_message(self.bot.pool, gid)
-                member_frog = await db.member_frog.get_amount(self.bot.pool, gid, uid)
-                _log.info(f"{embed_json=}")
+                frog_cnt_total = await db.member_frog.get_amount(
+                    self.bot.pool, gid, uid
+                )
+                frog_cnt_seasonal = await db.member_frog_log.get_seasonal_by_month(
+                    self.bot.pool, gid, uid, now.year, now.month
+                )
+
                 utility.deep_map(
                     embed_json,
                     frog.formatter,
                     member=catcher,
-                    frog_old=member_frog - 1,
-                    frog_new=member_frog,
+                    frog_cnt_old=frog_cnt_total - 1,
+                    frog_cnt_new=frog_cnt_total,
+                    seasonal_cap_old=frog_cnt_seasonal - 1,
+                    seasonal_cap_new=frog_cnt_seasonal,
                 )
 
                 content, embed, embeds = user_json.prepare(embed_json)
-
-                _log.info(f"{embed_json=}")
 
                 await channel.send(content, embed=embed, embeds=embeds)
             except TimeoutError:
@@ -152,7 +165,7 @@ class Frog(commands.Cog):
 
         await db.task.add_many(self.bot.pool, task_rows)
 
-    @commands.group(invoke_without_command=True)
+    @commands.group(invoke_without_command=True, aliases=["frogs"])
     async def frog(self, ctx, *, member: discord.Member = None):
         """Show this user's current frog profile."""
         if member is None:
@@ -162,8 +175,19 @@ class Frog(commands.Cog):
         uid = member.id
         member_frog = await db.member_frog.get_amount(self.bot.pool, gid, uid)
 
-    async def _prepare_personal_summary(ctx, user, rows):
-        pass
+    async def _prepare_personal_summary(ctx, user, rows) -> discord.Embed:
+        embed = discord.Embed()
+        embed.description = """
+        Current Frogs: **`0`**
+        Frogs Captured: **`0`**
+        Frozen Frogs: **`0`**
+
+        You currently the X percentile of all members!
+        """
+
+        embed.color = discord.Color.from_str("#a2dcf7")
+
+        return embed
 
     @frog.command(name="register")
     async def frog_register(
@@ -196,10 +220,9 @@ class Frog(commands.Cog):
             msg = f"Interval {interval} is not a valid time."
             raise commands.BadArgument(msg) from err
 
-        if not self.bot.debug or interval < 60:
+        if not self.bot.debug and interval < 60:
             msg = "Inverval must be greater than 60 seconds."
             raise commands.BadArgument(msg)
-        # End argument checking
 
         try:
             persist = parse_duration(persist).in_seconds()
@@ -207,13 +230,14 @@ class Frog(commands.Cog):
             msg = f"Persist {persist} is not a valid time."
             raise commands.BadArgument(msg) from err
 
-        if self.bot.debug or persist < 3 or persist > 120:
+        if not self.bot.debug and (persist < 3 or persist > 120):
             msg = "Persist must be between 3 and 120 seconds."
             raise commands.BadArgument(msg)
 
-        if self.bot.debug or fuzzy < 0 or fuzzy > 1:
+        if not self.bot.debug and (fuzzy < 0 or fuzzy > 1):
             msg = "Fuzzy must be between 0 and 1."
             raise commands.BadArgument(msg)
+        # End argument checking
 
         # Update per-guild frog settngs.
         fg = db.table.FrogSpawn(gid, cid, interval, persist, fuzzy)
@@ -268,7 +292,7 @@ class Frog(commands.Cog):
         exp_amount = 10
 
         exp_payload = db.table.MemberExpLog(
-            gid, uid, exp_amount, now, db.table.MemberExpLogSource.FROG
+            gid, uid, exp_amount, now, db.table.MemberExpLogSourceEnum.FROG
         )
         await db.member_exp_log.add(self.bot.pool, exp_payload)
 

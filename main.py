@@ -20,7 +20,8 @@ from discord.utils import _ColourFormatter, stream_supports_colour
 
 from src.cazzubot import CazzuBot
 from src.db.table import (
-    MemberExpLogSource,
+    FrogTypeEnum,
+    MemberExpLogSourceEnum,
     ModlogStatusEnum,
     ModlogTypeEnum,
     WindowEnum,
@@ -89,9 +90,13 @@ async def setup_codecs(con: Connection):
     )
 
     await con.set_type_codec(
+        "frog_type_enum", encoder=lambda e: e.value, decoder=FrogTypeEnum
+    )
+
+    await con.set_type_codec(
         "member_exp_log_source_enum",
         encoder=lambda e: e.value,
-        decoder=MemberExpLogSource,
+        decoder=MemberExpLogSourceEnum,
     )
 
     await con.set_type_codec("json", encoder=dumps, decoder=loads, schema="pg_catalog")

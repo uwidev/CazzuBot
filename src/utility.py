@@ -257,3 +257,7 @@ def prase_dur_str_mix(self, raw) -> tuple[pendulum.DateTime, str]:
             s = raw
 
     return time, s
+
+
+def calc_percentile(rank: int, total: int) -> float:
+    return (total - rank + 1) / (total) * 100.0

@@ -185,7 +185,7 @@ class Experience(commands.Cog):
         user: discord.Member,
         entries: list[Record],
         mode: db.table.WindowEnum = db.table.WindowEnum.SEASONAL,
-    ):
+    ) -> discord.Embed:
         """Return the embed of scoreboard Club Membership Card.
 
         entiries: the raw result from query, containing (rank, uid, exp) in that order
@@ -266,7 +266,7 @@ class Experience(commands.Cog):
             )
 
         # rank + 1 so that #1 rank is 100% percentile
-        percentile = (total_member_count - rank + 1) / (total_member_count) * 100.0
+        percentile = utility.calc_percentile(rank, total_member_count)
 
         embed.set_author(
             name=f"{user.display_name}'s Club Membership Card",

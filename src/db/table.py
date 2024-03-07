@@ -54,9 +54,13 @@ class WindowEnum(Enum):
     LIFETIME = "lifetime"
 
 
-class MemberExpLogSource(Enum):
+class MemberExpLogSourceEnum(Enum):
     MESSAGE = "message"
     FROG = "frog"
+
+
+class FrogTypeEnum(Enum):
+    NORMAL = "normal"
 
 
 @dataclass
@@ -225,11 +229,24 @@ class MemberExp(SnowflakeTable):
 
 @dataclass
 class MemberExpLog(SnowflakeTable):
-    gid: int  # REFERENCES member.gid
-    uid: int  # REFERENCES member.uid
+    gid: int  # REFERENCES guild.gid
+    uid: int  # REFERENCES user.uid
     exp: int
     at: pendulum.DateTime
-    source: MemberExpLogSource = MemberExpLogSource.MESSAGE
+    source: MemberExpLogSourceEnum = MemberExpLogSourceEnum.MESSAGE
 
     def __iter__(self):
         return iter([self.gid, self.uid, self.exp, self.at, self.source])
+
+
+@dataclass
+class MemberFrogLog(SnowflakeTable):
+    """Log when a user captures a frog."""
+
+    gid: int
+    uid: int
+    type: FrogTypeEnum
+    at: pendulum.DateTime = None
+
+    def __iter__(self):
+        return iter([self.gid, self.uid, self.type, self.at])

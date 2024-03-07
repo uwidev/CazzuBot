@@ -14,6 +14,7 @@ from . import (  # noqa: F401
     member_exp,
     member_exp_log,
     member_frog,
+    member_frog_log,
     modlog,
     rank,
     rank_threshold,

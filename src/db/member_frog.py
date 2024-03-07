@@ -63,6 +63,7 @@ async def upsert_modify_frog(
 
 
 async def get_amount(pool: Pool, gid: int, uid: int) -> int:
+    """Return the total amount of frogs a user has."""
     async with pool.acquire() as con:
         return await con.fetchval(
             """
