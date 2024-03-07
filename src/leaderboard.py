@@ -15,30 +15,38 @@ Making a leadeboard is process.
 """
 
 
-def create_data_subset(rows: list, focus_index: int, *, size: int = 5):
+def create_data_subset(
+    rows: list, focus_index: int, *, size: int = 5
+) -> tuple[list, int]:
     """Create a sub-list of a bigger list, creating a window with a certain size.
 
     If the focus index is on edges, will still return the correct size.
 
     Also returns the 'corrected focus' as the second value.
     """
-    extends = (size - 1) // 2
-    corrected_center = min(max(extends, focus_index), len(rows) - 1 - extends)
+    if len(rows) <= size:
+        return rows, focus_index
 
-    if focus_index <= extends:  # focus too front
-        corrected_focus = focus_index
-    elif focus_index > len(rows) - 1 - extends:  # focus too end
-        corrected_focus = focus_index - corrected_center
-    else:  # just right
-        corrected_focus = extends
+    extends = (size - 1) // 2  # 2
+    lower = focus_index - extends  # -2
+    upper = focus_index + extends  # 2
 
-    return (
-        rows[corrected_center - extends : corrected_center + extends + 1],
-        corrected_focus,
-    )
+    # edge cases, focus index is "centered" on edge of rows
+    if lower < 0:  # move window up
+        upper -= lower
+        lower = 0
+
+    elif upper > len(rows) - 1:  # move window down
+        lower -= upper - (len(rows) - 1)
+        upper = len(rows) - 1
+
+    window = rows[lower : upper + 1]
+    corrected_index = focus_index - lower
+
+    return window, corrected_index
 
 
-def generate(
+def format(
     entries: list[list],
     headers: list,
     *,
