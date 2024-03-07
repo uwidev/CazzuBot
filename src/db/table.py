@@ -61,6 +61,7 @@ class MemberExpLogSourceEnum(Enum):
 
 class FrogTypeEnum(Enum):
     NORMAL = "normal"
+    FROZEN = "frozen"
 
 
 @dataclass
@@ -207,11 +208,12 @@ class Frog(SnowflakeTable):
 class MemberFrog(SnowflakeTable):
     gid: int  # references member.gid
     uid: int  # references member.uid
-    frog: int = 0
+    normal: int = 0
+    frozen: int = 0
 
     def __iter__(self):
         """Unpacking for inserting new row."""
-        return iter([self.gid, self.gid, self.gid, self.frog])
+        return iter([self.gid, self.gid, self.gid, self.normal, self.frozen])
 
 
 @dataclass

@@ -5,7 +5,7 @@ import logging
 import pendulum
 from asyncpg import Pool, Record, exceptions
 
-from . import guild, table, user, utility
+from . import guild, member_frog_log, table, utility
 
 
 _log = logging.getLogger(__name__)
@@ -17,8 +17,8 @@ async def add(pool: Pool, payload: table.MemberFrog):
         async with con.transaction():
             await con.execute(
                 """
-                INSERT INTO member_frog (gid, uid, frog)
-                VALUES ($1, $2, $3)
+                INSERT INTO member_frog (gid, uid, normal, frozen)
+                VALUES ($1, $2, $3, $4)
                 """,
                 *payload
             )
@@ -45,7 +45,7 @@ async def upsert_modify_frog(
 ) -> None:
     gid = payload.gid
     uid = payload.uid
-    frog = payload.frog
+    frog_norm = payload.normal
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
@@ -57,20 +57,41 @@ async def upsert_modify_frog(
                 """,
                 gid,
                 uid,
-                frog,
+                frog_norm,
                 modify,
             )
 
 
-async def get_amount(pool: Pool, gid: int, uid: int) -> int:
-    """Return the total amount of frogs a user has."""
+async def get_normal(pool: Pool, gid: int, uid: int) -> int:
+    """Return the total amount of normal frogs a user has."""
     async with pool.acquire() as con:
         return await con.fetchval(
             """
-            SELECT frog
+            SELECT normal
             FROM member_frog
             WHERE gid = $1 AND uid = $2
             """,
             gid,
             uid,
         )
+
+
+async def get_members_frog_seasonal(
+    pool: Pool, gid: int, year: int, season: int
+) -> list[Record]:
+    """Fetch frog and ranks them of all guild members.
+
+    Acts more of an alias for more intuitive design.
+    """
+    return await member_frog_log.get_seasonal_bulk_ranked(pool, gid, year, season)
+
+
+async def get_members_frog_seasonal_by_month(
+    pool: Pool, gid: int, year: int, month: int
+) -> list[Record]:
+    """Fetch frog and ranks them of all guild members.
+
+    Acts more of an alias for more intuitive design.
+    """
+    zero_indexed_month = month - 1
+    return await get_members_frog_seasonal(pool, gid, year, zero_indexed_month // 3)

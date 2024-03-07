@@ -5,13 +5,14 @@ import copy
 import json
 import logging
 from collections.abc import Callable
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import discord
 import pendulum
 from asyncpg import Record
 from discord.ext import commands
 
+from main import CazzuBot
 from src.ntlp import (
     InvalidTimeError,
     normalize_time_str,
@@ -261,3 +262,18 @@ def prase_dur_str_mix(self, raw) -> tuple[pendulum.DateTime, str]:
 
 def calc_percentile(rank: int, total: int) -> float:
     return (total - rank + 1) / (total) * 100.0
+
+
+async def find_username(bot: CazzuBot, ctx: commands.Context, uid: int) -> str:
+    """Attempt to resolve a user id to a member's display name.
+
+    If fails, return uid.
+    """
+    res = else_if_none(
+        ctx.guild.get_member(uid),
+        bot.get_user(uid),
+        await bot.fetch_user(uid),
+        str(uid),
+    )
+
+    return res.display_name if hasattr(res, "display_name") else res

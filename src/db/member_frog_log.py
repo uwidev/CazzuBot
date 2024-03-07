@@ -165,7 +165,7 @@ async def get_seasonal_bulk_ranked(pool: Pool, gid: int, year: int, season: int)
     async with pool.acquire() as con:
         return await con.fetch(
             """
-            SELECT RANK() OVER (ORDER BY COUNTR(*) DESC) AS rank, uid, count(*) as frog
+            SELECT RANK() OVER (ORDER BY COUNT(*) DESC) AS rank, uid, count(*) as frog
             FROM member_frog_log
             WHERE gid = $1 AND at BETWEEN $2 AND $3
             group by (gid, uid)

@@ -213,17 +213,7 @@ class Experience(commands.Cog):
         #
         # Even if the expression may stall, since they are await'ed, it shouldn't stall
         # the loop. So for generator purposes, there's no purpose to use asyncstdlib.
-        members = [
-            utility.else_if_none(
-                ctx.guild.get_member(id),
-                self.bot.get_user(id),
-                await self.bot.fetch_user(id),
-                id,
-            )
-            for id in uids
-        ]
-
-        names = [member.display_name for member in members]
+        names = [await utility.find_username(self.bot, ctx, id) for id in uids]
 
         # Transpose back to prepare to generate
         window = list(zip(ranks, exps, lvls, names))
@@ -233,7 +223,7 @@ class Experience(commands.Cog):
         align = ["<", ">", ">", ">"]
         max_padding = [0, 0, 0, 16]
 
-        raw_scoreboard = leaderboard.generate(
+        raw_scoreboard = leaderboard.format(
             window,
             headers,
             align=align,
@@ -242,6 +232,7 @@ class Experience(commands.Cog):
 
         col_widths = leaderboard.calc_max_col_width(window, headers, max_padding)
 
+        _log.debug(f"{raw_scoreboard=}")
         leaderboard.highlight_row(raw_scoreboard, subset_i, col_widths)
         scoreboard_s = "\n".join(raw_scoreboard)  # Final step to join.
 
@@ -271,7 +262,6 @@ class Experience(commands.Cog):
                 self.bot.pool, gid
             )
 
-        # rank + 1 so that #1 rank is 100% percentile
         percentile = utility.calc_percentile(rank, total_member_count)
 
         embed.set_author(

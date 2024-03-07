@@ -5,24 +5,24 @@ import logging
 import os
 import random
 from asyncio import TimeoutError
+from math import trunc
 from typing import TYPE_CHECKING
 
 import discord
 import pendulum
+from asyncpg import Record
 from discord.ext import commands, tasks
 from pendulum import DateTime
 
 from main import CazzuBot
-from src import db, frog, user_json, utility
+from src import db, frog, leaderboard, user_json, utility
 from src.custom_converters import PositiveInt
 from src.ntlp import InvalidTimeError, parse_duration
 
 
-if TYPE_CHECKING:
-    from asyncpg import Record
-
-
 _log = logging.getLogger(__name__)
+
+_SCOREBOARD_STAMP = "https://cdn.discordapp.com/emojis/752290769712316506.webp?size=160&quality=lossless"
 
 
 class Frog(commands.Cog):
@@ -108,7 +108,7 @@ class Frog(commands.Cog):
                 await db.member_frog_log.add(self.bot.pool, log)
 
                 embed_json = await db.frog.get_message(self.bot.pool, gid)
-                frog_cnt_total = await db.member_frog.get_amount(
+                frog_cnt_total = await db.member_frog.get_normal(
                     self.bot.pool, gid, uid
                 )
                 frog_cnt_seasonal = await db.member_frog_log.get_seasonal_by_month(
@@ -166,23 +166,108 @@ class Frog(commands.Cog):
         await db.task.add_many(self.bot.pool, task_rows)
 
     @commands.group(invoke_without_command=True, aliases=["frogs"])
-    async def frog(self, ctx, *, member: discord.Member = None):
+    async def frog(self, ctx: commands.Context, *, member: discord.Member = None):
         """Show this user's current frog profile."""
         if member is None:
             member = ctx.message.author
 
-        gid = ctx.guild.gid
+        now = pendulum.now()
+        gid = ctx.guild.id
         uid = member.id
-        member_frog = await db.member_frog.get_amount(self.bot.pool, gid, uid)
 
-    async def _prepare_personal_summary(ctx, user, rows) -> discord.Embed:
+        rows = await db.member_frog.get_members_frog_seasonal_by_month(
+            self.bot.pool, gid, now.year, now.month
+        )
+
+        for row in rows:
+            _log.debug(f"{list(row.values())=}")
+
+        embed = await self._prepare_personal_summary(ctx, member, rows)
+
+        await ctx.send(embed=embed)
+
+    async def _prepare_personal_summary(
+        self,
+        ctx: commands.Context,
+        user: discord.Member,
+        data: list[Record],
+        mode: db.table.WindowEnum = db.table.WindowEnum.SEASONAL,
+    ) -> discord.Embed:
+        """Return embed for frog summary on user.
+
+        data: raw query result, formatted as (rank, uid, frog)
+        """
+        uid = user.id
+
+        # Prepare leaderboard
+        uid_index = [r["uid"] for r in data].index(uid)
+        _log.debug(f"{uid_index=}")
+        subset, subset_i = leaderboard.create_data_subset(data, uid_index)
+        for s in subset:
+            _log.debug(f"{s=}")
+
+        # Transpose, turn uid into usernames
+        ranks, uids, frog_cnt = zip(*subset)
+
+        names = [await utility.find_username(self.bot, ctx, id) for id in uids]
+
+        # Transpose back to row-major
+        window = list(zip(ranks, frog_cnt, names))
+
+        # Generate leaderboard
+        headers = ["Rank", "Frogs", "User"]
+        align = ["<", ">", ">"]
+        max_padding = [0, 0, 16]
+
+        raw_scoreboard = leaderboard.format(
+            window, headers, align=align, max_padding=max_padding
+        )
+
+        col_widths = leaderboard.calc_max_col_width(data, headers, max_padding)
+
+        for e in raw_scoreboard:
+            _log.debug(f"{e}")
+        leaderboard.highlight_row(raw_scoreboard, subset_i, col_widths)
+        scoreboard_s = "\n".join(raw_scoreboard)
+
+        # Other Preparation
+        gid = ctx.guild.id
+
+        # Prepare Embed
         embed = discord.Embed()
-        embed.description = """
-        Current Frogs: **`0`**
-        Frogs Captured: **`0`**
+        user_frog_cnt = frog_cnt[subset_i]
+        user_frog_inv = await db.member_frog.get_normal(self.bot.pool, gid, uid)
+        rank = ranks[subset_i]
+
+        if mode is db.table.WindowEnum.SEASONAL:
+            now = pendulum.now()
+            year = now.year
+            month = now.month
+
+            total_member_count = (
+                await db.member_frog_log.get_seasonal_total_members_by_month(
+                    self.bot.pool, gid, year, month
+                )
+            )
+        elif mode is db.table.WindowEnum.LIFETIME:
+            total_member_count = await db.member_frog_log.get_total_members(
+                self.bot.pool, gid
+            )
+
+        percentile = utility.calc_percentile(rank, total_member_count)
+
+        embed.set_author(
+            name=f"{user.display_name}'s Frog Capture Permit",
+            icon_url=_SCOREBOARD_STAMP,
+        )
+        embed.set_thumbnail(url=user.avatar.url)
+        embed.description = f"""
+        Frogs Captured: **`{user_frog_cnt}`**
+        Current Frogs: **`{user_frog_inv}`**
         Frozen Frogs: **`0`**
 
-        You currently the X percentile of all members!
+        You currently the `{utility.ordinal(trunc(percentile))}` percentile of all members!
+        ```py\n{scoreboard_s}```
         """
 
         embed.color = discord.Color.from_str("#a2dcf7")
@@ -283,7 +368,7 @@ class Frog(commands.Cog):
         gid = ctx.guild.id
         uid = ctx.author.id
 
-        member_frogs = await db.member_frog.get_amount(self.bot.pool, gid, uid)
+        member_frogs = await db.member_frog.get_normal(self.bot.pool, gid, uid)
         if member_frogs is not None and member_frogs - amount < 0:
             msg = f"Member does not have enough frogs ({member_frogs}) to consume."
             raise commands.BadArgument(msg)
