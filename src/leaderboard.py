@@ -1,13 +1,13 @@
 """All functions related to making a leaderboard string from a database query.
 
 Making a leadeboard is process.
-    1. Get query from database; query should be ranked.
-    2. Call create_window(), where focus_index is the index in rows in which to focus.
-    3. If you need to perform an operation across a column, here's how you do it.
-        3a. Transpose the window with zip(*window), assign to column variables.
-            ---> Zipping arrays will yield its transpose.
+    1. Get query from database; query should already be ranked and ordered.
+    2. Call create_data_subset(); focus_index is the index of a row to "center" on.
+    3. If you need to perform an operation across a column...
+        3a. Transpose the window with zip(*window) to make data column-major.
+            ---> Zipping arrays will yield its transpose; default is row-major
         3b. Do operations over columns.
-        3c. Transpose back with zip e.g. zip(col1, col2, col3). Cast to list.
+        3c. Transpose back with zip e.g. zip(col1, col2, col3). Type-cast to list.
     4. Call generate(). Pass the window (entries), header, desired padding, etc.
     5. If needed, highlight a specifc index. If you wanted to highlight the focus from
        window, remember that create_window returns that index.
@@ -15,7 +15,7 @@ Making a leadeboard is process.
 """
 
 
-def create_window(rows: list, focus_index: int, size: int = 5):
+def create_data_subset(rows: list, focus_index: int, *, size: int = 5):
     """Create a sub-list of a bigger list, creating a window with a certain size.
 
     If the focus index is on edges, will still return the correct size.
@@ -39,28 +39,27 @@ def create_window(rows: list, focus_index: int, size: int = 5):
 
 
 def generate(
-    entries: list,
+    entries: list[list],
     headers: list,
-    align: list,
     *,
+    align: list,
     fill: str = ".",
     spacing: int = 2,
     max_padding: list = [],
 ) -> list[list[str], list[int]]:
-    """Format and return a text-based scoreboard with dynamic alignment.
+    """Format row-major data as a text scoreboard.
 
-    Returned is a list of strings. You will need to join with newline.
-    Also returns calculated padding for any further transformation.
+    Returned is a list of strings, whose first element is the column names, and second
+    element is a list of rows.
 
-    rows: the format of [row1[col1, col2, col3], row2[col1, col2, col3], ...]
+    entires: row-major data [row1[col1, col2, col3], row2[col1, col2, col3], ...]
     header: a list of the names of columns header[col1, col2, col3]
     align: a list of how to pad e.g. <, ^, >
     fill: character used for filling
     spacing: always put fill (if applicable) padding between columns
     max_padding: the max padding a column can have, if 0, "infinite" for that col
     """
-    max_padding = [x if x else 999 for x in max_padding]  # if pad 0, set 999
-    padding = max_width(entries, headers, max_padding)
+    padding = calc_max_col_width(entries, headers, max_padding)
 
     header_format = "{val:{align}{pad}}"
     headers_s = f"{' ' * spacing}".join(
@@ -84,31 +83,32 @@ def generate(
             )
         rows_s.append(f"{(' ' if row % 2 else fill) * spacing}".join(row_raw))
 
-    return [headers_s, *rows_s], padding
+    return [headers_s, *rows_s]
 
 
-def highlight_user(
+def highlight_row(
     scoreboard: list[str],
     index: int,
-    col1_padding: int,
+    column_widths: list[int],
     *,
-    header: bool = True,
+    has_header: bool = True,
 ):
-    """Modify IN PLACE the leaderboard  to add an @ at specified index.
+    """Modify IN PLACE the leaderboard to prepend an @ on indexed row.
 
     We do some disgusting string splicing. In order for this to work consistently, there
     needs to be some minmal padding. We will move column 1 of index to the right by
     1, and to do that, we need a little bit of padding so we don't cross over into
     column 2.
     """
-    this_rank = scoreboard[index + int(header)][0:col1_padding]
+    col1_width = column_widths[0]
+    this_rank = scoreboard[index + int(has_header)][0:col1_width]
     scoreboard[index + 1] = (
-        "@" + this_rank + scoreboard[index + int(header)][col1_padding + 1 :]
+        "@" + this_rank + scoreboard[index + int(has_header)][col1_width + 1 :]
     )
     return scoreboard
 
 
-def max_width(
+def calc_max_col_width(
     entries: list[list], headers: list[str] = None, max_padding: list[int] = None
 ) -> list[int]:
     """Return the max length of strings per column.
@@ -117,6 +117,7 @@ def max_width(
 
     entires is [row1[col1, col2], ...]
     """
+    max_padding = [x if x else 999 for x in max_padding]
     padding = []
 
     if not headers:

@@ -183,21 +183,21 @@ class Experience(commands.Cog):
         self,
         ctx: commands.Context,
         user: discord.Member,
-        entries: list[Record],
+        data: list[Record],
         mode: db.table.WindowEnum = db.table.WindowEnum.SEASONAL,
     ) -> discord.Embed:
         """Return the embed of scoreboard Club Membership Card.
 
-        entiries: the raw result from query, containing (rank, uid, exp) in that order
+        data: the raw result from query, containing (rank, uid, exp) in that order
         """
         uid = user.id
 
         # Prepare leaderboard window
-        uid_index = [r["uid"] for r in entries].index(uid)
-        window_raw, user_window_index = leaderboard.create_window(entries, uid_index)
+        uid_index = [r["uid"] for r in data].index(uid)
+        subset, subset_i = leaderboard.create_data_subset(data, uid_index)
 
         # Transpose for per-column transformations
-        ranks, uids, exps = zip(*window_raw)
+        ranks, uids, exps = zip(*subset)
         lvls = [levels_helper.level_from_exp(e) for e in exps]
 
         # Annoying bug to learn from, and python programming misunderstanding.
@@ -229,14 +229,20 @@ class Experience(commands.Cog):
         window = list(zip(ranks, exps, lvls, names))
 
         # Generate leaderboard
-        raw_scoreboard, paddings = leaderboard.generate(
+        headers = ["Rank", "Exp", "Lv", "User"]
+        align = ["<", ">", ">", ">"]
+        max_padding = [0, 0, 0, 16]
+
+        raw_scoreboard = leaderboard.generate(
             window,
-            ["Rank", "Exp", "Lv", "User"],
-            ["<", ">", ">", ">"],
-            max_padding=[0, 0, 0, 16],
+            headers,
+            align=align,
+            max_padding=max_padding,
         )
 
-        leaderboard.highlight_user(raw_scoreboard, user_window_index, paddings[0])
+        col_widths = leaderboard.calc_max_col_width(window, headers, max_padding)
+
+        leaderboard.highlight_row(raw_scoreboard, subset_i, col_widths)
         scoreboard_s = "\n".join(raw_scoreboard)  # Final step to join.
 
         # Other Preparation
@@ -246,9 +252,9 @@ class Experience(commands.Cog):
 
         # Generate Embed
         embed = discord.Embed()
-        lvl = lvls[user_window_index]
-        exp = exps[user_window_index]
-        rank = ranks[user_window_index]
+        lvl = lvls[subset_i]
+        exp = exps[subset_i]
+        rank = ranks[subset_i]
 
         if mode is db.table.WindowEnum.SEASONAL:
             now = pendulum.now()
