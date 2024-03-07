@@ -27,6 +27,7 @@ from . import guild, table, user, utility
 _log = logging.getLogger(__name__)
 
 
+@utility.fkey_member
 async def add(pool: Pool, payload: table.MemberExpLog) -> None:
     """Log expereience gain entry."""
     await create_partition(pool, payload.gid)
