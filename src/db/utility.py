@@ -92,7 +92,8 @@ def fkey_gid(original_func):
             #         msg = "Function parameters is missing 'gid'"
             #         raise ParameterError(msg) from err
 
-            gid = getattr(args[1], "gid", args[1])
+            # Allows (payload) or (gid)
+            gid = args[1].gid if hasattr(args[1], "gid") else args[1]
             await insert_gid(pool, table.Guild(gid))
 
             await original_func(*args, **kwargs)
@@ -128,7 +129,10 @@ def fkey_uid(original_func):
 
         except ForeignKeyViolationError:
             pool = args[0]
-            uid = getattr(args[1], "uid", args[2])
+
+            # Allows (payload) or (gid, uid)
+            uid = args[1].uid if hasattr(args[1], "uid") else args[2]
+
             await insert_uid(pool, table.User(uid))
 
             await original_func(*args, **kwargs)
@@ -195,8 +199,14 @@ def fkey_member(original_func):
 
         except ForeignKeyViolationError:
             pool = args[0]
-            gid = getattr(args[1], "gid", args[1])
-            uid = getattr(args[1], "uid", args[2])
+
+            # Allows (payload) or (gid, uid)
+            if hasattr(args[1], "gid") and hasattr(args[1], "uid"):
+                gid = args[1].gid
+                uid = args[1].uid
+            else:
+                gid = args[1]
+                uid = args[2]
             await insert_member(pool, table.Member(gid, uid))
 
             await original_func(*args, **kwargs)
@@ -222,25 +232,29 @@ def fkey_channel(original_func):
     @functools.wraps(original_func)
     async def wrapper(*args, **kwargs):
         _log.info("calling decorator...")
-        if not hasattr(args[1], "gid"):
-            msg = "Provided payload object does not have attribute gid"
-            raise AttributeError(msg)
-        if not hasattr(args[1], "cid"):
-            msg = "Provided payload object does not have attribute cid"
-            raise AttributeError(msg)
+        # if not hasattr(args[1], "gid"):
+        #     msg = "Provided payload object does not have attribute gid"
+        #     raise AttributeError(msg)
+        # if not hasattr(args[1], "cid"):
+        #     msg = "Provided payload object does not have attribute cid"
+        #     raise AttributeError(msg)
 
         try:
-            _log.info("trying to call original func first...")
             await original_func(*args, **kwargs)
 
         except ForeignKeyViolationError:
-            _log.info("cid not found, inserting...?")
             pool = args[0]
-            gid = getattr(args[1], "gid", args[1])
-            cid = getattr(args[1], "cid", args[2])
+
+            # Allows (payload) or (gid, cid)
+            if hasattr(args[1], "gid") and hasattr(args[1], "cid"):
+                gid = args[1].gid
+                cid = args[1].cid
+            else:
+                gid = args[1]
+                cid = args[2]
+
             await insert_cid(pool, table.Channel(gid, cid))
 
-            _log.info("trying to call original func second...")
             await original_func(*args, **kwargs)
         except UniqueViolationError:
             pass
