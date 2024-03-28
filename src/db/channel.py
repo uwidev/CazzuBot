@@ -26,6 +26,3 @@ async def add(pool: Pool, payload: table.Channel):
 
 def init():
     utility.insert_cid = add
-
-
-init()

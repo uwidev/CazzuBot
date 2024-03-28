@@ -221,6 +221,7 @@ def fkey_channel(original_func):
     @fkey_gid
     @functools.wraps(original_func)
     async def wrapper(*args, **kwargs):
+        _log.info("calling decorator...")
         if not hasattr(args[1], "gid"):
             msg = "Provided payload object does not have attribute gid"
             raise AttributeError(msg)
@@ -229,14 +230,17 @@ def fkey_channel(original_func):
             raise AttributeError(msg)
 
         try:
+            _log.info("trying to call original func first...")
             await original_func(*args, **kwargs)
 
         except ForeignKeyViolationError:
+            _log.info("cid not found, inserting...?")
             pool = args[0]
             gid = getattr(args[1], "gid", args[1])
             cid = getattr(args[1], "cid", args[2])
             await insert_cid(pool, table.Channel(gid, cid))
 
+            _log.info("trying to call original func second...")
             await original_func(*args, **kwargs)
         except UniqueViolationError:
             pass

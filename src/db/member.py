@@ -27,6 +27,3 @@ async def add(pool: Pool, payload: table.Member):
 
 def init():
     utility.insert_member = add
-
-
-init()

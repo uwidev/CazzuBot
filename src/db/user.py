@@ -36,6 +36,3 @@ async def get(pool: Pool, uid: int):
 
 def init():
     utility.insert_uid = add
-
-
-init()

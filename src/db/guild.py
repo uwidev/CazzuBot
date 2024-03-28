@@ -115,6 +115,3 @@ async def get_members_exp_ranked(pool: Pool, gid: int) -> list[Record]:
 
 def init():
     utility.insert_gid = add
-
-
-init()

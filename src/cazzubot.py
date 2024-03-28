@@ -12,6 +12,7 @@ from asyncpg import Pool
 from discord.ext import commands
 
 import src.levels_helper
+from src import db
 from src.json_handler import CustomDecoder, CustomEncoder
 
 
@@ -41,6 +42,11 @@ class CazzuBot(commands.Bot):
 
         if self.debug:
             self.add_check(CazzuBot.dev_mode_check)
+
+        db.member.init()
+        db.user.init()
+        db.guild.init()
+        db.channel.init()
 
     @staticmethod
     async def dev_mode_check(ctx: commands.Context):

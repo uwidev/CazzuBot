@@ -5,6 +5,7 @@ needs to define in order to operate.
 """
 
 from . import (  # noqa: F401
+    channel,
     frog,
     frog_spawn,
     guild,
