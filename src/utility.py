@@ -277,3 +277,12 @@ async def find_username(bot: CazzuBot, ctx: commands.Context, uid: int) -> str:
     )
 
     return res.display_name if hasattr(res, "display_name") else res
+
+
+def prepare_embed(title: str, desc: str, color: bytes = 0x9EDBF7) -> discord.Embed:
+    """Create a simple discord.embed object and returns it."""
+    embed = discord.Embed(title=title, description=desc, color=0x9EDBF7)
+
+    embed.set_footer(text="-sarono", icon_url="https://i.imgur.com/BAj8IWu.png")
+
+    return embed

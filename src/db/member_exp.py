@@ -1,4 +1,9 @@
-"""Manages all queries about guilds."""
+"""Manages all queries for member experience functionality.
+
+The member's lifetime experience is also precomputed in this table.
+
+For more accurate experience, or for range-based queries, see member_exp_log.py
+"""
 
 import logging
 

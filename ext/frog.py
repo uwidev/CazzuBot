@@ -5,6 +5,7 @@ import logging
 import os
 import random
 from asyncio import TimeoutError
+from enum import Enum
 from math import trunc
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,11 @@ from src.ntlp import InvalidTimeError, parse_duration
 _log = logging.getLogger(__name__)
 
 _SCOREBOARD_STAMP = "https://cdn.discordapp.com/emojis/752290769712316506.webp?size=160&quality=lossless"
+
+
+class _ExpFrog(Enum):
+    NORMAL: int = 60
+    FROZEN: int = 20
 
 
 class Frog(commands.Cog):
@@ -108,9 +114,7 @@ class Frog(commands.Cog):
                 await db.member_frog_log.add(self.bot.pool, log)
 
                 embed_json = await db.frog.get_message(self.bot.pool, gid)
-                frog_cnt_total = await db.member_frog.get_normal(
-                    self.bot.pool, gid, uid
-                )
+                frog_cnt_total = await db.member_frog.get_frogs(self.bot.pool, gid, uid)
                 frog_cnt_seasonal = await db.member_frog_log.get_seasonal_by_month(
                     self.bot.pool, gid, uid, now.year, now.month
                 )
@@ -236,7 +240,7 @@ class Frog(commands.Cog):
         # Prepare Embed
         embed = discord.Embed()
         user_frog_cnt = frog_cnt[subset_i]
-        user_frog_inv = await db.member_frog.get_normal(self.bot.pool, gid, uid)
+        user_frog_inv = await db.member_frog.get_frogs(self.bot.pool, gid, uid)
         rank = ranks[subset_i]
 
         if mode is db.table.WindowEnum.SEASONAL:
@@ -360,7 +364,12 @@ class Frog(commands.Cog):
         await ctx.message.add_reaction("👍")
 
     @frog.command(name="consume")
-    async def frog_consume(self, ctx: commands.Context, amount: PositiveInt = 1):
+    async def frog_consume(
+        self,
+        ctx: commands.Context,
+        amount: PositiveInt = 1,
+        frog_type: db.table.FrogTypeEnum = db.table.FrogTypeEnum.NORMAL,
+    ):
         if amount < 1:
             msg = "Amount of frogs consume must be greater than 0."
             raise commands.BadArgument(msg)
@@ -368,22 +377,84 @@ class Frog(commands.Cog):
         gid = ctx.guild.id
         uid = ctx.author.id
 
-        member_frogs = await db.member_frog.get_normal(self.bot.pool, gid, uid)
+        member_frogs = await db.member_frog.get_frogs(
+            self.bot.pool, gid, uid, frog_type
+        )
         if member_frogs is not None and member_frogs - amount < 0:
             msg = f"Member does not have enough frogs ({member_frogs}) to consume."
             raise commands.BadArgument(msg)
 
+        # User confirmation
+        wait_for = 120
+        fg_type = frog_type.value
+        exp_per = _ExpFrog[frog_type.name].value
+        total_exp = exp_per * amount
+
+        frogs_old = await db.member_frog.get_frogs(self.bot.pool, gid, uid, frog_type)
+        frogs_new = frogs_old - amount
+
         now = pendulum.now()
-        exp_amount = 10
-
-        exp_payload = db.table.MemberExpLog(
-            gid, uid, exp_amount, now, db.table.MemberExpLogSourceEnum.FROG
+        exp_old = await db.member_exp_log.get_seasonal_by_month(
+            self.bot.pool, gid, uid, now.year, now.month
         )
-        await db.member_exp_log.add(self.bot.pool, exp_payload)
+        exp_new = exp_old + total_exp
 
-        await db.member_frog.upsert_modify_frog(
-            self.bot.pool, db.table.MemberFrog(gid, uid), -amount
+        desc = (
+            f"You are about to consume **`{amount}` {fg_type} frog(s)**.\n\n"
+            f"These types of frogs grant `{exp_per}` exp per frog, for a total of **`{total_exp}`**.\n\n"
+            "Resulting frogs\n"
+            f"**`{frogs_old}`** -> **`{frogs_new}`**\n"
+            "Resulting exp\n**`"
+            f"{exp_old:,}`** -> **`{exp_new:,}`**\n\n"
+            "Please confirm."
         )
+
+        embed = utility.prepare_embed("**Confirmation**", desc)
+        embed.set_thumbnail(url="https://i.imgur.com/ybxI7pu.png")
+        msg: discord.Message = await ctx.send(embed=embed, delete_after=wait_for)
+        await msg.add_reaction("❌")
+        await msg.add_reaction("✅")
+
+        try:
+
+            def check(reaction, user):
+                if (
+                    user.id == uid
+                    and reaction.message.id == msg.id
+                    and reaction.emoji in ["✅", "❌"]
+                ):
+                    return True
+                return False
+
+            reaction, consumer = await self.bot.wait_for(
+                "reaction_add", check=check, timeout=wait_for
+            )
+
+            if reaction == "❌":
+                await msg.delete()
+                return
+
+            # Now consume
+            now = pendulum.now()
+
+            exp_payload = db.table.MemberExpLog(
+                gid, uid, exp_per, now, db.table.MemberExpLogSourceEnum.FROG
+            )
+            await db.member_exp_log.add(self.bot.pool, exp_payload)
+
+            await db.member_frog.upsert_modify_frog(
+                self.bot.pool, db.table.MemberFrog(gid, uid), -amount, frog_type
+            )
+
+            embed_post = utility.prepare_embed(
+                "Frog(s) have been consumed!",
+                f"Resulting {fg_type} frogs\n**`{frogs_old}`** -> **`{frogs_new}`**",
+            )
+            embed_post.set_thumbnail(url="https://i.imgur.com/kCHjymJ.png")
+            await msg.edit(embed=embed_post)
+
+        except TimeoutError:
+            await msg.delete()
 
     @frog.group(name="set")
     @commands.has_permissions(administrator=True)

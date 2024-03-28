@@ -20,7 +20,7 @@ async def add(pool: Pool, payload: table.MemberFrog):
                 INSERT INTO member_frog (gid, uid, normal, frozen)
                 VALUES ($1, $2, $3, $4)
                 """,
-                *payload
+                *payload,
             )
 
 
@@ -35,13 +35,16 @@ async def upsert(pool: Pool, payload: table.MemberFrog):
                 ON CONFLICT (gid, uid) DO UPDATE SET
                     frog = EXCLUDED.frog
                 """,
-                *payload
+                *payload,
             )
 
 
 @utility.fkey_member
 async def upsert_modify_frog(
-    pool: Pool, payload: table.MemberFrog, modify: int
+    pool: Pool,
+    payload: table.MemberFrog,
+    modify: int,
+    frog_type: table.FrogTypeEnum = table.FrogTypeEnum.NORMAL,
 ) -> None:
     gid = payload.gid
     uid = payload.uid
@@ -49,11 +52,11 @@ async def upsert_modify_frog(
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
-                """
-                INSERT INTO member_frog (gid, uid, frog)
+                f"""
+                INSERT INTO member_frog (gid, uid, {frog_type.value})
                 VALUES ($1, $2, $3)
                 ON CONFLICT (gid, uid) DO UPDATE SET
-                    frog = member_frog.frog + $4
+                    {frog_type.value} = member_frog.{frog_type.value} + $4
                 """,
                 gid,
                 uid,
@@ -62,12 +65,17 @@ async def upsert_modify_frog(
             )
 
 
-async def get_normal(pool: Pool, gid: int, uid: int) -> int:
+async def get_frogs(
+    pool: Pool,
+    gid: int,
+    uid: int,
+    frog_type: table.FrogTypeEnum = table.FrogTypeEnum.NORMAL,
+) -> int:
     """Return the total amount of normal frogs a user has."""
     async with pool.acquire() as con:
         return await con.fetchval(
-            """
-            SELECT normal
+            f"""
+            SELECT {frog_type.value}
             FROM member_frog
             WHERE gid = $1 AND uid = $2
             """,
@@ -79,7 +87,7 @@ async def get_normal(pool: Pool, gid: int, uid: int) -> int:
 async def get_members_frog_seasonal(
     pool: Pool, gid: int, year: int, season: int
 ) -> list[Record]:
-    """Fetch frog and ranks them of all guild members.
+    """Fetch frog captures and ranks them of all guild members.
 
     Acts more of an alias for more intuitive design.
     """
@@ -89,7 +97,7 @@ async def get_members_frog_seasonal(
 async def get_members_frog_seasonal_by_month(
     pool: Pool, gid: int, year: int, month: int
 ) -> list[Record]:
-    """Fetch frog and ranks them of all guild members.
+    """Fetch frog captures and ranks them of all guild members.
 
     Acts more of an alias for more intuitive design.
     """
