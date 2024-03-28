@@ -61,19 +61,23 @@ class Frog(commands.Cog):
         if not records:
             return  # no frogs to handle
 
-        expired: list[Record] = [item for item in records if item["run_at"] < now]
+        expired_frog_record: list[Record] = [
+            item for item in records if item["run_at"] < now
+        ]
 
-        frogs: list[db.table.Task] = [db.table.Task(**ex) for ex in expired]
+        expired_frog_task: list[db.table.Task] = [
+            db.table.Task(**ex) for ex in expired_frog_record
+        ]
         # for frog in frogs:  # Decode payload string to json dictionary object
         # frog.payload = self.bot.json_decoder.decode(frog.payload)
         # _log.info(frog.payload)
 
         # _log.info(frogs)
 
-        for record in frogs:  # would be better to batch so only 1 db call
-            await db.task.drop_one(self.bot.pool, record.id)
+        for expired in expired_frog_task:  # would be better to batch so only 1 db call
+            await db.task.drop_one(self.bot.pool, expired.id)
 
-        for fg in frogs:
+        for fg in expired_frog_task:
             gid = fg.payload["gid"]
             cid = fg.payload["cid"]
             interval = fg.payload["interval"]
@@ -137,7 +141,13 @@ class Frog(commands.Cog):
             finally:
                 await msg.delete()
 
-            # Roll next spawna and update run_at
+            # Roll next spawn and update run_at
+            # owner may disable frogs when frog has already spawned
+            # check mitigates bug of frog spawn loop despite disabled
+            enabled = await db.frog.get_enabled(self.bot.pool, gid)
+            if not enabled:
+                return
+
             now = pendulum.now()
             run_at = self.roll_future_frog(now, interval, fuzzy)
             fg.run_at = run_at
@@ -354,7 +364,7 @@ class Frog(commands.Cog):
 
     @frog.command(name="clear")
     async def frog_clear(self, ctx: commands.Context):
-        """Remove all frog settings for this guild,.
+        """Remove all frog settings for this guild.
 
         Also stops frog tasks for this guild.
         """
