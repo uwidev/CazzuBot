@@ -294,7 +294,7 @@ class Frog(commands.Cog):
         ctx: commands.Context,
         interval: str,
         persist: str = "30",
-        fuzzy: float = 0.3,
+        fuzzy: float = 0.5,
         channel: discord.TextChannel = None,
     ):
         """Register this channel as a channel that can spawn frogs.
