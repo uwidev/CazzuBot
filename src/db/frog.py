@@ -26,6 +26,19 @@ async def add(pool: Pool, payload: table.Frog) -> None:
 
 
 @utility.fkey_gid
+async def init(pool: Pool, gid: int, *args, **kwargs) -> None:
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                INSERT INTO frog (gid)
+                VALUES ($1)
+                """,
+                gid,
+            )
+
+
+@utility.fkey_gid
 async def set_message(pool: Pool, gid: int, json_d: dict):
     async with pool.acquire() as con:
         async with con.transaction():
@@ -57,6 +70,7 @@ async def set_enabled(pool: Pool, gid: int, val: bool):
             )
 
 
+@utility.retry(on_none=init)
 async def get_message(pool: Pool, gid: int) -> list[Record]:
     async with pool.acquire() as con:
         return await con.fetchval(
@@ -69,6 +83,7 @@ async def get_message(pool: Pool, gid: int) -> list[Record]:
         )
 
 
+@utility.retry(on_none=init)
 async def get_enabled(pool: Pool, gid: int) -> list[Record]:
     """Return if frog spawns are enabled."""
     async with pool.acquire() as con:
