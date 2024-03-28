@@ -1,18 +1,6 @@
-"""Manages everything related to logging the raw events of experience gain.
+"""Manages everything related to logging frog captures.
 
-Exp is stored per-message rather than added to a running value. They are also given a
-timestamp. This allows for flexible queries and design of leaderboards, but requires
-additional computation to calculate each member's cumulative experience per time-window.
-
-There may potentially be a "lifetime" exp stored on the member, which can speed things.
-
-If query performance is slow, consider building and keeping an internal cache of
-pre-computed experiences.
-
-Partitioned by gid, indexed by date.
-
-We index the date to allow for speedy variable range searches. Partition by gid since
-we will always bucket logs into a particular gid.
+Similar to member_frog_log, we partition by gid and index by date.
 """
 
 import contextlib
@@ -28,23 +16,23 @@ _log = logging.getLogger(__name__)
 
 
 @utility.fkey_member
-async def add(pool: Pool, payload: table.MemberExpLog) -> None:
-    """Log expereience gain entry."""
+async def add(pool: Pool, payload: table.MemberFrogLog) -> None:
+    """Log frog capture."""
     await create_partition(pool, payload.gid)
 
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
                 """
-                INSERT INTO member_exp_log (gid, uid, exp, at, source)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO member_frog_log (gid, uid, type, at)
+                VALUES ($1, $2, $3, $4)
                 """,
                 *payload,
             )
 
 
 async def create_partition(pool: Pool, gid: int) -> None:
-    """Partition member exp log as needed."""
+    """Partition member frog log as needed."""
     now = pendulum.now()
     start = pendulum.datetime(now.year, now.month, 1)
     end = start.add(months=1)
@@ -56,7 +44,7 @@ async def create_partition(pool: Pool, gid: int) -> None:
 async def create_partition_monthly(
     pool: Pool, start: pendulum.DateTime, end: pendulum.DateTime
 ) -> None:
-    """Parition the experience log database by this month.
+    """Parition the frog capture log database by this month.
 
     Only creates the parition if it doesn't yet exist.
     """
@@ -67,34 +55,12 @@ async def create_partition_monthly(
             with contextlib.suppress(InvalidObjectDefinitionError):  # Already exists
                 await con.execute(
                     f"""
-                    CREATE TABLE IF NOT EXISTS exp_log_{start_str}
-                        PARTITION OF member_exp_log
+                    CREATE TABLE IF NOT EXISTS frog_log_{start_str}
+                        PARTITION OF member_frog_log
                         FOR VALUES FROM ('{start.to_date_string()}') TO ('{end.to_date_string()}')
                     ;
                     """
                 )
-
-
-async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime) -> None:
-    """Parition the experience log database by gid.
-
-    Only creates the parition if it doesn't yet exist.
-
-    2023-11-2: Partitioning doesn't seem to increase performance, and perhaps seems to
-        bloat design. Partitioning by month makes sense, but partitioning by month and
-        gid? I think an index would be better suited for gid lookups...
-    """
-    start_str = f"{date.year}_{date.month}"
-
-    async with pool.acquire() as con:
-        async with con.transaction():
-            await con.execute(
-                f"""
-                CREATE TABLE IF NOT EXISTS exp_log_{start_str}_{gid}
-                    PARTITION OF exp_log_{start_str}
-                    FOR VALUES IN ({gid});
-                """
-            )
 
 
 async def create_index_on_date(pool: Pool, date: pendulum.DateTime) -> None:
@@ -105,22 +71,25 @@ async def create_index_on_date(pool: Pool, date: pendulum.DateTime) -> None:
         async with con.transaction():
             await con.execute(
                 f"""
-                CREATE INDEX IF NOT EXISTS idx_exp_log_{start_str}
-                ON exp_log_{start_str} (gid, uid)
+                CREATE INDEX IF NOT EXISTS idx_frog_log_{start_str}
+                ON frog_log_{start_str} (gid, uid)
                 """
             )
 
 
 async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> int:
-    """Fetch a member's sum exp from the specified month."""
+    """Fetch a member's frog captures from the specified month.
+
+    !! CURRENTLY DOES NOT DISCRIMINIATE BETWEEN FROG TYPES !!
+    """
     date = pendulum.datetime(year, month, 1)
     date_str = f"{date.year}_{date.month}"
 
     async with pool.acquire() as con:
         return await con.fetchval(
             f"""
-            SELECT sum(exp)
-            FROM exp_log_{date_str}
+            SELECT count(*)
+            FROM frog_log_{date_str}
             WHERE gid = $1 AND uid = $2
             """,
             gid,
@@ -131,7 +100,7 @@ async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> 
 async def get_seasonal_by_month(
     pool: Pool, gid: int, uid: int, year: int, month: int
 ) -> int:
-    """Fetch a member's sum seasonal experience by month.
+    """Fetch a member's sum seasonal frog captures by month.
 
     Passed argument should still be natural counting, starting from 1.
 
@@ -140,15 +109,19 @@ async def get_seasonal_by_month(
     3-5  -> 1
     6-8  -> 2
     9-11 -> 3
+
+    !! CURRENTLY DOES NOT DISCRIMINIATE BETWEEN FROG TYPES !!
     """
     zero_indexed_month = month - 1
     return await get_seasonal(pool, gid, uid, year, zero_indexed_month // 3)
 
 
 async def get_seasonal(pool: Pool, gid: int, uid: int, year: int, season: int) -> int:
-    """Fetch a member's sum experience based on season.
+    """Fetch a member's frog captures based on season.
 
     Seasons start from 0 and go to to 3.
+
+    !! CURRENTLY DOES NOT DISCRIMINIATE BETWEEN FROG TYPES !!
     """
     if season < 0 or season > 3:  # noqa: PLR2004
         msg = "Seasons must be in the range of 0-3"
@@ -162,8 +135,8 @@ async def get_seasonal(pool: Pool, gid: int, uid: int, year: int, season: int) -
     async with pool.acquire() as con:
         return await con.fetchval(
             """
-            SELECT sum(exp)
-            FROM member_exp_log
+            SELECT count(*)
+            FROM member_frog_log
             WHERE gid = $1 AND uid = $2 AND at BETWEEN $3 AND $4
             """,
             gid,
@@ -174,11 +147,11 @@ async def get_seasonal(pool: Pool, gid: int, uid: int, year: int, season: int) -
 
 
 async def get_seasonal_bulk_ranked(pool: Pool, gid: int, year: int, season: int) -> int:
-    """Fetch exp and ranks them of a guild's members.
+    """Fetch frog captures and ranks them of a guild's members.
 
     Seasons start from 0 and go to to 3.
 
-    Return records are 'formatted' as records [[rank, uid, exp]]
+    Return records are 'formatted' as records [[rank, uid, count]]
     """
     if season < 0 or season > 3:  # noqa: PLR2004
         msg = "Seasons must be in the range of 0-3"
@@ -192,10 +165,10 @@ async def get_seasonal_bulk_ranked(pool: Pool, gid: int, year: int, season: int)
     async with pool.acquire() as con:
         return await con.fetch(
             """
-            SELECT RANK() OVER (ORDER BY SUM(exp) DESC) AS rank, uid, SUM(exp) as exp
-            FROM member_exp_log
+            SELECT RANK() OVER (ORDER BY COUNT(*) DESC) AS rank, uid, count(*) as frog
+            FROM member_frog_log
             WHERE gid = $1 AND at BETWEEN $2 AND $3
-            GROUP BY (gid, uid)
+            group by (gid, uid)
             """,
             gid,
             interval[0],
@@ -220,7 +193,7 @@ async def get_seasonal_total_members(
         return await con.fetchval(
             """
             SELECT COUNT(DISTINCT uid)
-            FROM member_exp_log
+            FROM member_frog_log
             WHERE gid = $1 AND at BETWEEN $2 AND $3
             """,
             gid,
@@ -244,8 +217,8 @@ async def get_total_members(
         return await con.fetchval(
             """
             SELECT COUNT(DISTINCT uid)
-            FROM member_exp_log
-            WHERE gid = $1
+            FROM member_frog_log
+            WHERE gid = $1 AND at BETWEEN $2 AND $3
             """,
             gid,
         )

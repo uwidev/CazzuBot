@@ -2,6 +2,7 @@
 
 See member_exp_log.py for details on how exp is stored and summed.
 """
+
 import logging
 from enum import Enum, auto
 from math import trunc
@@ -88,19 +89,19 @@ class Experience(commands.Cog):
         uid = message.author.id
         gid = message.guild.id
 
-        member_db = await db.member.get(self.bot.pool, gid, uid)
-        if not member_db:  # Member not found, insert and try again.
-            await db.member.add(
+        member_db = await db.member_exp.get_one(self.bot.pool, gid, uid)
+        if member_db is None:  # Member not found, insert and try again.
+            await db.member_exp.add(
                 self.bot.pool,
-                db.table.Member(gid, uid, 0, 0, now.subtract(hours=1)),
+                db.table.MemberExp(gid, uid, 0, 0, now.subtract(hours=1)),
             )
-            member_db = await db.member.get(self.bot.pool, gid, uid)
+            member_db = await db.member_exp.get_one(self.bot.pool, gid, uid)
 
-        if member_db and now < member_db.get("exp_cdr"):
+        if member_db and now < member_db.get("cdr"):
             return  # Cooldown has not yet expired, do nothing
 
         # Prepare and pack variables
-        msg_cnt = member_db.get("exp_msg_cnt") + 1
+        msg_cnt = member_db.get("msg_cnt") + 1
         exp_gain = _from_msg(msg_cnt)
 
         year = now.year
@@ -114,7 +115,7 @@ class Experience(commands.Cog):
         seasonal_exp_new = seasonal_exp_old + exp_gain
         seasonal_exp = utility.OldNew(seasonal_exp_old, seasonal_exp_new)
 
-        lifetime_exp_old = member_db.get("exp_lifetime")
+        lifetime_exp_old = member_db.get("lifetime")
         lifetime_exp_new = lifetime_exp_old + exp_gain
         lifetime_exp = utility.OldNew(lifetime_exp_old, lifetime_exp_new)
 
@@ -128,10 +129,10 @@ class Experience(commands.Cog):
 
         # Add to member's lifetime exp
         offset_cooldown = now + pendulum.duration(seconds=_EXP_COOLDOWN)
-        member_updated = db.table.Member(
+        member_updated = db.table.MemberExp(
             gid, uid, lifetime_exp.new, msg_cnt, offset_cooldown
         )
-        await db.member.update_exp(self.bot.pool, member_updated)
+        await db.member_exp.update_exp(self.bot.pool, member_updated)
 
         # Add to loggings for seasonal (and weekly, monthly, etc.)
         await db.member_exp_log.add(
@@ -182,21 +183,21 @@ class Experience(commands.Cog):
         self,
         ctx: commands.Context,
         user: discord.Member,
-        entries: list[Record],
+        data: list[Record],
         mode: db.table.WindowEnum = db.table.WindowEnum.SEASONAL,
-    ):
+    ) -> discord.Embed:
         """Return the embed of scoreboard Club Membership Card.
 
-        entiries: the raw result from query, containing (rank, uid, exp) in that order
+        data: the raw result from query, containing (rank, uid, exp) in that order
         """
         uid = user.id
 
         # Prepare leaderboard window
-        uid_index = [r["uid"] for r in entries].index(uid)
-        window_raw, user_window_index = leaderboard.create_window(entries, uid_index)
+        uid_index = [r["uid"] for r in data].index(uid)
+        subset, subset_i = leaderboard.create_data_subset(data, uid_index)
 
         # Transpose for per-column transformations
-        ranks, uids, exps = zip(*window_raw)
+        ranks, uids, exps = zip(*subset)
         lvls = [levels_helper.level_from_exp(e) for e in exps]
 
         # Annoying bug to learn from, and python programming misunderstanding.
@@ -212,30 +213,27 @@ class Experience(commands.Cog):
         #
         # Even if the expression may stall, since they are await'ed, it shouldn't stall
         # the loop. So for generator purposes, there's no purpose to use asyncstdlib.
-        members = [
-            utility.else_if_none(
-                ctx.guild.get_member(id),
-                self.bot.get_user(id),
-                await self.bot.fetch_user(id),
-                id,
-            )
-            for id in uids
-        ]
-
-        names = [member.display_name for member in members]
+        names = [await utility.find_username(self.bot, ctx, id) for id in uids]
 
         # Transpose back to prepare to generate
         window = list(zip(ranks, exps, lvls, names))
 
         # Generate leaderboard
-        raw_scoreboard, paddings = leaderboard.generate(
+        headers = ["Rank", "Exp", "Lv", "User"]
+        align = ["<", ">", ">", ">"]
+        max_padding = [0, 0, 0, 16]
+
+        raw_scoreboard = leaderboard.format(
             window,
-            ["Rank", "Exp", "Lv", "User"],
-            ["<", ">", ">", ">"],
-            max_padding=[0, 0, 0, 16],
+            headers,
+            align=align,
+            max_padding=max_padding,
         )
 
-        leaderboard.highlight_user(raw_scoreboard, user_window_index, paddings[0])
+        col_widths = leaderboard.calc_max_col_width(window, headers, max_padding)
+
+        _log.debug(f"{raw_scoreboard=}")
+        leaderboard.highlight_row(raw_scoreboard, subset_i, col_widths)
         scoreboard_s = "\n".join(raw_scoreboard)  # Final step to join.
 
         # Other Preparation
@@ -245,9 +243,9 @@ class Experience(commands.Cog):
 
         # Generate Embed
         embed = discord.Embed()
-        lvl = lvls[user_window_index]
-        exp = exps[user_window_index]
-        rank = ranks[user_window_index]
+        lvl = lvls[subset_i]
+        exp = exps[subset_i]
+        rank = ranks[subset_i]
 
         if mode is db.table.WindowEnum.SEASONAL:
             now = pendulum.now()
@@ -264,7 +262,7 @@ class Experience(commands.Cog):
                 self.bot.pool, gid
             )
 
-        percentile = (total_member_count - rank) / (total_member_count - 1) * 100.0
+        percentile = utility.calc_percentile(rank, total_member_count)
 
         embed.set_author(
             name=f"{user.display_name}'s Club Membership Card",

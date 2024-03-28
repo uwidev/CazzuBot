@@ -4,6 +4,7 @@ A user's level is derived from a user's experience points. Because of this, leve
 not actually need to be stored internally.
 """
 
+import json
 import logging
 
 import discord
@@ -35,27 +36,29 @@ class Level(commands.Cog):
         pass
 
     @level_set.command(name="message", aliases=["msg"])
-    async def level_set_message(self, ctx: commands.Context, *, message):
-        decoded = await user_json.verify(
-            self.bot, ctx, message, level.formatter, member=ctx.author
-        )
+    async def level_set_message(self, ctx: commands.Context, *, message: str):
+        decoded = await user_json.verify(self.bot, ctx, message)
 
         gid = ctx.guild.id
-        await db.level.set_message(
-            self.bot.pool, gid, self.bot.json_encoder.encode(decoded)
-        )
+        await db.level.set_message(self.bot.pool, gid, decoded)
 
     @level.command(name="demo")
     async def level_demo(self, ctx: commands.Context):
         gid = ctx.guild.id
         payload = await db.level.get_message(self.bot.pool, gid)
-        decoded = self.bot.json_decoder.decode(payload)
+        decoded = payload
 
         member = ctx.author
         utility.deep_map(decoded, level.formatter, member=member)
 
         content, embed, embeds = user_json.prepare(decoded)
         await ctx.send(content, embed=embed, embeds=embeds)
+
+    @level.command(name="raw")
+    async def rank_raw(self, ctx: commands.Context):
+        gid = ctx.guild.id
+        payload = await db.level.get_message(self.bot.pool, gid)
+        await ctx.send(f"```{json.dumps(payload)}```")
 
 
 async def setup(bot: commands.Bot):

@@ -80,7 +80,7 @@ class Welcome(commands.Cog):
                 msg = "Default role was set but was not found in guild."
                 raise self.WelcomeMisconfigutationError(msg)
 
-            decoded = self.bot.json_decoder.decode(message)
+            decoded = message
             utility.deep_map(decoded, welcome.formatter, member=after)
             content, embed, embeds = user_json.prepare(decoded)
             await channel.send(content, embed=embed, embeds=embeds)
@@ -147,7 +147,7 @@ class Welcome(commands.Cog):
         await db.welcome.set_message(
             self.bot.pool,
             gid,
-            self.bot.json_encoder.encode(decoded),
+            decoded,
         )
 
     @welcome.command(name="demo")
@@ -155,13 +155,20 @@ class Welcome(commands.Cog):
         """Demos the welcome message in this channel with you as the new user."""
         gid = ctx.guild.id
         payload = await db.welcome.get_message(self.bot.pool, gid)
-        decoded: dict = self.bot.json_decoder.decode(payload)
+        decoded: dict = payload
 
         member = ctx.author
         utility.deep_map(decoded, welcome.formatter, member=member)
 
         content, embed, embeds = user_json.prepare(decoded)
         await ctx.send(content, embed=embed, embeds=embeds)
+
+    @welcome.command(name="raw")
+    async def welcome_raw(self, ctx: commands.Context):
+        """Return the welcome message in the raw json form."""
+        gid = ctx.guild.id
+        payload = await db.welcome.get_message(self.bot.pool, gid)
+        await ctx.send(f"```{json.dumps(payload)}```")
 
 
 async def setup(bot: CazzuBot):

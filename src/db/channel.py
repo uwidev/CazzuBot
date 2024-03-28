@@ -1,4 +1,4 @@
-"""Manages all queries about member."""
+"""Manages all queries about channel."""
 
 import logging
 
@@ -11,14 +11,13 @@ from . import guild, table, user, utility
 _log = logging.getLogger(__name__)
 
 
-@utility.fkey_uid
 @utility.fkey_gid
-async def add(pool: Pool, payload: table.Member):
+async def add(pool: Pool, payload: table.Channel):
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
                 """
-                INSERT INTO member (gid, uid)
+                INSERT INTO channel (gid, cid)
                 VALUES ($1, $2)
                 """,
                 *payload
@@ -26,7 +25,7 @@ async def add(pool: Pool, payload: table.Member):
 
 
 def init():
-    utility.insert_member = add
+    utility.insert_cid = add
 
 
 init()

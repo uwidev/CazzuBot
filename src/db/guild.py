@@ -6,22 +6,30 @@ Asyncpg follows native PostgreSQL for query arguments $n. In other words, when w
 query, you should NOT do a string format on the query. Rather, additional arguments are
 given which will be substituted into the string after internal sanitation.
 """
+
 import logging
 from enum import Enum
 
 from asyncpg import Pool, Record
 from discord.ext import commands
 
-from . import member, member_exp_log, table
+from . import member_exp, member_exp_log, table, utility
 
 
 _log = logging.getLogger(__name__)
 
 
-class Table(Enum):
-    TASK = "task"
-    MODLOG = "modlog"
-    GUILD_SETTING = "guild"
+async def add(pool: Pool, guild: table.Guild):
+    """Insert a new entry into guild settings with default values."""
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                INSERT INTO guild (gid)
+                VALUES ($1)
+                """,
+                guild.gid,
+            )
 
 
 def req_mute_id():
@@ -64,19 +72,6 @@ async def get_mute_id(pool: Pool, gid: int) -> int:
         )
 
 
-async def add(pool: Pool, guild: table.Guild):
-    """Insert a new entry into guild settings with default values."""
-    async with pool.acquire() as con:
-        async with con.transaction():
-            await con.execute(
-                """
-                INSERT INTO guild (gid)
-                VALUES ($1)
-                """,
-                guild.gid,
-            )
-
-
 async def get(pool: Pool, gid: int):
     async with pool.acquire() as con:
         return await con.fetchrow(
@@ -115,4 +110,11 @@ async def get_members_exp_ranked(pool: Pool, gid: int) -> list[Record]:
 
     Acts more of an alias for more intuitive design.
     """
-    return await member.get_exp_bulk_ranked(pool, gid)
+    return await member_exp.get_exp_bulk_ranked(pool, gid)
+
+
+def init():
+    utility.insert_gid = add
+
+
+init()

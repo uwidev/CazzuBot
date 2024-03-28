@@ -1,4 +1,5 @@
 """General commands that can be used by everyone."""
+
 from typing import TYPE_CHECKING
 
 import discord

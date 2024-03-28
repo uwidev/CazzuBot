@@ -1,4 +1,5 @@
 """All things related to ext.levels which is to be public."""
+
 import logging
 
 import discord
@@ -17,25 +18,28 @@ async def on_msg_handle_levels(
 
     Called from ext.experience. Returns (old, new) level
     """
-    if level.new > level.old:
-        gid = message.guild.id
+    if level.new <= level.old:
+        return
 
-        # If we ranked up, do not send level up, since rank up trumps level up.
-        if not await rank.get_ranked_up(bot, level, gid):
-            raw_json = await db.level.get_message(bot.pool, gid)
-            embed_json = bot.json_decoder.decode(raw_json)
+    gid = message.guild.id
 
-            member = message.author
+    # If we ranked up, do not send level up, since rank up trumps level up.
+    if await rank.get_ranked_up(bot, level, gid):
+        return
 
-            utility.deep_map(
-                embed_json,
-                formatter,
-                member=member,
-                level_old=level.old,
-                level_new=level.new,
-            )
-            content, embed, embeds = user_json.prepare(embed_json)
-            await message.channel.send(content, embed=embed, embeds=embeds)
+    embed_json = await db.level.get_message(bot.pool, gid)
+
+    member = message.author
+
+    utility.deep_map(
+        embed_json,
+        formatter,
+        member=member,
+        level_old=level.old,
+        level_new=level.new,
+    )
+    content, embed, embeds = user_json.prepare(embed_json)
+    await message.channel.send(content, embed=embed, embeds=embeds)
 
 
 def formatter(s: str, *, member, level_old=None, level_new=None):

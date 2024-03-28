@@ -1,15 +1,22 @@
 """General-purpose functions."""
+
 import asyncio
 import copy
 import json
 import logging
 from collections.abc import Callable
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import discord
 import pendulum
 from asyncpg import Record
 from discord.ext import commands
+
+from main import CazzuBot
+from src.ntlp import (
+    InvalidTimeError,
+    normalize_time_str,
+)
 
 
 _log = logging.getLogger("discord")
@@ -226,3 +233,56 @@ def ordinal(n: int) -> str:
         return f"{n}{s[v%10]}"
 
     return f"{n}{s[v]}"
+
+
+def prase_dur_str_mix(self, raw) -> tuple[pendulum.DateTime, str]:
+    """Transform a time string mix.
+
+    Time is optional, and must come first.
+
+    ==== Examples of expected output =====
+    DateTime dur 2h, "foo bar barz"         "2h foo bar barz"
+    None, "foo bar barz"                    "2h foo bar barz"
+    None, "foo 2h bar barz"                 "foo 2h bar barz"
+    """
+    time = None
+    s = raw
+    if raw:
+        if raw.find(" ") != -1:
+            dur_raw, s = raw.split(" ", 1)
+        else:
+            dur_raw = raw
+        try:
+            time = normalize_time_str(dur_raw)
+        except InvalidTimeError:
+            s = raw
+
+    return time, s
+
+
+def calc_percentile(rank: int, total: int) -> float:
+    return (total - rank + 1) / (total) * 100.0
+
+
+async def find_username(bot: CazzuBot, ctx: commands.Context, uid: int) -> str:
+    """Attempt to resolve a user id to a member's display name.
+
+    If fails, return uid.
+    """
+    res = else_if_none(
+        ctx.guild.get_member(uid),
+        bot.get_user(uid),
+        await bot.fetch_user(uid),
+        str(uid),
+    )
+
+    return res.display_name if hasattr(res, "display_name") else res
+
+
+def prepare_embed(title: str, desc: str, color: bytes = 0x9EDBF7) -> discord.Embed:
+    """Create a simple discord.embed object and returns it."""
+    embed = discord.Embed(title=title, description=desc, color=0x9EDBF7)
+
+    embed.set_footer(text="-sarono", icon_url="https://i.imgur.com/BAj8IWu.png")
+
+    return embed

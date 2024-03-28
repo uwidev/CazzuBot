@@ -2,6 +2,7 @@
 
 Remember that levels also based on experience.
 """
+
 import json
 import logging
 from typing import TYPE_CHECKING
@@ -141,10 +142,10 @@ class Ranks(commands.Cog):
             self.bot, ctx, message, rank.formatter, member=ctx.author
         )
 
+        _log.info(f"{decoded=}")
+
         gid = ctx.guild.id
-        await db.rank.set_message(
-            self.bot.pool, gid, self.bot.json_encoder.encode(decoded), mode=mode
-        )
+        await db.rank.set_message(self.bot.pool, gid, decoded, mode=mode)
 
     @rank.command(name="demo")
     async def rank_demo(
@@ -152,7 +153,7 @@ class Ranks(commands.Cog):
     ):
         gid = ctx.guild.id
         payload = await db.rank.get_message(self.bot.pool, gid, mode=mode)
-        decoded = self.bot.json_decoder.decode(payload)
+        decoded = payload
 
         member = ctx.author
         utility.deep_map(decoded, rank.formatter, member=member)
@@ -166,7 +167,7 @@ class Ranks(commands.Cog):
     ):
         gid = ctx.guild.id
         payload = await db.rank.get_message(self.bot.pool, gid, mode=mode)
-        await ctx.send(f"```{payload}```")
+        await ctx.send(f"```{json.dumps(payload)}```")
 
 
 async def setup(bot: commands.Bot):

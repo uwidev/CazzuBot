@@ -3,6 +3,7 @@
 The original idea was to store member-rank data as a junction table, but rank can
 trivially be derived from experience. We don't the junction table.
 """
+
 import logging
 
 import discord
@@ -28,10 +29,10 @@ async def on_msg_handle_ranks(
 
     Called from ext.experience
     """
-    seasonal_add, seasonal_remove = await _on_msg_handle_ranks(
+    seasonal_add, seasonal_remove = await _determine_rank_changes(
         bot, message, seasonal_level, notify=True
     )
-    lifetime_add, lifetime_remove = await _on_msg_handle_ranks(
+    lifetime_add, lifetime_remove = await _determine_rank_changes(
         bot, message, lifetime_level, WindowEnum.LIFETIME
     )
 
@@ -48,7 +49,7 @@ async def on_msg_handle_ranks(
         await member.remove_roles(*ranks_to_remove)
 
 
-async def _on_msg_handle_ranks(
+async def _determine_rank_changes(
     bot: CazzuBot,
     message: discord.Message,
     level: utility.OldNew,
@@ -63,7 +64,7 @@ async def _on_msg_handle_ranks(
     gid = message.guild.id
 
     raw_rank_payload = await db.rank.get(bot.pool, gid, mode=mode)
-    _, enabled, keep_old, raw_json = raw_rank_payload.values()
+    _, enabled, keep_old, embed_json = raw_rank_payload.values()
 
     if not enabled:
         return ([None], [None])
@@ -84,7 +85,6 @@ async def _on_msg_handle_ranks(
         seasonal_rank_new = message.guild.get_role(rid.new)
         if seasonal_rank_new is not None:  # if is None, role was deleted from guild
             rank_old = message.guild.get_role(rid.old)
-            embed_json = bot.json_decoder.decode(raw_json)
 
             utility.deep_map(
                 embed_json,
@@ -218,7 +218,7 @@ async def get_ranked_up(bot: CazzuBot, level: utility.OldNew, gid: int):
 def formatter(
     s: str,
     *,
-    member,
+    member: discord.Member,
     rank_old: discord.Role = None,
     rank_new: discord.Role = None,
     level_old: int = None,
