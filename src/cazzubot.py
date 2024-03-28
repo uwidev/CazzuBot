@@ -1,4 +1,5 @@
 """Custom bot class for type hinting and additional functionality."""
+
 import getpass
 import logging
 import os
@@ -37,6 +38,13 @@ class CazzuBot(commands.Bot):
         self.ext_path = ext_path
         self.debug = debug
         self.debug_users = debug_users
+
+        if self.debug:
+            self.add_check(CazzuBot.dev_mode_check)
+
+    @staticmethod
+    async def dev_mode_check(ctx: commands.Context):
+        return await CazzuBot.is_owner(ctx.bot, ctx.author)
 
     async def on_ready(self):
         _log.info("Logged in as %s", self.user.name)
