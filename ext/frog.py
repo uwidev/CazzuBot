@@ -276,9 +276,9 @@ class Frog(commands.Cog):
         )
         embed.set_thumbnail(url=user.avatar.url)
         embed.description = f"""
-        Frogs Captured: **`{user_frog_cnt}`**
-        Current Frogs: **`{user_frog_inv}`**
-        Frozen Frogs: **`0`**
+        Total Frogs Captured: **`{user_frog_cnt}`**
+        Frogs (Seasonal): **`{user_frog_inv}`**
+        Frogs (Frozen): **`0`**
 
         You currently the `{utility.ordinal(trunc(percentile))}` percentile of all members!
         ```py\n{scoreboard_s}```
