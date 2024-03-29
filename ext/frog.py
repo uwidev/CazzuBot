@@ -79,6 +79,14 @@ class Frog(commands.Cog):
 
         for fg in expired_frog_task:
             gid = fg.payload["gid"]
+
+            # When a guild disables frog, frog tasks should be cleared as well.
+            # Checking if enabled is redundant, since it shouldn't be possible for a
+            # task to exist after a guild disables them.
+            # enabled = await db.frog.get_enabled(self.bot.pool, gid)
+            # if not enabled:
+            #     return
+
             cid = fg.payload["cid"]
             interval = fg.payload["interval"]
             persist = fg.payload["persist"]
@@ -142,8 +150,10 @@ class Frog(commands.Cog):
                 await msg.delete()
 
             # Roll next spawn and update run_at
-            # owner may disable frogs when frog has already spawned
-            # check mitigates bug of frog spawn loop despite disabled
+            # From earlier comment, it when a frog despawns/is captured, it
+            # automatically gets added as a new task. It should ensure that it doesn't
+            # conflict with the guild's frog enabled setting, as if disabled, frogs
+            # shouldn't be spawning at all anymore.
             enabled = await db.frog.get_enabled(self.bot.pool, gid)
             if not enabled:
                 return
@@ -160,24 +170,58 @@ class Frog(commands.Cog):
     async def _reset_frog_tasks(self):
         """Clear all frog tasks and re-inserts new tasks per all guild settings."""
         _log.info("Cleaning and preparing up frog spawn tasks...")
-        await db.task.drop(self.bot.pool, tag=["frog"])
+        await self._clear_frog_task()
+
         records = await db.frog_spawn.get_all(self.bot.pool)
-        frog_registers: list[db.table.FrogSpawn] = [
+        frog_spawns: list[db.table.FrogSpawn] = [
             db.table.FrogSpawn(*record) for record in records
         ]
 
+        await self._spawn_frogs(frog_spawns)
+
+    async def _reset_guild_frog_tasks(self, gid: int):
+        """Clear a guild's frog tasks and re-inserts new tasks per guild settings."""
+        await self._clear_guild_frog_task(gid)
+
+        records = await db.frog_spawn.get(self.bot.pool, gid)
+        frog_spawns: list[db.table.FrogSpawn] = [
+            db.table.FrogSpawn(*record) for record in records
+        ]
+
+        await self._spawn_frogs(frog_spawns)
+
+    async def _spawn_frogs(self, frog_spawns: list[db.table.FrogSpawn]):
+        """Spawn frogs given a list of FrogSpawn objects.
+
+        Frogs will not spawn if a guild has disabled them.
+        """
         now = pendulum.now()
         run_ats = [
             self.roll_future_frog(now, frog.interval, frog.fuzzy)
-            for frog in frog_registers
+            for frog in frog_spawns
         ]
 
-        task_rows = [
-            db.table.Task(["frog"], run_ats[i], frog_registers[i].__dict__)
-            for i in range(len(frog_registers))
+        task_rows: list[db.table.Task] = [
+            db.table.Task(["frog"], run_ats[i], frog_spawns[i].__dict__)
+            for i in range(len(frog_spawns))
         ]
 
-        await db.task.add_many(self.bot.pool, task_rows)
+        enabled_records = await db.frog.get_enabled_guilds(self.bot.pool)
+        enabled_gids = (record.get("gid") for record in enabled_records)
+
+        filtered_tasks = list(
+            filter(lambda task: task.payload["gid"] in enabled_gids, task_rows)
+        )
+
+        await db.task.add_many(self.bot.pool, filtered_tasks)
+
+    async def _clear_guild_frog_task(self, gid: int):
+        """Clear a guild's frog tasks."""
+        await db.task.drop(self.bot.pool, payload={"gid": gid}, tag=["frog"])
+
+    async def _clear_frog_task(self):
+        """Clear all frog tasks."""
+        await db.task.drop(self.bot.pool, tag=["frog"])
 
     @commands.group(invoke_without_command=True, aliases=["frogs"])
     async def frog(self, ctx: commands.Context, *, member: discord.Member = None):
@@ -344,21 +388,23 @@ class Frog(commands.Cog):
 
         # Now we need to update any ongoing tasks, and if not, create it.
         # Not only do we need to reroll run_at, but we need to update payload.
-        payload = self.generate_payload(gid, cid, interval, persist, fuzzy)
-        record = await db.task.get_one(
-            self.bot.pool,
-            payload={"gid": gid, "cid": cid},
-            tag=["frog"],
-        )
+        enabled = await db.frog.get_enabled(self.bot.pool, gid)
+        if enabled:
+            payload = self.generate_payload(gid, cid, interval, persist, fuzzy)
+            record = await db.task.get_one(
+                self.bot.pool,
+                payload={"gid": gid, "cid": cid},
+                tag=["frog"],
+            )
 
-        if record is not None:  # If a task already exists
-            id = record["id"]
-            run_at = self.roll_future_frog(now, interval, fuzzy)
+            if record is not None:  # If a task already exists
+                id = record["id"]
+                run_at = self.roll_future_frog(now, interval, fuzzy)
 
-            # payload = self.bot.json_encoder.encode(payload)
-            await db.task.frog_update(self.bot.pool, id, run_at, payload)
-        else:  # If task not already exists
-            await self.add_frog_task(payload)
+                # payload = self.bot.json_encoder.encode(payload)
+                await db.task.frog_update(self.bot.pool, id, run_at, payload)
+            else:  # If task not already exists
+                await self.add_frog_task(payload)
 
         await ctx.message.add_reaction("👍")
 
@@ -480,8 +526,16 @@ class Frog(commands.Cog):
 
     @frog_set.command(name="enabled", aliases=["on"])
     async def frog_set_enabled(self, ctx: commands.Context, val: bool):
+        """Set frog spawns to true or false.
+
+        Also handles clearing or queuing frog tasks for this guild.
+        """
         gid = ctx.guild.id
         await db.frog.set_enabled(self.bot.pool, gid, val)
+        if val:
+            await self._reset_guild_frog_tasks(gid)
+        else:
+            await self._clear_guild_frog_task(gid)
 
     @frog.command(name="demo")
     async def frog_demo(self, ctx: commands.Context):

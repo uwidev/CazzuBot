@@ -70,6 +70,19 @@ async def get_all(pool: Pool) -> list[Record]:
         )
 
 
+async def get(pool: Pool, gid: int) -> list[Record]:
+    """Get a guild's frog settings."""
+    async with pool.acquire() as con:
+        return await con.fetch(
+            """
+            SELECT gid, cid, interval, persist, fuzzy
+            FROM frog_spawn
+            WHERE gid = $1
+            """,
+            gid,
+        )
+
+
 @utility.fkey_gid
 async def set_message(pool: Pool, gid: int, json_d: dict):
     """Set json message for on frog capture."""
