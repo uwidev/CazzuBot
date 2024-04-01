@@ -16,7 +16,7 @@ from discord.ext import commands, tasks
 from pendulum import DateTime
 
 from main import CazzuBot
-from src import db, frog, leaderboard, user_json, utility
+from src import db, frog, frog_factory, leaderboard, user_json, utility
 from src.custom_converters import PositiveInt
 from src.ntlp import InvalidTimeError, parse_duration
 
@@ -37,7 +37,7 @@ class Frog(commands.Cog):
         self.check_spawn_frog.start()
 
     async def cog_load(self):
-        await self._reset_frog_tasks()
+        await frog_factory.reset_frog_tasks(self.bot)
 
     async def cog_unload(self):
         self.check_spawn_frog.cancel()
@@ -54,174 +54,11 @@ class Frog(commands.Cog):
         """
         # _log.info("Checking if frog can spawn...")
 
-        now = pendulum.now("UTC")
-        records: list[Record] = await db.task.get(self.bot.pool, tag=["frog"])
-        # _log.info(f"{records=}")
-
-        if not records:
-            return  # no frogs to handle
-
-        expired_frog_record: list[Record] = [
-            item for item in records if item["run_at"] < now
-        ]
-
-        expired_frog_task: list[db.table.Task] = [
-            db.table.Task(**ex) for ex in expired_frog_record
-        ]
-        # for frog in frogs:  # Decode payload string to json dictionary object
-        # frog.payload = self.bot.json_decoder.decode(frog.payload)
-        # _log.info(frog.payload)
-
-        # _log.info(frogs)
-
-        for expired in expired_frog_task:  # would be better to batch so only 1 db call
-            await db.task.drop_one(self.bot.pool, expired.id)
-
-        for fg in expired_frog_task:
-            gid = fg.payload["gid"]
-
-            # When a guild disables frog, frog tasks should be cleared as well.
-            # Checking if enabled is redundant, since it shouldn't be possible for a
-            # task to exist after a guild disables them.
-            # enabled = await db.frog.get_enabled(self.bot.pool, gid)
-            # if not enabled:
-            #     return
-
-            cid = fg.payload["cid"]
-            interval = fg.payload["interval"]
-            persist = fg.payload["persist"]
-            fuzzy = fg.payload["fuzzy"]
-            id = fg.id
-
-            guild = self.bot.get_guild(gid)
-            channel = guild.get_channel(cid)
-
-            _log.debug(f"Spawning frog in {guild.name=}, {channel.name=}...")
-            msg = await channel.send("<:cirnoFrog:695126166301835304>")
-            await msg.add_reaction("<:cirnoNet:752290769712316506>")
-
-            def check(reaction: discord.Reaction, user: discord.User):
-                return (
-                    reaction.message.id == msg.id
-                    and str(reaction.emoji) == "<:cirnoNet:752290769712316506>"
-                    and not user.bot
-                ) or (self.bot.debug and user.id == self.bot.owner_id)
-
-            reaction: discord.Reaction
-            catcher: discord.User
-            try:
-                reaction, catcher = await self.bot.wait_for(
-                    "reaction_add", timeout=persist, check=check
-                )  # wait for catch, if caught continue
-                now = pendulum.now()
-                uid = catcher.id
-
-                log = db.table.MemberFrogLog(
-                    gid, uid, db.table.FrogTypeEnum.NORMAL, now
-                )
-
-                await db.member_frog.upsert_modify_frog(
-                    self.bot.pool, db.table.MemberFrog(gid, uid, 1), 1
-                )
-                await db.member_frog_log.add(self.bot.pool, log)
-
-                embed_json = await db.frog.get_message(self.bot.pool, gid)
-                frog_cnt_total = await db.member_frog.get_frogs(self.bot.pool, gid, uid)
-                frog_cnt_seasonal = await db.member_frog_log.get_seasonal_by_month(
-                    self.bot.pool, gid, uid, now.year, now.month
-                )
-
-                utility.deep_map(
-                    embed_json,
-                    frog.formatter,
-                    member=catcher,
-                    frog_cnt_old=frog_cnt_total - 1,
-                    frog_cnt_new=frog_cnt_total,
-                    seasonal_cap_old=frog_cnt_seasonal - 1,
-                    seasonal_cap_new=frog_cnt_seasonal,
-                )
-
-                content, embed, embeds = user_json.prepare(embed_json)
-
-                await channel.send(content, embed=embed, embeds=embeds, delete_after=7)
-            except TimeoutError:
-                pass
-            finally:
-                await msg.delete()
-
-            # Roll next spawn and update run_at
-            # From earlier comment, it when a frog despawns/is captured, it
-            # automatically gets added as a new task. It should ensure that it doesn't
-            # conflict with the guild's frog enabled setting, as if disabled, frogs
-            # shouldn't be spawning at all anymore.
-            enabled = await db.frog.get_enabled(self.bot.pool, gid)
-            if not enabled:
-                return
-
-            now = pendulum.now()
-            run_at = self.roll_future_frog(now, interval, fuzzy)
-            fg.run_at = run_at
-            await db.task.add(self.bot.pool, fg)
+        await frog_factory.check_frog_spawn(self.bot)
 
     @check_spawn_frog.before_loop
     async def before_check_frog_spawn(self):
         await self.bot.wait_until_ready()
-
-    async def _reset_frog_tasks(self):
-        """Clear all frog tasks and re-inserts new tasks per all guild settings."""
-        _log.info("Cleaning and preparing up frog spawn tasks...")
-        await self._clear_frog_task()
-
-        records = await db.frog_spawn.get_all(self.bot.pool)
-        frog_spawns: list[db.table.FrogSpawn] = [
-            db.table.FrogSpawn(*record) for record in records
-        ]
-
-        await self._spawn_frogs(frog_spawns)
-
-    async def _reset_guild_frog_tasks(self, gid: int):
-        """Clear a guild's frog tasks and re-inserts new tasks per guild settings."""
-        await self._clear_guild_frog_task(gid)
-
-        records = await db.frog_spawn.get(self.bot.pool, gid)
-        frog_spawns: list[db.table.FrogSpawn] = [
-            db.table.FrogSpawn(*record) for record in records
-        ]
-
-        await self._spawn_frogs(frog_spawns)
-
-    async def _spawn_frogs(self, frog_spawns: list[db.table.FrogSpawn]):
-        """Spawn frogs given a list of FrogSpawn objects.
-
-        Frogs will not spawn if a guild has disabled them.
-        """
-        now = pendulum.now()
-        run_ats = [
-            self.roll_future_frog(now, frog.interval, frog.fuzzy)
-            for frog in frog_spawns
-        ]
-
-        task_rows: list[db.table.Task] = [
-            db.table.Task(["frog"], run_ats[i], frog_spawns[i].__dict__)
-            for i in range(len(frog_spawns))
-        ]
-
-        enabled_records = await db.frog.get_enabled_guilds(self.bot.pool)
-        enabled_gids = [record.get("gid") for record in enabled_records]
-
-        filtered_tasks = list(
-            filter(lambda task: task.payload["gid"] in enabled_gids, task_rows)
-        )
-
-        await db.task.add_many(self.bot.pool, filtered_tasks)
-
-    async def _clear_guild_frog_task(self, gid: int):
-        """Clear a guild's frog tasks."""
-        await db.task.drop(self.bot.pool, payload={"gid": gid}, tag=["frog"])
-
-    async def _clear_frog_task(self):
-        """Clear all frog tasks."""
-        await db.task.drop(self.bot.pool, tag=["frog"])
 
     @commands.group(invoke_without_command=True, aliases=["frogs"])
     async def frog(self, ctx: commands.Context, *, member: discord.Member = None):
@@ -259,7 +96,9 @@ class Frog(commands.Cog):
         await ctx.send(embed=embed)
 
     @frog.command(name="lifetime")
-    async def exp_lifetime(self, ctx: commands.Context, *, user: discord.Member = None):
+    async def frog_lifetime(
+        self, ctx: commands.Context, *, user: discord.Member = None
+    ):
         """Lifetime frog variant."""
         if user is None:
             user = ctx.message.author
@@ -445,12 +284,12 @@ class Frog(commands.Cog):
 
             if record is not None:  # If a task already exists
                 id = record["id"]
-                run_at = self.roll_future_frog(now, interval, fuzzy)
+                run_at = frog_factory.roll_future_frog(now, interval, fuzzy)
 
                 # payload = self.bot.json_encoder.encode(payload)
                 await db.task.frog_update(self.bot.pool, id, run_at, payload)
             else:  # If task not already exists
-                await self.add_frog_task(payload)
+                await frog_factory.add_frog_task(self.bot, payload)
 
         await ctx.message.add_reaction("👍")
 
@@ -559,7 +398,6 @@ class Frog(commands.Cog):
         except TimeoutError:
             await msg.delete()
 
-    @commands.has_permissions(administrator=True)
     @frog.group(name="set")
     @commands.has_permissions(administrator=True)
     async def frog_set(self, ctx):
@@ -581,9 +419,9 @@ class Frog(commands.Cog):
         gid = ctx.guild.id
         await db.frog.set_enabled(self.bot.pool, gid, val)
         if val:
-            await self._reset_guild_frog_tasks(gid)
+            await frog_factory.reset_guild_frog_tasks(self.bot, gid)
         else:
-            await self._clear_guild_frog_task(gid)
+            await frog_factory.clear_guild_frog_task(self.bot, gid)
 
     @commands.has_permissions(administrator=True)
     @frog.command(name="demo")
@@ -605,25 +443,6 @@ class Frog(commands.Cog):
         payload = await db.frog.get_message(self.bot.pool, gid)
         await ctx.send(f"```{json.dumps(payload)}```")
 
-    async def add_frog_task(self, payload: dict):
-        """Add the task for frog future spawn.
-
-        Frogs spawn within some interval, slightly offset either positively or
-        negatively by some % designated by fuzzy.
-
-        Interval and persist should be in seconds.
-        """
-        now = pendulum.now()
-        interval = payload["interval"]
-        fuzzy = payload["fuzzy"]
-
-        run_at = self.roll_future_frog(now, interval, fuzzy)
-
-        payload = payload
-        tsk = db.table.Task(["frog"], run_at, payload)
-
-        await db.task.add(self.bot.pool, tsk)
-
     def generate_payload(
         self, gid: int, cid: int, interval: int, persist: int, fuzzy: float
     ) -> dict | str:
@@ -634,19 +453,6 @@ class Frog(commands.Cog):
             "persist": persist,
             "fuzzy": fuzzy,
         }
-
-    async def update_frog_task(
-        self, id: int, now: DateTime, interval: int, fuzzy: float
-    ):
-        run_at = self.roll_future_frog(now, interval, fuzzy)
-        await db.task.frog_update_run(self.bot.pool, id, run_at)
-
-    def roll_fuzzy(self, fuzzy: float):
-        return ((random.random() - 0.5) * 2) * fuzzy
-
-    def roll_future_frog(self, now: DateTime, interval: int, fuzzy: float):
-        fuzzy_persist = interval * (1 + self.roll_fuzzy(fuzzy))
-        return now + pendulum.duration(seconds=fuzzy_persist)
 
 
 async def setup(bot: commands.Bot):
