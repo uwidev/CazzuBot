@@ -103,3 +103,17 @@ async def get_members_frog_seasonal_by_month(
     """
     zero_indexed_month = month - 1
     return await get_members_frog_seasonal(pool, gid, year, zero_indexed_month // 3)
+
+
+async def get_all_member_frogs_ranked(pool: Pool, gid: int) -> list[Record]:
+    """Return all member's frog information for a guild."""
+    async with pool.acquire() as con:
+        return await con.fetch(
+            """
+                SELECT RANK() OVER (ORDER BY capture DESC) AS rank, uid, capture
+                FROM member_frog
+                WHERE gid = $1
+                ORDER BY capture DESC
+                """,
+            gid,
+        )

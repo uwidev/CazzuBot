@@ -217,8 +217,8 @@ async def get_total_members(
         return await con.fetchval(
             """
             SELECT COUNT(DISTINCT uid)
-            FROM member_frog_log
-            WHERE gid = $1 AND at BETWEEN $2 AND $3
+            FROM member_frog
+            WHERE gid = $1
             """,
             gid,
         )

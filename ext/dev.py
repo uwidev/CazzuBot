@@ -1,4 +1,5 @@
 """Developer commands for sandbox purposes."""
+
 import asyncio
 import logging
 import os
@@ -10,6 +11,7 @@ import discord
 import pendulum
 from asyncstdlib.builtins import list as alist
 from discord.ext import commands
+from tinydb import Query, TinyDB
 
 from src import db
 
@@ -28,24 +30,30 @@ _log = logging.getLogger(__name__)
 class Dev(commands.Cog):
     def __init__(self, bot):
         self.bot: CazzuBot = bot
+        self.bot.tinydb = TinyDB("user.json")
 
     def cog_check(self, ctx):
         return ctx.author.id == self.bot.owner_id
 
     @commands.command()
     async def test(self, ctx: commands.Context):
-        res = await db.internal.get_last_daily(self.bot.pool)
-        _log.info(f"{res=}")
-
-    # @commands.Cog.listener()
-    # async def on_member_update(self, before: discord.Member, after: discord.Member):
-    #     if before.id == 338486462519443461:
-    #         _log.info(f"{before.pending=}")
-    #         _log.info(f"{before.flags.started_onboarding=}")
-    #         _log.info(f"{before.flags.completed_onboarding=}")
-    #         _log.info(f"{after.pending=}")
-    #         _log.info(f"{after.flags.started_onboarding=}")
-    #         _log.info(f"{after.flags.completed_onboarding=}")
+        _log.info("Beginning database insert...")
+        async with self.bot.pool.acquire() as con:
+            async with con.transaction():
+                for user in iter(self.bot.tinydb):
+                    captures = user["frogs_lifetime"]
+                    uid = user["id"]
+                    _log.info(f"Inserting {uid=} | {captures=}")
+                    await con.execute(
+                        """
+                        UPDATE member_frog
+                        SET capture = $1
+                        WHERE uid = $2
+                        """,
+                        captures,
+                        uid,
+                    )
+        _log.info("====== Done =======")
 
     @commands.group()
     async def story(self, ctx):

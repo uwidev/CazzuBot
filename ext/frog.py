@@ -97,13 +97,13 @@ class Frog(commands.Cog):
             channel = guild.get_channel(cid)
 
             _log.debug(f"Spawning frog in {guild.name=}, {channel.name=}...")
-            msg = await channel.send("🥔")
-            await msg.add_reaction("🍆")
+            msg = await channel.send("<:cirnoFrog:695126166301835304>")
+            await msg.add_reaction("<:cirnoNet:752290769712316506>")
 
             def check(reaction: discord.Reaction, user: discord.User):
                 return (
                     reaction.message.id == msg.id
-                    and str(reaction.emoji) == "🍆"
+                    and str(reaction.emoji) == "<:cirnoNet:752290769712316506>"
                     and not user.bot
                 ) or (self.bot.debug and user.id == self.bot.owner_id)
 
@@ -240,7 +240,50 @@ class Frog(commands.Cog):
         for row in rows:
             _log.debug(f"{list(row.values())=}")
 
+        # New season, no data on user yet
+        # It would be better to just ignore all things leaderboards, but still show
+        # all other status, but this will work for now...
+        #
+        # This is an issue with c!xp as well...
+        if not rows:
+            await ctx.send("No one has yet captured frogs in this server!")
+            return
+
+        _, uids, _ = zip(*rows)
+        if uid not in uids:
+            await ctx.send("You have not yet captured any frogs this season!")
+            return
+
         embed = await self._prepare_personal_summary(ctx, member, rows)
+
+        await ctx.send(embed=embed)
+
+    @frog.command(name="lifetime")
+    async def exp_lifetime(self, ctx: commands.Context, *, user: discord.Member = None):
+        """Lifetime frog variant."""
+        if user is None:
+            user = ctx.message.author
+
+        gid = ctx.guild.id
+        rows = await db.member_frog.get_all_member_frogs_ranked(self.bot.pool, gid)
+
+        # New season, no data on user yet
+        # It would be better to just ignore all things leaderboards, but still show
+        # all other status, but this will work for now...
+        #
+        # This is an issue with c!xp as well...
+        if not rows:
+            await ctx.send("No one has yet captured frogs in this server!")
+            return
+
+        _, uids, _ = zip(*rows)
+        if user.id not in uids:
+            await ctx.send("You have not yet captured any frogs this season!")
+            return
+
+        embed = await self._prepare_personal_summary(
+            ctx, user, rows, db.table.WindowEnum.LIFETIME
+        )
 
         await ctx.send(embed=embed)
 
@@ -321,6 +364,8 @@ class Frog(commands.Cog):
         embed.set_thumbnail(url=user.avatar.url)
         embed.description = f"""
         Total Frogs Captured: **`{user_frog_cnt}`**
+
+        **__Inventory__**
         Frogs (Seasonal): **`{user_frog_inv}`**
         Frogs (Frozen): **`0`**
 

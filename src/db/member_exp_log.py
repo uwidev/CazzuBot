@@ -244,7 +244,7 @@ async def get_total_members(
         return await con.fetchval(
             """
             SELECT COUNT(DISTINCT uid)
-            FROM member_exp_log
+            FROM member_exp
             WHERE gid = $1
             """,
             gid,
