@@ -207,7 +207,7 @@ class Frog(commands.Cog):
         ]
 
         enabled_records = await db.frog.get_enabled_guilds(self.bot.pool)
-        enabled_gids = (record.get("gid") for record in enabled_records)
+        enabled_gids = [record.get("gid") for record in enabled_records]
 
         filtered_tasks = list(
             filter(lambda task: task.payload["gid"] in enabled_gids, task_rows)
