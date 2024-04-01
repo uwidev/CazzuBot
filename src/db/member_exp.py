@@ -137,6 +137,6 @@ async def sync_with_exp_logs(pool: Pool) -> None:
                     FROM member_exp_log
                     GROUP BY uid, gid
                     ) as source
-                WHERE member.uid = source.uid and member.gid = source.gid
+                WHERE member_exp.uid = source.uid and member_exp.gid = source.gid
                 """
             )

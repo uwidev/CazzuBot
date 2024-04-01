@@ -60,59 +60,7 @@ async def check_frog_spawn(bot: CazzuBot):
         fuzzy = fg.payload["fuzzy"]
         id = fg.id
 
-        guild = bot.get_guild(gid)
-        channel = guild.get_channel(cid)
-
-        _log.debug(f"Spawning frog in {guild.name=}, {channel.name=}...")
-        msg = await channel.send("<:cirnoFrog:695126166301835304>")
-        await msg.add_reaction("<:cirnoNet:752290769712316506>")
-
-        def check(reaction: discord.Reaction, user: discord.User):
-            return (
-                reaction.message.id == msg.id
-                and str(reaction.emoji) == "<:cirnoNet:752290769712316506>"
-                and not user.bot
-            ) or (bot.debug and user.id == bot.owner_id)
-
-        reaction: discord.Reaction
-        catcher: discord.User
-        try:
-            reaction, catcher = await bot.wait_for(
-                "reaction_add", timeout=persist, check=check
-            )  # wait for catch, if caught continue
-            now = pendulum.now()
-            uid = catcher.id
-
-            log = db.table.MemberFrogLog(gid, uid, db.table.FrogTypeEnum.NORMAL, now)
-
-            await db.member_frog.upsert_modify_frog(
-                bot.pool, db.table.MemberFrog(gid, uid, 1), 1
-            )
-            await db.member_frog_log.add(bot.pool, log)
-
-            embed_json = await db.frog.get_message(bot.pool, gid)
-            frog_cnt_total = await db.member_frog.get_frogs(bot.pool, gid, uid)
-            frog_cnt_seasonal = await db.member_frog_log.get_seasonal_by_month(
-                bot.pool, gid, uid, now.year, now.month
-            )
-
-            utility.deep_map(
-                embed_json,
-                frog.formatter,
-                member=catcher,
-                frog_cnt_old=frog_cnt_total - 1,
-                frog_cnt_new=frog_cnt_total,
-                seasonal_cap_old=frog_cnt_seasonal - 1,
-                seasonal_cap_new=frog_cnt_seasonal,
-            )
-
-            content, embed, embeds = user_json.prepare(embed_json)
-
-            await channel.send(content, embed=embed, embeds=embeds, delete_after=7)
-        except TimeoutError:
-            pass
-        finally:
-            await msg.delete()
+        was_captured = await spawn_and_wait(bot, persist, gid=gid, cid=cid)
 
         # Roll next spawn and update run_at
         # From earlier comment, it when a frog despawns/is captured, it
@@ -129,6 +77,90 @@ async def check_frog_spawn(bot: CazzuBot):
         await db.task.add(bot.pool, fg)
 
 
+async def spawn_and_wait(
+    bot: CazzuBot,
+    persist: int,
+    *,
+    ctx: commands.Context = None,
+    gid: int = None,
+    cid: int = None,
+):
+    """Spawn frog and wait until capture.
+
+    Return True if captured, else False.
+
+    Requires EXCLUSIVELY context OR gid and cid to spawn properly.
+    """
+    if ctx is not None:
+        guild = ctx.guild
+        channel = ctx.channel
+    else:
+        guild = bot.get_guild(gid)
+        channel = bot.get_channel(cid)
+
+    _log.debug(f"Spawning frog in {guild.name}, {channel.name}...")
+    msg = await channel.send("<:cirnoFrog:695126166301835304>")
+    await msg.add_reaction("<:cirnoNet:752290769712316506>")
+
+    def check(reaction: discord.Reaction, user: discord.User):
+        return (
+            reaction.message.id == msg.id
+            and str(reaction.emoji) == "<:cirnoNet:752290769712316506>"
+            and not user.bot
+        ) or (bot.debug and user.id == bot.owner_id)
+
+    reaction: discord.Reaction
+    catcher: discord.User
+    try:
+        reaction, catcher = await bot.wait_for(
+            "reaction_add", timeout=persist, check=check
+        )  # wait for catch, if caught continue
+        now = pendulum.now()
+        uid = catcher.id
+
+        frog_type = db.table.FrogTypeEnum.NORMAL  # for now until fancy frogs
+
+        log = db.table.MemberFrogLog(gid, uid, frog_type, now)
+        await db.member_frog_log.add(bot.pool, log)
+
+        await db.member_frog.modify_frog(
+            bot.pool,
+            gid,
+            uid,
+            modify=1,
+            frog_type=frog_type,
+        )
+
+        # change lifetime cap
+        await db.member_frog.modify_capture(bot.pool, gid, uid, modify=1)
+
+        embed_json = await db.frog.get_message(bot.pool, gid)
+        frog_cnt_total = await db.member_frog.get_frogs(bot.pool, gid, uid)
+        frog_cnt_seasonal = await db.member_frog_log.get_seasonal_by_month(
+            bot.pool, gid, uid, now.year, now.month
+        )
+
+        utility.deep_map(
+            embed_json,
+            frog.formatter,
+            member=catcher,
+            frog_cnt_old=frog_cnt_total - 1,
+            frog_cnt_new=frog_cnt_total,
+            seasonal_cap_old=frog_cnt_seasonal - 1,
+            seasonal_cap_new=frog_cnt_seasonal,
+        )
+
+        content, embed, embeds = user_json.prepare(embed_json)
+
+        await channel.send(content, embed=embed, embeds=embeds, delete_after=7)
+    except TimeoutError:
+        return False
+    else:
+        return True
+    finally:
+        await msg.delete()
+
+
 async def clear_guild_frog_task(bot: CazzuBot, gid: int):
     """Clear a guild's frog tasks."""
     await db.task.drop(bot.pool, payload={"gid": gid}, tag=["frog"])
@@ -139,7 +171,7 @@ async def clear_frog_task(bot: CazzuBot):
     await db.task.drop(bot.pool, tag=["frog"])
 
 
-async def spawn_frogs(bot: CazzuBot, frog_spawns: list[db.table.FrogSpawn]):
+async def queue_frog_spawns(bot: CazzuBot, frog_spawns: list[db.table.FrogSpawn]):
     """Spawn frogs given a list of FrogSpawn objects.
 
     Frogs will not spawn if a guild has disabled them.
@@ -172,7 +204,7 @@ async def reset_frog_tasks(bot: CazzuBot):
         db.table.FrogSpawn(*record) for record in records
     ]
 
-    await spawn_frogs(bot, frog_spawns)
+    await queue_frog_spawns(bot, frog_spawns)
 
 
 async def reset_guild_frog_tasks(bot: CazzuBot, gid: int):
@@ -184,7 +216,7 @@ async def reset_guild_frog_tasks(bot: CazzuBot, gid: int):
         db.table.FrogSpawn(*record) for record in records
     ]
 
-    await spawn_frogs(bot, frog_spawns)
+    await queue_frog_spawns(bot, frog_spawns)
 
 
 async def update_frog_task(

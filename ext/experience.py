@@ -281,6 +281,16 @@ class Experience(commands.Cog):
 
         return embed
 
+    @exp.command(name="resync")
+    @commands.is_owner()
+    @utility.author_confirm()
+    async def exp_resync(self, ctx: commands.Context):
+        _log.info(f"{ctx.author} called for resync of member lifetime exp")
+
+        msg = await ctx.send("Starting frog sync...")
+        await db.member_exp.sync_with_exp_logs(self.bot.pool)
+        await msg.edit(content="Synced! ✅")
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Experience(bot))

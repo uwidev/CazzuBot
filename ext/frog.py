@@ -384,8 +384,8 @@ class Frog(commands.Cog):
             )
             await db.member_exp_log.add(self.bot.pool, exp_payload)
 
-            await db.member_frog.upsert_modify_frog(
-                self.bot.pool, db.table.MemberFrog(gid, uid), -amount, frog_type
+            await db.member_frog.modify_frog(
+                self.bot.pool, gid, uid, modify=-amount, frog_type=frog_type
             )
 
             embed_post = utility.prepare_embed(
@@ -457,59 +457,17 @@ class Frog(commands.Cog):
     @frog.command(name="spawn")
     @commands.is_owner()
     async def frog_spawn(self, ctx: commands.Context):
-        channel = ctx.channel
-        gid = ctx.guild.id
-        persist = 30
+        await frog_factory.spawn_and_wait(self.bot, 30, ctx=ctx)
 
-        msg = await channel.send("<:cirnoFrog:695126166301835304>")
-        await msg.add_reaction("<:cirnoNet:752290769712316506>")
+    @frog.command(name="resync")
+    @commands.is_owner()
+    @utility.author_confirm()
+    async def frog_resync(self, ctx: commands.Context):
+        _log.warning(f"{ctx.author} called for resync of member frog captures")
 
-        def check(reaction: discord.Reaction, user: discord.User):
-            return (
-                reaction.message.id == msg.id
-                and str(reaction.emoji) == "<:cirnoNet:752290769712316506>"
-                and not user.bot
-            ) or (self.bot.debug and user.id == self.bot.owner_id)
-
-        reaction: discord.Reaction
-        catcher: discord.User
-        try:
-            reaction, catcher = await self.bot.wait_for(
-                "reaction_add", timeout=persist, check=check
-            )  # wait for catch, if caught continue
-            now = pendulum.now()
-            uid = catcher.id
-
-            log = db.table.MemberFrogLog(gid, uid, db.table.FrogTypeEnum.NORMAL, now)
-
-            await db.member_frog.upsert_modify_frog(
-                self.bot.pool, db.table.MemberFrog(gid, uid, 1), 1
-            )
-            await db.member_frog_log.add(self.bot.pool, log)
-
-            embed_json = await db.frog.get_message(self.bot.pool, gid)
-            frog_cnt_total = await db.member_frog.get_frogs(self.bot.pool, gid, uid)
-            frog_cnt_seasonal = await db.member_frog_log.get_seasonal_by_month(
-                self.bot.pool, gid, uid, now.year, now.month
-            )
-
-            utility.deep_map(
-                embed_json,
-                frog.formatter,
-                member=catcher,
-                frog_cnt_old=frog_cnt_total - 1,
-                frog_cnt_new=frog_cnt_total,
-                seasonal_cap_old=frog_cnt_seasonal - 1,
-                seasonal_cap_new=frog_cnt_seasonal,
-            )
-
-            content, embed, embeds = user_json.prepare(embed_json)
-
-            await channel.send(content, embed=embed, embeds=embeds, delete_after=7)
-        except TimeoutError:
-            pass
-        finally:
-            await msg.delete()
+        msg = await ctx.send("Starting frog sync...")
+        await db.member_frog.sync_with_frog_logs(self.bot.pool)
+        await msg.edit(content="Synced! ✅")
 
 
 async def setup(bot: commands.Bot):

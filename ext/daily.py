@@ -52,8 +52,9 @@ class Daily(commands.Cog):
         this_daily = now.set(hour=0, minute=0, second=0, microsecond=0)
         await db.internal.set_last_daily(self.bot.pool, str(this_daily))
 
-        # Resync message logs exp with lifetime exp
+        # Resync logs to their lifetime placeholders
         await db.member_exp.sync_with_exp_logs(self.bot.pool)
+        await db.member_frog.sync_with_frog_logs(self.bot.pool)
 
 
 async def setup(bot: CazzuBot):

@@ -40,15 +40,15 @@ async def upsert(pool: Pool, payload: table.MemberFrog):
 
 
 @utility.fkey_member
-async def upsert_modify_frog(
+async def modify_frog(
     pool: Pool,
-    payload: table.MemberFrog,
+    gid: int,
+    uid: int,
+    *,
     modify: int,
     frog_type: table.FrogTypeEnum = table.FrogTypeEnum.NORMAL,
 ) -> None:
-    gid = payload.gid
-    uid = payload.uid
-    frog_norm = payload.normal
+    """Upsert a member's inventory of frogs."""
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
@@ -56,11 +56,33 @@ async def upsert_modify_frog(
                 INSERT INTO member_frog (gid, uid, {frog_type.value})
                 VALUES ($1, $2, $3)
                 ON CONFLICT (gid, uid) DO UPDATE SET
-                    {frog_type.value} = member_frog.{frog_type.value} + $4
+                    {frog_type.value} = member_frog.{frog_type.value} + $3
                 """,
                 gid,
                 uid,
-                frog_norm,
+                modify,
+            )
+
+
+@utility.fkey_member
+async def modify_capture(
+    pool: Pool,
+    gid: int,
+    uid: int,
+    modify: int,
+) -> None:
+    """Upsert a member's lifetime capture."""
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                INSERT INTO member_frog (gid, uid, capture)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (gid, uid) DO UPDATE SET
+                    capture = member_frog.capture + $3
+                """,
+                gid,
+                uid,
                 modify,
             )
 
@@ -117,3 +139,21 @@ async def get_all_member_frogs_ranked(pool: Pool, gid: int) -> list[Record]:
                 """,
             gid,
         )
+
+
+async def sync_with_frog_logs(pool: Pool) -> None:
+    """Sum count frogs and set to lifetime."""
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                UPDATE member_frog
+                SET capture = source.capture
+                FROM (
+                    SELECT gid, uid, COUNT(*) as capture
+                    FROM member_frog_log
+                    GROUP BY uid, gid
+                    ) as source
+                WHERE member_frog.uid = source.uid and member_frog.gid = source.gid
+                """
+            )

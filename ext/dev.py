@@ -1,4 +1,4 @@
-"""Developer commands for sandbox purposes."""
+"""Developer commands to run during operation."""
 
 import asyncio
 import logging
@@ -37,6 +37,9 @@ class Dev(commands.Cog):
 
     @commands.command()
     async def test(self, ctx: commands.Context):
+        await ctx.send("jierabnhgbnaljkgn")
+
+    async def tinydb_frog_cap_migrate(self):
         _log.info("Beginning database insert...")
         async with self.bot.pool.acquire() as con:
             async with con.transaction():

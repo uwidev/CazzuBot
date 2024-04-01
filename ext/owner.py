@@ -37,12 +37,6 @@ class Owner(commands.Cog):
     async def init_guild(self, ctx: commands.Context):
         await db.guild.add(self.bot.pool, db.GuildSchema(ctx.guild.id))
 
-    @commands.command()
-    @utility.author_confirm()
-    async def resync_exp(self, ctx: commands.Context):
-        _log.info(f"{ctx.author} called for resync of member lifetime exp")
-        await db.member_exp.sync_with_exp_logs(self.bot.pool)
-
     @commands.group()
     async def calc(self, ctx: commands.Context):
         """Helper for calculating all things related to level."""
