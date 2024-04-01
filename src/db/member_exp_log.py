@@ -30,7 +30,7 @@ _log = logging.getLogger(__name__)
 @utility.fkey_member
 async def add(pool: Pool, payload: table.MemberExpLog) -> None:
     """Log expereience gain entry."""
-    await create_partition(pool, payload.gid)
+    # await create_partition(pool, payload.gid)
 
     async with pool.acquire() as con:
         async with con.transaction():
@@ -43,85 +43,85 @@ async def add(pool: Pool, payload: table.MemberExpLog) -> None:
             )
 
 
-async def create_partition(pool: Pool, gid: int) -> None:
-    """Partition member exp log as needed."""
-    now = pendulum.now()
-    start = pendulum.datetime(now.year, now.month, 1)
-    end = start.add(months=1)
+# async def create_partition(pool: Pool, gid: int) -> None:
+#     """Partition member exp log as needed."""
+#     now = pendulum.now()
+#     start = pendulum.datetime(now.year, now.month, 1)
+#     end = start.add(months=1)
 
-    await create_partition_monthly(pool, start, end)
-    await create_index_on_date(pool, start)
-
-
-async def create_partition_monthly(
-    pool: Pool, start: pendulum.DateTime, end: pendulum.DateTime
-) -> None:
-    """Parition the experience log database by this month.
-
-    Only creates the parition if it doesn't yet exist.
-    """
-    start_str = f"{start.year}_{start.month}"
-
-    async with pool.acquire() as con:
-        async with con.transaction():
-            with contextlib.suppress(InvalidObjectDefinitionError):  # Already exists
-                await con.execute(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS exp_log_{start_str}
-                        PARTITION OF member_exp_log
-                        FOR VALUES FROM ('{start.to_date_string()}') TO ('{end.to_date_string()}')
-                    ;
-                    """
-                )
+#     await create_partition_monthly(pool, start, end)
+#     await create_index_on_date(pool, start)
 
 
-async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime) -> None:
-    """Parition the experience log database by gid.
+# async def create_partition_monthly(
+#     pool: Pool, start: pendulum.DateTime, end: pendulum.DateTime
+# ) -> None:
+#     """Parition the experience log database by this month.
 
-    Only creates the parition if it doesn't yet exist.
+#     Only creates the parition if it doesn't yet exist.
+#     """
+#     start_str = f"{start.year}_{start.month}"
 
-    2023-11-2: Partitioning doesn't seem to increase performance, and perhaps seems to
-        bloat design. Partitioning by month makes sense, but partitioning by month and
-        gid? I think an index would be better suited for gid lookups...
-    """
-    start_str = f"{date.year}_{date.month}"
-
-    async with pool.acquire() as con:
-        async with con.transaction():
-            await con.execute(
-                f"""
-                CREATE TABLE IF NOT EXISTS exp_log_{start_str}_{gid}
-                    PARTITION OF exp_log_{start_str}
-                    FOR VALUES IN ({gid});
-                """
-            )
+#     async with pool.acquire() as con:
+#         async with con.transaction():
+#             with contextlib.suppress(InvalidObjectDefinitionError):  # Already exists
+#                 await con.execute(
+#                     f"""
+#                     CREATE TABLE IF NOT EXISTS exp_log_{start_str}
+#                         PARTITION OF member_exp_log
+#                         FOR VALUES FROM ('{start.to_date_string()}') TO ('{end.to_date_string()}')
+#                     ;
+#                     """
+#                 )
 
 
-async def create_index_on_date(pool: Pool, date: pendulum.DateTime) -> None:
-    """Index the selected partition."""
-    start_str = f"{date.year}_{date.month}"
+# async def create_partition_gid(pool: Pool, gid: int, date: pendulum.DateTime) -> None:
+#     """Parition the experience log database by gid.
 
-    async with pool.acquire() as con:
-        async with con.transaction():
-            await con.execute(
-                f"""
-                CREATE INDEX IF NOT EXISTS idx_exp_log_{start_str}
-                ON exp_log_{start_str} (gid, uid)
-                """
-            )
+#     Only creates the parition if it doesn't yet exist.
+
+#     2023-11-2: Partitioning doesn't seem to increase performance, and perhaps seems to
+#         bloat design. Partitioning by month makes sense, but partitioning by month and
+#         gid? I think an index would be better suited for gid lookups...
+#     """
+#     start_str = f"{date.year}_{date.month}"
+
+#     async with pool.acquire() as con:
+#         async with con.transaction():
+#             await con.execute(
+#                 f"""
+#                 CREATE TABLE IF NOT EXISTS exp_log_{start_str}_{gid}
+#                     PARTITION OF exp_log_{start_str}
+#                     FOR VALUES IN ({gid});
+#                 """
+#             )
+
+
+# async def create_index_on_date(pool: Pool, date: pendulum.DateTime) -> None:
+#     """Index the selected partition."""
+#     start_str = f"{date.year}_{date.month}"
+
+#     async with pool.acquire() as con:
+#         async with con.transaction():
+#             await con.execute(
+#                 f"""
+#                 CREATE INDEX IF NOT EXISTS idx_exp_log_{start_str}
+#                 ON exp_log_{start_str} (gid, uid)
+#                 """
+#             )
 
 
 async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> int:
     """Fetch a member's sum exp from the specified month."""
     date = pendulum.datetime(year, month, 1)
-    date_str = f"{date.year}_{date.month}"
+    date_end = date.add(months=1)
 
     async with pool.acquire() as con:
         return await con.fetchval(
             f"""
             SELECT sum(exp)
-            FROM exp_log_{date_str}
-            WHERE gid = $1 AND uid = $2
+            FROM member_exp_log
+            WHERE gid = $1 AND uid = $2 AND at BETWEEN {date} AND {date_end}
             """,
             gid,
             uid,
