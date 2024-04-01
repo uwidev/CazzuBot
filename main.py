@@ -109,8 +109,10 @@ async def main():
     parser = argparse.ArgumentParser(prog="CazzuBot")
     parser.add_argument("-d", "--debug", action="store_true")
     parser.add_argument("-p", "--production", action="store_true")
+    parser.add_argument("-s", "--sandbox", action="store_true")
     debug = parser.parse_args().debug
     production = parser.parse_args().production
+    sandbox = parser.parse_args().sandbox
 
     postgres_db = os.getenv("POSTGRES_DB")
     postgres_user = os.getenv("POSTGRES_USER")
@@ -146,6 +148,9 @@ async def main():
     prefix = "c!" if production else "d!"
     _log.info(f"Prefix is set to: {prefix}")
 
+    if sandbox:
+        _log.warning("RUNNING IN SANDBOX MODE")
+
     # Bot setup and run
     # Intents need to be set up to let discord know what we want for request
     intents = discord.Intents.default()
@@ -168,6 +173,7 @@ async def main():
             owner_id=owner_id,
             debug=debug,
             debug_users=DEBUG_USERS,
+            sandbox=sandbox,
         ) as bot:
             await bot.start(
                 token if production else token_dev

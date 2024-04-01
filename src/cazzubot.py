@@ -39,6 +39,7 @@ class CazzuBot(commands.Bot):
         self.ext_path = ext_path
         self.debug = debug
         self.debug_users = debug_users
+        self.sandbox = kwargs["sandbox"]
 
         if self.debug:
             self.add_check(CazzuBot.dev_mode_check)
@@ -68,7 +69,7 @@ class CazzuBot(commands.Bot):
 
     async def _load_extensions(self):
         for file in os.listdir(self.ext_path):
-            if file.endswith(".py"):
+            if file.endswith(".py") and not file.startswith("sandbox"):
                 try:
                     await self.load_extension(f"{self.ext_path}.{file[:-3]}")
                     _log.info("|\t> loaded %s!", file[:-3])
@@ -83,13 +84,29 @@ class CazzuBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         _log.info("Loading extensions...")
-        await self._load_extensions()
+        if not self.sandbox:
+            await self._load_extensions()
+        else:
+            await self._load_sandbox()
 
         _log.info("Loading json enconder and decoder...")
         self.json_encoder = CustomEncoder()
         self.json_decoder = CustomDecoder()
 
         return 0
+
+    async def _load_sandbox(self):
+        try:
+            await self.load_extension("ext.sandbox")
+            _log.info("|\t> loaded sandbox!")
+        except (
+            commands.ExtensionNotFound,
+            commands.ExtensionAlreadyLoaded,
+            commands.NoEntryPointError,
+            commands.ExtensionFailed,
+        ) as err:
+            # _log.error(err)
+            _log.error(traceback.format_exc())
 
         # _log.info("Loading tasks...")
         # await task.all(bot.pool)
