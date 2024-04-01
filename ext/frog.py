@@ -42,8 +42,8 @@ class Frog(commands.Cog):
     async def cog_unload(self):
         self.check_spawn_frog.cancel()
 
-    def cog_check(self, ctx):
-        return ctx.author.id == self.bot.owner_id
+    # def cog_check(self, ctx):
+    #     return ctx.author.id == self.bot.owner_id
 
     @tasks.loop(seconds=1)
     async def check_spawn_frog(self):
@@ -377,6 +377,7 @@ class Frog(commands.Cog):
 
         return embed
 
+    @commands.has_permissions(administrator=True)
     @frog.command(name="register")
     async def frog_register(
         self,
@@ -453,6 +454,7 @@ class Frog(commands.Cog):
 
         await ctx.message.add_reaction("👍")
 
+    @commands.has_permissions(administrator=True)
     @frog.command(name="clear")
     async def frog_clear(self, ctx: commands.Context):
         """Remove all frog settings for this guild.
@@ -557,6 +559,7 @@ class Frog(commands.Cog):
         except TimeoutError:
             await msg.delete()
 
+    @commands.has_permissions(administrator=True)
     @frog.group(name="set")
     @commands.has_permissions(administrator=True)
     async def frog_set(self, ctx):
@@ -582,6 +585,7 @@ class Frog(commands.Cog):
         else:
             await self._clear_guild_frog_task(gid)
 
+    @commands.has_permissions(administrator=True)
     @frog.command(name="demo")
     async def frog_demo(self, ctx: commands.Context):
         gid = ctx.guild.id
@@ -594,6 +598,7 @@ class Frog(commands.Cog):
         content, embed, embeds = user_json.prepare(decoded)
         await ctx.send(content, embed=embed, embeds=embeds)
 
+    @commands.has_permissions(administrator=True)
     @frog.command(name="raw")
     async def frog_raw(self, ctx: commands.Context):
         gid = ctx.guild.id
