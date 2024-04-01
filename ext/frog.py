@@ -454,6 +454,63 @@ class Frog(commands.Cog):
             "fuzzy": fuzzy,
         }
 
+    @frog.command(name="spawn")
+    @commands.is_owner()
+    async def frog_spawn(self, ctx: commands.Context):
+        channel = ctx.channel
+        gid = ctx.guild.id
+        persist = 30
+
+        msg = await channel.send("<:cirnoFrog:695126166301835304>")
+        await msg.add_reaction("<:cirnoNet:752290769712316506>")
+
+        def check(reaction: discord.Reaction, user: discord.User):
+            return (
+                reaction.message.id == msg.id
+                and str(reaction.emoji) == "<:cirnoNet:752290769712316506>"
+                and not user.bot
+            ) or (self.bot.debug and user.id == self.bot.owner_id)
+
+        reaction: discord.Reaction
+        catcher: discord.User
+        try:
+            reaction, catcher = await self.bot.wait_for(
+                "reaction_add", timeout=persist, check=check
+            )  # wait for catch, if caught continue
+            now = pendulum.now()
+            uid = catcher.id
+
+            log = db.table.MemberFrogLog(gid, uid, db.table.FrogTypeEnum.NORMAL, now)
+
+            await db.member_frog.upsert_modify_frog(
+                self.bot.pool, db.table.MemberFrog(gid, uid, 1), 1
+            )
+            await db.member_frog_log.add(self.bot.pool, log)
+
+            embed_json = await db.frog.get_message(self.bot.pool, gid)
+            frog_cnt_total = await db.member_frog.get_frogs(self.bot.pool, gid, uid)
+            frog_cnt_seasonal = await db.member_frog_log.get_seasonal_by_month(
+                self.bot.pool, gid, uid, now.year, now.month
+            )
+
+            utility.deep_map(
+                embed_json,
+                frog.formatter,
+                member=catcher,
+                frog_cnt_old=frog_cnt_total - 1,
+                frog_cnt_new=frog_cnt_total,
+                seasonal_cap_old=frog_cnt_seasonal - 1,
+                seasonal_cap_new=frog_cnt_seasonal,
+            )
+
+            content, embed, embeds = user_json.prepare(embed_json)
+
+            await channel.send(content, embed=embed, embeds=embeds, delete_after=7)
+        except TimeoutError:
+            pass
+        finally:
+            await msg.delete()
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Frog(bot))
