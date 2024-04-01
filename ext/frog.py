@@ -143,7 +143,7 @@ class Frog(commands.Cog):
 
                 content, embed, embeds = user_json.prepare(embed_json)
 
-                await channel.send(content, embed=embed, embeds=embeds)
+                await channel.send(content, embed=embed, embeds=embeds, delete_after=7)
             except TimeoutError:
                 pass
             finally:
