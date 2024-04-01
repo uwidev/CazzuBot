@@ -134,7 +134,7 @@ async def sync_with_exp_logs(pool: Pool) -> None:
                 SET lifetime = source.exp
                 FROM (
                     SELECT uid, gid, sum(exp) as exp
-                    FROM member_log
+                    FROM member_exp_log
                     GROUP BY uid, gid
                     ) as source
                 WHERE member.uid = source.uid and member.gid = source.gid
