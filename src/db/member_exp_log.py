@@ -192,10 +192,14 @@ async def get_seasonal_bulk_ranked(pool: Pool, gid: int, year: int, season: int)
     async with pool.acquire() as con:
         return await con.fetch(
             """
-            SELECT RANK() OVER (ORDER BY SUM(exp) DESC) AS rank, uid, SUM(exp) as exp
-            FROM member_exp_log
-            WHERE gid = $1 AND at BETWEEN $2 AND $3
-            GROUP BY (gid, uid)
+            SELECT RANK() OVER (ORDER BY exp_sum DESC) AS rank, uid, exp_sum
+            FROM (
+                SELECT uid, SUM(exp) AS exp_sum
+                FROM member_exp_log
+                WHERE gid = $1 AND at BETWEEN $2 AND $3
+                GROUP BY uid
+            ) AS subquery
+            ORDER BY exp_sum DESC;
             """,
             gid,
             interval[0],
@@ -219,9 +223,12 @@ async def get_seasonal_total_members(
     async with pool.acquire() as con:
         return await con.fetchval(
             """
-            SELECT COUNT(DISTINCT uid)
-            FROM member_exp_log
-            WHERE gid = $1 AND at BETWEEN $2 AND $3
+            SELECT COUNT(*)
+            FROM (
+                SELECT DISTINCT uid
+                FROM member_exp_log
+                WHERE gid = $1 AND at BETWEEN $2 AND $3
+            )
             """,
             gid,
             interval[0],
@@ -243,7 +250,7 @@ async def get_total_members(
     async with pool.acquire() as con:
         return await con.fetchval(
             """
-            SELECT COUNT(DISTINCT uid)
+            SELECT COUNT(*)
             FROM member_exp
             WHERE gid = $1
             """,
