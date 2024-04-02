@@ -14,7 +14,7 @@ def formatter(s: str, *, member: discord.Member):
     """
     # member = kwargs.get("member")
     return s.format(
-        avatar=member.avatar.url,
+        avatar=member.display_avatar.url,
         name=member.display_name,
         mention=member.mention,
         id=member.id,
