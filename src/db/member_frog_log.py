@@ -31,50 +31,50 @@ async def add(pool: Pool, payload: table.MemberFrogLog) -> None:
             )
 
 
-async def create_partition(pool: Pool, gid: int) -> None:
-    """Partition member frog log as needed."""
-    now = pendulum.now()
-    start = pendulum.datetime(now.year, now.month, 1)
-    end = start.add(months=1)
+# async def create_partition(pool: Pool, gid: int) -> None:
+#     """Partition member frog log as needed."""
+#     now = pendulum.now()
+#     start = pendulum.datetime(now.year, now.month, 1)
+#     end = start.add(months=1)
 
-    await create_partition_monthly(pool, start, end)
-    await create_index_on_date(pool, start)
-
-
-async def create_partition_monthly(
-    pool: Pool, start: pendulum.DateTime, end: pendulum.DateTime
-) -> None:
-    """Parition the frog capture log database by this month.
-
-    Only creates the parition if it doesn't yet exist.
-    """
-    start_str = f"{start.year}_{start.month}"
-
-    async with pool.acquire() as con:
-        async with con.transaction():
-            with contextlib.suppress(InvalidObjectDefinitionError):  # Already exists
-                await con.execute(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS frog_log_{start_str}
-                        PARTITION OF member_frog_log
-                        FOR VALUES FROM ('{start.to_date_string()}') TO ('{end.to_date_string()}')
-                    ;
-                    """
-                )
+#     await create_partition_monthly(pool, start, end)
+#     await create_index_on_date(pool, start)
 
 
-async def create_index_on_date(pool: Pool, date: pendulum.DateTime) -> None:
-    """Index the selected partition."""
-    start_str = f"{date.year}_{date.month}"
+# async def create_partition_monthly(
+#     pool: Pool, start: pendulum.DateTime, end: pendulum.DateTime
+# ) -> None:
+#     """Parition the frog capture log database by this month.
 
-    async with pool.acquire() as con:
-        async with con.transaction():
-            await con.execute(
-                f"""
-                CREATE INDEX IF NOT EXISTS idx_frog_log_{start_str}
-                ON frog_log_{start_str} (gid, uid)
-                """
-            )
+#     Only creates the parition if it doesn't yet exist.
+#     """
+#     start_str = f"{start.year}_{start.month}"
+
+#     async with pool.acquire() as con:
+#         async with con.transaction():
+#             with contextlib.suppress(InvalidObjectDefinitionError):  # Already exists
+#                 await con.execute(
+#                     f"""
+#                     CREATE TABLE IF NOT EXISTS frog_log_{start_str}
+#                         PARTITION OF member_frog_log
+#                         FOR VALUES FROM ('{start.to_date_string()}') TO ('{end.to_date_string()}')
+#                     ;
+#                     """
+#                 )
+
+
+# async def create_index_on_date(pool: Pool, date: pendulum.DateTime) -> None:
+#     """Index the selected partition."""
+#     start_str = f"{date.year}_{date.month}"
+
+#     async with pool.acquire() as con:
+#         async with con.transaction():
+#             await con.execute(
+#                 f"""
+#                 CREATE INDEX IF NOT EXISTS idx_frog_log_{start_str}
+#                 ON frog_log_{start_str} (gid, uid)
+#                 """
+#             )
 
 
 async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> int:
@@ -83,14 +83,15 @@ async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> 
     !! CURRENTLY DOES NOT DISCRIMINIATE BETWEEN FROG TYPES !!
     """
     date = pendulum.datetime(year, month, 1)
+    date_end = date.add(months=3)
     date_str = f"{date.year}_{date.month}"
 
     async with pool.acquire() as con:
         return await con.fetchval(
             f"""
             SELECT count(*)
-            FROM frog_log_{date_str}
-            WHERE gid = $1 AND uid = $2
+            FROM member_frog_log
+            WHERE gid = $1 AND uid = $2 AND at BETWEEN {date} AND {date_end}
             """,
             gid,
             uid,
