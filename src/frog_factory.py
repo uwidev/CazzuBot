@@ -93,6 +93,7 @@ async def spawn_and_wait(
     """
     if ctx is not None:
         guild = ctx.guild
+        gid = guild.id
         channel = ctx.channel
     else:
         guild = bot.get_guild(gid)
