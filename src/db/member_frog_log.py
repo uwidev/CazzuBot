@@ -101,7 +101,7 @@ async def get_monthly(pool: Pool, gid: int, uid: int, year: int, month: int) -> 
 async def get_seasonal_by_month(
     pool: Pool, gid: int, uid: int, year: int, month: int
 ) -> int:
-    """Fetch a member's sum seasonal frog captures by month.
+    """Fetch a member's count seasonal frog captures by month.
 
     Passed argument should still be natural counting, starting from 1.
 
@@ -136,7 +136,7 @@ async def get_seasonal(pool: Pool, gid: int, uid: int, year: int, season: int) -
     async with pool.acquire() as con:
         return await con.fetchval(
             """
-            SELECT count(*)
+            SELECT COUNT(*)
             FROM member_frog_log
             WHERE gid = $1 AND uid = $2 AND at BETWEEN $3 AND $4
             """,
@@ -166,10 +166,14 @@ async def get_seasonal_bulk_ranked(pool: Pool, gid: int, year: int, season: int)
     async with pool.acquire() as con:
         return await con.fetch(
             """
-            SELECT RANK() OVER (ORDER BY COUNT(*) DESC) AS rank, uid, count(*) as frog
-            FROM member_frog_log
-            WHERE gid = $1 AND at BETWEEN $2 AND $3
-            group by (gid, uid)
+            SELECT RANK() OVER (ORDER BY capture_count DESC) AS rank, uid, capture_count
+            FROM (
+                SELECT uid, COUNT(*) AS capture_count
+                FROM member_frog_log
+                WHERE gid = $1 AND at BETWEEN $2 AND $3
+                GROUP BY uid
+            ) AS subquery
+            ORDER BY capture_count DESC;
             """,
             gid,
             interval[0],
@@ -193,9 +197,12 @@ async def get_seasonal_total_members(
     async with pool.acquire() as con:
         return await con.fetchval(
             """
-            SELECT COUNT(DISTINCT uid)
-            FROM member_frog_log
-            WHERE gid = $1 AND at BETWEEN $2 AND $3
+            SELECT COUNT(*)
+            FROM (
+                SELECT DISTINCT uid
+                FROM member_frog_log
+                WHERE gid = $1 AND at BETWEEN $2 AND $3
+            )
             """,
             gid,
             interval[0],
@@ -217,7 +224,7 @@ async def get_total_members(
     async with pool.acquire() as con:
         return await con.fetchval(
             """
-            SELECT COUNT(DISTINCT uid)
+            SELECT COUNT(*)
             FROM member_frog
             WHERE gid = $1
             """,
