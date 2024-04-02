@@ -18,7 +18,7 @@ _log = logging.getLogger(__name__)
 @utility.fkey_member
 async def add(pool: Pool, payload: table.MemberFrogLog) -> None:
     """Log frog capture."""
-    await create_partition(pool, payload.gid)
+    # await create_partition(pool, payload.gid)
 
     async with pool.acquire() as con:
         async with con.transaction():
