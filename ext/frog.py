@@ -27,8 +27,8 @@ _SCOREBOARD_STAMP = "https://cdn.discordapp.com/emojis/752290769712316506.webp?s
 
 
 class _ExpFrog(Enum):
-    NORMAL: int = 30
-    FROZEN: int = 15
+    NORMAL: int = 10
+    FROZEN: int = 3
 
 
 class Frog(commands.Cog):
