@@ -376,6 +376,16 @@ class Frog(commands.Cog):
                 await msg.delete()
                 return
 
+            member_frog = await db.member_frog.get_frogs(
+                self.bot.pool, gid, uid, frog_type
+            )
+
+            # Check again, at this very moment, to prevent forced queuing of frog consumption
+            # A race condition can still occur here, albiet extremely rare...
+            if member_frogs is not None and member_frog - amount < 0:
+                msg = f"Member does not have enouhg frogs ({member_frog}) to consume."
+                raise commands.BadArgument(msg)
+
             # Now consume
             now = pendulum.now()
 
