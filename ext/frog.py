@@ -372,7 +372,7 @@ class Frog(commands.Cog):
                 "reaction_add", check=check, timeout=wait_for
             )
 
-            if reaction == "❌":
+            if reaction.emoji == "❌":
                 await msg.delete()
                 return
 
@@ -380,7 +380,7 @@ class Frog(commands.Cog):
             now = pendulum.now()
 
             exp_payload = db.table.MemberExpLog(
-                gid, uid, exp_per, now, db.table.MemberExpLogSourceEnum.FROG
+                gid, uid, total_exp, now, db.table.MemberExpLogSourceEnum.FROG
             )
             await db.member_exp_log.add(self.bot.pool, exp_payload)
 
