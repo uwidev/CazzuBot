@@ -239,7 +239,7 @@ def formatter(
     rank_new = rank_new.mention if rank_new else None
 
     return s.format(
-        avatar=member.avatar.url,
+        avatar=member.display_avatar.url,
         name=member.display_name,
         mention=member.mention,
         id=member.id,
