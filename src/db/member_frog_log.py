@@ -24,8 +24,8 @@ async def add(pool: Pool, payload: table.MemberFrogLog) -> None:
         async with con.transaction():
             await con.execute(
                 """
-                INSERT INTO member_frog_log (gid, uid, type, at)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO member_frog_log (gid, uid, type, at, waited_for)
+                VALUES ($1, $2, $3, $4, $5)
                 """,
                 *payload,
             )

@@ -249,6 +249,7 @@ class MemberFrogLog(SnowflakeTable):
     uid: int
     type: FrogTypeEnum
     at: pendulum.DateTime = None
+    waited_for: float = None
 
     def __iter__(self):
-        return iter([self.gid, self.uid, self.type, self.at])
+        return iter([self.gid, self.uid, self.type, self.at, self.waited_for])

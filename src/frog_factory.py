@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import random
+import time
 from asyncio import TimeoutError
 from enum import Enum
 from math import trunc
@@ -100,6 +101,7 @@ async def spawn_and_wait(
         channel = bot.get_channel(cid)
 
     _log.debug(f"Spawning frog in {guild.name}, {channel.name}...")
+    timer_start = time.time()
     msg = await channel.send("<:cirnoFrog:695126166301835304>")
     await msg.add_reaction("<:cirnoNet:752290769712316506>")
 
@@ -116,12 +118,14 @@ async def spawn_and_wait(
         reaction, catcher = await bot.wait_for(
             "reaction_add", timeout=persist, check=check
         )  # wait for catch, if caught continue
+        timer_end = time.time()
+        timer_diff = timer_end - timer_start
         now = pendulum.now()
         uid = catcher.id
 
         frog_type = db.table.FrogTypeEnum.NORMAL  # for now until fancy frogs
 
-        log = db.table.MemberFrogLog(gid, uid, frog_type, now)
+        log = db.table.MemberFrogLog(gid, uid, frog_type, now, timer_diff)
         await db.member_frog_log.add(bot.pool, log)
 
         await db.member_frog.modify_frog(

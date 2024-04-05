@@ -2,6 +2,7 @@
 
 For specific operations on the rannked role list themselves, see db.ranked_thresholds.
 """
+
 import logging
 from collections.abc import Callable
 
