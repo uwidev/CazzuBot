@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 
 import discord
 import pendulum
-from asyncstdlib.builtins import list as alist
 from discord.ext import commands
 
 # from tinydb import Query, TinyDB
