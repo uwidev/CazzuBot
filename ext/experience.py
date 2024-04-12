@@ -140,12 +140,14 @@ class Experience(commands.Cog):
         )
 
         # Deal with potential level up
-        await level.on_msg_handle_levels(self.bot, message, seasonal_level)
+        await level.on_msg_handle_levels(
+            self.bot, message, seasonal_level, delete_after=7
+        )
 
         # Deal with potential rank up
         # We do not check for level up because we still want to have rank integrity
         await rank.on_msg_handle_ranks(
-            self.bot, message, seasonal_level, lifetime_level
+            self.bot, message, seasonal_level, lifetime_level, delete_after=7
         )
 
     @commands.group(aliases=["xp", "experience"], invoke_without_command=True)

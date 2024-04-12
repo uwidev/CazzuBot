@@ -12,7 +12,11 @@ _log = logging.getLogger(__name__)
 
 
 async def on_msg_handle_levels(
-    bot: CazzuBot, message: discord.Message, level: utility.OldNew
+    bot: CazzuBot,
+    message: discord.Message,
+    level: utility.OldNew,
+    *,
+    delete_after: int = 0
 ):
     """Handle potential level ups from experience gain.
 
@@ -39,7 +43,9 @@ async def on_msg_handle_levels(
         level_new=level.new,
     )
     content, embed, embeds = user_json.prepare(embed_json)
-    await message.channel.send(content, embed=embed, embeds=embeds)
+    await message.channel.send(
+        content, embed=embed, embeds=embeds, delete_after=delete_after
+    )
 
 
 def formatter(s: str, *, member, level_old=None, level_new=None):

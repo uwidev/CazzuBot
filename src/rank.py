@@ -22,6 +22,8 @@ async def on_msg_handle_ranks(
     message: discord.Message,
     seasonal_level: utility.OldNew,
     lifetime_level: utility.OldNew,
+    *,
+    delete_after: int = 0,
 ):
     """Handle potential rank ups from level ups.
 
@@ -30,7 +32,7 @@ async def on_msg_handle_ranks(
     Called from ext.experience
     """
     seasonal_add, seasonal_remove = await _determine_rank_changes(
-        bot, message, seasonal_level, notify=True
+        bot, message, seasonal_level, notify=True, delete_after=7
     )
     lifetime_add, lifetime_remove = await _determine_rank_changes(
         bot, message, lifetime_level, WindowEnum.LIFETIME
@@ -56,6 +58,7 @@ async def _determine_rank_changes(
     mode: WindowEnum = WindowEnum.SEASONAL,
     *,
     notify: bool = False,
+    delete_after=0,
 ) -> tuple[list[discord.Role], list[discord.Role]]:
     """Return a nested tuple containing the collection of ranks to add and remove.
 
@@ -97,7 +100,9 @@ async def _determine_rank_changes(
             )
 
         content, embed, embeds = user_json.prepare(embed_json)
-        await message.channel.send(content, embed=embed, embeds=embeds)
+        await message.channel.send(
+            content, embed=embed, embeds=embeds, delete_after=delete_after
+        )
 
     # Ensure rank-role integreity
     if rid.new is not None:
