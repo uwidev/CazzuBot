@@ -157,7 +157,12 @@ async def spawn_and_wait(
 
         content, embed, embeds = user_json.prepare(embed_json)
 
-        await channel.send(content, embed=embed, embeds=embeds, delete_after=7)
+        msg_caught = await channel.send('_ _', delete_after=7)
+        if embed:
+            await msg_caught.edit(content=content, embed=embed)
+        elif embeds:
+            await msg_caught.edit(content=content, embeds=embeds)
+            
     except TimeoutError:
         return False
     else:
