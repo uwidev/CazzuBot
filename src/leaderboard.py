@@ -12,7 +12,16 @@ Making a leadeboard is process.
     5. If needed, highlight a specifc index. If you wanted to highlight the focus from
        window, remember that create_window returns that index.
     6. The leaerboard now needs to be joined with newline to create full message.
+
+With the complexity of a leaderboard, it would be wise to create a leaderboard class,
+and delegate functionality to said class.
 """
+
+import discord
+from asyncpg import Record
+from discord.ext import commands
+
+from src import db, levels_helper, utility
 
 
 def create_focus_subset(
@@ -145,3 +154,70 @@ def calc_max_col_width(
         padding.append(width_trunc)
 
     return padding
+
+
+async def prepare_leaderboard_subset(
+    rows: list[Record],
+    page: int,
+) -> list[Record]:
+    page = min(len(rows) // 10, page)
+    if rows:
+        width = 10
+        lo = (page - 1) * width
+        up = page * width
+        subset = rows[lo:up]
+        # embed = await self._format_leaderboard_subset(ctx, subset, uid=ctx.author.id)
+    else:
+        subset = None
+        # embed.description = "There are no experience logs at this time."
+
+    return subset
+
+
+async def _format_leaderboard_subset(
+    ctx: commands.Context,
+    subset: list[Record],
+    mode: db.table.WindowEnum = db.table.WindowEnum.SEASONAL,
+    *,
+    uid: int = None,
+) -> discord.Embed:
+    """Prepare the leaderboard for lazy computing when a page is requested.
+
+    data: the raw result from query, containing (rank, uid, exp) in that order
+    user: provide user if you want to highlight them, if exist
+    """
+    # Transpose for per-column transformations
+    ranks, uids, exps = zip(*subset)
+    lvls = [levels_helper.level_from_exp(e) for e in exps]
+    names = [await utility.find_username(ctx.bot, ctx, id) for id in uids]
+
+    # Transpose back to prepare to generate
+    window = list(zip(ranks, exps, lvls, names))
+
+    # Generate leaderboard
+    headers = ["Rank", "Exp", "Lv", "User"]
+    align = ["<", ">", ">", ">"]
+    max_padding = [0, 0, 0, 16]
+
+    raw_scoreboard = format(
+        window,
+        headers,
+        align=align,
+        max_padding=max_padding,
+    )
+
+    if uid in uids:
+        col_widths = calc_max_col_width(window, headers, max_padding)
+        subset_i = uids.index(uid)
+        highlight_row(raw_scoreboard, subset_i, col_widths)
+
+    scoreboard_s = "\n".join(raw_scoreboard)  # Final step to join.
+
+    # Generate Embed
+    embed = discord.Embed()
+
+    embed.description = f"```py\n{scoreboard_s}```"
+
+    embed.color = discord.Color.from_str("#a2dcf7")
+
+    return embed

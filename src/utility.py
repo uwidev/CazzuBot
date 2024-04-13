@@ -309,3 +309,7 @@ def prepare_embed(title: str, desc: str, color: bytes = 0x9EDBF7) -> discord.Emb
     embed.set_footer(text="-sarono", icon_url="https://i.imgur.com/BAj8IWu.png")
 
     return embed
+
+
+def month2season(m: int):
+    return m // 3

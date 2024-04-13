@@ -321,23 +321,24 @@ class Experience(commands.Cog):
 
         gid = ctx.guild.id
 
-        # Prepare initial leaderboard
+        # Fetch data
         date = pendulum.date(year, ((season - 1) * 3) + 1, 1)
         rows = await db.guild.get_members_exp_seasonal_by_month(
             self.bot.pool, gid, date.year, date.month
         )
 
-        embed = await self._prepare_leaderboard_subset(ctx, page, rows, date)
-        embed.set_author(
-            name="Club Cirno Leaderboards",
-            icon_url=_SCOREBOARD_STAMP,
+        headers = ["Rank", "Exp", "Lv", "User"]
+        align = ["<", ">", ">", ">"]
+        max_padding = [0, 0, 0, 16]
+
+        # Chunk data to process only what we need right now
+        scoreboard_s = await self.create_leaderboard_str(
+            rows, page, ctx, headers, align, max_padding
         )
-        if rows:
-            embed.set_thumbnail(
-                url=(
-                    await utility.find_user(self.bot, ctx, rows[0].get("uid"))
-                ).display_avatar.url
-            )
+
+        embed = await self._prepare_leaderboard_embed(
+            ctx, page, date, rows, scoreboard_s
+        )
 
         # Send leaderboard
         msg = await ctx.send(embed=embed)
@@ -376,125 +377,117 @@ class Experience(commands.Cog):
                 future.cancel()  # stop waiting for these tasks
 
             # Handle user input
-            if str(reaction.emoji) == "◀":
-                _log.info("Decreasing page...")
-                page = max(page - 1, 1)
-            elif str(reaction.emoji) == "▶":
-                _log.info("Increasing page...")
-                max_page = len(rows) // 10
-                page = min(page + 1, max_page)
-            elif str(reaction.emoji) == "⬅":
-                date = date.subtract(months=3)
-                rows = await db.guild.get_members_exp_seasonal_by_month(
-                    self.bot.pool, gid, date.year, date.month
-                )
-                page = 1
-            elif str(reaction.emoji) == "➡":
-                date = date.add(months=3)
+            if str(reaction.emoji) in ["◀", "▶"]:
+                if str(reaction.emoji) == "◀":
+                    page = max(page - 1, 1)
+                elif str(reaction.emoji) == "▶":
+                    max_page = len(rows) // 10
+                    page = min(page + 1, max_page)
+
+            elif str(reaction.emoji) in ["⬅", "➡"]:
+                if str(reaction.emoji) == "⬅":
+                    date = date.subtract(months=3)
+                elif str(reaction.emoji) == "➡":
+                    date = date.add(months=3)
+
                 rows = await db.guild.get_members_exp_seasonal_by_month(
                     self.bot.pool, gid, date.year, date.month
                 )
                 page = 1
 
-            # Prepare new embed
-            embed = await self._prepare_leaderboard_subset(ctx, page, rows, date)
-            embed.set_author(
-                name="Club Cirno Leaderboards",
-                icon_url=_SCOREBOARD_STAMP,
+            scoreboard_s = await self.create_leaderboard_str(
+                rows, page, ctx, headers, align, max_padding
             )
-            if rows:
-                embed.set_thumbnail(
-                    url=(
-                        await utility.find_user(self.bot, ctx, rows[0].get("uid"))
-                    ).display_avatar.url
-                )
+
+            embed = await self._prepare_leaderboard_embed(
+                ctx, page, date, rows, scoreboard_s
+            )
             await msg.edit(embed=embed)
 
-    async def _prepare_leaderboard_subset(
+    async def create_leaderboard_str(
+        self,
+        rows: list[Record],
+        page: int,
+        ctx: commands.Context,
+        headers: list[str],
+        align: list[str],
+        max_padding: list[int],
+    ) -> str:
+        if not rows:
+            return "No data has been logged during this time period."
+
+        subset = await leaderboard.prepare_leaderboard_subset(rows, page)
+        subset_, uids = await self.process_subset(ctx, subset)
+        raw_scoreboard = leaderboard.format(
+            subset_, headers, align=align, max_padding=max_padding
+        )
+
+        self.leaderboard_highlight(
+            ctx, headers, max_padding, subset_, uids, raw_scoreboard
+        )
+
+        scoreboard_s = "\n".join(raw_scoreboard)
+        return scoreboard_s
+
+    def leaderboard_highlight(
+        self,
+        ctx: commands.Context,
+        headers: list[str],
+        max_padding: list[str],
+        subset_: list,
+        uids: list[str],
+        raw_scoreboard: list[str],
+    ) -> None:
+        """Given a list of strings, will modify in place and add @ if matches uid."""
+        uid = ctx.author.id
+        if uid in uids:
+            col_widths = leaderboard.calc_max_col_width(subset_, headers, max_padding)
+            subset_i = uids.index(uid)
+            leaderboard.highlight_row(raw_scoreboard, subset_i, col_widths)
+
+    async def _prepare_leaderboard_embed(
         self,
         ctx: commands.Context,
         page: int,
-        rows: list[Record],
         date: pendulum.DateTime,
-    ) -> discord.Embed:
-        page = min(len(rows) // 10, page)
-        year = date.year
-        month = date.month - 1
+        rows: list[Record],
+        scoreboard_s: list[str],
+    ):
+        embed = discord.Embed()
+        embed.set_author(
+            name="Club Cirno Leaderboards",
+            icon_url=_SCOREBOARD_STAMP,
+        )
         if rows:
-            width = 10
-            lo = (page - 1) * width
-            up = page * width
-            subset = rows[lo:up]
-            embed = await self._format_leaderboard_subset(
-                ctx, subset, uid=ctx.author.id
-            )
-            embed.description = f"""\
-            Year: **`{year}`**
-            Season: **`{month // 3 + 1}`**
-            Page: **`{page}`**
-            {embed.description}
-            """
-        else:
-            embed = discord.Embed(
-                description=f"""\
-                Year: **`{year}`**
-                Season: **`{month // 3 + 1}`**
-                Page: **`{page}`**\n
-                There are no experience logs at this time.
-                """
+            embed.set_thumbnail(
+                url=(
+                    await utility.find_user(self.bot, ctx, rows[0].get("uid"))
+                ).display_avatar.url
             )
 
+        embed.description = f"""
+            Year: **`{date.year}`**
+            Season: **`{date.month // 3 + 1}`**
+            Page: **`{page}`**
+            ```py\n{scoreboard_s}```"""
+
+        embed.color = discord.Color.from_str("#a2dcf7")
         return embed
 
-    async def _format_leaderboard_subset(
-        self,
-        ctx: commands.Context,
-        subset: list[Record],
-        mode: db.table.WindowEnum = db.table.WindowEnum.SEASONAL,
-        *,
-        uid: int = None,
-    ) -> discord.Embed:
-        """Prepare the leaderboard for lazy computing when a page is requested.
+    async def process_subset(self, ctx, subset) -> tuple[list[int], list[list]]:
+        """Process experience leaderboards to levels.
 
-        data: the raw result from query, containing (rank, uid, exp) in that order
-        user: provide user if you want to highlight them, if exist
+        Return the new, processed subset with new fields.
+
+        Also return uids for usage.
         """
-        # Transpose for per-column transformations
         ranks, uids, exps = zip(*subset)
         lvls = [levels_helper.level_from_exp(e) for e in exps]
         names = [await utility.find_username(self.bot, ctx, id) for id in uids]
 
         # Transpose back to prepare to generate
         window = list(zip(ranks, exps, lvls, names))
-
-        # Generate leaderboard
-        headers = ["Rank", "Exp", "Lv", "User"]
-        align = ["<", ">", ">", ">"]
-        max_padding = [0, 0, 0, 16]
-
-        raw_scoreboard = leaderboard.format(
-            window,
-            headers,
-            align=align,
-            max_padding=max_padding,
-        )
-
-        col_widths = leaderboard.calc_max_col_width(window, headers, max_padding)
-
-        if uid in uids:
-            subset_i = uids.index(uid)
-            leaderboard.highlight_row(raw_scoreboard, subset_i, col_widths)
-
-        scoreboard_s = "\n".join(raw_scoreboard)  # Final step to join.
-
-        # Generate Embed
-        embed = discord.Embed()
-
-        embed.description = f"```py\n{scoreboard_s}```"
-
-        embed.color = discord.Color.from_str("#a2dcf7")
-
-        return embed
+        return window, uids
 
     @exp.command(name="resync")
     @commands.is_owner()
