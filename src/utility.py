@@ -280,12 +280,16 @@ async def find_username(bot: CazzuBot, ctx: commands.Context, uid: int) -> str:
 
     If fails, return uid.
     """
-    res = else_if_none(
-        ctx.guild.get_member(uid),
-        bot.get_user(uid),
-        await bot.fetch_user(uid),
-        str(uid),
-    )
+    res = ctx.guild.get_member(uid)
+
+    if res is None:
+        res = bot.get_user(uid)
+
+    if res is None:
+        res = await bot.fetch_user(uid)
+
+    if res is None:
+        str(uid)
 
     return res.display_name if hasattr(res, "display_name") else res
 
