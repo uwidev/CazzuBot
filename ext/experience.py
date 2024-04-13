@@ -322,7 +322,7 @@ class Experience(commands.Cog):
         gid = ctx.guild.id
 
         # Prepare initial leaderboard
-        date = pendulum.date(year, ((season) * 3), 1)
+        date = pendulum.date(year, ((season - 1) * 3) + 1, 1)
         rows = await db.guild.get_members_exp_seasonal_by_month(
             self.bot.pool, gid, date.year, date.month
         )
@@ -355,7 +355,7 @@ class Experience(commands.Cog):
                     self.bot.wait_for("reaction_add", check=check),
                     self.bot.wait_for("reaction_remove", check=check),
                 ],
-                timeout=10,
+                timeout=30,
                 return_when=asyncio.FIRST_COMPLETED,
             )
 
