@@ -3,6 +3,7 @@
 See member_exp_log.py for details on how exp is stored and summed.
 """
 
+import asyncio
 import logging
 from enum import Enum, auto
 from math import trunc
@@ -82,9 +83,6 @@ class Experience(commands.Cog):
         # if message.author.id != 92664421553307648:  # debug, only see usara
         #     return
 
-        _log.debug("Received message from %s", message.author)
-        _log.debug("%s", message)
-
         now = pendulum.now("UTC")
         uid = message.author.id
         gid = message.guild.id
@@ -161,7 +159,7 @@ class Experience(commands.Cog):
 
         rows = await db.guild.get_members_exp_seasonal_by_month(
             self.bot.pool, gid, now.year, now.month
-        )  # month needs to be zero indexed to properly bin into seasons
+        )
 
         embed = await self._prepare_personal_summary(ctx, user, rows)
 
@@ -196,7 +194,7 @@ class Experience(commands.Cog):
 
         # Prepare leaderboard window
         uid_index = [r["uid"] for r in data].index(uid)
-        subset, subset_i = leaderboard.create_data_subset(data, uid_index)
+        subset, subset_i = leaderboard.create_focus_subset(data, uid_index)
 
         # Transpose for per-column transformations
         ranks, uids, exps = zip(*subset)
@@ -234,7 +232,6 @@ class Experience(commands.Cog):
 
         col_widths = leaderboard.calc_max_col_width(window, headers, max_padding)
 
-        _log.debug(f"{raw_scoreboard=}")
         leaderboard.highlight_row(raw_scoreboard, subset_i, col_widths)
         scoreboard_s = "\n".join(raw_scoreboard)  # Final step to join.
 
@@ -270,7 +267,7 @@ class Experience(commands.Cog):
             name=f"{user.display_name}'s Club Membership Card",
             icon_url=_SCOREBOARD_STAMP,
         )
-        embed.set_thumbnail(url=user.avatar.url)
+        embed.set_thumbnail(url=user.display_avatar.url)
         embed.description = f"""
         Rank: {role.mention if role else '`None`'}
         Level: **`{lvl:,}`**
@@ -278,6 +275,222 @@ class Experience(commands.Cog):
 
         You currently the `{utility.ordinal(trunc(percentile))}` percentile of all members!
         ```py\n{scoreboard_s}```"""
+
+        embed.color = discord.Color.from_str("#a2dcf7")
+
+        return embed
+
+    @exp.command(name="top")
+    async def exp_top(
+        self,
+        ctx: commands.Context,
+        year: int = None,
+        season: int = None,
+        page: int = None,
+    ):
+        """Display the seasonal experience leaderboard of the select year and month."""
+
+        def check(reaction: discord.Reaction, user: discord.Member):
+            return (
+                user == ctx.author
+                and reaction.message == msg
+                and str(reaction.emoji) in ("⬅", "◀", "▶", "➡")
+            )
+
+        now = pendulum.now()
+        if year is None:
+            year = now.year
+
+        if season is None:
+            season = now.month // 3
+
+        if page is None:
+            page = 1
+
+        if season < 1 or season > 4:
+            msg = f"Season {season} is not a valid number (1-4)"
+            raise commands.BadArgument(msg)
+
+        if year < 2023 or year > now.year:
+            msg = f"Year {year} is not a valid year, or is too early."
+            raise commands.BadArgument(msg)
+
+        if page <= 0:
+            msg = f"Page {page} must be greater than 0."
+            raise commands.BadArgument(msg)
+
+        gid = ctx.guild.id
+
+        # Prepare initial leaderboard
+        date = pendulum.date(year, ((season) * 3), 1)
+        rows = await db.guild.get_members_exp_seasonal_by_month(
+            self.bot.pool, gid, date.year, date.month
+        )
+
+        embed = await self._prepare_leaderboard_subset(ctx, page, rows, date)
+        embed.set_author(
+            name="Club Cirno Leaderboards",
+            icon_url=_SCOREBOARD_STAMP,
+        )
+        if rows:
+            embed.set_thumbnail(
+                url=(
+                    await utility.find_user(self.bot, ctx, rows[0].get("uid"))
+                ).display_avatar.url
+            )
+
+        # Send leaderboard
+        msg = await ctx.send(embed=embed)
+        await msg.add_reaction("⬅")
+        await msg.add_reaction("◀")
+        await msg.add_reaction("▶")
+        await msg.add_reaction("➡")
+
+        # Wait for input and edit message as needed
+        while True:
+            # Source of how to wait for multiple coroutines, as implemented below.
+            # https://discord.com/channels/336642139381301249/564950631455129636/818902309421318204
+            done, pending = await asyncio.wait(
+                [
+                    self.bot.wait_for("reaction_add", check=check),
+                    self.bot.wait_for("reaction_remove", check=check),
+                ],
+                timeout=10,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if not done:
+                break
+
+            try:
+                reaction, user = done.pop().result()
+                reaction: discord.Reaction
+
+            except Exception as err:  # when .result(), may re-raise exception from og
+                raise commands.CommandError from err
+
+            for future in done:
+                future.exception()  # consume(?) exceptions so they don't clutter output
+
+            for future in pending:
+                future.cancel()  # stop waiting for these tasks
+
+            # Handle user input
+            if str(reaction.emoji) == "◀":
+                _log.info("Decreasing page...")
+                page = max(page - 1, 1)
+            elif str(reaction.emoji) == "▶":
+                _log.info("Increasing page...")
+                max_page = len(rows) // 10
+                page = min(page + 1, max_page)
+            elif str(reaction.emoji) == "⬅":
+                date = date.subtract(months=3)
+                rows = await db.guild.get_members_exp_seasonal_by_month(
+                    self.bot.pool, gid, date.year, date.month
+                )
+                page = 1
+            elif str(reaction.emoji) == "➡":
+                date = date.add(months=3)
+                rows = await db.guild.get_members_exp_seasonal_by_month(
+                    self.bot.pool, gid, date.year, date.month
+                )
+                page = 1
+
+            # Prepare new embed
+            embed = await self._prepare_leaderboard_subset(ctx, page, rows, date)
+            embed.set_author(
+                name="Club Cirno Leaderboards",
+                icon_url=_SCOREBOARD_STAMP,
+            )
+            if rows:
+                embed.set_thumbnail(
+                    url=(
+                        await utility.find_user(self.bot, ctx, rows[0].get("uid"))
+                    ).display_avatar.url
+                )
+            await msg.edit(embed=embed)
+
+    async def _prepare_leaderboard_subset(
+        self,
+        ctx: commands.Context,
+        page: int,
+        rows: list[Record],
+        date: pendulum.DateTime,
+    ) -> discord.Embed:
+        page = min(len(rows) // 10, page)
+        year = date.year
+        month = date.month - 1
+        if rows:
+            width = 10
+            lo = (page - 1) * width
+            up = page * width
+            subset = rows[lo:up]
+            embed = await self._format_leaderboard_subset(
+                ctx, subset, uid=ctx.author.id
+            )
+            embed.description = f"""\
+            Year: **`{year}`**
+            Season: **`{month // 3 + 1}`**
+            Page: **`{page}`**
+            {embed.description}
+            """
+        else:
+            embed = discord.Embed(
+                description=f"""\
+                Year: **`{year}`**
+                Season: **`{month // 3 + 1}`**
+                Page: **`{page}`**\n
+                There are no experience logs at this time.
+                """
+            )
+
+        return embed
+
+    async def _format_leaderboard_subset(
+        self,
+        ctx: commands.Context,
+        subset: list[Record],
+        mode: db.table.WindowEnum = db.table.WindowEnum.SEASONAL,
+        *,
+        uid: int = None,
+    ) -> discord.Embed:
+        """Prepare the leaderboard for lazy computing when a page is requested.
+
+        data: the raw result from query, containing (rank, uid, exp) in that order
+        user: provide user if you want to highlight them, if exist
+        """
+        # Transpose for per-column transformations
+        ranks, uids, exps = zip(*subset)
+        lvls = [levels_helper.level_from_exp(e) for e in exps]
+        names = [await utility.find_username(self.bot, ctx, id) for id in uids]
+
+        # Transpose back to prepare to generate
+        window = list(zip(ranks, exps, lvls, names))
+
+        # Generate leaderboard
+        headers = ["Rank", "Exp", "Lv", "User"]
+        align = ["<", ">", ">", ">"]
+        max_padding = [0, 0, 0, 16]
+
+        raw_scoreboard = leaderboard.format(
+            window,
+            headers,
+            align=align,
+            max_padding=max_padding,
+        )
+
+        col_widths = leaderboard.calc_max_col_width(window, headers, max_padding)
+
+        if uid in uids:
+            subset_i = uids.index(uid)
+            leaderboard.highlight_row(raw_scoreboard, subset_i, col_widths)
+
+        scoreboard_s = "\n".join(raw_scoreboard)  # Final step to join.
+
+        # Generate Embed
+        embed = discord.Embed()
+
+        embed.description = f"```py\n{scoreboard_s}```"
 
         embed.color = discord.Color.from_str("#a2dcf7")
 

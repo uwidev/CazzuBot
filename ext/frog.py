@@ -142,7 +142,7 @@ class Frog(commands.Cog):
         # Prepare leaderboard
         uid_index = [r["uid"] for r in data].index(uid)
         _log.debug(f"{uid_index=}")
-        subset, subset_i = leaderboard.create_data_subset(data, uid_index)
+        subset, subset_i = leaderboard.create_focus_subset(data, uid_index)
         for s in subset:
             _log.debug(f"{s=}")
 

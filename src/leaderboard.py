@@ -15,7 +15,7 @@ Making a leadeboard is process.
 """
 
 
-def create_data_subset(
+def create_focus_subset(
     rows: list, focus_index: int, *, size: int = 5
 ) -> tuple[list, int]:
     """Create a sub-list of a bigger list, creating a window with a certain size.

@@ -1,4 +1,5 @@
 """Contains helper functions for calculating a level given experience."""
+
 import logging
 from enum import Enum, auto
 from math import cos, pi
@@ -117,7 +118,6 @@ def _bin_up(arr, target):
 
     while left <= right:
         mid = left + (right - left) // 2
-
         # If checking forward is out of scope, break and return -1
         # to generate more levels to look up.
         if mid + 1 >= len(arr):

@@ -280,18 +280,26 @@ async def find_username(bot: CazzuBot, ctx: commands.Context, uid: int) -> str:
 
     If fails, return uid.
     """
+    res = await find_user(bot, ctx, uid)
+    return res.display_name if hasattr(res, "display_name") else res
+
+
+async def find_user(bot: CazzuBot, ctx: commands.Context, uid: int) -> discord.Member:
+    """Attempt to find a user, looking at internal cache first, then fetching.
+
+    If fails, return None.
+    """
     res = ctx.guild.get_member(uid)
 
     if res is None:
         res = bot.get_user(uid)
 
     if res is None:
+        _log.info(f"uid {uid} not found, fetching")
         res = await bot.fetch_user(uid)
+        _log.info(f"maybe found? was {res}")
 
-    if res is None:
-        str(uid)
-
-    return res.display_name if hasattr(res, "display_name") else res
+    return res
 
 
 def prepare_embed(title: str, desc: str, color: bytes = 0x9EDBF7) -> discord.Embed:
