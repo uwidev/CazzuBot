@@ -302,7 +302,7 @@ class Experience(commands.Cog):
             year = now.year
 
         if season is None:
-            season = now.month // 3
+            season = now.month // 3 + 1
 
         if page is None:
             page = 1
