@@ -106,12 +106,12 @@ class Experience(commands.Cog):
 
         year = now.year
         month = now.month
-        seasonal_exp_old = utility.else_if_none(
-            await db.member_exp_log.get_seasonal_by_month(
-                self.bot.pool, gid, uid, year, month
-            ),
-            0,
+        seasonal_exp_old = await db.member_exp_log.get_seasonal_by_month(
+            self.bot.pool, gid, uid, year, month
         )
+        if not seasonal_exp_old:
+            seasonal_exp_old = 0
+
         seasonal_exp_new = seasonal_exp_old + exp_gain
         seasonal_exp = utility.OldNew(seasonal_exp_old, seasonal_exp_new)
 

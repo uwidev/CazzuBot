@@ -43,6 +43,16 @@ class ReadOnlyDict(dict):
 
 
 def else_if_none(*args, raise_err=True):
+    """Return the first argument evaluated to be not null.
+
+    Somewhat bad practice. It will evaluate EVERYTHING passed into it, meaning that if
+    there's an API call, or anything blocking, it will always stall on that evaluation.
+
+    Suggested not to use anymore and phase out for manual code control... or something
+    better.
+
+    An alternative would be to pack input as [(function, *arg, **kwarg)], loop and call.
+    """
     for arg in args:
         if arg is not None:
             return arg
@@ -165,6 +175,7 @@ def update_dict(old: dict, ref: dict) -> dict:
     Returns:
     -------
         {'a': 3, 'b': {'y': 0}, 'd': 2}
+
     """
     new = {}
 
