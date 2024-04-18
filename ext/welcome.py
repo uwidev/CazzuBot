@@ -1,5 +1,6 @@
 """Welcoming functionality for new users who join the server."""
 
+import asyncio
 import copy
 import json
 import logging
@@ -100,6 +101,7 @@ class Welcome(commands.Cog):
         member,
         msg_json,
     ):
+        await asyncio.sleep(1)  # delay to let user ui update channels so ping works
         utility.deep_map(msg_json, welcome.formatter, member=member)
         content, embed, embeds = user_json.prepare(msg_json)
         await sendable.send(content, embed=embed, embeds=embeds)
