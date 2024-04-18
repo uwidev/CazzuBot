@@ -52,41 +52,57 @@ class Welcome(commands.Cog):
         onboarding step... which means users can get welcomed multiple times for each
         completed welcoming task. Changed to pending instead.
         """
-        # if before.pending != after.pending:
-        if before.pending != after.pending and after.id != self.last_welcomed_id:
-            self.last_welcomed_id = after.id  # Placed here to prevent race conditions
-            guild = before.guild
-            gid = guild.id
+        guild = before.guild
+        gid = guild.id
+        enabled, cid, message, default_rid, mode, monitor_rid = (
+            await db.welcome.get_payload(self.bot.pool, gid)
+        ).values()
 
-            enabled, cid, message, default_rid = (
-                await db.welcome.get_payload(self.bot.pool, gid)
-            ).values()
+        # Verifications
+        if not enabled:
+            return
 
-            # Verify valid settings
-            if not enabled:
-                return
+        if not cid:
+            msg = "Channel is not set or does not exist."
+            raise self.WelcomeMisconfigutationError(msg)
 
-            if not cid:
-                msg = "Channel is not set or does not exist."
-                raise self.WelcomeMisconfigutationError(msg)
+        channel = guild.get_channel(cid)
+        if not channel and cid:  # cid defined but channel not found
+            msg = "Channel was set but was not found in guild."
+            raise self.WelcomeMisconfigutationError(msg)
 
-            channel = guild.get_channel(cid)
-            if not channel and cid:  # cid defined but channel not found
-                msg = "Channel was set but was not found in guild."
-                raise self.WelcomeMisconfigutationError(msg)
+        role = guild.get_role(default_rid)
+        if not role and default_rid:  # rid defined but role not found
+            msg = "Default role was set but was not found in guild."
+            raise self.WelcomeMisconfigutationError(msg)
 
-            role = guild.get_role(default_rid)
-            if not role and default_rid:  # rid defined but role not found
-                msg = "Default role was set but was not found in guild."
-                raise self.WelcomeMisconfigutationError(msg)
+        # Vary function based on welcome mode
+        if mode == db.table.WelcomeModeEnum.PENDING:
+            if before.pending != after.pending and after.id != self.last_welcomed_id:
+                self.last_welcomed_id = (
+                    after.id
+                )  # Placed here to prevent race conditions
 
-            decoded = message
-            utility.deep_map(decoded, welcome.formatter, member=after)
-            content, embed, embeds = user_json.prepare(decoded)
-            await channel.send(content, embed=embed, embeds=embeds)
+                await self._send_welcome(channel, after, message)
 
-            if role:
-                await after.add_roles(role)
+                if role:
+                    await after.add_roles(role)
+        elif mode == db.table.WelcomeModeEnum.ROLE:
+            roles_before = set(before.roles)
+            roles_after = set(after.roles)
+            roles_diff: list[discord.Role] = roles_after - roles_before
+            if roles_diff and monitor_rid == roles_diff.pop().id:
+                await self._send_welcome(channel, after, message)
+
+    async def _send_welcome(
+        self,
+        sendable: discord.PartialMessageable,
+        member,
+        msg_json,
+    ):
+        utility.deep_map(msg_json, welcome.formatter, member=member)
+        content, embed, embeds = user_json.prepare(msg_json)
+        await sendable.send(content, embed=embed, embeds=embeds)
 
     class WelcomeMisconfigutationError(Exception):
         """Raised when guild configuations are invalid."""
@@ -149,6 +165,21 @@ class Welcome(commands.Cog):
             gid,
             decoded,
         )
+
+    @welcome_set.command(name="mode")
+    async def welcome_set_mode(
+        self, ctx: commands.Context, *, mode: db.table.WelcomeModeEnum
+    ):
+        gid = ctx.guild.id
+        await db.welcome.set_mode(self.bot.pool, gid, mode)
+        await ctx.message.add_reaction("👍")
+
+    @welcome_set.command(name="monitor")
+    async def welcome_set_monitor(self, ctx: commands.Context, *, role: discord.Role):
+        gid = ctx.guild.id
+        rid = role.id
+        await db.welcome.set_monitor_rid(self.bot.pool, gid, rid)
+        await ctx.message.add_reaction("👍")
 
     @welcome.command(name="demo")
     async def welcome_demo(self, ctx: commands.Context):

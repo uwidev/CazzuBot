@@ -64,6 +64,11 @@ class FrogTypeEnum(Enum):
     FROZEN = "frozen"
 
 
+class WelcomeModeEnum(Enum):
+    PENDING = "pending"
+    ROLE = "role"
+
+
 @dataclass
 class Task(SnowflakeTable):
     tag: list
@@ -253,3 +258,33 @@ class MemberFrogLog(SnowflakeTable):
 
     def __iter__(self):
         return iter([self.gid, self.uid, self.type, self.at, self.waited_for])
+
+
+@dataclass
+class Welcome(SnowflakeTable):
+    """A guild's welcome settings.
+
+    monitor_rid be considered moved to its own table as its existance depends on
+    if mode is set to ROLE, otherwise it is just NULL
+    """
+
+    gid: int
+    enabled: bool
+    default_rid: None
+    cid: None
+    message: dict
+    mode: WelcomeModeEnum
+    monitor_rid: int
+
+    def __iter__(self):
+        return iter(
+            [
+                self.gid,
+                self.enabled,
+                self.default_rid,
+                self.cid,
+                self.message,
+                self.mode,
+                self.monitor_rid,
+            ]
+        )

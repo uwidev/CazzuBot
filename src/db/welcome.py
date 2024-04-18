@@ -1,4 +1,5 @@
 """Manages all queries for a guild's welcome settings."""
+
 import logging
 
 from asyncpg import Pool, Record
@@ -10,6 +11,10 @@ _log = logging.getLogger(__name__)
 
 
 async def add(pool: Pool, gid: int):
+    """Add guild to database welcome.
+
+    Should consider taking a table.Welcome object instead for standardization.
+    """
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
@@ -161,9 +166,38 @@ async def get_payload(pool: Pool, gid: int) -> Record:
     async with pool.acquire() as con:
         return await con.fetchrow(
             """
-            SELECT enabled, cid, message, default_rid
+            SELECT enabled, cid, message, default_rid, mode, monitor_rid
             FROM welcome
             WHERE gid = $1
             """,
             gid,
         )
+
+
+async def set_mode(pool: Pool, gid: int, mode: table.WelcomeModeEnum):
+    """Get all neccessary information to handle welcoming users."""
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                UPDATE welcome
+                SET mode = $2
+                WHERE gid = $1
+                """,
+                gid,
+                mode,
+            )
+
+
+async def set_monitor_rid(pool: Pool, gid: int, rid: int):
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                UPDATE welcome
+                SET monitor_rid = $2
+                WHERE gid = $1
+                """,
+                gid,
+                rid,
+            )

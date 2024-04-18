@@ -24,6 +24,7 @@ from src.db.table import (
     MemberExpLogSourceEnum,
     ModlogStatusEnum,
     ModlogTypeEnum,
+    WelcomeModeEnum,
     WindowEnum,
 )
 from src.json_handler import dumps, loads
@@ -97,6 +98,12 @@ async def setup_codecs(con: Connection):
         "member_exp_log_source_enum",
         encoder=lambda e: e.value,
         decoder=MemberExpLogSourceEnum,
+    )
+
+    await con.set_type_codec(
+        "welcome_mode_enum",
+        encoder=lambda e: e.value,
+        decoder=WelcomeModeEnum,
     )
 
     await con.set_type_codec("json", encoder=dumps, decoder=loads, schema="pg_catalog")
