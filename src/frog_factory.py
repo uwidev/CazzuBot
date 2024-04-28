@@ -42,8 +42,9 @@ async def check_frog_spawn(bot: CazzuBot):
         db.table.Task(**ex) for ex in expired_frog_record
     ]
 
-    for expired in expired_frog_task:  # would be better to batch so only 1 db call
-        await db.task.drop_one(bot.pool, expired.id)
+    # No need to drop frog tasks since, just update when they spawn.
+    # for expired in expired_frog_task:  # would be better to batch so only 1 db call
+    #     await db.task.drop_one(bot.pool, expired.id)
 
     for fg in expired_frog_task:
         gid = fg.payload["gid"]
@@ -61,6 +62,15 @@ async def check_frog_spawn(bot: CazzuBot):
         fuzzy = fg.payload["fuzzy"]
         id = fg.id
 
+        # Roll for future frog, assuming no one will catch this one.
+        # This is to prevent problems where regardless connection issues, or if this
+        # function fails to complete, a future frog will always be rolled based on
+        # when the frog should despawn.
+        run_at = roll_future_frog(
+            pendulum.now("UTC").add(seconds=persist), interval, fuzzy
+        )
+        await db.task.update_run_at(bot.pool, id, run_at)
+
         was_captured = await spawn_and_wait(bot, persist, gid=gid, cid=cid)
 
         # Roll next spawn and update run_at
@@ -72,10 +82,10 @@ async def check_frog_spawn(bot: CazzuBot):
         if not enabled:
             return
 
-        now = pendulum.now()
-        run_at = roll_future_frog(now, interval, fuzzy)
-        fg.run_at = run_at
-        await db.task.add(bot.pool, fg)
+        if was_captured:  # Reroll based on when captured, not when frog despawn.
+            now = pendulum.now("UTC")
+            run_at = roll_future_frog(now, interval, fuzzy)
+            await db.task.update_run_at(bot.pool, id, run_at)
 
 
 async def spawn_and_wait(
@@ -85,7 +95,7 @@ async def spawn_and_wait(
     ctx: commands.Context = None,
     gid: int = None,
     cid: int = None,
-):
+) -> bool:
     """Spawn frog and wait until capture.
 
     Return True if captured, else False.
@@ -157,12 +167,12 @@ async def spawn_and_wait(
 
         content, embed, embeds = user_json.prepare(embed_json)
 
-        msg_caught = await channel.send('_ _', delete_after=7)
+        msg_caught = await channel.send("_ _", delete_after=7)
         if embed:
             await msg_caught.edit(content=content, embed=embed)
         elif embeds:
             await msg_caught.edit(content=content, embeds=embeds)
-            
+
     except TimeoutError:
         return False
     else:
@@ -233,7 +243,7 @@ async def update_frog_task(
     bot: CazzuBot, id: int, now: DateTime, interval: int, fuzzy: float
 ):
     run_at = roll_future_frog(now, interval, fuzzy)
-    await db.task.frog_update_run(bot.pool, id, run_at)
+    await db.task.update_run_at(bot.pool, id, run_at)
 
 
 def roll_fuzzy(fuzzy: float):

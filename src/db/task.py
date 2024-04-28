@@ -122,7 +122,7 @@ async def drop(pool: Pool, *, payload: dict = {}, tag: list[str] = []) -> None:
             )
 
 
-async def frog_update_run(pool: Pool, id: int, run_at: DateTime) -> None:
+async def update_run_at(pool: Pool, id: int, run_at: DateTime) -> None:
     """Update run_at interval on a frog task,."""
     async with pool.acquire() as con:
         async with con.transaction():
