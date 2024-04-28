@@ -123,7 +123,7 @@ async def drop(pool: Pool, *, payload: dict = {}, tag: list[str] = []) -> None:
 
 
 async def update_run_at(pool: Pool, id: int, run_at: DateTime) -> None:
-    """Update run_at interval on a frog task,."""
+    """Update run_at matching id."""
     async with pool.acquire() as con:
         async with con.transaction():
             await con.execute(
@@ -137,8 +137,8 @@ async def update_run_at(pool: Pool, id: int, run_at: DateTime) -> None:
             )
 
 
-async def frog_update(pool: Pool, id: int, run_at: DateTime, payload: dict) -> None:
-    """Update all run_at and payload.
+async def update_all(pool: Pool, id: int, run_at: DateTime, payload: dict) -> None:
+    """Update run_at and payload matching id.
 
     Does not update tag, so might be slightly misleading.
     """
@@ -152,6 +152,21 @@ async def frog_update(pool: Pool, id: int, run_at: DateTime, payload: dict) -> N
                 """,
                 id,
                 run_at,
+                payload,
+            )
+
+
+async def update_payload(pool: Pool, id: int, payload: dict) -> None:
+    """Update payload matching id."""
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                UPDATE task
+                SET payload = $3
+                WHERE id = $1
+                """,
+                id,
                 payload,
             )
 

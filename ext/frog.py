@@ -287,7 +287,7 @@ class Frog(commands.Cog):
                 run_at = frog_factory.roll_future_frog(now, interval, fuzzy)
 
                 # payload = self.bot.json_encoder.encode(payload)
-                await db.task.frog_update(self.bot.pool, id, run_at, payload)
+                await db.task.update_all(self.bot.pool, id, run_at, payload)
             else:  # If task not already exists
                 await frog_factory.add_frog_task(self.bot, payload)
 
