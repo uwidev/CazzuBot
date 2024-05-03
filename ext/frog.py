@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import random
+import traceback
 from asyncio import TimeoutError
 from enum import Enum
 from math import trunc
@@ -53,8 +54,23 @@ class Frog(commands.Cog):
         the task query with tags "frog".
         """
         # _log.info("Checking if frog can spawn...")
-
-        await frog_factory.check_frog_spawn(self.bot)
+        try:
+            await frog_factory.check_frog_spawn(self.bot)
+        except discord.DiscordServerError:
+            # Loops, if they encounter any exception, will stop looping and set
+            # _has_failed = True. Catching allows looping to continue to work even
+            # if Discord themselves have a server error.
+            #
+            # Though if Discord never fixes themselves, this will continuously reroll
+            # all frogs despite never interacting with discord.
+            _log.warning("%s", traceback.format_exc())
+        except Exception as err:
+            msg = (
+                "Frog tasks.loop has encountered an uncaught exception. "
+                "Frog spawning will now terminate."
+            )
+            _log.error("%s", msg)
+            _log.exception(err)
 
     @check_spawn_frog.before_loop
     async def before_check_frog_spawn(self):
