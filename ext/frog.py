@@ -489,7 +489,7 @@ class Frog(commands.Cog):
     @commands.is_owner()
     async def frog_fake(self, ctx: commands.Context):
         msg = await ctx.send("<:cirnoFrog:695126166301835304>")
-        await msg.add_reaction("<:cirnoNet:752290769712316506>")
+        await msg.add_reaction("<:cirnoFrogNet:753158156711886909>")
 
     @frog.command(name="resync")
     @commands.is_owner()
