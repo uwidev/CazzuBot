@@ -20,6 +20,7 @@ from main import CazzuBot
 from src import db, frog, frog_factory, leaderboard, user_json, utility
 from src.custom_converters import PositiveInt
 from src.ntlp import InvalidTimeError, parse_duration
+from src.db.table import FrogTypeEnum
 
 
 _log = logging.getLogger(__name__)
@@ -193,6 +194,9 @@ class Frog(commands.Cog):
         embed = discord.Embed()
         user_frog_cnt = frog_cnt[subset_i]
         user_frog_inv = await db.member_frog.get_frogs(self.bot.pool, gid, uid)
+        user_frog_frozen_inv = await db.member_frog.get_frogs(
+            self.bot.pool, gid, uid, FrogTypeEnum.FROZEN
+        )
         rank = ranks[subset_i]
 
         if mode is db.table.WindowEnum.SEASONAL:
@@ -222,7 +226,7 @@ class Frog(commands.Cog):
 
         **__Inventory__**
         Frogs (Seasonal): **`{user_frog_inv}`**
-        Frogs (Frozen): **`0`**
+        Frogs (Frozen): **`{user_frog_frozen_inv}`**
 
         You currently the `{utility.ordinal(trunc(percentile))}` percentile of all members!
         ```py\n{scoreboard_s}```
