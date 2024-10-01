@@ -3,6 +3,14 @@
 Bot grabs API key from secret/setup.py.
 
 Docker sets fresh database password from secret/db
+
+usage: CazzuBot [-h] [-d] [-p] [-s]
+
+options:
+  -h, --help        show this help message and exit
+  -d, --debug       Run as debug and only respond to debug users
+  -p, --production  Run with production token
+  -s, --sandbox     Run with only the the sandbox.py extension
 """
 
 import argparse
