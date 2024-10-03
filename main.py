@@ -144,7 +144,7 @@ async def main():
 
     # Read secret files
     async with aiofiles.open(postgres_password_file, mode="r") as file:
-        pw = await file.readline()
+        pw = (await file.readline()).strip()
 
     async with aiofiles.open(token_file, mode="r") as file:
         token = await file.readline()
