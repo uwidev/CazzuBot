@@ -113,5 +113,38 @@ async def get_members_exp_ranked(pool: Pool, gid: int) -> list[Record]:
     return await member_exp.get_exp_bulk_ranked(pool, gid)
 
 
+async def set_inktober_cid(pool: Pool, gid: int, cid: int) -> list[Record]:
+    """Set inktober channel id.
+
+    To react to messages with valid submission.
+    """
+    async with pool.acquire() as con:
+        async with con.transaction():
+            await con.execute(
+                """
+                UPDATE guild
+                SET inktober_cid = $2
+                WHERE gid = $1
+                """,
+                gid,
+                cid,
+            )
+
+
+async def get_inktober_cid(pool: Pool, gid, int) -> list[Record]:
+    """Get inktober channel id."""
+    async with pool.acquire() as con:
+        ret = await con.fetchval(
+            """
+            SELECT inktober_cid
+            FROM guild
+            WHERE gid = $1
+            """,
+            gid,
+        )
+
+    return ret
+
+
 def init():
     utility.insert_gid = add
