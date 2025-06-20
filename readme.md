@@ -1,11 +1,18 @@
-## How to develop
-All functionality of the bot should be developed within `/cogs`.
+## CazzuBot
+This is the bot that runs [Club Cirno](https://discord.gg/club-cirno).
 
-Each file within `/cogs` define its own ecosystem. For example, all functionality relating to **frogs** should be in some file `frogs.py`. If said file is too long/big, it may be better to split the cog into various files, named as such `frogs_comamnds.py`, `frogs_listener.py`.
+Primary features are as follows.
+- Experience scoring algorithm to evaluate user activity
+- Ranked roles based on experience
+- Token (frog) spawning system to encourage activity
+- Leaderboards for both experience and tokens
+- Seasonal resets and lifetime tracking for all features listed above
+- Other utility to batch work for the server
 
-What are cogs? Cogs can be thought as a collection of commands, states, event listeners, etc. in one class. Cogs are loaded onto the bot at runtime and extend the functionality of the bot. It's modular and can be hot-swapped.
-https://discordpy.readthedocs.io/en/stable/ext/commands/cogs.html
+On the technical side of things:
+- Containerized with docker
+- Asynchronous PostgreSQL
+- Has support for multiple guilds, but experiemental and has not been tested
+  - Not a planned feature, more so good practices
 
-How to write a cog and commands? See `/cogs/echo.py`.
-
-To try to get familiar with writing commands, try writing a simple math command as a cog.
+The bot may not initialize its own database. If you try to run the bot yourself, you may need to manually create it. I may or may not support it, as I wrote this bot specifically for Club Cirno and learning purposes.
