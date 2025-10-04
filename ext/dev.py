@@ -38,6 +38,7 @@ class Dev(commands.Cog):
     async def test(self, ctx: commands.Context):
         await ctx.send("jierabnhgbnaljkgn")
 
+
     # async def tinydb_frog_cap_migrate(self):
     #     _log.info("Beginning database insert...")
     #     async with self.bot.pool.acquire() as con:
@@ -131,8 +132,11 @@ class Dev(commands.Cog):
                         to_print += to_append
                         i += 1
 
-                    await ctx.send(to_print)
-                    await asyncio.sleep(2)
+                    try:
+                        await ctx.send(to_print)
+                        await asyncio.sleep(2)
+                    except discord.errors.HTTPException:
+                        pass
                     if eof_reached == 1:
                         break
 
@@ -154,7 +158,7 @@ class Dev(commands.Cog):
                         to_print += to_append
                         i += 1
 
-                    # print('going to print {}'.format(to_print))
+                    # _log.info('going to print {}'.format(to_print))
                     await ctx.send(to_print)
                     if eof_reached == 1:
                         break
