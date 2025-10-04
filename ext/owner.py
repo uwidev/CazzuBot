@@ -1,6 +1,7 @@
 """Debug access for owner."""
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pendulum
@@ -53,6 +54,27 @@ class Owner(commands.Cog):
         res = levels_helper.exp_to_level_cum(n)
         await ctx.reply(f"{res:.2f}")
 
+    @commands.command()
+    async def archive_emojis(self, ctx: commands.Context):
+        """Save this guild's emojis to local files."""
+        await ctx.send("Saving server emoji's to disk...")
+
+        guild = ctx.guild
+        emojis = guild.emojis
+
+        # archives path based on docker volume mount
+        archive_pth = Path('/usr/src/app/archives') / str(guild.id)
+        archive_pth.mkdir(exist_ok=True, parents=True)
+
+        _log.info(f"emojis will be saved to {archive_pth.resolve()}")
+
+        for emoji in emojis:
+            name = emoji.name
+            save_to = archive_pth / name
+            with save_to as fp:
+                await emoji.save(save_to)
+
+        await ctx.send("Saved!")
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Owner(bot))
