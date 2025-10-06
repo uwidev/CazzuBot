@@ -15,9 +15,9 @@ async def add(pool: Pool, payload: table.Frog) -> None:
 		async with con.transaction():
 			await con.execute(
 				"""
-                INSERT INTO frog (gid)
-                VALUES ($1)
-                """,
+				INSERT INTO frog (gid)
+				VALUES ($1)
+				""",
 				*payload,
 			)
 
@@ -28,9 +28,9 @@ async def init(pool: Pool, gid: int, *args, **kwargs) -> None:
 		async with con.transaction():
 			await con.execute(
 				"""
-                INSERT INTO frog (gid)
-                VALUES ($1)
-                """,
+				INSERT INTO frog (gid)
+				VALUES ($1)
+				""",
 				gid,
 			)
 
@@ -41,11 +41,11 @@ async def set_message(pool: Pool, gid: int, json_d: dict):
 		async with con.transaction():
 			await con.execute(
 				"""
-                INSERT INTO frog (gid, message)
-                VALUES($1, $2)
-                ON CONFLICT (gid) DO UPDATE SET
-                    message = EXCLUDED.message
-                """,
+				INSERT INTO frog (gid, message)
+				VALUES($1, $2)
+				ON CONFLICT (gid) DO UPDATE SET
+					message = EXCLUDED.message
+				""",
 				gid,
 				json_d,
 			)
@@ -57,11 +57,11 @@ async def set_enabled(pool: Pool, gid: int, val: bool):
 		async with con.transaction():
 			await con.execute(
 				"""
-                INSERT INTO frog (gid, enabled)
-                VALUES($1, $2)
-                ON CONFLICT (gid) DO UPDATE SET
-                    enabled = EXCLUDED.enabled
-                """,
+				INSERT INTO frog (gid, enabled)
+				VALUES($1, $2)
+				ON CONFLICT (gid) DO UPDATE SET
+					enabled = EXCLUDED.enabled
+				""",
 				gid,
 				val,
 			)
@@ -72,10 +72,10 @@ async def get_message(pool: Pool, gid: int) -> list[Record]:
 	async with pool.acquire() as con:
 		return await con.fetchval(
 			"""
-            SELECT message
-            FROM frog
-            WHERE gid = $1
-            """,
+			SELECT message
+			FROM frog
+			WHERE gid = $1
+			""",
 			gid,
 		)
 
@@ -86,10 +86,10 @@ async def get_enabled(pool: Pool, gid: int) -> bool:
 	async with pool.acquire() as con:
 		return await con.fetchval(
 			"""
-            SELECT enabled
-            FROM frog
-            WHERE gid = $1
-            """,
+			SELECT enabled
+			FROM frog
+			WHERE gid = $1
+			""",
 			gid,
 		)
 
@@ -99,7 +99,8 @@ async def get_enabled_guilds(pool: Pool) -> list[Record]:
 	async with pool.acquire() as con:
 		return await con.fetch(
 			"""
-            SELECT gid
-            FROM frog
-            WHERE enabled = true
-            """
+			SELECT gid
+			FROM frog
+			WHERE enabled = true
+			"""
+		)

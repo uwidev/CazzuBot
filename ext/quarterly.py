@@ -18,24 +18,24 @@ _log = logging.getLogger(__name__)
 
 
 # def get_next_quarter(
-# 	today: datetime.datetime | None = None,
+# today: datetime.datetime | None = None,
 # ) -> datetime.datetime:
-# 	if today is None:
-# 		today = datetime.datetime.today().astimezone(datetime.timezone.utc)
+# if today is None:
+# today = datetime.datetime.today().astimezone(datetime.timezone.utc)
 #
-# 	quarters = [1, 4, 7, 10]
+# quarters = [1, 4, 7, 10]
 #
-# 	for m in quarters:
-# 		quarter_date = datetime.datetime(
-# 			today.year, m, 1, tzinfo=datetime.timezone.utc
-# 		)
-# 		print(repr(today), repr(quarter_date))
-# 		if quarter_date > today:
-# 			return quarter_date
+# for m in quarters:
+# quarter_date = datetime.datetime(
+# today.year, m, 1, tzinfo=datetime.timezone.utc
+# )
+# print(repr(today), repr(quarter_date))
+# if quarter_date > today:
+# return quarter_date
 #
-# 	return datetime.datetime(
-# 		today.year + 1, 1, 1, tzinfo=datetime.timezone.utc
-# 	)
+# return datetime.datetime(
+# today.year + 1, 1, 1, tzinfo=datetime.timezone.utc
+# )
 
 
 # Used as a proxy to check quarterly
@@ -104,7 +104,9 @@ async def setup(bot: CazzuBot):
 		force_reset = True
 	else:
 		# last_quarterly = pendulum.parser.parse(last_quarterly_raw)
-		last_quarterly = datetime.datetime.fromisoformat(last_quarterly_raw)
+		last_quarterly = datetime.datetime.fromisoformat(
+			last_quarterly_raw
+		)
 		if month2season(now.month) > month2season(last_quarterly.month):
 			force_reset = True
 

@@ -12,173 +12,178 @@ from jsonschema import ValidationError, validate
 
 from src import utility
 
-
 _log = logging.getLogger(__name__)
 
 
 EMBED_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "title": {"type": "string"},
-        "description": {"type": "string"},
-        "url": {"type": "string", "format": "uri"},
-        "timestamp": {"type": "string", "format": "date-time"},
-        "color": {"type": "integer"},
-        "fields": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {"name": {"type": "string"}, "value": {"type": "string"}},
-                "required": ["name", "value"],
-            },
-        },
-        "author": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "url": {"type": "string", "format": "uri"},
-                "icon_url": {"type": "string", "format": "uri"},
-            },
-        },
-        "footer": {
-            "type": "object",
-            "properties": {
-                "text": {"type": "string"},
-                "icon_url": {"type": "string", "format": "uri"},
-            },
-        },
-        "image": {
-            "type": "object",
-            "properties": {"url": {"type": "string", "format": "uri"}},
-        },
-        "thumbnail": {
-            "type": "object",
-            "properties": {"url": {"type": "string", "format": "uri"}},
-        },
-        "video": {
-            "type": "object",
-            "properties": {
-                "url": {"type": "string", "format": "uri"},
-                "proxy_url": {"type": "string", "format": "uri"},
-                "height": {"type": "integer"},
-                "width": {"type": "integer"},
-            },
-            "required": ["url"],
-        },
-        "provider": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "url": {"type": "string", "format": "uri"},
-            },
-        },
-    },
+	"type": "object",
+	"properties": {
+		"title": {"type": "string"},
+		"description": {"type": "string"},
+		"url": {"type": "string", "format": "uri"},
+		"timestamp": {"type": "string", "format": "date-time"},
+		"color": {"type": "integer"},
+		"fields": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"name": {"type": "string"},
+					"value": {"type": "string"},
+				},
+				"required": ["name", "value"],
+			},
+		},
+		"author": {
+			"type": "object",
+			"properties": {
+				"name": {"type": "string"},
+				"url": {"type": "string", "format": "uri"},
+				"icon_url": {"type": "string", "format": "uri"},
+			},
+		},
+		"footer": {
+			"type": "object",
+			"properties": {
+				"text": {"type": "string"},
+				"icon_url": {"type": "string", "format": "uri"},
+			},
+		},
+		"image": {
+			"type": "object",
+			"properties": {"url": {"type": "string", "format": "uri"}},
+		},
+		"thumbnail": {
+			"type": "object",
+			"properties": {"url": {"type": "string", "format": "uri"}},
+		},
+		"video": {
+			"type": "object",
+			"properties": {
+				"url": {"type": "string", "format": "uri"},
+				"proxy_url": {"type": "string", "format": "uri"},
+				"height": {"type": "integer"},
+				"width": {"type": "integer"},
+			},
+			"required": ["url"],
+		},
+		"provider": {
+			"type": "object",
+			"properties": {
+				"name": {"type": "string"},
+				"url": {"type": "string", "format": "uri"},
+			},
+		},
+	},
 }
 
 MESSAGE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "content": {"type": "string"},
-        "nonce": {"type": ["string", "number"]},
-        "tts": {"type": "boolean"},
-        "embed": EMBED_SCHEMA,
-        "embeds": {"type": "array", "items": EMBED_SCHEMA},
-        "allowed_mentions": {"type": "boolean"},
-        "sticker_ids": {"type": "array", "items": {"type": "number"}},
-        "attachments": {"type": "array", "maxContains": 0},  # Do not accept attachments
-        "flags": {"type": "number"},
-    },
-    "additionalProperties": False,
+	"type": "object",
+	"properties": {
+		"content": {"type": "string"},
+		"nonce": {"type": ["string", "number"]},
+		"tts": {"type": "boolean"},
+		"embed": EMBED_SCHEMA,
+		"embeds": {"type": "array", "items": EMBED_SCHEMA},
+		"allowed_mentions": {"type": "boolean"},
+		"sticker_ids": {"type": "array", "items": {"type": "number"}},
+		"attachments": {
+			"type": "array",
+			"maxContains": 0,
+		},	# Do not accept attachments
+		"flags": {"type": "number"},
+	},
+	"additionalProperties": False,
 }
 
 
 async def verify(
-    bot,
-    ctx: commands.Context,
-    json_s: str,
-    formatter: Callable = None,
-    **kwarg,
+	bot,
+	ctx: commands.Context,
+	json_s: str,
+	formatter: Callable = None,
+	**kwarg,
 ) -> dict:
-    """Verify if a user's provided json argument is valid.
+	"""Verify if a user's provided json argument is valid.
 
-    Return its decoded dict if valid, None if not.
+	Return its decoded dict if valid, None if not.
 
-    If formatter is given, a deep copy of the dict will be created. It will then try to
-    format said deep copy. NOT TOO SURE WHY I DID THIS. MAYBE IT WAS TO VERIFY THE
-    FORMATTER WORKS, OR TO "FORCE" SPECIFIC SUBSTITUTIONS, BUT THERE ISN'T EVEN A CHHECK
-    FOR THAT.
-    """
-    try:
-        json_dict = json.loads(json_s)
-        fix_timestamps(json_dict)
+	If formatter is given, a deep copy of the dict will be created. It will then try to
+	format said deep copy. NOT TOO SURE WHY I DID THIS. MAYBE IT WAS TO VERIFY THE
+	FORMATTER WORKS, OR TO "FORCE" SPECIFIC SUBSTITUTIONS, BUT THERE ISN'T EVEN A CHHECK
+	FOR THAT.
+	"""
+	try:
+		json_dict = json.loads(json_s)
+		fix_timestamps(json_dict)
 
-        # send embed to verify valid embed
-        demo = copy.deepcopy(json_dict)
+		# send embed to verify valid embed
+		demo = copy.deepcopy(json_dict)
 
-        if formatter:
-            utility.deep_map(demo, formatter, **kwarg)
+		if formatter:
+			utility.deep_map(demo, formatter, **kwarg)
 
-        # We use jsonschema to make sure people aren't abusing the bot to store
-        # excess information. Still not 100% safe, but still better than just checking
-        # to see if the embed has the fields to be sendable.
-        validate(demo, MESSAGE_SCHEMA)
+		# We use jsonschema to make sure people aren't abusing the bot to store
+		# excess information. Still not 100% safe, but still better than just checking
+		# to see if the embed has the fields to be sendable.
+		validate(demo, MESSAGE_SCHEMA)
 
-        # This is another way to validate. If we get a HTTP error (can't remember which
-        # one), we know the embed is invalid.
-        # content, embed, embeds = prepare_message(demo)
-        # await ctx.reply(
-        #     content=content,
-        #     embed=embed,
-        #     embeds=embeds,
-        # )
+		# This is another way to validate. If we get a HTTP error (can't remember which
+		# one), we know the embed is invalid.
+		# content, embed, embeds = prepare_message(demo)
+		# await ctx.reply(
+		#	  content=content,
+		#	  embed=embed,
+		#	  embeds=embeds,
+		# )
 
-    except json.decoder.JSONDecodeError as err:
-        msg = f"Provided JSON is not a valid JSON object.\n\n{err.msg}"
-        raise commands.BadArgument(msg) from err
+	except json.decoder.JSONDecodeError as err:
+		msg = f"Provided JSON is not a valid JSON object.\n\n{err.msg}"
+		raise commands.BadArgument(msg) from err
 
-    except ValidationError as err:
-        msg = f"Provided JSON is not a valid Discord message.\n\n{err.message}"
-        raise commands.BadArgument(msg) from err
+	except ValidationError as err:
+		msg = f"Provided JSON is not a valid Discord message.\n\n{err.message}"
+		raise commands.BadArgument(msg) from err
 
-    else:
-        return json_dict
+	else:
+		return json_dict
 
 
 def fix_timestamps(embed: dict):
-    """Convert key timestamp to isoformat for database."""
-    timestamp = embed.get("timestamp", None)
-    if timestamp:
-        embed["timestamp"] = pendulum.parser.parse(timestamp).isoformat()
+	"""Convert key timestamp to isoformat for database."""
+	timestamp = embed.get("timestamp", None)
+	if timestamp:
+		embed["timestamp"] = pendulum.parser.parse(timestamp).isoformat()
 
 
 def prepare(embed_json: dict) -> tuple[str, dict, list]:
-    """Parse dictionary to embed objects, return as tuple for sending message."""
-    content = embed_json.get("content", None)
-    embed = embed_from_decoding(embed_json)
-    embeds = embeds_from_decoding(embed_json)
+	"""Parse dictionary to embed objects, return as tuple for sending message."""
+	content = embed_json.get("content", None)
+	embed = embed_from_decoding(embed_json)
+	embeds = embeds_from_decoding(embed_json)
 
-    return content, embed, embeds
+	return content, embed, embeds
 
 
 def embed_from_decoding(d: dict):
-    """Return an embed object from json.
+	"""Return an embed object from json.
 
-    None if doesn't exist.
-    """
-    embed = d.get("embed", None)
-    if not embed:
-        return None
+	None if doesn't exist.
+	"""
+	embed = d.get("embed", None)
+	if not embed:
+		return None
 
-    return discord.Embed.from_dict(embed)
+	return discord.Embed.from_dict(embed)
 
 
 def embeds_from_decoding(d: dict):
-    """Return a list of embed objects from a json.
+	"""Return a list of embed objects from a json.
 
-    None if empty.
-    """
-    embeds = d.get("embeds", None)
-    if not embeds:
-        return None
+	None if empty.
+	"""
+	embeds = d.get("embeds", None)
+	if not embeds:
+		return None
 
-    return [discord.Embed.from_dict(embed) for embed in embeds]
+	return [discord.Embed.from_dict(embed) for embed in embeds]
