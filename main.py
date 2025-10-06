@@ -1,3 +1,5 @@
+#!/bin/env python
+
 """Runs the bot.
 
 Bot grabs API key from secret/setup.py.
