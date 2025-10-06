@@ -50,8 +50,7 @@ class Daily(commands.Cog):
 
 		# Log the time this daily reset was done
 		now = pendulum.now("UTC")
-		this_daily = now.set(hour=0, minute=0, second=0, microsecond=0)
-		await db.internal.set_last_daily(self.bot.pool, this_daily)
+		await db.internal.set_last_daily(self.bot.pool, now)
 
 		# Resync logs to their lifetime placeholders
 		await db.member_exp.sync_with_exp_logs(self.bot.pool)
@@ -66,16 +65,15 @@ async def setup(bot: CazzuBot):
 	force_reset = False
 
 	last_daily_raw = await db.internal.get_last_daily(bot.pool)
-	if (
-		not last_daily_raw
-	):  # Bot has never resetted dailies before, or db fucked
+	# Bot has never resetted dailies before, or db fucked
+	if not last_daily_raw:
 		_log.warning(
 			"There was no last time since the bot has done daily resets..."
 		)
 		force_reset = True
 	else:
 		last_daily = pendulum.parser.parse(last_daily_raw)
-		if not last_daily or now > last_daily + pendulum.duration(days=1):
+		if now > last_daily + pendulum.duration(days=1):
 			force_reset = True
 
 	await bot.add_cog(Daily(bot, force_reset=force_reset))
