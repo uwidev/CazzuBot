@@ -79,7 +79,7 @@ class Quarterly(commands.Cog):
 		"""Reset dailies."""
 		_log.info("Running quarterly reset")
 
-		db.member_frog.freeze_frogs(self.bot.pool)
+		await db.member_frog.freeze_frogs(self.bot.pool)
 
 		# Log the time this quarterly reset was done
 		now = pendulum.now("UTC")
