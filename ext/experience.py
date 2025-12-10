@@ -71,7 +71,7 @@ class Experience(commands.Cog):
 		exp, and should eventually be switched to seasonal experience.
 		"""
 		if (
-			self.bot.debug
+			self.bot.is_debug
 			and message.author.id not in self.bot.debug_users
 		):
 			return

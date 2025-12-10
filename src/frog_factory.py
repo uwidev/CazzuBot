@@ -115,7 +115,7 @@ async def spawn_and_wait(
 			reaction.message.id == msg.id
 			and str(reaction.emoji) == "<:cirnoNet:752290769712316506>"
 			and not user.bot
-		) or (bot.debug and user.id == bot.owner_id)
+		) or (bot.is_debug and user.id == bot.owner_id)
 
 	reaction: discord.Reaction
 	catcher: discord.User

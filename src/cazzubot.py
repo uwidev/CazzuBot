@@ -20,24 +20,24 @@ class CazzuBot(commands.Bot):
 		*args,
 		pool: Pool,
 		ext_path: str,
-		debug=False,
-		debug_users: list = [],
+		is_debug: bool = False,
+		debug_users: list[int] = [],
 		**kwargs,
 	):
 		"""Assign the database pool, hotswap path, and database.
 
 		Database should be a tuple of (name, host, user).
-		Password is asked for at runtime.
+		Password is asked for at runtime. ???
 		"""
 		super().__init__(*args, **kwargs)
-		self.pool = pool
-		self.ext_path = ext_path
-		self.debug = debug
-		self.debug_users = debug_users
-		self.sandbox = kwargs["sandbox"]
+		self.pool: Pool = pool
+		self.ext_path: str = ext_path
+		self.is_debug: bool = is_debug
+		self.debug_users: list[int] = debug_users
+		self.is_sandbox: bool = kwargs["sandbox"]
 
-		if self.debug:
-			self.add_check(CazzuBot.dev_mode_check)
+		if self.is_debug:
+			self.add_check(CazzuBot.is_dev_mode)
 
 		db.member.init()
 		db.user.init()
@@ -45,7 +45,7 @@ class CazzuBot(commands.Bot):
 		db.channel.init()
 
 	@staticmethod
-	async def dev_mode_check(ctx: commands.Context):
+	async def is_dev_mode(ctx: commands.Context) -> bool:
 		return await CazzuBot.is_owner(ctx.bot, ctx.author)
 
 	async def on_ready(self):
@@ -81,16 +81,14 @@ class CazzuBot(commands.Bot):
 
 	async def setup_hook(self) -> None:
 		_log.info("Loading extensions...")
-		if not self.sandbox:
+		if not self.is_sandbox:
 			await self._load_extensions()
 		else:
 			await self._load_sandbox()
 
-		_log.info("Loading json enconder and decoder...")
+		_log.info("Loading json encoder and decoder...")
 		self.json_encoder = CustomEncoder()
 		self.json_decoder = CustomDecoder()
-
-		return 0
 
 	async def _load_sandbox(self):
 		try:

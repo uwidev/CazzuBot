@@ -277,7 +277,7 @@ class Frog(commands.Cog):
 			msg = f"Interval {interval} is not a valid time."
 			raise commands.BadArgument(msg) from err
 
-		if not self.bot.debug and interval < 60:
+		if not self.bot.is_debug and interval < 60:
 			msg = "Inverval must be greater than 60 seconds."
 			raise commands.BadArgument(msg)
 
@@ -287,11 +287,11 @@ class Frog(commands.Cog):
 			msg = f"Persist {persist} is not a valid time."
 			raise commands.BadArgument(msg) from err
 
-		if not self.bot.debug and (persist < 3 or persist > 120):
+		if not self.bot.is_debug and (persist < 3 or persist > 120):
 			msg = "Persist must be between 3 and 120 seconds."
 			raise commands.BadArgument(msg)
 
-		if not self.bot.debug and (fuzzy < 0 or fuzzy > 1):
+		if not self.bot.is_debug and (fuzzy < 0 or fuzzy > 1):
 			msg = "Fuzzy must be between 0 and 1."
 			raise commands.BadArgument(msg)
 		# End argument checking

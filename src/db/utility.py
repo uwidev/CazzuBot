@@ -17,7 +17,7 @@ from . import table
 _log = logging.getLogger(__name__)
 
 # Variables must be set at runtime to a async function which adds the key into the
-# table, corrosponding to said table. This is dependency injection and is here to
+# table, corresponding to said table. This is dependency injection and is here to
 # prevent circular importing.
 insert_cid = None
 insert_gid = None
