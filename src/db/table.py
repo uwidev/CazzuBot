@@ -184,6 +184,7 @@ class Rank(SnowflakeTable):
 class Level(SnowflakeTable):
 	gid: int  # references guild.id
 	message: str  # encoded json, default already set in db
+	quiet: list[int]  # channels to be quiet in
 
 	def __iter__(self):
 		return iter([self.gid])

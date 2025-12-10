@@ -34,7 +34,7 @@ class CazzuBot(commands.Bot):
 		self.ext_path: str = ext_path
 		self.is_debug: bool = is_debug
 		self.debug_users: list[int] = debug_users
-		self.is_sandbox: bool = kwargs["sandbox"]
+		self.is_sandbox: bool = kwargs["is_sandbox"]
 
 		if self.is_debug:
 			self.add_check(CazzuBot.is_dev_mode)

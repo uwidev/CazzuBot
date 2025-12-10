@@ -14,7 +14,7 @@ from . import guild, member_exp_log, table
 _log = logging.getLogger(__name__)
 
 
-async def add(pool: Pool, level: table.RankThreshold):
+async def add(pool: Pool, level: table.Level):
 	if not await guild.get(pool, level.gid):  # guild not yet init
 		await guild.add(pool, level.gid)
 
@@ -43,7 +43,7 @@ async def get(pool: Pool, gid: int) -> list[Record]:
 
 async def set_message(pool: Pool, gid: int, encoded_json: str):
 	if not await get(pool, gid):  # this not yet init
-		payload = table.Level(gid, None)
+		payload = table.Level(gid, None, None)
 		await add(pool, payload)
 
 	async with pool.acquire() as con:
@@ -61,7 +61,7 @@ async def set_message(pool: Pool, gid: int, encoded_json: str):
 
 async def get_message(pool: Pool, gid: int) -> list[Record]:
 	if not await get(pool, gid):  # this not yet init
-		payload = table.Level(gid, None)
+		payload = table.Level(gid, None, None)
 		await add(pool, payload)
 
 	async with pool.acquire() as con:
@@ -121,3 +121,56 @@ async def get_seasonal_by_month(
 		pool, gid, uid, year, month
 	)
 	return levels_helper.level_from_exp(exp)
+
+
+async def add_quiet(pool: Pool, gid: int, cid: int):
+	"""Add a channel as 'quiet' for the purposes of suppressing leveling up."""
+	if not await get(pool, gid):  # this not yet init
+		payload = table.Level(gid, None, None)
+		await add(pool, payload)
+
+	async with pool.acquire() as con:
+		async with con.transaction():
+			await con.execute(
+				"""
+				UPDATE level
+				SET quiet = array_append(quiet, $2)
+				WHERE gid = $1
+				""",
+				gid,
+				cid,
+			)
+
+async def get_quiet(pool: Pool, gid: int) -> list[int]:
+	"""Get the quiet array of quiet channels from the guild."""
+	if not await get(pool, gid):  # this not yet init
+		payload = table.Level(gid, None, None)
+		await add(pool, payload)
+
+	async with pool.acquire() as con:
+		return await con.fetchval(
+			"""
+			SELECT quiet
+			FROM level
+			WHERE gid = $1
+			""",
+			gid
+		)
+
+async def del_quiet(pool: Pool, gid: int, cid:int):
+	"""Delete the channel from the database."""
+	if not await get(pool, gid):  # this not yet init
+		payload = table.Level(gid, None, None)
+		await add(pool, payload)
+
+	async with pool.acquire() as con:
+		async with con.transaction():
+			await con.execute(
+				"""
+				UPDATE level
+				SET quiet = array_remove(quiet, $2)
+				WHERE gid = $1
+				""",
+				gid,
+				cid,
+			)

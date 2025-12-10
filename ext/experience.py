@@ -531,6 +531,31 @@ class Experience(commands.Cog):
 		await db.member_exp.sync_with_exp_logs(self.bot.pool)
 		await msg.edit(content="Synced! ✅")
 
+	@exp.group(name="quiet", invoke_without_command=True)
+	async def quiet(self, ctx: commands.Context):
+		gid = ctx.guild.id
+		quiets = await db.level.get_quiet(self.bot.pool, gid)
+		await ctx.send(str(quiets))
+	
+	@quiet.command(name="add")
+	@commands.has_permissions(administrator=True)
+	async def quiet_add(self, ctx: commands.Context, channel: discord.TextChannel):
+		gid = ctx.guild.id
+		cid = channel.id
+		quites = await db.level.get_quiet(self.bot.pool, gid)
+		if cid in quites:
+			await db.level.add_quiet(self.bot.pool, gid, cid)
+		await ctx.message.add_reaction('👍')
+
+
+	@quiet.command(name="del")
+	@commands.has_permissions(administrator=True)
+	async def quiet_del(self, ctx: commands.Context, channel: discord.TextChannel):
+		gid = channel.guild.id
+		cid = channel.id
+		await db.level.add_quiet(self.bot.pool, gid, cid)
+		await ctx.message.add_reaction('👍')
+
 
 async def setup(bot: commands.Bot):
 	await bot.add_cog(Experience(bot))
