@@ -1,7 +1,5 @@
 """Poll application commands."""
 
-# TODO: poll results at the end
-
 import logging
 import random
 from typing import TYPE_CHECKING
@@ -101,8 +99,8 @@ class Poll(commands.Cog):
 		gid = interaction.guild.id
 
 		# ensure poll with id exists
-		poll_record = await db.poll.get_poll(self.bot.pool, gid, poll_id)
-		if not poll_record:
+		poll = await db.poll.get_poll(self.bot.pool, gid, poll_id)
+		if not poll:
 			callback = f"❌ Poll ID#{poll_id} does not exist!"
 			await interaction.response.send_message(callback, ephemeral=True)
 			return
@@ -114,10 +112,7 @@ class Poll(commands.Cog):
 			await interaction.response.send_message(callback, ephemeral=True)
 			return
 
-		title = poll_record.get("title")
-		desc = poll_record.get("description")
-
-		embed = utility.prepare_embed(title, desc)
+		embed = utility.prepare_embed(poll.title, poll.description)
 		embed.set_footer(text=f"Poll ID#{poll_id}", icon_url=EMOJI_OPEN)
 
 		view = PollView(self.bot, gid, poll_id)
@@ -140,10 +135,10 @@ class Poll(commands.Cog):
 	)
 	async def poll_open(self, interaction: discord.Interaction, poll_id: int):
 		gid = interaction.guild.id
-		record = await db.poll.get_poll(self.bot.pool, gid, poll_id)
+		poll = await db.poll.get_poll(self.bot.pool, gid, poll_id)
 
 		# ensure mid exists
-		mid = record.get('mid')
+		mid = poll.mid
 		if not mid:
 			msg = f"❌ Message for poll ID#{poll_id} does not yet exist!"
 			await interaction.reaction.send_message(msg)
@@ -170,24 +165,17 @@ class Poll(commands.Cog):
 		self, interaction: discord.Interaction, poll_id: int
 	):
 		gid = interaction.guild.id
-		records = await db.poll.get_votes(self.bot.pool, gid, poll_id)
-		stats = [tuple(record.values()) for record in records]
+		poll_votes = await db.poll.get_results(self.bot.pool, gid, poll_id)
+		_log.info(f'{poll_votes}')
 
 		# for this iteration, we lose track of description...
-		
-		# aggregate the individual votes into a iid:total
-		aggregate = {}
-		for iid, count, desc in stats:
-			aggregate[iid] = aggregate.get(iid, 0) + count
 
-		stats = list(aggregate.items())
-		stats.sort(key=lambda x: x[1], reverse=True)
-		total = sum((count for _, count in stats))
+		total = sum(v.count for v in poll_votes)
 		await interaction.response.send_message(
 			f"```{'Item':<16}{'Count':>8}{'Percent':>8}\n"
 			+ "\n".join(
-				f"{desc or item:<16}{count:>8}{count / total:>8.2%}"
-				for item, count in stats[:min(10, len(stats))]
+				f"{v.description or v.iid:<16}{v.count:>8}{v.count / total:>8.2%}"
+				for v in poll_votes[:min(10, len(poll_votes))]
 			)
 			+ "```"
 		)
@@ -202,21 +190,22 @@ class PollView(discord.ui.View):
 		self.message: discord.InteractionMessage | None = None
 
 	# TODO: default voting closed
-	# TODO: persistent views
+	# TODO: persistent views that work even on bot reboot
 	# TODO: allow closing/opening of votes
+	# TODO: add "issue" report feature to report bugs
 	@discord.ui.button(
 		label="Vote", style=discord.ButtonStyle.primary, emoji="📥", disabled=False
 	)
 	async def vote(
 		self, interaction: discord.Interaction, button: discord.ui.Button
 	):
-		poll_record = await db.poll.get_poll(
+		poll = await db.poll.get_poll(
 			self.bot.pool, self.gid, self.poll_id
 		)
 		items = await db.poll.get_items(
 			self.bot.pool, self.gid, self.poll_id
 		)
-		modal = PollModal(self.bot, poll_record, items)
+		modal = PollModal(self.bot, poll, items)
 		await interaction.response.send_modal(modal)
 	
 	async def open(self):
@@ -239,13 +228,13 @@ class PollModal(
 	`max_vote`: Number of votes a user can put int; >=1
 	"""
 
-	def __init__(self, bot, poll_record, items):
+	def __init__(self, bot, poll, items):
 		super().__init__(timeout=300)
 		self.bot = bot
-		self.poll_record: Record = poll_record
+		self.poll: db.table.Poll = poll
 		self.items = items
 
-		self.max_vote = poll_record.get("max_vote")
+		self.max_vote = poll.max_vote
 		self.upper = len(items)
 
 		self.vote_input = discord.ui.TextInput(
@@ -269,8 +258,8 @@ class PollModal(
 				return
 
 			# delete the user's previous votes on this poll
-			gid = self.poll_record.get("gid")
-			pid = self.poll_record.get("id")
+			gid = self.poll.gid
+			pid = self.poll.id
 			uid = interaction.user.id
 			await db.poll.drop_user_on_poll(self.bot.pool, gid, pid, uid)
 
@@ -332,8 +321,8 @@ class PollModal(
 		return errors
 
 	async def store_values(self, uid, votes):
-		gid: int = self.poll_record.get("gid")
-		pid: int = self.poll_record.get("id")
+		gid: int = self.poll.gid
+		pid: int = self.poll.id
 
 		poll_votes = [
 			db.table.PollVote(gid, pid, iid, uid) for iid in votes

@@ -22,13 +22,17 @@ async def add_poll(pool: Pool, payload: table.Poll) -> int:
 				VALUES ($1, $2, $3, $4)
 				RETURNING id
 				""",
-				*payload,
+				payload.gid,
+				payload.title,
+				payload.description,
+				payload.max_vote,
+				# *payload,
 			)
 
 
-async def get_poll(pool: Pool, gid: int, pid: int) -> Record | None:
+async def get_poll(pool: Pool, gid: int, pid: int) -> table.Poll | None:
 	async with pool.acquire() as con:
-		return await con.fetchrow(
+		record = await con.fetchrow(
 			"""
 			SELECT *
 			FROM poll
@@ -37,6 +41,11 @@ async def get_poll(pool: Pool, gid: int, pid: int) -> Record | None:
 			gid,
 			pid,
 		)
+
+		if not record:
+			return None
+
+		return table.Poll.from_record(record)
 
 
 async def set_mid(pool: Pool, gid: int, pid: int, mid: int):
@@ -54,19 +63,6 @@ async def set_mid(pool: Pool, gid: int, pid: int, mid: int):
 			)
 
 
-async def get_mid(pool: Pool, gid: int, pid: int) -> int:
-	async with pool.acquire() as con:
-		async with con.transaction():
-			return await con.fetchval(
-				"""
-				SELECT mid
-				FROM poll
-				WHERE gid = $1 AND id = $2
-				""",
-				gid,
-				pid,
-			)
-
 async def open(pool: Pool, gid: int, pid: int):
 	async with pool.acquire() as con:
 		async with con.transaction():
@@ -79,7 +75,6 @@ async def open(pool: Pool, gid: int, pid: int):
 				gid,
 				pid,
 			)
-
 
 
 async def add_item(pool: Pool, payload: table.PollItem):
@@ -110,9 +105,9 @@ async def add_items_dummy(pool: Pool, gid: int, pid: int, n: int):
 			)
 
 
-async def get_items(pool: Pool, gid: int, pid: int):
+async def get_items(pool: Pool, gid: int, pid: int) -> list[table.PollItem]:
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records =  await con.fetch(
 			"""
 			SELECT *
 			FROM poll_item
@@ -122,12 +117,13 @@ async def get_items(pool: Pool, gid: int, pid: int):
 			pid,
 		)
 
+		return [table.PollItem.from_record(r) for r in records]
+
 
 async def add_vote(pool: Pool, payload: table.PollVote):
 	uid = payload.uid
 	if not await user.get(pool, uid):
 		await user.add(pool, table.User(uid))
-	
 
 	async with pool.acquire() as con:
 		async with con.transaction():
@@ -175,18 +171,27 @@ async def drop_user_on_poll(pool: Pool, gid: int, pid: int, uid: int):
 				uid,
 			)
 
-async def get_votes(pool: Pool, gid: int, pid: int) -> [Record]:
-	"""Get the voting results in the form of (item id, vote counts, description)."""
+
+async def get_results(pool: Pool, gid: int, pid: int) -> list[table.PollVoteStats]:
+	"""Get the voting results in the form of (item id, vote counts, description).
+
+	Already aggregated and sorted by count descending.
+	"""
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records = await con.fetch(
 			"""
-			SELECT vote.iid, vote.count, item.description
+			SELECT vote.iid, SUM(vote.count) AS count, item.description
 			FROM poll_vote as vote
 			INNER JOIN poll_item AS item ON vote.iid = item.id AND vote.pid = item.pid
 			WHERE vote.gid = $1 AND vote.pid = $2
+			GROUP BY vote.iid, item.description
+			ORDER BY count DESC
 			""",
-			gid, pid
+			gid,
+			pid,
 		)
+
+		return [table.PollVoteStats.from_record(r) for r in records]
 
 
 # async def get_counters(pool: Pool, gid: int) -> [int]:

@@ -1,11 +1,16 @@
 """Defines schema for databases for autocomplete."""
 
+from typing_extensions import Self
+
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 
 import pendulum
 from asyncpg import Record
+
+_log = logging.getLogger(__name__)
 
 
 class SnowflakeTable(ABC):
@@ -36,6 +41,20 @@ class SnowflakeTable(ABC):
 
 		In order to unpack correctly, you must explicitly state the order to unpack.
 		"""
+
+	@classmethod
+	def from_record(cls, r: Record) -> Self:
+		columns = cls.__annotations__
+		defaults = {
+			k: v
+			for k, v in cls.__dict__.items()
+			if not k.startswith("__")
+			and not callable(v)
+			and not isinstance(v, classmethod)
+		}
+
+		payload = {c: r.get(c, defaults.get(c)) for c in columns}
+		return cls(*payload.values())
 
 
 class ModlogTypeEnum(Enum):
@@ -314,8 +333,8 @@ class Counter(SnowflakeTable):
 		return iter([self.gid, self.mid, self.count])
 
 
-# @dataclass
-class Poll(Record):
+@dataclass
+class Poll(SnowflakeTable):
 	"""The poll itself.
 
 	Do not assign id manually, it will be generated on db side.
@@ -325,27 +344,19 @@ class Poll(Record):
 	title: str = ""
 	description: str = ""
 	max_vote: int = 1
+	id: int = None
+	mid: int = None
 	open: bool = False
-	id: int | None = None
-	mid: int | None = None
 
-	def __getattr__(self, name: str):
-		try:
-			return self[name]
-		except KeyError:
-			raise AttributeError(
-				f"'{type(self).__name__}' object has no attribute '{name}'"
-			)
-
-	# def __iter__(self):
-	# 	return iter(
-	# 		[
-	# 			self.gid,
-	# 			self.title,
-	# 			self.description,
-	# 			self.max_vote,
-	# 		]
-	# 	)
+	def __iter__(self):
+		return iter(
+			[
+				self.gid,
+				self.title,
+				self.description,
+				self.max_vote,
+			]
+		)
 
 
 @dataclass
@@ -391,3 +402,17 @@ class PollVote(SnowflakeTable):
 				self.uid,
 			]
 		)
+
+@dataclass
+class PollVoteStats(SnowflakeTable):
+	iid: int
+	count: int
+	description: str = ''
+
+	def __iter__(self):
+		return iter([
+			self.iid,
+			self.count,
+			self.description,
+		])
+
