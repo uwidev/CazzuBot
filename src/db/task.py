@@ -1,4 +1,7 @@
-"""Defines SQL queries to make to the database for anything relate to a task."""
+"""Defines SQL queries to make to the database for anything relate to a task.
+
+Tasks are retrieved via tags (stored with tags as keys).
+"""
 
 import logging
 

@@ -25,7 +25,7 @@ class Echo(commands.Cog):
 
 	# Commands always needs this decorator. Must be a coroutine.
 	@commands.command()
-	async def echo(self, ctx, *, content: str):
+	async def echo(self, ctx: commands.Context, *, content: str):
 		# Commands always need the parameters:
 		# self: because method function
 		# ctx:	the context in which this command was executed

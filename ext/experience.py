@@ -543,9 +543,11 @@ class Experience(commands.Cog):
 		gid = ctx.guild.id
 		cid = channel.id
 		quites = await db.level.get_quiet(self.bot.pool, gid)
-		if cid in quites:
+		if cid not in quites:
 			await db.level.add_quiet(self.bot.pool, gid, cid)
-		await ctx.message.add_reaction('👍')
+			await ctx.message.add_reaction('👍')
+		else:
+			await ctx.send("Channel already exists in quiet list!")
 
 
 	@quiet.command(name="del")
@@ -553,8 +555,12 @@ class Experience(commands.Cog):
 	async def quiet_del(self, ctx: commands.Context, channel: discord.TextChannel):
 		gid = channel.guild.id
 		cid = channel.id
-		await db.level.add_quiet(self.bot.pool, gid, cid)
-		await ctx.message.add_reaction('👍')
+		quiets = await db.level.get_quiet(self.bot.pool, gid)
+		if cid in quiets:
+			await db.level.del_quiet(self.bot.pool, gid, cid)
+			await ctx.message.add_reaction('👍')
+		else:
+			await ctx.send("Channel was never in quiet list to begin with!")
 
 
 async def setup(bot: commands.Bot):

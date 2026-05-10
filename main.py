@@ -1,5 +1,4 @@
 #!/bin/env python
-
 """Runs the bot.
 
 Bot grabs API key from secret/setup.py.
@@ -19,12 +18,15 @@ import argparse
 import asyncio
 import logging
 import os
+from pathlib import Path
+import sys
 
 import aiofiles
 import asyncpg
 import discord
 from asyncpg import Connection
 from discord.utils import _ColourFormatter, stream_supports_colour
+from dotenv import load_dotenv
 
 from src.cazzubot import CazzuBot
 from src.db.table import (
@@ -39,8 +41,11 @@ from src.json_handler import dumps, loads
 
 EXTENSIONS_PATH = r"ext"
 
-DEBUG_USERS = [92664421553307648, 338486462519443461]  # usara, gegi
-
+DEBUG_USERS = [
+	92664421553307648,
+	338486462519443461,
+	["foo", ["bar"]],
+]  # usara, gegi
 
 _log = logging.getLogger(__name__)
 
@@ -57,6 +62,8 @@ async def main():
 	is_production: bool = args.production
 	is_sandbox: bool = args.sandbox
 
+	load_dotenv()
+
 	postgres_db = os.getenv("POSTGRES_DB")
 	postgres_user = os.getenv("POSTGRES_USER")
 	postgres_password_file = os.getenv("POSTGRES_PASSWORD_FILE")
@@ -64,7 +71,6 @@ async def main():
 	postgres_port = os.getenv("POSTGRES_PORT")
 	token_file = os.getenv("TOKEN_FILE")
 	owner_id = os.getenv("OWNER_ID")
-	log_path = os.getenv("LOG_PATH")
 
 	assert owner_id is not None
 
@@ -73,20 +79,24 @@ async def main():
 	token_file_dev = os.getenv("TOKEN_FILE_DEV")
 
 	# Read secret files
-	try:
-		async with aiofiles.open(postgres_password_file, mode="r") as file:
-			pw = (await file.readline()).strip()
+	password = os.getenv("SECRET")
+	token = os.getenv("TOKEN")
+	token_dev = os.getenv("TOKEN_DEV")
 
-		async with aiofiles.open(token_file, mode="r") as file:
-			token = await file.readline()
+	# try:
+	# 	async with aiofiles.open(postgres_password_file, mode="r") as file:
+	# 		pw = (await file.readline()).strip()
+	#
+	# 	async with aiofiles.open(token_file, mode="r") as file:
+	# 		token = await file.readline()
+	#
+	# 	async with aiofiles.open(token_file_dev, mode="r") as file:
+	# 		token_dev = await file.readline()
+	# except FileNotFoundError as e:
+	# 	print(f"Error reading secret files: {e}")
+	# 	return
 
-		async with aiofiles.open(token_file_dev, mode="r") as file:
-			token_dev = await file.readline()
-	except FileNotFoundError as e:
-		print(f"Error reading secret files: {e}")
-		return
-
-	setup_logging(log_path, debug=is_debug)
+	setup_logging(get_script_dir() / "log", debug=is_debug)
 
 	if is_debug:
 		_log.info("RUNNING IN DEBUG MODE")
@@ -106,12 +116,15 @@ async def main():
 	intents.message_content = True
 	intents.members = True
 
+	print(
+		f"{password=}\n{postgres_ip_dev=}\n{postgres_user=}\n{postgres_db=}\n{postgres_port=}"
+	)
 	async with asyncpg.create_pool(
 		database=postgres_db,
 		user=postgres_user,
 		host=postgres_ip if is_production else postgres_ip_dev,
 		port=postgres_port,
-		password=pw,
+		password=password,
 		init=setup_codecs,
 	) as pool:
 		async with CazzuBot(
@@ -129,7 +142,7 @@ async def main():
 			)  # Ignore built-in logger
 
 
-def setup_logging(log_path: str, *, debug: bool = False):
+def setup_logging(log_path: str | Path, *, debug: bool = False):
 	"""Write info logging to console and debug logging to file."""
 	logger = logging.getLogger()
 	logger.setLevel(logging.DEBUG)
@@ -142,16 +155,17 @@ def setup_logging(log_path: str, *, debug: bool = False):
 	)
 	file_handler.setLevel(logging.DEBUG)
 
+	log_fmt = "[{asctime}] [{levelname:<8}] {name}: {message}"
 	dt_fmt = "%Y-%m-%d %H:%M:%S"
 	formatters = {
 		"file": logging.Formatter(
-			"[{asctime}] [{levelname:<8}] {name}: {message}",
+			log_fmt,
 			dt_fmt,
 			style="{",
 		),
 		"console": _ColourFormatter()
 		if stream_supports_colour(console_handler.stream)
-		else logging.Formatter(dt_fmt),
+		else logging.Formatter(log_fmt, dt_fmt, style="{"),
 	}
 
 	for handler in [console_handler, file_handler]:
@@ -206,6 +220,12 @@ async def setup_codecs(con: Connection):
 	await con.set_type_codec(
 		"jsonb", encoder=dumps, decoder=loads, schema="pg_catalog"
 	)
+
+
+def get_script_dir() -> Path:
+	"""Return the directory of the running script regardless of CWD."""
+	this = Path(sys.argv[0]).resolve()
+	return this.parent
 
 
 if __name__ == "__main__":

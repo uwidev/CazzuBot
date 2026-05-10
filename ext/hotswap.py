@@ -1,16 +1,19 @@
 """Allows the hotswapping of extensions/cogs."""
 
 import logging
-import os
+from typing import TYPE_CHECKING
 
 from discord.ext import commands
 
 _log = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+	from main import CazzuBot
+
 
 class HotSwap(commands.Cog):
 	def __init__(self, bot):
-		self.bot = bot
+		self.bot: CazzuBot = bot
 
 	def cog_check(self, ctx):
 		return ctx.author.id == self.bot.owner_id
@@ -36,6 +39,9 @@ class HotSwap(commands.Cog):
 		) as err:
 			_log.error(err)
 
+		# Re-sync any application commands
+		await self.bot.tree.sync()
+
 	@cog.command()
 	async def load(self, ctx, ext_name):
 		extensions = os.listdir(self.bot.ext_path)
@@ -56,6 +62,9 @@ class HotSwap(commands.Cog):
 			commands.ExtensionFailed,
 		) as err:
 			_log.error(err)
+
+		# Re-sync any application commands
+		await self.bot.tree.sync()
 
 	@cog.command()
 	async def unload(self, ctx, ext_name):

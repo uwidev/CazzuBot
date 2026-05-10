@@ -1,13 +1,12 @@
 """Developer commands to run during operation."""
 
-import asyncio
 import logging
 import os
-import re
-from collections import defaultdict
+import random
 from typing import TYPE_CHECKING
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 # from tinydb import Query, TinyDB
@@ -33,147 +32,156 @@ class Dev(commands.Cog):
 		return ctx.author.id == self.bot.owner_id
 
 	@commands.command()
-	async def test(self, ctx: commands.Context):
-		await ctx.send("jierabnhgbnaljkgn")
+	async def scrape(self, ctx):
+		os.makedirs("emojis", exist_ok=True)
 
-	# async def tinydb_frog_cap_migrate(self):
-	# _log.info("Beginning database insert...")
-	# async with self.bot.pool.acquire() as con:
-	# async with con.transaction():
-	# for user in iter(self.bot.tinydb):
-	# captures = user["frogs_lifetime"]
-	# uid = user["id"]
-	# _log.info(f"Inserting {uid=} | {captures=}")
-	# await con.execute(
-	# """
-	# UPDATE member_frog
-	# SET capture = $1
-	# WHERE uid = $2
-	# """,
-	# captures,
-	# uid,
-	# )
-	# _log.info("====== Done =======")
+		for emoji in ctx.guild.emojis:
+			ext = "gif" if emoji.animated else "png"
+			await emoji.save(f"emojis/{emoji.name}_{emoji.id}.{ext}")
 
-	@commands.group()
-	async def story(self, ctx):
+		await ctx.send(f"✅ Saved {len(ctx.guild.emojis)} emojis")
+
+	@app_commands.command(name="foobar", description="cool description")
+	async def command_test(self, interaction: discord.Interaction):
+		"""test to see if command register"""
+
+		view = DemoView()
+		await interaction.response.send_message("hello world!", view=view)
+
+
+class DemoView(discord.ui.View):
+	def __init__(self):
+		super().__init__(timeout=60)
+
+	@discord.ui.button(
+		label="Click me!", style=discord.ButtonStyle.primary, emoji="👍"
+	)
+	async def demo_buttom(
+		self, interaction: discord.Interaction, button: discord.ui.Button
+	):
+		await interaction.response.send_message(
+			"i can't believe you've done this"
+		)
+
+	@discord.ui.button(
+		label="do not", style=discord.ButtonStyle.primary, emoji="👎"
+	)
+	async def demo_button2(
+		self, interaction: discord.Interaction, button: discord.ui.Button
+	):
+		await interaction.response.send_message("no")
+
+	@discord.ui.button(
+		label="modal test", style=discord.ButtonStyle.primary, emoji="🎉"
+	)
+	async def demo_modal(
+		self, interaction: discord.Interaction, button: discord.ui.Button
+	):
+		modal = DemoModal(10, 10)
+		await interaction.response.send_modal(modal)
+
+
+class DemoModal(
+	discord.ui.Modal, title="Assign point(s) to last week's Cirno images"
+):
+	"""Create modal form with one input field, taking `max_vote` comma-separated ints.
+
+	`upper`: Acceptable ints from 1 to `upper`; >= 1
+	`max_vote`: Number of votes a user can put int; >=1
+	"""
+
+	def __init__(self, upper: int, max_vote: int = 1):
+		super().__init__(timeout=300)
+
+		if upper < 1:
+			msg = f"Upper must be greater than 0, got {upper}"
+			raise ValueError(msg)
+
+		if max_vote < 1:
+			msg = f"max_vote must be greater than 0, got {max_vote}"
+			raise ValueError(msg)
+
+		self.upper = upper
+		self.max_vote = max_vote
+
+		self.vote_input = discord.ui.TextInput(
+			label=f"Max {self.max_vote} Votes",
+			placeholder=f"Example: {', '.join(str(random.randint(1, self.upper + 1)) for _ in range(self.max_vote))}",
+			style=discord.TextStyle.long,
+		)
+
+		self.add_item(self.vote_input)
+
+	async def on_submit(self, interaction: discord.Interaction):
+		"""Prase, validate, submit to database."""
+		try:
+			_log.info(self.vote_input.value)
+			votes = await self.parse_votes(self.vote_input.value)
+			errors = self.validate_votes(votes)
+
+			if errors:
+				await interaction.response.send_message(
+					"❌ Invalid vote\n" + "\n".join(errors), ephemeral=True
+				)
+				return
+
+			await self.store_values(votes)
+			await interaction.response.send_message(
+				f"Your vote(s) of {votes} have been recorded.",
+				ephemeral=True,
+			)
+
+		except (TypeError, ValueError) as e:
+			await interaction.response.send_message(
+				f"❌ Format error: {e}",
+				ephemeral=True,
+			)
+
+	async def parse_votes(self, raw_input):
+		"""Turn input into workable data structure."""
+		votes = [vote.strip() for vote in raw_input.split(",") if vote]
+
+		# edge case "-" captured by first clause, otherwise it would raise error on v[1:]
+		not_numbers = [
+			v
+			for v in votes
+			if not (v.isdigit() or (v[0] == "-" and v[1:].isdigit()))
+		]
+		if not_numbers:
+			raise TypeError(f"Input is not a digit: {not_numbers}")
+
+		# parsed nothing
+		if not votes:
+			raise ValueError("No votes entered")
+
+		# turn into appropriate type
+		votes = [int(v) for v in votes]
+
+		return votes
+
+	def validate_votes(self, votes: list[type[int]]):
+		"""Validate data against poll criteria."""
+		errors = []
+
+		# out of range
+		out_of_range = [
+			v for v in votes if v not in range(1, self.upper + 1)
+		]
+		if out_of_range:
+			errors.append(
+				f"Numbers out of range (1-{self.upper}): {out_of_range}"
+			)
+
+		# too many votes
+		if len(votes) > self.max_vote:
+			errors.append(
+				f"Too many votes (max {self.max_vote}): got {len(votes)}"
+			)
+
+		return errors
+
+	async def store_values(self, votes):
 		pass
-
-	@story.command(name="compile")
-	async def story_compile(self, ctx):
-		"""Saves all message in a .txt file as one long message. Also summarizes the contributions.
-		File name will be the same as the channel name.
-		"""
-		channel = ctx.channel
-		contributions = 0
-		emoji = re.compile(r"(<a?:[a-zA-Z0-9\_]+:[0-9]+>)")
-		contributors = defaultdict(int)
-
-		async with channel.typing():
-			if not os.path.isdir("story"):
-				os.makedirs("story")
-
-			participants = defaultdict(int)
-			with open(
-				f"story/{channel.name}.txt", mode="w", encoding="utf-8"
-			) as file:
-				async for message in channel.history(
-					limit=None, before=ctx.message, oldest_first=True
-				):
-					contributors[message.author.name] += 1
-
-					file.write(f"{message.content} ")
-					contributions += 1
-					participants[message.author] += 1
-
-				with open(
-					f"story/{channel.name}-contibutors.txt",
-					mode="w",
-					encoding="utf-8",
-				) as file:
-					file.write(
-						f".\n.\n.\n__**Total contributions: {contributions}**__\n"
-					)
-
-					i = 0
-					for item in sorted(
-						contributors.items(),
-						key=lambda x: x[1],
-						reverse=True,
-					):
-						percent = item[1] / contributions
-						if i < 5:
-							file.write(
-								f"**{item[0]}: {item[1]} ({percent:.2%})**\n"
-							)
-						else:
-							file.write(
-								f"{item[0]}: {item[1]} ({percent:.2%})\n"
-							)
-						i += 1
-
-			# msg = await channel.send('🎉 Done compiling 🎉')
-			# await msg.delete(delay=3)
-			await ctx.message.delete()
-
-	@story.command()
-	async def write(self, ctx, file_name):
-		"""Given a existing file name from a compiled story, writes the entire story."""
-		await ctx.send(f"```fix\n>>> {file_name} <<<```")
-		async with ctx.channel.typing():
-			with open(f"story/{file_name}.txt", encoding="utf-8") as file:
-				while True:
-					i = 0
-					to_append = ""
-					to_print = ""
-					eof_reached = 0
-
-					while i <= 1900 or to_append != " ":
-						to_append = file.read(1)
-
-						if not to_append:
-							# print('>>> reached EOF')
-							eof_reached = 1
-							break
-
-						to_print += to_append
-						i += 1
-
-					try:
-						await ctx.send(to_print)
-						await asyncio.sleep(2)
-					except discord.errors.HTTPException:
-						pass
-					if eof_reached == 1:
-						break
-
-			with open(
-				f"story/{file_name}-contibutors.txt", encoding="utf-8"
-			) as file:
-				while True:
-					i = 0
-					to_append = ""
-					to_print = ""
-					eof_reached = 0
-
-					while i <= 1900 or to_append != " ":
-						to_append = file.read(1)
-
-						if not to_append:
-							# print('>>> reached EOF')
-							eof_reached = 1
-							break
-
-						to_print += to_append
-						i += 1
-
-					# _log.info('going to print {}'.format(to_print))
-					await ctx.send(to_print)
-					if eof_reached == 1:
-						break
-					await asyncio.sleep(2)
-
-		await ctx.message.delete()
 
 
 async def setup(bot: commands.Bot):

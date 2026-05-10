@@ -21,12 +21,11 @@ if TYPE_CHECKING:
 
 
 async def check_frog_spawn(bot: CazzuBot):
-	now = pendulum.now("UTC")
 	records: list[Record] = await db.task.get(bot.pool, tag=["frog"])
-
 	if not records:
 		return	# no frogs to handle
 
+	now = pendulum.now("UTC")
 	expired_frog_record: list[Record] = [
 		item for item in records if item["run_at"] < now
 	]

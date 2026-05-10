@@ -23,4 +23,6 @@ from . import (  # noqa: F401
 	task,
 	user,
 	welcome,
+	counter,
+	poll,
 )

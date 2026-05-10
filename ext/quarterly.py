@@ -62,7 +62,7 @@ class Quarterly(commands.Cog):
 	@tasks.loop(time=DAILY_RESET)
 	async def quarterly_reset(self):
 		"""Dummy function to decorate for tasks."""  # noqa: D401
-		last_quarterly: datetime.datetime = db.internal.get_last_quarterly(
+		last_quarterly: datetime.datetime = await db.internal.get_last_quarterly(
 			self.bot.pool
 		)
 		last_quarterly: int = month2season(last_quarterly.month)

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import pendulum
+from asyncpg import Record
 
 
 class SnowflakeTable(ABC):
@@ -297,5 +298,96 @@ class Welcome(SnowflakeTable):
 				self.message,
 				self.mode,
 				self.monitor_rid,
+			]
+		)
+
+
+@dataclass
+class Counter(SnowflakeTable):
+	"""The counter config."""
+
+	gid: int
+	mid: int
+	count: int = 0
+
+	def __iter__(self):
+		return iter([self.gid, self.mid, self.count])
+
+
+# @dataclass
+class Poll(Record):
+	"""The poll itself.
+
+	Do not assign id manually, it will be generated on db side.
+	"""
+
+	gid: int
+	title: str = ""
+	description: str = ""
+	max_vote: int = 1
+	open: bool = False
+	id: int | None = None
+	mid: int | None = None
+
+	def __getattr__(self, name: str):
+		try:
+			return self[name]
+		except KeyError:
+			raise AttributeError(
+				f"'{type(self).__name__}' object has no attribute '{name}'"
+			)
+
+	# def __iter__(self):
+	# 	return iter(
+	# 		[
+	# 			self.gid,
+	# 			self.title,
+	# 			self.description,
+	# 			self.max_vote,
+	# 		]
+	# 	)
+
+
+@dataclass
+class PollItem(SnowflakeTable):
+	"""The item that users can vote on for a poll.
+	pid -> Poll.id
+
+	Do not assign id manually, it will be generated on db side.
+	"""
+
+	gid: int
+	pid: int
+	id: int = None
+
+	def __iter__(self):
+		return iter(
+			[
+				self.gid,
+				self.pid,
+			]
+		)
+
+
+@dataclass
+class PollVote(SnowflakeTable):
+	"""The user vote on the item on a poll.
+	pid -> PollItem.pid -> Poll.id
+	iid -> PollItem.id
+	"""
+
+	gid: int
+	pid: int
+	iid: int
+	uid: int
+	count: int = 1
+
+	def __iter__(self):
+		return iter(
+			[
+				self.gid,
+				self.pid,
+				self.iid,
+				self.uid,
 			]
 		)

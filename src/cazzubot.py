@@ -49,6 +49,7 @@ class CazzuBot(commands.Bot):
 		return await CazzuBot.is_owner(ctx.bot, ctx.author)
 
 	async def on_ready(self):
+		await self.tree.sync()
 		_log.info("Logged in as %s", self.user.name)
 
 	async def on_command_error(
@@ -92,8 +93,14 @@ class CazzuBot(commands.Bot):
 
 	async def _load_sandbox(self):
 		try:
-			await self.load_extension("ext.sandbox")
-			_log.info("|\t> loaded sandbox!")
+			await self.load_extension("ext.poll")
+			_log.info("|\t> loaded poll!")
+			await self.load_extension("ext.board")
+			_log.info("|\t> loaded board!")
+			await self.load_extension("ext.dev")
+			_log.info("|\t> loaded dev!")
+			await self.load_extension("ext.hotswap")
+			_log.info("|\t> loaded hotswap!")
 		except (
 			commands.ExtensionNotFound,
 			commands.ExtensionAlreadyLoaded,
