@@ -69,15 +69,29 @@ async def on_frog_due(bot, payload: dict[str, Any]) -> None:
 		await bot.scheduler.update_run_at(task_id, run_at)
 
 
-async def spawn_and_wait(bot, persist: int, *, cid: int) -> bool:
-	"""Spawn a frog in a channel and wait for someone to capture it."""
-	channel = bot.get_channel(cid)
-	if channel is None:
-		_log.warning("frog channel %s not found; skipping", cid)
-		return False
+async def spawn_and_wait(
+	bot,
+	persist: int,
+	*,
+	cid: int,
+	message: discord.Message | None = None,
+) -> bool:
+	"""Spawn a frog and wait for someone to capture it.
 
+	When ``message`` is given it is used as the frog (its reactions are the
+	capture target); otherwise a new frog message is sent to ``cid``.
+	"""
+	if message is None:
+		channel = bot.get_channel(cid)
+		if channel is None:
+			_log.warning("frog channel %s not found; skipping", cid)
+			return False
+		message = await channel.send(FROG_EMOJI)
+	else:
+		channel = message.channel
+
+	msg = message
 	timer_start = time.time()
-	msg = await channel.send(FROG_EMOJI)
 	await msg.add_reaction(FROG_NET_EMOJI)
 
 	def check(reaction: discord.Reaction, user: discord.User) -> bool:

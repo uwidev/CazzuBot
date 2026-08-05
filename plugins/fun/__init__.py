@@ -15,6 +15,7 @@ import discord
 from discord.ext import commands
 
 from cazzubot import Plugin
+from cazzubot.window import window_success
 
 _log = logging.getLogger(__name__)
 
@@ -25,12 +26,12 @@ class MemberCog(commands.Cog):
 	def __init__(self, bot) -> None:
 		self.bot = bot
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def hashiresoriyo(self, ctx: commands.Context) -> None:
 		"""Gives you a jolly Saber."""
 		await ctx.send("https://www.youtube.com/watch?v=dQ_d_VKrFgM")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def info(
 		self, ctx: commands.Context, *, member: discord.Member = None
 	) -> None:
@@ -41,13 +42,14 @@ class MemberCog(commands.Cog):
 			f"{len(member.roles)} roles"
 		)
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def noot(self, ctx: commands.Context) -> None:
 		"""Noot noot!"""
 		await ctx.send("NOOT NOOT")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def ping(self, ctx: commands.Context) -> None:
+		"""Ping the bot."""
 		await ctx.send(
 			f":ping_pong: Pong! {self.bot.latency * 1000:.2f}ms"
 		)
@@ -59,16 +61,10 @@ class EchoCog(commands.Cog):
 	def __init__(self, bot) -> None:
 		self.bot = bot
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def echo(self, ctx: commands.Context, *, content: str) -> None:
+		"""Echo your text back."""
 		await ctx.send(content)
-
-	@commands.Cog.listener()
-	async def on_reaction_add(
-		self, reaction: discord.Reaction, user: discord.User
-	) -> None:
-		if user.id == self.bot.owner_id:
-			await reaction.message.channel.send("Hello there...")
 
 
 class InktoberCog(commands.Cog):
@@ -91,16 +87,18 @@ class InktoberCog(commands.Cog):
 		):
 			await message.add_reaction("👍")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def register_inktober(
 		self, ctx: commands.Context, channel: discord.TextChannel = None
 	) -> None:
 		"""Set the channel to watch for inktober submissions."""
 		channel = channel or ctx.channel
 		await self.bot.settings.set("inktober.cid", channel.id)
-		await ctx.message.add_reaction("👍")
+		await window_success(
+			ctx, f"Inktober channel set to {channel.mention}"
+		)
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def scrape_inktober(
 		self, ctx: commands.Context, ch: discord.TextChannel = None
 	) -> None:
@@ -135,14 +133,19 @@ class StoryCog(commands.Cog):
 	async def cog_check(self, ctx: commands.Context) -> bool:
 		return ctx.author.id == self.bot.owner_id
 
-	@commands.group()
+	@commands.hybrid_group()
 	async def story(self, ctx: commands.Context) -> None:
-		pass
+		"""Compile and write channel stories."""
 
 	@story.command(name="compile")
 	async def story_compile(self, ctx: commands.Context) -> None:
 		"""Save all messages in this channel to a .txt file with stats."""
 		channel = ctx.channel
+		# respond immediately with a status; the scan may exceed 3s, so the
+		# result is delivered as an edit — never a bare defer
+		status = None
+		if ctx.interaction is not None:
+			status = await ctx.send("Compiling channel history...")
 		contributions = 0
 		contributors: defaultdict[str, int] = defaultdict(int)
 
@@ -152,7 +155,11 @@ class StoryCog(commands.Cog):
 				f"story/{channel.name}.txt", mode="w", encoding="utf-8"
 			) as file:
 				async for message in channel.history(
-					limit=None, before=ctx.message, oldest_first=True
+					limit=None,
+					before=ctx.message
+					if ctx.message is not None
+					else None,
+					oldest_first=True,
 				):
 					contributors[message.author.name] += 1
 					file.write(f"{message.content} ")
@@ -181,7 +188,13 @@ class StoryCog(commands.Cog):
 					else:
 						file.write(f"{name}: {count} ({percent:.2%})\n")
 
-		await ctx.message.delete()
+		if ctx.interaction is not None:
+			await status.edit(
+				content=f"Compiled {contributions} contributions to "
+				f"story/{channel.name}.txt"
+			)
+		elif ctx.message is not None:
+			await ctx.message.delete()
 
 	@story.command(name="write")
 	async def story_write(
@@ -201,7 +214,8 @@ class StoryCog(commands.Cog):
 						break
 					await ctx.send(chunk)
 					await asyncio.sleep(2)
-		await ctx.message.delete()
+		if ctx.interaction is None and ctx.message is not None:
+			await ctx.message.delete()
 
 
 class FunPlugin(Plugin):

@@ -17,6 +17,7 @@ import discord
 from discord.ext import commands
 
 from cazzubot import Plugin, templates, utils
+from cazzubot.window import window_success
 from cazzubot.models import WelcomeModeEnum
 
 _log = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ class WelcomeCog(commands.Cog):
 
 	# -- configuration ------------------------------------------------------
 
-	@commands.group()
+	@commands.hybrid_group()
 	@commands.has_permissions(administrator=True)
 	async def welcome(self, ctx: commands.Context) -> None:
 		"""Entry command for welcome settings."""
@@ -113,28 +114,38 @@ class WelcomeCog(commands.Cog):
 		self, ctx: commands.Context, enabled: bool
 	) -> None:
 		await self.bot.settings.set("welcome.enabled", enabled)
-		await ctx.message.add_reaction("👍")
+		await window_success(
+			ctx,
+			"Welcome messages enabled"
+			if enabled
+			else "Welcome messages disabled",
+		)
 
 	@welcome_set.command(name="verify")
 	async def welcome_set_verify_first(
 		self, ctx: commands.Context, verify_first: bool
 	) -> None:
 		await self.bot.settings.set("welcome.verify_first", verify_first)
-		await ctx.message.add_reaction("👍")
+		await window_success(
+			ctx,
+			"Verify-first enabled"
+			if verify_first
+			else "Verify-first disabled",
+		)
 
 	@welcome_set.command(name="role")
 	async def welcome_set_rid(
 		self, ctx: commands.Context, role: discord.Role
 	) -> None:
 		await self.bot.settings.set("welcome.default_rid", role.id)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, f"Default role set to {role}")
 
 	@welcome_set.command(name="channel")
 	async def welcome_set_cid(
 		self, ctx: commands.Context, channel: discord.TextChannel
 	) -> None:
 		await self.bot.settings.set("welcome.cid", channel.id)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, f"Welcome channel set to {channel}")
 
 	@welcome_set.command(name="message", aliases=["msg"])
 	async def welcome_set_message(
@@ -149,7 +160,7 @@ class WelcomeCog(commands.Cog):
 			ctx, message, formatter, member=ctx.author
 		)
 		await self.bot.settings.set("welcome.message", decoded)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, "Welcome message set")
 
 	@welcome_set.command(name="mode")
 	async def welcome_set_mode(
@@ -162,14 +173,14 @@ class WelcomeCog(commands.Cog):
 				f"Mode must be one of {[m.value for m in WelcomeModeEnum]}"
 			) from None
 		await self.bot.settings.set("welcome.mode", mode_enum.value)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, f"Welcome mode set to {mode_enum.value}")
 
 	@welcome_set.command(name="monitor")
 	async def welcome_set_monitor(
 		self, ctx: commands.Context, *, role: discord.Role
 	) -> None:
 		await self.bot.settings.set("welcome.monitor_rid", role.id)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, f"Monitored role set to {role}")
 
 	@welcome.command(name="demo")
 	async def welcome_demo(self, ctx: commands.Context) -> None:

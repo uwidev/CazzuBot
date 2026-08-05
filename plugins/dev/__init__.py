@@ -24,16 +24,12 @@ class DevCog(commands.Cog):
 	async def cog_check(self, ctx: commands.Context) -> bool:
 		return ctx.author.id == self.bot.owner_id
 
-	async def cog_after_invoke(self, ctx: commands.Context) -> None:
-		if ctx.command_failed:
-			await ctx.message.add_reaction("❌")
-
-	@commands.command()
+	@commands.hybrid_command()
 	async def owner(self, ctx: commands.Context) -> None:
 		_log.info("%s is the bot owner.", ctx.author)
 		await ctx.send(f"You are {ctx.author.mention}!")
 
-	@commands.group()
+	@commands.hybrid_group()
 	async def calc(self, ctx: commands.Context) -> None:
 		"""Helpers for level math."""
 
@@ -47,7 +43,7 @@ class DevCog(commands.Cog):
 		"""Cumulative exp from level 0 to n."""
 		await ctx.reply(f"{levels.exp_to_level_cum(n):.2f}")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def archive_emojis(self, ctx: commands.Context) -> None:
 		"""Save this guild's emojis to archives/{guild_id}/."""
 		await ctx.send("Saving server emoji's to disk...")
@@ -57,7 +53,7 @@ class DevCog(commands.Cog):
 			await emoji.save(archive_pth / emoji.name)
 		await ctx.send("Saved!")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def scrape(self, ctx: commands.Context) -> None:
 		"""Download every guild emoji into emojis/."""
 		await ctx.send("Scraping server emojis...")
@@ -78,9 +74,9 @@ class HotswapCog(commands.Cog):
 	async def cog_check(self, ctx: commands.Context) -> bool:
 		return ctx.author.id == self.bot.owner_id
 
-	@commands.group()
+	@commands.hybrid_group()
 	async def cog(self, ctx: commands.Context) -> None:
-		pass
+		"""Plugin hotswap."""
 
 	@cog.command(name="reload")
 	async def plugin_reload(

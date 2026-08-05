@@ -89,37 +89,80 @@ async def find_user(
 		return None
 
 
+class ConfirmView(discord.ui.View):
+	"""Yes/No button prompt; ``value`` is True / False / None (timed out).
+
+	Only the invoking author's clicks count. On an answer the message is
+	deleted when ``delete_after`` is set (mirroring the old reaction-based
+	flow), otherwise the buttons are stripped from it.
+	"""
+
+	def __init__(
+		self,
+		author_id: int,
+		*,
+		timeout: float = 7.0,
+		delete_after: bool = True,
+	) -> None:
+		super().__init__(timeout=timeout)
+		self.author_id = author_id
+		self.delete_after = delete_after
+		self.value: bool | None = None
+
+	async def _finish(
+		self, interaction: discord.Interaction, value: bool
+	) -> None:
+		if interaction.user.id != self.author_id:
+			return  # other users' clicks are ignored
+		self.value = value
+		self.stop()
+		if self.delete_after and interaction.message is not None:
+			await interaction.response.defer()
+			try:
+				await interaction.message.delete()
+			except discord.NotFound:
+				pass
+		else:
+			await interaction.response.edit_message(view=None)
+
+	@discord.ui.button(
+		label="Yes", style=discord.ButtonStyle.success, emoji="👍"
+	)
+	async def yes(
+		self, interaction: discord.Interaction, button: discord.ui.Button
+	) -> None:
+		await self._finish(interaction, True)
+
+	@discord.ui.button(
+		label="No", style=discord.ButtonStyle.danger, emoji="❌"
+	)
+	async def no(
+		self, interaction: discord.Interaction, button: discord.ui.Button
+	) -> None:
+		await self._finish(interaction, False)
+
+
 async def author_confirm(
 	ctx: commands.Context,
 	confirmation_msg: str = "Please confirm.",
 	*,
 	delete_after: bool = True,
 ) -> bool:
-	"""Ask the author for a 👍/❌ confirmation; True if 👍."""
+	"""Ask the author to confirm with Yes/No buttons; True if Yes."""
 	if ctx.invoked_with == "help":
 		return True
-	confirm = await ctx.send(confirmation_msg)
-	await confirm.add_reaction("👍")
-	await confirm.add_reaction("❌")
-
-	def check(reaction, user):
-		return (
-			user == ctx.author
-			and str(reaction.emoji) in ("👍", "❌")
-			and reaction.message.id == confirm.id
-		)
-
-	try:
-		reaction, _ = await ctx.bot.wait_for(
-			"reaction_add", timeout=7.0, check=check
-		)
-	except TimeoutError:
-		await confirm.delete()
+	view = ConfirmView(ctx.author.id, delete_after=delete_after)
+	confirm = await ctx.send(confirmation_msg, view=view)
+	await view.wait()
+	if (
+		view.value is None
+	):  # timed out — mirror old behaviour: remove prompt
+		try:
+			await confirm.delete()
+		except discord.NotFound:
+			pass
 		return False
-
-	if delete_after:
-		await confirm.delete()
-	return str(reaction.emoji) == "👍"
+	return view.value
 
 
 def deep_map(

@@ -24,6 +24,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - `cazzubot/plugin.py` — `Plugin` base (`name`, `cogs`, `schema`, `scheduled`, `on_load`/`on_unload`) + `discover_plugins()` (packages or single modules; each defines `plugin = MyPlugin()`).
 - `cazzubot/scheduler.py` — one loop over `tasks(tag, run_at, payload)`; tags registered via `Plugin.scheduled`; handlers re-schedule by inserting rows. Replaces frog/counter/mod expiry loops.
 - `cazzubot/settings.py` — JSON key-value store (single guild), namespaced keys (e.g. `frog.enabled`, `rank.seasonal.message`, `level.quiet`).
+- `cazzubot/window.py` — buffered, level-tagged command reporting to Discord (`command_window(ctx)` CM, `@windowed` decorator, `window_*` one-off helpers); auto-flushes at end of command and on error; ephemeral on slash. Distinct from CLI logging.
 - Plugins: experience (message exp pipeline + membership card + `exp top` paging), levels, ranks (thresholds → roles, seasonal/lifetime), frogs (spawn cadence `interval ± fuzzy%`, capture, consume-for-exp, quarterly freeze), daily, quarterly, mod (modlog + scheduled mute/tempban), poll (app commands + modal view), welcome, counter (baka button), board, fun (member/echo/inktober/story), dev (owner tools + `cog reload` hotswap).
 - Cross-plugin flow: `experience.on_message` awards exp then calls `plugins.levels.cog.handle_level_up` and `plugins.ranks.logic.handle_ranks`.
 
@@ -35,6 +36,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - `tasks.loop(time=…)` only for daily/quarterly cadence (with missed-run force check on boot); everything delayed goes through the scheduler.
 - User-configurable message JSON goes through `cazzubot.templates.verify/prepare` (jsonschema-validated); placeholders applied via `utils.deep_map` + per-feature formatters.
 - Time handled with pendulum, always UTC (see `cazzubot/timeparse.py`).
+- Command feedback goes through `cazzubot.window` (levels debug/info/success/warn/error; success/warn/error prefix ✓/⚠︎/✖) — no emoji-reaction feedback. CLI `logging` stays for bot internals (db, connection, plugin hooks); command-local state goes to the user via the window, flushed before blocking ops and always at command end (even on error).
 - Ruff select `["E4", "E7", "E9", "F"]`; basedpyright config present (Python 3.10, Linux).
 
 ## Notes

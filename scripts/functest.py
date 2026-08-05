@@ -22,6 +22,12 @@ from cazzubot import CazzuBot, Config  # noqa: E402
 from cazzubot import levels, timeparse  # noqa: E402
 from cazzubot.models import FrogTypeEnum, ModlogTypeEnum  # noqa: E402
 from cazzubot.utils import OldNew  # noqa: E402
+from cazzubot.window import (  # noqa: E402
+	command_window,
+	window_info,
+	window_warn,
+	windowed,
+)
 
 from plugins.experience import db as exp_db  # noqa: E402
 from plugins.frogs import db as frog_db  # noqa: E402
@@ -251,6 +257,75 @@ async def main() -> None:
 	finally:
 		await bot2.close()
 	ok("data persists across database reopen")
+
+	# -- window: buffered internal-state reporting --------------------------
+
+	class FakeSendCtx:
+		def __init__(self, interaction=None) -> None:
+			self.interaction = interaction
+			self.sent: list[tuple[str, dict]] = []
+
+		async def send(self, content=None, **kwargs) -> None:
+			self.sent.append((content, kwargs))
+
+	ctx_fake = FakeSendCtx()
+	async with command_window(ctx_fake) as window:
+		window.debug("dbg")
+		window.info("fetching")
+		window.success("done")
+		window.warn("slow")
+		window.error("boom")
+	assert len(ctx_fake.sent) == 1  # one message, not one per line
+	text, kwargs = ctx_fake.sent[0]
+	assert text.splitlines()[2] == "✓ done"
+	assert text.splitlines()[3] == "⚠︎ slow"
+	assert text.splitlines()[4] == "✖ boom"
+	assert kwargs == {"ephemeral": True}
+	ok("window buffers levels into one ephemeral message")
+
+	ctx_fake.sent.clear()
+	async with command_window(ctx_fake) as window:
+		pass
+	assert ctx_fake.sent == []
+	ok("window empty flush is a no-op")
+
+	ctx_fake.sent.clear()
+	try:
+		async with command_window(ctx_fake) as window:
+			window.info("partial")
+			raise RuntimeError("kaboom")
+		raise AssertionError("should have raised")
+	except RuntimeError:
+		pass
+	text, _ = ctx_fake.sent[0]
+	assert "partial" in text and "✖ RuntimeError: kaboom" in text
+	ok("window flushes state + error on exception")
+
+	ctx_fake.sent.clear()
+	async with command_window(ctx_fake) as window:
+		window.info("a|b")
+		await window.flush(monospace=True)
+	text, _ = ctx_fake.sent[0]
+	assert text == "```\na|b\n```"
+	ok("window monospace flush wraps in code block")
+
+	@windowed
+	async def _windowed_cmd(self, ctx, val: int) -> int:
+		ctx.window.success(f"val={val}")
+		return val
+
+	ctx_fake.sent.clear()
+	assert await _windowed_cmd(None, ctx_fake, 3) == 3
+	assert ctx_fake.sent == [("✓ val=3", {"ephemeral": True})]
+	ok("windowed decorator exposes ctx.window and auto-flushes")
+
+	ctx_fake.sent.clear()
+	await window_info(ctx_fake, "hi")
+	await window_warn(ctx_fake, "careful")
+	assert len(ctx_fake.sent) == 2
+	assert ctx_fake.sent[0][0] == "hi"
+	assert ctx_fake.sent[1][0] == "⚠︎ careful"
+	ok("window one-off helpers send single lines")
 
 	print(f"\nALL {passed} FUNCTIONAL CHECKS PASSED")
 

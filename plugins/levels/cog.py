@@ -10,6 +10,7 @@ import discord
 from discord.ext import commands
 
 from cazzubot import templates, utils
+from cazzubot.window import window_success
 
 _log = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class LevelsCog(commands.Cog):
 	def __init__(self, bot) -> None:
 		self.bot = bot
 
-	@commands.group(
+	@commands.hybrid_group(
 		name="level", aliases=["lvl"], invoke_without_command=True
 	)
 	@commands.has_permissions(administrator=True)
@@ -94,7 +95,7 @@ class LevelsCog(commands.Cog):
 			ctx, message, formatter, member=ctx.author
 		)
 		await self.bot.settings.set(MESSAGE_KEY, decoded)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, "Level-up message set")
 
 	@level.command(name="demo")
 	async def level_demo(self, ctx: commands.Context) -> None:

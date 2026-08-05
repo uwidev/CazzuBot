@@ -6,6 +6,7 @@ import discord
 from discord.ext import commands
 
 from cazzubot import templates, utils
+from cazzubot.window import window_success
 from cazzubot.models import WindowEnum
 
 from . import db as ranks_db
@@ -29,11 +30,11 @@ class RanksCog(commands.Cog):
 		perms = ctx.channel.permissions_for(ctx.author)
 		return bool(perms.administrator)
 
-	@commands.group(
+	@commands.hybrid_group(
 		name="rank", aliases=["ranks"], invoke_without_command=True
 	)
 	async def rank(self, ctx: commands.Context) -> None:
-		pass
+		"""Manage ranked roles."""
 
 	@rank.command(name="add")
 	async def rank_add(
@@ -48,20 +49,18 @@ class RanksCog(commands.Cog):
 			await ctx.send("Level must be between 1-999.")
 			return
 		await ranks_db.add(self.bot.db, role.id, level, mode=mode)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, f"Added {role} at level {level}")
 
 	@rank.command(name="remove", aliases=["del"])
 	async def rank_remove(
 		self,
 		ctx: commands.Context,
-		arg: discord.Role | int,
+		arg: discord.Role,
 		mode: WindowEnum = WindowEnum.SEASONAL,
 	) -> None:
-		"""Remove a rank by role or threshold level."""
-		await ranks_db.delete(
-			self.bot.db, arg if isinstance(arg, int) else arg.id, mode
-		)
-		await ctx.message.add_reaction("👍")
+		"""Remove a rank role."""
+		await ranks_db.delete(self.bot.db, arg.id, mode)
+		await window_success(ctx, f"Removed {arg}")
 
 	@rank.command(name="clean")
 	async def rank_clean(self, ctx: commands.Context) -> None:
@@ -71,7 +70,9 @@ class RanksCog(commands.Cog):
 			r["rid"] for r in rows if not ctx.guild.get_role(r["rid"])
 		]
 		await ranks_db.batch_delete(self.bot.db, removed)
-		await ctx.message.add_reaction("👍")
+		await window_success(
+			ctx, f"Removed {len(removed)} stale rank roles"
+		)
 
 	@rank.command(name="clear", aliases=["purge", "drop"])
 	async def rank_clear(
@@ -79,12 +80,13 @@ class RanksCog(commands.Cog):
 		ctx: commands.Context,
 		mode: WindowEnum = WindowEnum.SEASONAL,
 	) -> None:
+		"""Drop all rank thresholds for a window."""
 		await ranks_db.drop(self.bot.db, mode)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, "Cleared rank thresholds")
 
 	@rank.group(name="set")
 	async def rank_set(self, ctx: commands.Context) -> None:
-		pass
+		"""Configure rank settings."""
 
 	@rank_set.command(name="enabled")
 	async def rank_set_enabled(
@@ -93,18 +95,23 @@ class RanksCog(commands.Cog):
 		val: bool,
 		mode: WindowEnum = WindowEnum.SEASONAL,
 	) -> None:
+		"""Enable or disable rank-up messages for a window."""
 		await ranks_db.set_enabled(self.bot.settings, val, mode)
-		await ctx.message.add_reaction("👍")
+		await window_success(
+			ctx,
+			"Rank messages enabled" if val else "Rank messages disabled",
+		)
 
-	@rank_set.command(name="keepOld")
+	@rank_set.command(name="keep_old", aliases=["keepOld"])
 	async def rank_set_keep_old(
 		self,
 		ctx: commands.Context,
 		val: bool,
 		mode: WindowEnum = WindowEnum.SEASONAL,
 	) -> None:
+		"""Keep old rank roles after a reset for a window."""
 		await ranks_db.set_keep_old(self.bot.settings, val, mode)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, f"Keep-old set to {val}")
 
 	@rank_set.command(name="message", aliases=["msg"])
 	async def rank_set_message(
@@ -134,7 +141,7 @@ class RanksCog(commands.Cog):
 			ctx, message, formatter, member=ctx.author
 		)
 		await ranks_db.set_message(self.bot.settings, decoded, mode)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, "Rank message set")
 
 	@rank.command(name="demo")
 	async def rank_demo(

@@ -11,6 +11,7 @@ import pendulum
 from discord.ext import commands
 
 from cazzubot import leaderboard, templates, timeparse, utils
+from cazzubot.window import command_window, window_success
 from cazzubot.models import (
 	FrogTypeEnum,
 	MemberExpLogSourceEnum,
@@ -40,7 +41,7 @@ class FrogsCog(commands.Cog):
 	def __init__(self, bot) -> None:
 		self.bot = bot
 
-	@commands.group(invoke_without_command=True, aliases=["frogs"])
+	@commands.hybrid_group(invoke_without_command=True, aliases=["frogs"])
 	async def frog(
 		self, ctx: commands.Context, *, member: discord.Member = None
 	) -> None:
@@ -204,7 +205,7 @@ class FrogsCog(commands.Cog):
 			self.bot.db, channel.id, interval_s, persist_s, fuzzy
 		)
 		await factory.reset_frog_tasks(self.bot)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, "Spawn channel registered")
 
 	@frog.command(name="clear")
 	@commands.has_permissions(administrator=True)
@@ -212,7 +213,7 @@ class FrogsCog(commands.Cog):
 		"""Remove all frog settings and stop frog spawning."""
 		await frog_db.clear_spawns(self.bot.db)
 		await self.bot.scheduler.drop_tag("frog")
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, "Cleared all frog spawn channels")
 
 	@frog.group(name="set")
 	@commands.has_permissions(administrator=True)
@@ -228,7 +229,7 @@ class FrogsCog(commands.Cog):
 			ctx, message, factory.formatter, member=ctx.author
 		)
 		await frog_db.set_message(self.bot.settings, decoded)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, "Capture message set")
 
 	@frog_set.command(name="enabled", aliases=["on"])
 	async def frog_set_enabled(
@@ -237,7 +238,10 @@ class FrogsCog(commands.Cog):
 		"""Enable/disable frog spawns (re-queues or clears spawn tasks)."""
 		await frog_db.set_enabled(self.bot.settings, val)
 		await factory.reset_frog_tasks(self.bot)
-		await ctx.message.add_reaction("👍")
+		await window_success(
+			ctx,
+			"Frog spawning enabled" if val else "Frog spawning disabled",
+		)
 
 	@frog.command(name="demo")
 	@commands.has_permissions(administrator=True)
@@ -361,7 +365,11 @@ class FrogsCog(commands.Cog):
 	@commands.is_owner()
 	async def frog_spawn(self, ctx: commands.Context) -> None:
 		"""Force-spawn a frog in this channel."""
-		await factory.spawn_and_wait(self.bot, 30, cid=ctx.channel.id)
+		# the frog message is the success signal — no separate confirmation
+		msg = await ctx.send(factory.FROG_EMOJI)
+		await factory.spawn_and_wait(
+			self.bot, 30, cid=ctx.channel.id, message=msg
+		)
 
 	@frog.command(name="fake")
 	@commands.is_owner()
@@ -376,6 +384,8 @@ class FrogsCog(commands.Cog):
 		"""Rebuild lifetime capture counts from the frog logs."""
 		if not await utils.author_confirm(ctx):
 			return
-		msg = await ctx.send("Starting frog sync...")
-		await frog_db.sync_with_frog_logs(self.bot.db)
-		await msg.edit(content="Synced! ✅")
+		async with command_window(ctx) as window:
+			window.info("Fetching frog logs...")
+			await window.flush()  # ack early before the big UPDATE
+			await frog_db.sync_with_frog_logs(self.bot.db)
+			window.success("Lifetime captures synced.")

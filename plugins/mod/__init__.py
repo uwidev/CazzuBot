@@ -11,6 +11,7 @@ import pendulum
 from discord.ext import commands
 
 from cazzubot import Plugin
+from cazzubot.window import window_info, window_success
 from cazzubot.models import ModlogStatusEnum, ModlogTypeEnum
 from cazzubot.timeparse import (
 	InvalidTimeError,
@@ -136,11 +137,12 @@ class ModCog(commands.Cog):
 			]
 		)
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def mod_check(self, ctx: commands.Context) -> None:
+		"""Check if you have moderator permissions."""
 		await ctx.send("You have moderator permissions!")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def warn(
 		self, ctx: commands.Context, member: discord.Member, *, reason: str
 	) -> None:
@@ -152,9 +154,9 @@ class ModCog(commands.Cog):
 			pendulum.now("UTC"),
 			reason=reason,
 		)
-		await ctx.message.add_reaction("👍")
+		await window_info(ctx, f"Warned {member}")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def mute(
 		self,
 		ctx: commands.Context,
@@ -197,8 +199,9 @@ class ModCog(commands.Cog):
 			await ctx.send("Mute role no longer exists in this server.")
 			return
 		await member.add_roles(role, reason=reason)
+		await window_info(ctx, f"Muted {member}")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def kick(
 		self,
 		ctx: commands.Context,
@@ -215,9 +218,9 @@ class ModCog(commands.Cog):
 			reason=reason,
 		)
 		await member.kick(reason=reason)
-		await ctx.message.add_reaction("👍")
+		await window_info(ctx, f"Kicked {member}")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def ban(
 		self,
 		ctx: commands.Context,
@@ -251,8 +254,9 @@ class ModCog(commands.Cog):
 				{"uid": member.id, "log_type": ban_type.value},
 			)
 		await member.ban(reason=reason)
+		await window_info(ctx, f"Banned {member}")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def unmute(
 		self, ctx: commands.Context, member: discord.Member
 	) -> None:
@@ -268,9 +272,9 @@ class ModCog(commands.Cog):
 				and payload.get("log_type") == "mute"
 			):
 				await self.bot.scheduler.drop(task["id"])
-		await ctx.message.add_reaction("👍")
+		await window_info(ctx, f"Unmuted {member}")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def unban(
 		self, ctx: commands.Context, user: discord.User
 	) -> None:
@@ -283,20 +287,20 @@ class ModCog(commands.Cog):
 				and payload.get("log_type") == "tempban"
 			):
 				await self.bot.scheduler.drop(task["id"])
-		await ctx.message.add_reaction("👍")
+		await window_info(ctx, f"Unbanned {user}")
 
-	@commands.group()
+	@commands.hybrid_group()
 	async def set(self, ctx: commands.Context) -> None:
-		pass
+		"""Mod settings."""
 
 	@set.command(name="mute")
 	async def set_mute(
 		self, ctx: commands.Context, *, role: discord.Role
 	) -> None:
 		await set_mute_role(self.bot.settings, role.id)
-		await ctx.message.add_reaction("👍")
+		await window_success(ctx, f"Mute role set to {role}")
 
-	@commands.command()
+	@commands.hybrid_command()
 	async def slowmode(
 		self,
 		ctx: commands.Context,

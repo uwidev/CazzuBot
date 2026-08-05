@@ -30,6 +30,7 @@ cazzubot/                   the core package (replaces src/)
     config.py               Config dataclass from env; ONE guild_id
     db.py                   Database — aiosqlite wrapper, WAL, FK on, explicit transactions
     settings.py             settings(key, value) JSON key-value store (single guild)
+    window.py               buffered, level-tagged command reporting to Discord (CM + @windowed + one-off helpers)
     plugin.py               Plugin base + auto-discovery of plugins/
     scheduler.py            one central task loop over the tasks table
     utils.py                OldNew, ordinal, percentile, embeds, confirm, month2season…
@@ -78,6 +79,21 @@ reach shared services through the bot: `bot.db`, `bot.settings`, `bot.scheduler`
 - No `gid` columns anywhere. `users`/`members` tables kept minimal (`INSERT OR IGNORE`
   on demand — no decorator magic).
 
+## Command feedback
+
+Commands signal their result through `cazzubot/window.py` — a buffered,
+level-tagged window into the command's internal state, sent to the invoker
+(ephemeral on slash). Levels `success`/`warn`/`error` prefix unicode text
+symbols (`✓`/`⚠︎`/`✖`); `debug`/`info` are plain. Lines buffer and flush as
+**one** message: explicitly before blocking work (big disk/DB ops), and always
+at the end of the command — including on error. No emoji-reaction feedback.
+
+Three forms: `async with command_window(ctx) as window:` (CM), `@windowed`
+(exposes `ctx.window`, auto-flush), and one-off `window_*` helpers. A command
+whose own output is the signal (leaderboards, embeds, the spawned frog) needs
+no window at all. CLI `logging` stays for bot internals (db, connection,
+plugin hooks) — command-local state goes to the user, not the CLI log.
+
 ## Scheduling
 
 One `Scheduler` (a single `tasks.loop(seconds=1)`) polls `tasks(tag, run_at, payload)`.
@@ -109,6 +125,9 @@ JSONB subset matching, `db.init()` DI, partitioned-log scaffolding, multi-guild
 
 ## Migration
 
-v1 PostgreSQL data is **not migrated** (user decision: simpler is the goal). The bot
-starts fresh; `exp resync`, `frog resync`, `calc` are the tools to rebuild state, and
-member exp is derived from `member_exp_log` anyway.
+v1 PostgreSQL data is migrated with the one-off scripts in `scripts/`
+(`migrate_pg_to_sqlite.py`, `verify_migration.py`, `boot_check_migrated.py`).
+The ops protocol is documented in `docs/MIGRATION.md`; the per-table transform
+spec in `scripts/migration/MAPPING.md`. The source PostgreSQL is never
+written to; the migration is re-runnable and verified per-uid before the
+SQLite file is swapped in.

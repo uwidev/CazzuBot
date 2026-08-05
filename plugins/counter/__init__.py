@@ -59,9 +59,9 @@ class CounterCog(commands.Cog):
 		self.bot = bot
 		self._locks: dict[int, asyncio.Lock] = {}
 
-	@commands.group()
+	@commands.hybrid_group()
 	async def counter(self, ctx: commands.Context) -> None:
-		"""Group counter command."""
+		"""Baka counter management."""
 
 	@commands.Cog.listener()
 	async def on_raw_reaction_add(
@@ -170,7 +170,6 @@ class CounterCog(commands.Cog):
 			"INSERT OR IGNORE INTO counter (mid, count) VALUES (?, 0)",
 			msg.id,
 		)
-		await ctx.message.add_reaction("👍")
 
 
 class CounterPlugin(Plugin):

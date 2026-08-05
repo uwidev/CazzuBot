@@ -10,6 +10,7 @@ from discord.ext import commands
 
 from cazzubot import leaderboard, levels, utils
 from cazzubot.utils import OldNew
+from cazzubot.window import command_window, window_success, window_warn
 
 from . import db as exp_db
 
@@ -142,7 +143,7 @@ class ExperienceCog(commands.Cog):
 
 	# -- commands ----------------------------------------------------------
 
-	@commands.group(
+	@commands.hybrid_group(
 		aliases=["xp", "experience"], invoke_without_command=True
 	)
 	async def exp(
@@ -405,9 +406,11 @@ class ExperienceCog(commands.Cog):
 		"""Rebuild every member's lifetime exp from the exp logs."""
 		if not await utils.author_confirm(ctx):
 			return
-		msg = await ctx.send("Starting member lifetime sync...")
-		await exp_db.sync_with_exp_logs(self.bot.db)
-		await msg.edit(content="Synced! ✅")
+		async with command_window(ctx) as window:
+			window.info("Fetching exp logs...")
+			await window.flush()  # ack early before the big UPDATE
+			await exp_db.sync_with_exp_logs(self.bot.db)
+			window.success("Lifetime exp synced.")
 
 	@exp.group(name="quiet", invoke_without_command=True)
 	async def quiet(self, ctx: commands.Context) -> None:
@@ -426,11 +429,13 @@ class ExperienceCog(commands.Cog):
 			await self.bot.settings.get("level.quiet", []) or []
 		)
 		if channel.id in quiets:
-			await ctx.send("Channel already exists in quiet list!")
+			await window_warn(ctx, "Channel already in the quiet list")
 			return
 		quiets.append(channel.id)
 		await self.bot.settings.set("level.quiet", quiets)
-		await ctx.message.add_reaction("👍")
+		await window_success(
+			ctx, f"Added {channel.mention} to the quiet list"
+		)
 
 	@quiet.command(name="del")
 	@commands.has_permissions(administrator=True)
@@ -441,10 +446,10 @@ class ExperienceCog(commands.Cog):
 			await self.bot.settings.get("level.quiet", []) or []
 		)
 		if channel.id not in quiets:
-			await ctx.send(
-				"Channel was never in quiet list to begin with!"
-			)
+			await window_warn(ctx, "Channel was never in the quiet list")
 			return
 		quiets.remove(channel.id)
 		await self.bot.settings.set("level.quiet", quiets)
-		await ctx.message.add_reaction("👍")
+		await window_success(
+			ctx, f"Removed {channel.mention} from the quiet list"
+		)
