@@ -20,3 +20,4 @@ test/
 .python-version
 *.dump
 button_count
+docker-compose*.y*ml
