@@ -33,18 +33,20 @@ async def add(pool: Pool, log: table.Modlog):
 			)
 
 
-async def get(db: Pool, gid: int) -> dict:
+async def get(db: Pool, gid: int) -> list[table.Modlog]:
 	"""Return modlogs for a specific guild."""
 	# return await settings.search(db, Table.MODLOG, where("gid") == gid)
 	async with db.acquire() as con:
 		async with con.transaction():
-			data = await con.fetch(
+			records = await con.fetch(
 				"""
 				SELECT * FROM modlog
 				WHERE gid = $1
 				""",
 				gid,
 			)
+
+			return [table.Modlog.from_record(r) for r in records if r]
 
 
 # async def create_partition_gid(pool: Pool, gid: int):

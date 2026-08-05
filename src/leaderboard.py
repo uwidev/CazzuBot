@@ -22,6 +22,7 @@ from asyncpg import Record
 from discord.ext import commands
 
 from src import db, levels_helper, utility
+from src.db.table import MemberExpRanked
 
 
 def create_focus_subset(

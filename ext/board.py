@@ -15,6 +15,7 @@ votes to determine the image with the most vote.
 
 import logging
 from pathlib import Path
+import os
 
 import pendulum
 from discord.ext import commands
@@ -49,7 +50,9 @@ class Board(commands.Cog):
 
 		ch = ctx.channel
 		id = 0
-		log_path = Path(f"./board/{year}-W{week:02}.txt")
+		log_path = Path(f"./board/{year}-W{week:02}/log.txt")
+		if not log_path.parent.exists():
+			os.makedirs(log_path.parent)
 		if not log_path.exists():
 			with log_path.open("x") as fp:
 				fp.write("id\tfilename\tuser id\tmsg id\n")
@@ -63,7 +66,7 @@ class Board(commands.Cog):
 						and attachment.content_type.startswith("image/")
 					):
 						filename = Path(
-							f"./board/{id}-{attachment.filename}"
+							f"./board/{year}-W{week:02}/{id}-{attachment.filename}"
 						)
 						await attachment.save(filename)
 						_log.info(f"saved {filename}")

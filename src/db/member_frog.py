@@ -106,7 +106,7 @@ async def get_frogs(
 
 async def get_members_frog_seasonal(
 	pool: Pool, gid: int, year: int, season: int
-) -> list[Record]:
+) -> list[table.FrogRankedSeasonal]:
 	"""Fetch frog captures and ranks them of all guild members.
 
 	Acts more of an alias for more intuitive design.
@@ -118,7 +118,7 @@ async def get_members_frog_seasonal(
 
 async def get_members_frog_seasonal_by_month(
 	pool: Pool, gid: int, year: int, month: int
-) -> list[Record]:
+) -> list[table.FrogRankedSeasonal]:
 	"""Fetch frog captures and ranks them of all guild members.
 
 	Acts more of an alias for more intuitive design.

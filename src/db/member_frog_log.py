@@ -155,7 +155,7 @@ async def get_seasonal(
 
 async def get_seasonal_bulk_ranked(
 	pool: Pool, gid: int, year: int, season: int
-) -> int:
+) -> list[table.FrogRankedSeasonal]:
 	"""Fetch frog captures and ranks them of a guild's members.
 
 	Seasons start from 0 and go to to 3.
@@ -174,7 +174,7 @@ async def get_seasonal_bulk_ranked(
 	)  # [from, to]
 
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records = await con.fetch(
 			"""
 			SELECT RANK() OVER (ORDER BY capture_count DESC) AS rank, uid, capture_count
 			FROM (
@@ -189,6 +189,8 @@ async def get_seasonal_bulk_ranked(
 			interval[0],
 			interval[1],
 		)
+
+		return [table.FrogRankedSeasonal.from_record(r) for r in records if r]
 
 
 async def get_seasonal_total_members(

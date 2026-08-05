@@ -15,7 +15,7 @@ from discord.ext import commands, tasks
 from main import CazzuBot
 from src import db, frog, frog_factory, leaderboard, user_json, utility
 from src.custom_converters import PositiveInt
-from src.db.table import FrogTypeEnum
+from src.db.table import FrogTypeEnum, FrogRankedSeasonal
 from src.ntlp import InvalidTimeError, parse_duration
 
 _log = logging.getLogger(__name__)
@@ -84,11 +84,11 @@ class Frog(commands.Cog):
 		gid = ctx.guild.id
 		uid = member.id
 
-		rows = await db.member_frog.get_members_frog_seasonal_by_month(
+		ranks = await db.member_frog.get_members_frog_seasonal_by_month(
 			self.bot.pool, gid, now.year, now.month
 		)
 
-		for row in rows:
+		for row in ranks:
 			_log.debug(f"{list(row.values())=}")
 
 		# New season, no data on user yet
@@ -96,18 +96,18 @@ class Frog(commands.Cog):
 		# all other status, but this will work for now...
 		#
 		# This is an issue with c!xp as well...
-		if not rows:
+		if not ranks:
 			await ctx.send("No one has yet captured frogs in this server!")
 			return
 
-		_, uids, _ = zip(*rows)
+		_, uids, _ = zip(*ranks)
 		if uid not in uids:
 			await ctx.send(
 				"You have not yet captured any frogs this season!"
 			)
 			return
 
-		embed = await self._prepare_personal_summary(ctx, member, rows)
+		embed = await self._prepare_personal_summary(ctx, member, ranks)
 
 		await ctx.send(embed=embed)
 
@@ -150,18 +150,20 @@ class Frog(commands.Cog):
 		self,
 		ctx: commands.Context,
 		user: discord.Member,
-		data: list[Record],
+		data: list[FrogRankedSeasonal],
 		mode: db.table.WindowEnum = db.table.WindowEnum.SEASONAL,
 	) -> discord.Embed:
 		"""Return embed for frog summary on user.
 
-		data: raw query result, formatted as (rank, uid, frog)
+		data: raw query result, formatted as (rank, uid, value)
 		"""
 		uid = user.id
 
 		# Prepare leaderboard
-		uid_index = [r["uid"] for r in data].index(uid)
+		uid_index = [r.uid for r in data].index(uid)
 		_log.debug(f"{uid_index=}")
+
+		subset: list[FrogRankedSeasonal]
 		subset, subset_i = leaderboard.create_focus_subset(data, uid_index)
 		for s in subset:
 			_log.debug(f"{s=}")

@@ -11,7 +11,7 @@ from asyncpg import Record
 
 from src import db, user_json, utility
 from src.cazzubot import CazzuBot
-from src.db.table import WindowEnum
+from src.db.table import RankThreshold, WindowEnum
 
 _log = logging.getLogger(__name__)
 
@@ -69,6 +69,9 @@ async def _determine_rank_changes(
 
 	raw_rank_payload = await db.rank.get(bot.pool, gid, mode=mode)
 	_, enabled, keep_old, embed_json = raw_rank_payload.values()
+	enabled = raw_rank_payload.enabled
+	keep_old = raw_rank_payload.keep_old
+
 
 	if not enabled:
 		return ([None], [None])
@@ -83,7 +86,7 @@ async def _determine_rank_changes(
 	member = message.author
 
 	rid, ind = rank_difference(bot, level, rank_threshold_payload)
-	rids = [row.get("rid") for row in rank_threshold_payload]
+	rids = [row.rid for row in rank_threshold_payload]
 	ranks = [message.guild.get_role(rid) for rid in rids]
 
 	# if rank up, send rank message
@@ -133,23 +136,23 @@ async def _determine_rank_changes(
 	return ranks_to_add, ranks_to_remove
 
 
-def calc_min_rank(rank_thresholds: list[Record], level) -> tuple[int, int]:
+def calc_min_rank(rank_thresholds: list[RankThreshold], level) -> tuple[int, int]:
 	"""Naively determine rank based on level from list of records.
 
 	Returns (rank_id, rank_index). (None, None) if not high enough for any rank.
 	"""
-	if level < rank_thresholds[0]["threshold"]:
+	if level < rank_thresholds[0].threshold:
 		return None, None
 
 	for i in range(1, len(rank_thresholds)):
-		if level < rank_thresholds[i]["threshold"]:
-			return rank_thresholds[i - 1]["rid"], i - 1
+		if level < rank_thresholds[i].threshold:
+			return rank_thresholds[i - 1].rid, i - 1
 
-	return rank_thresholds[-1]["rid"], len(rank_thresholds) - 1
+	return rank_thresholds[-1].rid, len(rank_thresholds) - 1
 
 
 def rank_difference(
-	bot: CazzuBot, level: utility.OldNew, rids: list[Record]
+	bot: CazzuBot, level: utility.OldNew, rids: list[RankThreshold]
 ) -> tuple[utility.OldNew, utility.OldNew]:
 	"""Return ranks corrosponding to given levels with their index to rids.
 

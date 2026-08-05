@@ -63,13 +63,13 @@ async def add_many(pool: Pool, tsks: list[table.Task]) -> None:
 
 async def get(
 	pool: Pool, *, payload: dict = {}, tag: list[str] = []
-) -> list[Record]:
+) -> list[table.Task]:
 	"""Find matching rows whose tags and payload are a superset of provided.
 
 	No payload or tag returns all tasks.
 	"""
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records =  await con.fetch(
 			"""
 			SELECT * FROM task
 			WHERE $1::character varying[] <@ tag AND $2::jsonb <@ payload::jsonb
@@ -77,6 +77,8 @@ async def get(
 			tag,
 			payload,
 		)
+
+		return [table.Task.from_record(r) for r in records if r]
 
 
 async def get_one(

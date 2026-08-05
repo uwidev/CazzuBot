@@ -42,9 +42,6 @@ async def get_poll(pool: Pool, gid: int, pid: int) -> table.Poll | None:
 			pid,
 		)
 
-		if not record:
-			return None
-
 		return table.Poll.from_record(record)
 
 
@@ -105,7 +102,7 @@ async def add_items_dummy(pool: Pool, gid: int, pid: int, n: int):
 			)
 
 
-async def get_items(pool: Pool, gid: int, pid: int) -> list[table.PollItem]:
+async def get_items(pool: Pool, gid: int, pid: int) -> list[table.PollItem | None]:
 	async with pool.acquire() as con:
 		records =  await con.fetch(
 			"""

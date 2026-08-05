@@ -21,9 +21,9 @@ async def add(pool: Pool, user: table.User):
 			)
 
 
-async def get(pool: Pool, uid: int):
+async def get(pool: Pool, uid: int) -> table.User | None:
 	async with pool.acquire() as con:
-		return await con.fetchrow(
+		record =  await con.fetchrow(
 			"""
 			SELECT *
 			FROM "user"
@@ -31,6 +31,8 @@ async def get(pool: Pool, uid: int):
 			""",
 			uid,
 		)
+
+		return table.User.from_record(record) if record else None
 
 
 def init():

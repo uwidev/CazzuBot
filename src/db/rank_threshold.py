@@ -35,12 +35,12 @@ async def get(
 	gid: int,
 	*,
 	mode: table.WindowEnum = table.WindowEnum.SEASONAL,
-) -> list[Record]:
+) -> list[table.RankThreshold]:
 	"""Return rank thresholds as a list of records."""
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records = await con.fetch(
 			"""
-			SELECT rid, threshold
+			SELECT gid, rid, threshold, mode
 			FROM rank_threshold
 			WHERE gid = $1 and mode = $2
 			ORDER BY threshold
@@ -49,22 +49,26 @@ async def get(
 			mode,
 		)
 
+		return [table.RankThreshold.from_record(r) for r in records if r]
+
 
 async def get_all_windows(
 	pool: Pool,
 	gid: int,
-) -> list[Record]:
+) -> list[table.RankThreshold]:
 	"""Return rank thresholds as a list of records."""
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records = await con.fetch(
 			"""
-			SELECT rid, threshold
+			SELECT gid, rid, threshold, mode
 			FROM rank_threshold
 			WHERE gid = $1
 			ORDER BY threshold
 			""",
 			gid,
 		)
+
+		return [table.RankThreshold.from_record(r) for r in records if r]
 
 
 async def delete(
@@ -126,23 +130,24 @@ async def drop(
 			)
 
 
-def _calc_min_rank(rank_threshold: list[Record], level) -> tuple[int, int]:
+def _calc_min_rank(rank_threshold: list[table.RankThreshold], level) -> tuple[int, int]:
 	"""Naively determine rank based on level from list of records.
 
 	This is the same function as rank.calc_min_rank (or at least should be).
 	The only difference is that it doesn't return the index.
 	"""
+	# TODO: no idea if return value is correct for functions that need this
 	if not rank_threshold:
 		return 0
 
-	if level < rank_threshold[0]["threshold"]:
+	if level < rank_threshold[0].threshold:
 		return None, None
 
 	for i in range(1, len(rank_threshold)):
-		if level < rank_threshold[i]["threshold"]:
-			return rank_threshold[i - 1]["rid"]
+		if level < rank_threshold[i].threshold:
+			return rank_threshold[i - 1].rid
 
-	return rank_threshold[-1]["rid"]
+	return rank_threshold[-1].rid
 
 
 async def of_member(

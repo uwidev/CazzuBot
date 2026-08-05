@@ -28,9 +28,9 @@ async def add(pool: Pool, member_exp: table.MemberExp) -> None:
 			)
 
 
-async def get_one(pool: Pool, gid: int, uid: int) -> Record:
+async def get(pool: Pool, gid: int, uid: int) -> table.MemberExp | None:
 	async with pool.acquire() as con:
-		return await con.fetchrow(
+		record = await con.fetchrow(
 			"""
 			SELECT *
 			FROM member_exp
@@ -40,6 +40,8 @@ async def get_one(pool: Pool, gid: int, uid: int) -> Record:
 			uid,
 			gid,
 		)
+
+		return table.MemberExp.from_record(record) if record else None
 
 
 async def update_exp(pool: Pool, member_exp: table.MemberExp) -> None:
@@ -84,10 +86,10 @@ async def create_partition_gid(pool: Pool, gid: int) -> None:
 			)
 
 
-async def get_exp_bulk_ranked(pool: Pool, gid: int) -> list[Record]:
+async def get_exp_bulk_ranked(pool: Pool, gid: int) -> list[table.MemberExpRanked]:
 	"""Get lifetime experience from given gid ordered descending."""
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records = await con.fetch(
 			"""
 			SELECT RANK() OVER (ORDER BY lifetime DESC) AS rank, uid, lifetime
 			FROM member_exp
@@ -96,6 +98,8 @@ async def get_exp_bulk_ranked(pool: Pool, gid: int) -> list[Record]:
 			""",
 			gid,
 		)
+
+		return [table.MemberExpRanked.from_record(r) for r in records if r]
 
 
 async def reset_all_msg_cnt(pool: Pool):

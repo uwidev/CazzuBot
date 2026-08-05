@@ -19,9 +19,9 @@ async def add(pool: Pool, payload: table.Counter):
 				*payload
 			)
 
-async def get_counters(pool: Pool, gid: int) -> [int]:
+async def get(pool: Pool, gid: int) -> list[table.Counter]:
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records = await con.fetch(
 			"""
 			SELECT mid, count
 			FROM counter
@@ -29,6 +29,8 @@ async def get_counters(pool: Pool, gid: int) -> [int]:
 			""",
 			gid
 		)
+
+		return [table.Counter.from_record(r) for r in records if r]
 
 async def update_count(pool:Pool, mid: int, count: int):
 	async with pool.acquire() as con:

@@ -54,9 +54,13 @@ class Welcome(commands.Cog):
 		"""
 		guild = before.guild
 		gid = guild.id
-		enabled, cid, message, default_rid, mode, monitor_rid = (
-			await db.welcome.get_payload(self.bot.pool, gid)
-		).values()
+		payload = await db.welcome.get(self.bot.pool, gid)
+		enabled = payload.enabled
+		cid = payload.cid
+		message = payload.message
+		default_rid = payload.default_rid
+		monitor_rid = payload.monitor_rid
+		
 
 		# Verifications
 		if not enabled:

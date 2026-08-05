@@ -14,6 +14,7 @@ from discord.ext import commands
 
 from main import CazzuBot
 from src import db, leaderboard, level, levels_helper, rank, utility
+from src.db.table import MemberExpRanked
 
 _log = logging.getLogger(__name__)
 
@@ -89,21 +90,21 @@ class Experience(commands.Cog):
 		uid = message.author.id
 		gid = message.guild.id
 
-		member_db = await db.member_exp.get_one(self.bot.pool, gid, uid)
+		member_db = await db.member_exp.get(self.bot.pool, gid, uid)
 		if member_db is None:  # Member not found, insert and try again.
 			await db.member_exp.add(
 				self.bot.pool,
 				db.table.MemberExp(gid, uid, 0, 0, now.subtract(hours=1)),
 			)
-			member_db = await db.member_exp.get_one(
+			member_db = await db.member_exp.get(
 				self.bot.pool, gid, uid
 			)
 
-		if member_db and now < member_db.get("cdr"):
+		if member_db and now < member_db.cdr:
 			return  # Cooldown has not yet expired, do nothing
 
 		# Prepare and pack variables
-		msg_cnt = member_db.get("msg_cnt") + 1
+		msg_cnt = member_db.msg_cnt + 1
 		exp_gain = _from_msg(msg_cnt)
 
 		year = now.year
@@ -117,7 +118,7 @@ class Experience(commands.Cog):
 		seasonal_exp_new = seasonal_exp_old + exp_gain
 		seasonal_exp = utility.OldNew(seasonal_exp_old, seasonal_exp_new)
 
-		lifetime_exp_old = member_db.get("lifetime")
+		lifetime_exp_old = member_db.lifetime
 		lifetime_exp_new = lifetime_exp_old + exp_gain
 		lifetime_exp = utility.OldNew(lifetime_exp_old, lifetime_exp_new)
 
@@ -190,9 +191,9 @@ class Experience(commands.Cog):
 			user = ctx.message.author
 
 		gid = ctx.guild.id
-		rows = await db.guild.get_members_exp_ranked(self.bot.pool, gid)
+		ranks = await db.guild.get_members_exp_ranked(self.bot.pool, gid)
 		embed = await self._prepare_personal_summary(
-			ctx, user, rows, db.table.WindowEnum.LIFETIME
+			ctx, user, ranks, db.table.WindowEnum.LIFETIME
 		)
 
 		await ctx.send(embed=embed)
@@ -201,7 +202,7 @@ class Experience(commands.Cog):
 		self,
 		ctx: commands.Context,
 		user: discord.Member,
-		data: list[Record],
+		data: list[MemberExpRanked],
 		mode: db.table.WindowEnum = db.table.WindowEnum.SEASONAL,
 	) -> discord.Embed:
 		"""Return the embed of scoreboard Club Membership Card.
@@ -211,7 +212,7 @@ class Experience(commands.Cog):
 		uid = user.id
 
 		# Prepare leaderboard window
-		uid_index = [r["uid"] for r in data].index(uid)
+		uid_index = [r.uid for r in data].index(uid)
 		subset, subset_i = leaderboard.create_focus_subset(data, uid_index)
 
 		# Transpose for per-column transformations
@@ -527,7 +528,7 @@ class Experience(commands.Cog):
 	async def exp_resync(self, ctx: commands.Context):
 		_log.info(f"{ctx.author} called for resync of member lifetime exp")
 
-		msg = await ctx.send("Starting frog sync...")
+		msg = await ctx.send("Starting member lifetime sync...")
 		await db.member_exp.sync_with_exp_logs(self.bot.pool)
 		await msg.edit(content="Synced! ✅")
 

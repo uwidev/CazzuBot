@@ -21,39 +21,33 @@ async def add(
 	"""Add a Rank object into the database."""
 	if not await guild.get(
 		pool, rank.gid
-	):	# guild not yet init, foreign key
+	):  # guild not yet init, foreign key
 		await guild.add(pool, rank.gid)
 
 	async with pool.acquire() as con:
 		async with con.transaction():
 			await con.execute(
 				"""
-				INSERT INTO rank (gid, message, mode)
-				VALUES ($1, $2, $3)
+				INSERT INTO rank (gid, message, enabled, keep_old, mode)
+				VALUES ($1, $2, $3, $4, $5)
 				""",
 				*rank,
 			)
 
 
-async def init(
-	pool: Pool,
-	gid: int,
-	*,
-	mode: table.WindowEnum = table.WindowEnum.SEASONAL,
-):
+async def init(pool: Pool, gid: int):
 	"""Initialize the minimal for operational database queries."""
-	if not await guild.get(pool, gid):	# guild not yet init, foreign key
+	if not await guild.get(pool, gid):  # guild not yet init, foreign key
 		await guild.add(pool, gid)
 
 	async with pool.acquire() as con:
 		async with con.transaction():
 			await con.execute(
 				"""
-				INSERT INTO rank (gid, mode)
-				VALUES ($1, $2)
+				INSERT INTO rank (gid)
+				VALUES ($1)
 				""",
 				gid,
-				mode,
 			)
 
 
@@ -63,13 +57,13 @@ async def get(
 	gid: int,
 	*,
 	mode: table.WindowEnum = table.WindowEnum.SEASONAL,
-) -> Record:
+) -> table.Rank | None:
 	"""Return rank row in a specific order for unpacking and else.
 
 	Less overhead than individually calling for each column.
 	"""
 	async with pool.acquire() as con:
-		return await con.fetchrow(
+		record = await con.fetchrow(
 			"""
 			SELECT gid, enabled, keep_old, message
 			FROM rank
@@ -78,6 +72,11 @@ async def get(
 			gid,
 			mode,
 		)
+
+		if not record:
+			return None
+
+		return table.Rank.from_record(record)
 
 
 @utility.retry(on_none=init)
@@ -155,7 +154,7 @@ async def get_message(
 	gid: int,
 	*,
 	mode: table.WindowEnum = table.WindowEnum.SEASONAL,
-) -> list[Record]:
+) -> dict:
 	async with pool.acquire() as con:
 		return await con.fetchval(
 			"""
@@ -174,7 +173,7 @@ async def get_enabled(
 	gid: int,
 	*,
 	mode: table.WindowEnum = table.WindowEnum.SEASONAL,
-) -> list[Record]:
+) -> bool:
 	"""Return if ranks are enabled."""
 	async with pool.acquire() as con:
 		return await con.fetchval(
@@ -194,7 +193,7 @@ async def get_keep_old(
 	gid: int,
 	*,
 	mode: table.WindowEnum = table.WindowEnum.SEASONAL,
-) -> list[Record]:
+) -> bool:
 	"""Return if older ranks should be retained."""
 	async with pool.acquire() as con:
 		return await con.fetchval(

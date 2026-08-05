@@ -107,7 +107,7 @@ async def get_members_exp_seasonal_by_month(
 	)
 
 
-async def get_members_exp_ranked(pool: Pool, gid: int) -> list[Record]:
+async def get_members_exp_ranked(pool: Pool, gid: int) -> list[table.MemberExpRanked]:
 	"""Fetch lifetime exp and ranks them of all guild members.
 
 	Acts more of an alias for more intuitive design.

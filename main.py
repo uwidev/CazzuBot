@@ -213,6 +213,8 @@ async def setup_codecs(con: Connection):
 		decoder=WelcomeModeEnum,
 	)
 
+	# json objects are treated as normal python objects
+	# does not work well when storing custom types
 	await con.set_type_codec(
 		"json", encoder=dumps, decoder=loads, schema="pg_catalog"
 	)

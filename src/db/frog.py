@@ -68,7 +68,7 @@ async def set_enabled(pool: Pool, gid: int, val: bool):
 
 
 @utility.retry(on_none=init)
-async def get_message(pool: Pool, gid: int) -> list[Record]:
+async def get_message(pool: Pool, gid: int) -> dict:
 	async with pool.acquire() as con:
 		return await con.fetchval(
 			"""
@@ -94,13 +94,15 @@ async def get_enabled(pool: Pool, gid: int) -> bool:
 		)
 
 
-async def get_enabled_guilds(pool: Pool) -> list[Record]:
+async def get_enabled_guilds(pool: Pool) -> list[table.Frog]:
 	"""Return all guilds who have enabled frog spawned."""
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records = await con.fetch(
 			"""
-			SELECT gid
+			SELECT gid, message, enabled
 			FROM frog
 			WHERE enabled = true
 			"""
 		)
+
+		return [table.Frog.from_record(r) for r in records if r]

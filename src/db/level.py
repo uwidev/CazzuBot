@@ -5,7 +5,7 @@ Levels are derived from experience.
 
 import logging
 
-from asyncpg import Pool, Record
+from asyncpg import Pool
 
 from src import levels_helper
 
@@ -29,9 +29,9 @@ async def add(pool: Pool, level: table.Level):
 			)
 
 
-async def get(pool: Pool, gid: int) -> list[Record]:
+async def get(pool: Pool, gid: int) -> list[table.Level]:
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records = await con.fetch(
 			"""
 			SELECT *
 			FROM level
@@ -39,6 +39,8 @@ async def get(pool: Pool, gid: int) -> list[Record]:
 			""",
 			gid,
 		)
+
+		return [table.Level.from_record(r) for r in records if r]
 
 
 async def set_message(pool: Pool, gid: int, encoded_json: str):
@@ -59,7 +61,7 @@ async def set_message(pool: Pool, gid: int, encoded_json: str):
 			)
 
 
-async def get_message(pool: Pool, gid: int) -> list[Record]:
+async def get_message(pool: Pool, gid: int) -> dict:
 	if not await get(pool, gid):  # this not yet init
 		payload = table.Level(gid, None, None)
 		await add(pool, payload)
@@ -141,6 +143,7 @@ async def add_quiet(pool: Pool, gid: int, cid: int):
 				cid,
 			)
 
+
 async def get_quiet(pool: Pool, gid: int) -> list[int]:
 	"""Get the quiet array of quiet channels from the guild."""
 	if not await get(pool, gid):  # this not yet init
@@ -154,10 +157,11 @@ async def get_quiet(pool: Pool, gid: int) -> list[int]:
 			FROM level
 			WHERE gid = $1
 			""",
-			gid
+			gid,
 		)
 
-async def del_quiet(pool: Pool, gid: int, cid:int):
+
+async def del_quiet(pool: Pool, gid: int, cid: int):
 	"""Delete the channel from the database."""
 	if not await get(pool, gid):  # this not yet init
 		payload = table.Level(gid, None, None)

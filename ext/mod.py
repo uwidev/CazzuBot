@@ -212,16 +212,15 @@ class Moderation(commands.Cog):
 	async def log_expired(self):
 		"""Handle mute and temp-ban expirations."""
 		now = pendulum.now(tz="UTC")
-		modlog_tasks = await db.task.get(self.bot.pool, tag=["modlog"])
+		tasks = await db.task.get(self.bot.pool, tag=["modlog"])
 
-		if not modlog_tasks:
+		if not tasks:
 			return  # no modlogs to handle
 
-		expired_logs = list(filter(lambda t: t[1] < now, modlog_tasks))
+		tasks_expired = [t for t in tasks if t.run_at < now]
 
-		for log in expired_logs:
-			payload_raw = log[2]
-			payload: dict = payload_raw
+		for task in tasks_expired:
+			payload: dict = task.payload
 			log_type = ModlogTypeEnum(payload["log_type"])
 			uid: int = payload["uid"]
 			gid: int = payload["gid"]
@@ -235,7 +234,7 @@ class Moderation(commands.Cog):
 				await member.remove_roles(
 					mute_role, reason="Mute expired."
 				)
-				await db.task.drop_one(self.bot.pool, log["id"])
+				await db.task.drop_one(self.bot.pool, task["id"])
 
 				_log.info(
 					"%s's has %s expired, reverting infraction actions...",
@@ -247,7 +246,7 @@ class Moderation(commands.Cog):
 				guild = self.bot.get_guild(gid)
 				user = await self.bot.fetch_user(uid)
 				await guild.unban(user, reason="Tempban expired.")
-				await db.task.drop_one(self.bot.pool, log["id"])
+				await db.task.drop_one(self.bot.pool, task["id"])
 
 				_log.info(
 					"%s's has %s expired, reverting infraction actions...",

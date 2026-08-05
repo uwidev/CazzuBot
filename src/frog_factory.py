@@ -17,42 +17,37 @@ from src import db, frog, user_json, utility
 _log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-	from asyncpg import Record
+	pass
 
 
 async def check_frog_spawn(bot: CazzuBot):
-	records: list[Record] = await db.task.get(bot.pool, tag=["frog"])
-	if not records:
-		return	# no frogs to handle
-
 	now = pendulum.now("UTC")
-	expired_frog_record: list[Record] = [
-		item for item in records if item["run_at"] < now
-	]
+	tasks = await db.task.get(bot.pool, tag=["frog"])
+	if not tasks:
+		return  # no frogs to handle
 
-	expired_frog_task: list[db.table.Task] = [
-		db.table.Task(**ex) for ex in expired_frog_record
-	]
+	expired_tasks = [item for item in tasks if item.run_at < now]
 
 	# No need to drop frog tasks since, just update when they spawn.
 	# for expired in expired_frog_task:  # would be better to batch so only 1 db call
-	#	  await db.task.drop_one(bot.pool, expired.id)
+	# await db.task.drop_one(bot.pool, expired.id)
 
-	for fg in expired_frog_task:
-		gid = fg.payload["gid"]
+	for task in expired_tasks:
+		payload = task.payload
+		gid = payload['gid']
 
 		# When a guild disables frog, frog tasks should be cleared as well.
 		# Checking if enabled is redundant, since it shouldn't be possible for a
 		# task to exist after a guild disables them.
 		# enabled = await db.frog.get_enabled(bot.pool, gid)
 		# if not enabled:
-		#	  return
+		# return
 
-		cid = fg.payload["cid"]
-		interval = fg.payload["interval"]
-		persist = fg.payload["persist"]
-		fuzzy = fg.payload["fuzzy"]
-		id = fg.id
+		cid = payload["cid"]
+		interval = payload["interval"]
+		persist = payload["persist"]
+		fuzzy = payload["fuzzy"]
+		id = task.id
 
 		# Roll for future frog, assuming no one will catch this one.
 		# This is to prevent problems where regardless connection issues, or if this
@@ -76,7 +71,7 @@ async def check_frog_spawn(bot: CazzuBot):
 
 		if (
 			was_captured
-		):	# Reroll based on when captured, not when frog despawn.
+		):  # Reroll based on when captured, not when frog despawn.
 			now = pendulum.now("UTC")
 			run_at = roll_future_frog(now, interval, fuzzy)
 			await db.task.update_run_at(bot.pool, id, run_at)
@@ -206,7 +201,7 @@ async def queue_frog_spawns(
 	]
 
 	enabled_records = await db.frog.get_enabled_guilds(bot.pool)
-	enabled_gids = [record.get("gid") for record in enabled_records]
+	enabled_gids = [record.gid for record in enabled_records]
 
 	filtered_tasks = list(
 		filter(lambda task: task.payload["gid"] in enabled_gids, task_rows)
@@ -220,10 +215,7 @@ async def reset_frog_tasks(bot: CazzuBot):
 	_log.info("Cleaning and preparing up frog spawn tasks...")
 	await clear_frog_task(bot)
 
-	records = await db.frog_spawn.get_all(bot.pool)
-	frog_spawns: list[db.table.FrogSpawn] = [
-		db.table.FrogSpawn(*record) for record in records
-	]
+	frog_spawns = await db.frog_spawn.get_all(bot.pool)
 
 	await queue_frog_spawns(bot, frog_spawns)
 
@@ -232,12 +224,9 @@ async def reset_guild_frog_tasks(bot: CazzuBot, gid: int):
 	"""Clear a guild's frog tasks and re-inserts new tasks per guild settings."""
 	await clear_guild_frog_task(bot, gid)
 
-	records = await db.frog_spawn.get(bot.pool, gid)
-	frog_spawns: list[db.table.FrogSpawn] = [
-		db.table.FrogSpawn(*record) for record in records
-	]
+	frog_spawn = await db.frog_spawn.get(bot.pool, gid)
 
-	await queue_frog_spawns(bot, frog_spawns)
+	await queue_frog_spawns(bot, [frog_spawn])
 
 
 async def update_frog_task(

@@ -1,6 +1,8 @@
 """Defines schema for databases for autocomplete."""
 
-from typing_extensions import Self
+# TODO: for each module, cast Record to table object and return, annotate
+# TODO: create decorators that auto-insert new user/member/guild
+# TODO: how to properly handle cases where we need make sure a gid/uid/etc foreign key exists whe it should exist...
 
 import logging
 from abc import ABC, abstractmethod
@@ -9,6 +11,7 @@ from enum import Enum
 
 import pendulum
 from asyncpg import Record
+from typing_extensions import Self
 
 _log = logging.getLogger(__name__)
 
@@ -194,10 +197,20 @@ class RankThreshold(SnowflakeTable):
 class Rank(SnowflakeTable):
 	gid: int  # references guild.id
 	message: str  # encoded json, default already set in db
-	mode: WindowEnum
+	enabled: bool = False
+	keep_old: bool = True
+	mode: WindowEnum = WindowEnum.SEASONAL
 
 	def __iter__(self):
-		return iter([self.gid, self.message, self.mode])
+		return iter(
+			[
+				self.gid,
+				self.message,
+				self.enabled,
+				self.keep_old,
+				self.mode,
+			]
+		)
 
 
 @dataclass
@@ -254,13 +267,23 @@ class MemberExp(SnowflakeTable):
 	uid: int  # references member.uid
 	lifetime: int = 0
 	msg_cnt: int = 0
-	cdr: pendulum.DateTime = None
+	cdr: pendulum.DateTime | None = None
 
 	def __iter__(self):
 		"""Unpacking for inserting new row."""
 		return iter(
 			[self.gid, self.uid, self.lifetime, self.msg_cnt, self.cdr]
 		)
+
+
+@dataclass
+class MemberExpRanked(SnowflakeTable):
+	rank: int
+	uid: int
+	lifetime: int
+
+	def __iter__(self):
+		return iter([self.rank, self.uid, self.lifetime])
 
 
 @dataclass
@@ -289,6 +312,18 @@ class MemberFrogLog(SnowflakeTable):
 		return iter(
 			[self.gid, self.uid, self.type, self.at, self.waited_for]
 		)
+
+
+@dataclass
+class FrogRankedSeasonal(SnowflakeTable):
+	"""Helped wrapper for querying seasonal bulk capture"""
+
+	rank: int
+	uid: int
+	capture_count: int
+
+	def __iter__(self):
+		return iter([self.rank, self.uid, self.capture_count])
 
 
 @dataclass
@@ -403,16 +438,18 @@ class PollVote(SnowflakeTable):
 			]
 		)
 
+
 @dataclass
 class PollVoteStats(SnowflakeTable):
 	iid: int
 	count: int
-	description: str = ''
+	description: str = ""
 
 	def __iter__(self):
-		return iter([
-			self.iid,
-			self.count,
-			self.description,
-		])
-
+		return iter(
+			[
+				self.iid,
+				self.count,
+				self.description,
+			]
+		)

@@ -237,12 +237,23 @@ class PollModal(
 		self.max_vote = poll.max_vote
 		self.upper = len(items)
 
+		# TODO: allow/disallow same-item voting
+		self.rules = discord.ui.TextDisplay(
+			f"""
+### Rules
+- Max votes: {self.max_vote}
+- Range: 1 to {self.upper}
+- Can vote on same image multiple times
+- Use comma-seperated items to vote
+			"""
+		)
+		self.add_item(self.rules)
+
 		self.vote_input = discord.ui.TextInput(
-			label=f"Max {self.max_vote} votes on items 1 to {self.upper}",
-			placeholder=f"Comma-seperated items to vote on (e.g. \"{', '.join(str(random.randint(1, self.upper + 1)) for _ in range(self.max_vote))}\")",
+			label=f"Vote",
+			placeholder="Example: " + ', '.join(str(random.randint(1, self.upper)) for _ in range(self.max_vote)),
 			style=discord.TextStyle.long,
 		)
-
 		self.add_item(self.vote_input)
 
 	async def on_submit(self, interaction: discord.Interaction):

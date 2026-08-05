@@ -34,8 +34,8 @@ class Counter(commands.Cog):
 		gid = payload.guild_id
 		mid = payload.message_id
 
-		counters = await db.counter.get_counters(self.bot.pool, gid)
-		mids = [record.get("mid") for record in counters]
+		counters = await db.counter.get(self.bot.pool, gid)
+		mids = [c.mid for c in counters]
 
 		if (
 			payload.user_id == self.bot.user.id
@@ -48,7 +48,7 @@ class Counter(commands.Cog):
 			return
 
 		counter = next(
-			counter for counter in counters if counter.get("mid") == mid
+			counter for counter in counters if counter.mid == mid
 		)
 		cid = payload.channel_id
 		ch = self.bot.get_channel(cid)
@@ -129,17 +129,17 @@ class Counter(commands.Cog):
 
 	@tasks.loop(seconds=1)
 	async def wait_baka_expire(self):
-		records = await db.task.get(self.bot.pool, tag=['counter'])
-		if not records:
+		tasks = await db.task.get(self.bot.pool, tag=['counter'])
+		if not tasks:
 			return
 
 		now = pendulum.now("UTC")
-		expired_counter_records = [
-			item for item in records if item["run_at"] < now
+		tasks_expired = [
+			t for t in tasks if t.run_at < now
 		]
 
-		for record in expired_counter_records:
-			payload = record['payload']
+		for task in tasks_expired:
+			payload = task.payload
 			cid, mid = (payload['cid'], payload['mid'])
 			cid = payload["cid"]
 			ch = await self.bot.fetch_channel(cid)
@@ -150,7 +150,7 @@ class Counter(commands.Cog):
 			embed.set_thumbnail(url=BORED)
 			await msg.edit(embed=embed)
 
-			await db.task.drop_one(self.bot.pool, record['id'])
+			await db.task.drop_one(self.bot.pool, task.id)
 
 	@counter.command(name="create")
 	async def counter_create(self, ctx: commands.Context):

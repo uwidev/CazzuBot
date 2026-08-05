@@ -56,28 +56,32 @@ async def clear(pool: Pool, gid: int) -> None:
 			)
 
 
-async def get_all(pool: Pool) -> list[Record]:
+async def get_all(pool: Pool) -> list[table.FrogSpawn]:
 	"""Get all frog settings."""
 	async with pool.acquire() as con:
-		return await con.fetch(
+		records = await con.fetch(
 			"""
-			SELECT gid, cid, interval, persist, fuzzy
+			SELECT *
 			FROM frog_spawn
 			"""
 		)
 
+		return [table.FrogSpawn.from_record(r) for r in records if r]
 
-async def get(pool: Pool, gid: int) -> list[Record]:
+
+async def get(pool: Pool, gid: int) -> table.FrogSpawn | None:
 	"""Get a guild's frog settings."""
 	async with pool.acquire() as con:
-		return await con.fetch(
+		record = await con.fetchrow(
 			"""
-			SELECT gid, cid, interval, persist, fuzzy
+			SELECT *
 			FROM frog_spawn
 			WHERE gid = $1
 			""",
 			gid,
 		)
+
+		return table.FrogSpawn.from_record(record) if record else None
 
 
 @utility.fkey_gid

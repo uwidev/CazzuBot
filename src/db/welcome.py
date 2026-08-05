@@ -25,9 +25,9 @@ async def add(pool: Pool, gid: int):
 			)
 
 
-async def get(pool: Pool, gid: int) -> Record:
+async def get(pool: Pool, gid: int) -> table.Welcome:
 	async with pool.acquire() as con:
-		return await con.fetchrow(
+		records = await con.fetchrow(
 			"""
 			SELECT *
 			FROM welcome
@@ -35,6 +35,8 @@ async def get(pool: Pool, gid: int) -> Record:
 			""",
 			gid,
 		)
+
+		return [table.Welcome.from_record(r) for r in records if r]
 
 
 async def set_enabled(pool: Pool, gid: int, val: bool):  # noqa: FBT001
@@ -167,20 +169,20 @@ async def get_cid(pool: Pool, gid: int) -> int:
 		)
 
 
-async def get_payload(pool: Pool, gid: int) -> Record:
-	"""Get all neccessary information to handle welcoming users."""
-	if not await get(pool, gid):  # return false, no need to create
-		return False
-
-	async with pool.acquire() as con:
-		return await con.fetchrow(
-			"""
-			SELECT enabled, cid, message, default_rid, mode, monitor_rid
-			FROM welcome
-			WHERE gid = $1
-			""",
-			gid,
-		)
+# async def get_payload(pool: Pool, gid: int) -> table.Welcome:
+# 	"""Get all neccessary information to handle welcoming users."""
+# 	if not await get(pool, gid):  # return false, no need to create
+# 		return False
+#
+# 	async with pool.acquire() as con:
+# 		r = await con.fetchrow(
+# 			"""
+# 			SELECT enabled, cid, message, default_rid, mode, monitor_rid
+# 			FROM welcome
+# 			WHERE gid = $1
+# 			""",
+# 			gid,
+# 		)
 
 
 async def set_mode(pool: Pool, gid: int, mode: table.WelcomeModeEnum):
