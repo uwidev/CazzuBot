@@ -11,6 +11,7 @@ Create `plugins/myfeature/__init__.py`:
 from discord.ext import commands
 from cazzubot import Plugin
 
+
 class MyCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -19,19 +20,23 @@ class MyCog(commands.Cog):
     async def hello(self, ctx):
         await ctx.send("world")
 
+
 class MyFeature(Plugin):
-    name = "myfeature"                       # unique id (defaults to folder name)
-    cogs = [MyCog]                           # cog classes (any number)
-    schema = [                               # DDL, idempotent, runs at boot
+    name = "myfeature"  # unique id (defaults to folder name)
+    cogs = [MyCog]  # cog classes (any number)
+    schema = [  # DDL, idempotent, runs at boot
         "CREATE TABLE IF NOT EXISTS myfeature (key TEXT PRIMARY KEY, value TEXT)",
     ]
-    scheduled = {"mytag": my_due_handler}     # tag -> async handler(bot, payload)
+    scheduled = {
+        "mytag": my_due_handler
+    }  # tag -> async handler(bot, payload)
 
     async def on_load(self, bot):
         """Optional startup hook (after every plugin's schema/cogs are ready)."""
 
     async def on_unload(self, bot):
         """Optional teardown hook."""
+
 
 plugin = MyFeature()
 ```

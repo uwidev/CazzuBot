@@ -11,10 +11,10 @@ from cazzubot.scheduler import Scheduler
 from cazzubot.settings import Settings
 
 __all__ = [
-	"CazzuBot",
-	"Config",
-	"Database",
-	"Plugin",
-	"Scheduler",
-	"Settings",
+    "CazzuBot",
+    "Config",
+    "Database",
+    "Plugin",
+    "Scheduler",
+    "Settings",
 ]

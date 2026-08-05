@@ -23,69 +23,69 @@ _log = logging.getLogger(__name__)
 
 
 def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
-	"""Write INFO to console and DEBUG to a rotating-ish log file."""
-	logger = logging.getLogger()
-	logger.setLevel(logging.DEBUG)
+    """Write INFO to console and DEBUG to a rotating-ish log file."""
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
 
-	console = logging.StreamHandler()
-	console.setLevel(logging.DEBUG if debug else logging.INFO)
+    console = logging.StreamHandler()
+    console.setLevel(logging.DEBUG if debug else logging.INFO)
 
-	Path(log_dir).mkdir(parents=True, exist_ok=True)
-	file_handler = logging.FileHandler(
-		filename=f"{log_dir}/discord.log", encoding="utf-8", mode="w+"
-	)
-	file_handler.setLevel(logging.DEBUG)
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(
+        filename=f"{log_dir}/discord.log", encoding="utf-8", mode="w+"
+    )
+    file_handler.setLevel(logging.DEBUG)
 
-	fmt = "[{asctime}] [{levelname:<8}] {name}: {message}"
-	formatters = {
-		"file": logging.Formatter(fmt, "%Y-%m-%d %H:%M:%S", style="{"),
-		"console": (
-			_ColourFormatter()
-			if stream_supports_colour(console.stream)
-			else logging.Formatter(fmt, "%Y-%m-%d %H:%M:%S", style="{")
-		),
-	}
-	for handler in (console, file_handler):
-		handler.setFormatter(
-			formatters[
-				"file"
-				if isinstance(handler, logging.FileHandler)
-				else "console"
-			]
-		)
-		logger.addHandler(handler)
+    fmt = "[{asctime}] [{levelname:<8}] {name}: {message}"
+    formatters = {
+        "file": logging.Formatter(fmt, "%Y-%m-%d %H:%M:%S", style="{"),
+        "console": (
+            _ColourFormatter()
+            if stream_supports_colour(console.stream)
+            else logging.Formatter(fmt, "%Y-%m-%d %H:%M:%S", style="{")
+        ),
+    }
+    for handler in (console, file_handler):
+        handler.setFormatter(
+            formatters[
+                "file"
+                if isinstance(handler, logging.FileHandler)
+                else "console"
+            ]
+        )
+        logger.addHandler(handler)
 
 
 def main() -> None:
-	parser = argparse.ArgumentParser(prog="CazzuBot")
-	parser.add_argument("-d", "--debug", action="store_true")
-	parser.add_argument("-p", "--production", action="store_true")
-	parser.add_argument("-s", "--sandbox", action="store_true")
-	args = parser.parse_args()
+    parser = argparse.ArgumentParser(prog="CazzuBot")
+    parser.add_argument("-d", "--debug", action="store_true")
+    parser.add_argument("-p", "--production", action="store_true")
+    parser.add_argument("-s", "--sandbox", action="store_true")
+    args = parser.parse_args()
 
-	config = Config.load(
-		debug=args.debug,
-		production=args.production,
-		sandbox=args.sandbox,
-	)
+    config = Config.load(
+        debug=args.debug,
+        production=args.production,
+        sandbox=args.sandbox,
+    )
 
-	setup_logging("log", debug=config.debug)
+    setup_logging("log", debug=config.debug)
 
-	_log.info(
-		"running in %s mode",
-		"SANDBOX"
-		if config.sandbox
-		else ("PRODUCTION" if args.production else "DEVELOP"),
-	)
-	_log.info("prefix is %r, guild_id=%s", config.prefix, config.guild_id)
+    _log.info(
+        "running in %s mode",
+        "SANDBOX"
+        if config.sandbox
+        else ("PRODUCTION" if args.production else "DEVELOP"),
+    )
+    _log.info("prefix is %r, guild_id=%s", config.prefix, config.guild_id)
 
-	bot = CazzuBot(config)
-	try:
-		asyncio.run(bot.start(config.token))
-	except KeyboardInterrupt:
-		asyncio.run(bot.close())
+    bot = CazzuBot(config)
+    try:
+        asyncio.run(bot.start(config.token))
+    except KeyboardInterrupt:
+        asyncio.run(bot.close())
 
 
 if __name__ == "__main__":
-	os.system("cls" if os.name == "nt" else "clear")
-	main()
+    os.system("cls" if os.name == "nt" else "clear")
+    main()

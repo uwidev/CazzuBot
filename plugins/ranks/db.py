@@ -16,7 +16,7 @@ from cazzubot.settings import Settings
 _log = logging.getLogger(__name__)
 
 SCHEMA = [
-	"""
+    """
 	CREATE TABLE IF NOT EXISTS rank_threshold (
 		rid       INTEGER NOT NULL,
 		threshold INTEGER NOT NULL,
@@ -28,151 +28,151 @@ SCHEMA = [
 
 
 def _key(mode: WindowEnum, field: str) -> str:
-	return f"rank.{mode.value}.{field}"
+    return f"rank.{mode.value}.{field}"
 
 
 # -- settings --------------------------------------------------------------
 
 
 async def get_message(
-	settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
+    settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
 ) -> dict | None:
-	return await settings.get(_key(mode, "message"))
+    return await settings.get(_key(mode, "message"))
 
 
 async def set_message(
-	settings: Settings,
-	message: dict,
-	mode: WindowEnum = WindowEnum.SEASONAL,
+    settings: Settings,
+    message: dict,
+    mode: WindowEnum = WindowEnum.SEASONAL,
 ) -> None:
-	await settings.set(_key(mode, "message"), message)
+    await settings.set(_key(mode, "message"), message)
 
 
 async def get_enabled(
-	settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
+    settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
 ) -> bool:
-	return bool(await settings.get(_key(mode, "enabled"), False))
+    return bool(await settings.get(_key(mode, "enabled"), False))
 
 
 async def set_enabled(
-	settings: Settings,
-	val: bool,
-	mode: WindowEnum = WindowEnum.SEASONAL,
+    settings: Settings,
+    val: bool,
+    mode: WindowEnum = WindowEnum.SEASONAL,
 ) -> None:
-	await settings.set(_key(mode, "enabled"), val)
+    await settings.set(_key(mode, "enabled"), val)
 
 
 async def get_keep_old(
-	settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
+    settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
 ) -> bool:
-	return bool(await settings.get(_key(mode, "keep_old"), True))
+    return bool(await settings.get(_key(mode, "keep_old"), True))
 
 
 async def set_keep_old(
-	settings: Settings,
-	val: bool,
-	mode: WindowEnum = WindowEnum.SEASONAL,
+    settings: Settings,
+    val: bool,
+    mode: WindowEnum = WindowEnum.SEASONAL,
 ) -> None:
-	await settings.set(_key(mode, "keep_old"), val)
+    await settings.set(_key(mode, "keep_old"), val)
 
 
 # -- rank_threshold table --------------------------------------------------
 
 
 async def add(
-	db: Database,
-	rid: int,
-	threshold: int,
-	*,
-	mode: WindowEnum = WindowEnum.SEASONAL,
+    db: Database,
+    rid: int,
+    threshold: int,
+    *,
+    mode: WindowEnum = WindowEnum.SEASONAL,
 ) -> None:
-	await db.execute(
-		"""
+    await db.execute(
+        """
 		INSERT OR REPLACE INTO rank_threshold (rid, threshold, mode)
 		VALUES (?, ?, ?)
 		""",
-		rid,
-		threshold,
-		mode.value,
-	)
+        rid,
+        threshold,
+        mode.value,
+    )
 
 
 async def get(
-	db: Database, *, mode: WindowEnum = WindowEnum.SEASONAL
+    db: Database, *, mode: WindowEnum = WindowEnum.SEASONAL
 ) -> list[dict]:
-	rows = await db.fetchall(
-		"""
+    rows = await db.fetchall(
+        """
 		SELECT rid, threshold, mode
 		FROM rank_threshold
 		WHERE mode = ?
 		ORDER BY threshold
 		""",
-		mode.value,
-	)
-	return [dict(r) for r in rows]
+        mode.value,
+    )
+    return [dict(r) for r in rows]
 
 
 async def delete(db: Database, arg: int, mode: WindowEnum) -> None:
-	"""Delete a threshold by role id or by threshold level."""
-	await db.execute(
-		"""
+    """Delete a threshold by role id or by threshold level."""
+    await db.execute(
+        """
 		DELETE FROM rank_threshold
 		WHERE mode = ? AND (rid = ? OR threshold = ?)
 		""",
-		mode.value,
-		arg,
-		arg,
-	)
+        mode.value,
+        arg,
+        arg,
+    )
 
 
 async def batch_delete(db: Database, rids: list[int]) -> None:
-	if not rids:
-		return
-	placeholders = ",".join("?" * len(rids))
-	await db.execute(
-		f"DELETE FROM rank_threshold WHERE rid IN ({placeholders})",
-		*rids,
-	)
+    if not rids:
+        return
+    placeholders = ",".join("?" * len(rids))
+    await db.execute(
+        f"DELETE FROM rank_threshold WHERE rid IN ({placeholders})",
+        *rids,
+    )
 
 
 async def drop(db: Database, mode: WindowEnum) -> None:
-	await db.execute(
-		"DELETE FROM rank_threshold WHERE mode = ?", mode.value
-	)
+    await db.execute(
+        "DELETE FROM rank_threshold WHERE mode = ?", mode.value
+    )
 
 
 async def of_member(
-	db: Database,
-	uid: int,
-	*,
-	mode: WindowEnum = WindowEnum.SEASONAL,
+    db: Database,
+    uid: int,
+    *,
+    mode: WindowEnum = WindowEnum.SEASONAL,
 ) -> int | None:
-	"""The rank role id a member currently holds (None if below all)."""
-	thresholds = await get(db, mode=mode)
-	if not thresholds:
-		return None
+    """The rank role id a member currently holds (None if below all)."""
+    thresholds = await get(db, mode=mode)
+    if not thresholds:
+        return None
 
-	now = pendulum.now("UTC")
-	if mode is WindowEnum.SEASONAL:
-		from plugins.experience.db import seasonal_exp
+    now = pendulum.now("UTC")
+    if mode is WindowEnum.SEASONAL:
+        from plugins.experience.db import seasonal_exp
 
-		level = await seasonal_exp(db, uid, now.year, (now.month - 1) // 3)
-	else:
-		row = await db.fetchone(
-			"SELECT lifetime FROM member_exp WHERE uid = ?", uid
-		)
-		level = row["lifetime"] if row else 0
+        level = await seasonal_exp(db, uid, now.year, (now.month - 1) // 3)
+    else:
+        row = await db.fetchone(
+            "SELECT lifetime FROM member_exp WHERE uid = ?", uid
+        )
+        level = row["lifetime"] if row else 0
 
-	return calc_min_rank(thresholds, level)[0]
+    return calc_min_rank(thresholds, level)[0]
 
 
 def calc_min_rank(
-	thresholds: list[dict], level: int
+    thresholds: list[dict], level: int
 ) -> tuple[int | None, int | None]:
-	"""Naive scan: (rid, index) of the highest threshold <= level."""
-	if not thresholds or level < thresholds[0]["threshold"]:
-		return None, None
-	for i in range(1, len(thresholds)):
-		if level < thresholds[i]["threshold"]:
-			return thresholds[i - 1]["rid"], i - 1
-	return thresholds[-1]["rid"], len(thresholds) - 1
+    """Naive scan: (rid, index) of the highest threshold <= level."""
+    if not thresholds or level < thresholds[0]["threshold"]:
+        return None, None
+    for i in range(1, len(thresholds)):
+        if level < thresholds[i]["threshold"]:
+            return thresholds[i - 1]["rid"], i - 1
+    return thresholds[-1]["rid"], len(thresholds) - 1

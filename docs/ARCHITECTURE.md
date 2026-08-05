@@ -52,13 +52,16 @@ and restart — the loader finds it, runs its schema, registers its cogs, done:
 from discord.ext import commands
 from cazzubot import Plugin
 
+
 class MyFeature(Plugin):
     name = "myfeature"
-    cogs = [MyCog]                      # any number of cog classes
+    cogs = [MyCog]  # any number of cog classes
     schema = ["CREATE TABLE IF NOT EXISTS myfeature (…)"]
-    scheduled = {"mytag": my_handler}    # tag -> async handler(bot, payload)
-    async def on_load(self, bot): ...    # optional startup hook
+    scheduled = {"mytag": my_handler}  # tag -> async handler(bot, payload)
+
+    async def on_load(self, bot): ...  # optional startup hook
     async def on_unload(self, bot): ...  # optional teardown hook
+
 
 plugin = MyFeature()
 ```

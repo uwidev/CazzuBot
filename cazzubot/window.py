@@ -41,110 +41,110 @@ _ERROR = "\u2716"  # ✖
 
 
 class CommandWindow:
-	"""Buffered level-tagged reporting for one command invocation."""
+    """Buffered level-tagged reporting for one command invocation."""
 
-	def __init__(self, ctx: Any) -> None:
-		self._ctx = ctx
-		self._lines: list[str] = []
+    def __init__(self, ctx: Any) -> None:
+        self._ctx = ctx
+        self._lines: list[str] = []
 
-	# -- levels -----------------------------------------------------------
+    # -- levels -----------------------------------------------------------
 
-	def debug(self, msg: object) -> None:
-		self._lines.append(str(msg))
+    def debug(self, msg: object) -> None:
+        self._lines.append(str(msg))
 
-	def info(self, msg: object) -> None:
-		self._lines.append(str(msg))
+    def info(self, msg: object) -> None:
+        self._lines.append(str(msg))
 
-	def success(self, msg: object) -> None:
-		self._lines.append(f"{_SUCCESS} {msg}")
+    def success(self, msg: object) -> None:
+        self._lines.append(f"{_SUCCESS} {msg}")
 
-	def warn(self, msg: object) -> None:
-		self._lines.append(f"{_WARN} {msg}")
+    def warn(self, msg: object) -> None:
+        self._lines.append(f"{_WARN} {msg}")
 
-	def error(self, msg: object) -> None:
-		self._lines.append(f"{_ERROR} {msg}")
+    def error(self, msg: object) -> None:
+        self._lines.append(f"{_ERROR} {msg}")
 
-	# -- delivery ----------------------------------------------------------
+    # -- delivery ----------------------------------------------------------
 
-	async def flush(self, *, monospace: bool = False) -> None:
-		"""Send buffered lines as one message; no-op when empty."""
-		if not self._lines:
-			return
-		text = "\n".join(self._lines)
-		if monospace:
-			text = f"```\n{text}\n```"
-		await self._ctx.send(text, ephemeral=True)
-		self._lines = []
+    async def flush(self, *, monospace: bool = False) -> None:
+        """Send buffered lines as one message; no-op when empty."""
+        if not self._lines:
+            return
+        text = "\n".join(self._lines)
+        if monospace:
+            text = f"```\n{text}\n```"
+        await self._ctx.send(text, ephemeral=True)
+        self._lines = []
 
-	# -- context manager ---------------------------------------------------
+    # -- context manager ---------------------------------------------------
 
-	async def __aenter__(self) -> "CommandWindow":
-		return self
+    async def __aenter__(self) -> "CommandWindow":
+        return self
 
-	async def __aexit__(self, exc_type, exc, tb) -> bool:
-		if exc_type is not None:
-			self.error(f"{exc_type.__name__}: {exc}")
-		try:
-			await self.flush()
-		except Exception:
-			# never let a failed flush mask the real command outcome
-			_log.exception("failed to flush command window")
-		return False  # re-raise
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        if exc_type is not None:
+            self.error(f"{exc_type.__name__}: {exc}")
+        try:
+            await self.flush()
+        except Exception:
+            # never let a failed flush mask the real command outcome
+            _log.exception("failed to flush command window")
+        return False  # re-raise
 
 
 def command_window(ctx: Any) -> CommandWindow:
-	"""Open a window into a command's internal state."""
-	return CommandWindow(ctx)
+    """Open a window into a command's internal state."""
+    return CommandWindow(ctx)
 
 
 def windowed(func):
-	"""Attach a CommandWindow to the command's ``ctx`` as ``ctx.window``.
+    """Attach a CommandWindow to the command's ``ctx`` as ``ctx.window``.
 
-	Auto-flushes at the end of the command and on error. Stack it below
-	``@commands.hybrid_command()`` / ``@commands.command()`` so the command
-	signature (and thus slash-option parsing) is untouched.
-	"""
+    Auto-flushes at the end of the command and on error. Stack it below
+    ``@commands.hybrid_command()`` / ``@commands.command()`` so the command
+    signature (and thus slash-option parsing) is untouched.
+    """
 
-	@functools.wraps(func)
-	async def wrapper(self, ctx, *args, **kwargs):
-		window = CommandWindow(ctx)
-		ctx.window = window  # type: ignore[attr-defined]
-		try:
-			result = await func(self, ctx, *args, **kwargs)
-		except BaseException as exc:
-			window.error(f"{type(exc).__name__}: {exc}")
-			raise
-		finally:
-			try:
-				await window.flush()
-			except Exception:
-				_log.exception("failed to flush command window")
-		return result
+    @functools.wraps(func)
+    async def wrapper(self, ctx, *args, **kwargs):
+        window = CommandWindow(ctx)
+        ctx.window = window  # type: ignore[attr-defined]
+        try:
+            result = await func(self, ctx, *args, **kwargs)
+        except BaseException as exc:
+            window.error(f"{type(exc).__name__}: {exc}")
+            raise
+        finally:
+            try:
+                await window.flush()
+            except Exception:
+                _log.exception("failed to flush command window")
+        return result
 
-	return wrapper
+    return wrapper
 
 
 async def _one_off(ctx: Any, level: str, msg: object) -> None:
-	window = CommandWindow(ctx)
-	getattr(window, level)(msg)
-	await window.flush()
+    window = CommandWindow(ctx)
+    getattr(window, level)(msg)
+    await window.flush()
 
 
 async def window_debug(ctx: Any, msg: object) -> None:
-	await _one_off(ctx, "debug", msg)
+    await _one_off(ctx, "debug", msg)
 
 
 async def window_info(ctx: Any, msg: object) -> None:
-	await _one_off(ctx, "info", msg)
+    await _one_off(ctx, "info", msg)
 
 
 async def window_success(ctx: Any, msg: object) -> None:
-	await _one_off(ctx, "success", msg)
+    await _one_off(ctx, "success", msg)
 
 
 async def window_warn(ctx: Any, msg: object) -> None:
-	await _one_off(ctx, "warn", msg)
+    await _one_off(ctx, "warn", msg)
 
 
 async def window_error(ctx: Any, msg: object) -> None:
-	await _one_off(ctx, "error", msg)
+    await _one_off(ctx, "error", msg)

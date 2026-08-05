@@ -7,9 +7,9 @@ from .cog import RanksCog
 
 
 class RanksPlugin(Plugin):
-	name = "ranks"
-	schema = db.SCHEMA
-	cogs = [RanksCog]
+    name = "ranks"
+    schema = db.SCHEMA
+    cogs = [RanksCog]
 
 
 plugin = RanksPlugin()

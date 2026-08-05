@@ -6,8 +6,8 @@ from .cog import LevelsCog
 
 
 class LevelsPlugin(Plugin):
-	name = "levels"
-	cogs = [LevelsCog]
+    name = "levels"
+    cogs = [LevelsCog]
 
 
 plugin = LevelsPlugin()

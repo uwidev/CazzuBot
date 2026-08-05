@@ -14,7 +14,7 @@ from cazzubot.db import Database, dump_json, load_json
 _log = logging.getLogger(__name__)
 
 _SCHEMA = [
-	"""
+    """
 	CREATE TABLE IF NOT EXISTS settings (
 		key   TEXT PRIMARY KEY,
 		value TEXT NOT NULL
@@ -24,34 +24,34 @@ _SCHEMA = [
 
 
 class Settings:
-	"""Key-value access layered on the ``settings`` table."""
+    """Key-value access layered on the ``settings`` table."""
 
-	def __init__(self, db: Database) -> None:
-		self.db = db
+    def __init__(self, db: Database) -> None:
+        self.db = db
 
-	@property
-	def schema(self) -> list[str]:
-		return _SCHEMA
+    @property
+    def schema(self) -> list[str]:
+        return _SCHEMA
 
-	async def get(self, key: str, default: Any = None) -> Any:
-		row = await self.db.fetchone(
-			"SELECT value FROM settings WHERE key = ?", key
-		)
-		return load_json(row["value"], default) if row else default
+    async def get(self, key: str, default: Any = None) -> Any:
+        row = await self.db.fetchone(
+            "SELECT value FROM settings WHERE key = ?", key
+        )
+        return load_json(row["value"], default) if row else default
 
-	async def set(self, key: str, value: Any) -> None:
-		await self.db.execute(
-			"""
+    async def set(self, key: str, value: Any) -> None:
+        await self.db.execute(
+            """
 			INSERT INTO settings (key, value) VALUES (?, ?)
 			ON CONFLICT (key) DO UPDATE SET value = excluded.value
 			""",
-			key,
-			dump_json(value),
-		)
+            key,
+            dump_json(value),
+        )
 
-	async def delete(self, key: str) -> None:
-		await self.db.execute("DELETE FROM settings WHERE key = ?", key)
+    async def delete(self, key: str) -> None:
+        await self.db.execute("DELETE FROM settings WHERE key = ?", key)
 
-	async def all(self) -> dict[str, Any]:
-		rows = await self.db.fetchall("SELECT key, value FROM settings")
-		return {r["key"]: load_json(r["value"]) for r in rows}
+    async def all(self) -> dict[str, Any]:
+        rows = await self.db.fetchall("SELECT key, value FROM settings")
+        return {r["key"]: load_json(r["value"]) for r in rows}
