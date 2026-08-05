@@ -1,17 +1,12 @@
 #!/bin/env python
-"""Runs the bot.
+"""Run the bot.
 
-Bot grabs API key from secret/setup.py.
+Usage: CazzuBot [-h] [-d] [-p] [-s]
 
-Docker sets fresh database password from secret/db
-
-usage: CazzuBot [-h] [-d] [-p] [-s]
-
-options:
-  -h, --help		show this help message and exit
-  -d, --debug		Run as debug and only respond to debug users
-  -p, --production	Run with production token
-  -s, --sandbox		Run with only the the sandbox.py extension
+Options:
+  -d, --debug       Run in debug mode; only owner/debug users may run commands
+  -p, --production  Run with the production token (prefix c!)
+  -s, --sandbox     Load only the sandbox plugins (poll, board, dev)
 """
 
 import argparse
@@ -19,217 +14,78 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-import sys
 
-import aiofiles
-import asyncpg
-import discord
-from asyncpg import Connection
 from discord.utils import _ColourFormatter, stream_supports_colour
-from dotenv import load_dotenv
 
-from src.cazzubot import CazzuBot
-from src.db.table import (
-	FrogTypeEnum,
-	MemberExpLogSourceEnum,
-	ModlogStatusEnum,
-	ModlogTypeEnum,
-	WelcomeModeEnum,
-	WindowEnum,
-)
-from src.json_handler import dumps, loads
-
-EXTENSIONS_PATH = r"ext"
-
-DEBUG_USERS = [
-	92664421553307648,
-	338486462519443461,
-	["foo", ["bar"]],
-]  # usara, gegi
+from cazzubot import CazzuBot, Config
 
 _log = logging.getLogger(__name__)
 
 
-async def main():
-	# Environment parsing
+def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
+	"""Write INFO to console and DEBUG to a rotating-ish log file."""
+	logger = logging.getLogger()
+	logger.setLevel(logging.DEBUG)
+
+	console = logging.StreamHandler()
+	console.setLevel(logging.DEBUG if debug else logging.INFO)
+
+	Path(log_dir).mkdir(parents=True, exist_ok=True)
+	file_handler = logging.FileHandler(
+		filename=f"{log_dir}/discord.log", encoding="utf-8", mode="w+"
+	)
+	file_handler.setLevel(logging.DEBUG)
+
+	fmt = "[{asctime}] [{levelname:<8}] {name}: {message}"
+	formatters = {
+		"file": logging.Formatter(fmt, "%Y-%m-%d %H:%M:%S", style="{"),
+		"console": (
+			_ColourFormatter()
+			if stream_supports_colour(console.stream)
+			else logging.Formatter(fmt, "%Y-%m-%d %H:%M:%S", style="{")
+		),
+	}
+	for handler in (console, file_handler):
+		handler.setFormatter(
+			formatters[
+				"file"
+				if isinstance(handler, logging.FileHandler)
+				else "console"
+			]
+		)
+		logger.addHandler(handler)
+
+
+def main() -> None:
 	parser = argparse.ArgumentParser(prog="CazzuBot")
 	parser.add_argument("-d", "--debug", action="store_true")
 	parser.add_argument("-p", "--production", action="store_true")
 	parser.add_argument("-s", "--sandbox", action="store_true")
 	args = parser.parse_args()
 
-	is_debug: bool = args.debug
-	is_production: bool = args.production
-	is_sandbox: bool = args.sandbox
-
-	load_dotenv()
-
-	postgres_db = os.getenv("POSTGRES_DB")
-	postgres_user = os.getenv("POSTGRES_USER")
-	postgres_password_file = os.getenv("POSTGRES_PASSWORD_FILE")
-	postgres_ip = os.getenv("POSTGRES_IP")
-	postgres_port = os.getenv("POSTGRES_PORT")
-	token_file = os.getenv("TOKEN_FILE")
-	owner_id = os.getenv("OWNER_ID")
-
-	assert owner_id is not None
-
-	# For development purposes
-	postgres_ip_dev = os.getenv("POSTGRES_IP_DEV")
-	token_file_dev = os.getenv("TOKEN_FILE_DEV")
-
-	# Read secret files
-	password = os.getenv("SECRET")
-	token = os.getenv("TOKEN")
-	token_dev = os.getenv("TOKEN_DEV")
-
-	# try:
-	# 	async with aiofiles.open(postgres_password_file, mode="r") as file:
-	# 		pw = (await file.readline()).strip()
-	#
-	# 	async with aiofiles.open(token_file, mode="r") as file:
-	# 		token = await file.readline()
-	#
-	# 	async with aiofiles.open(token_file_dev, mode="r") as file:
-	# 		token_dev = await file.readline()
-	# except FileNotFoundError as e:
-	# 	print(f"Error reading secret files: {e}")
-	# 	return
-
-	setup_logging(get_script_dir() / "log", debug=is_debug)
-
-	if is_debug:
-		_log.info("RUNNING IN DEBUG MODE")
-
-	mode = "PRODUCTION" if is_production else "DEVELOP"
-	_log.info(f"Bot running in {mode} mode")
-
-	prefix = "c!" if is_production else "d!"
-	_log.info(f"Prefix is set to: {prefix}")
-
-	if is_sandbox:
-		_log.warning("RUNNING IN SANDBOX MODE")
-
-	# Bot setup and run
-	# Intents need to be set up to let discord know what we want for request
-	intents = discord.Intents.default()
-	intents.message_content = True
-	intents.members = True
-
-	print(
-		f"{password=}\n{postgres_ip_dev=}\n{postgres_user=}\n{postgres_db=}\n{postgres_port=}"
-	)
-	async with asyncpg.create_pool(
-		database=postgres_db,
-		user=postgres_user,
-		host=postgres_ip if is_production else postgres_ip_dev,
-		port=postgres_port,
-		password=password,
-		init=setup_codecs,
-	) as pool:
-		async with CazzuBot(
-			prefix,
-			pool=pool,
-			ext_path=EXTENSIONS_PATH,
-			intents=intents,
-			owner_id=int(owner_id),
-			is_debug=is_debug,
-			debug_users=DEBUG_USERS,
-			is_sandbox=is_sandbox,
-		) as bot:
-			await bot.start(
-				token if is_production else token_dev
-			)  # Ignore built-in logger
-
-
-def setup_logging(log_path: str | Path, *, debug: bool = False):
-	"""Write info logging to console and debug logging to file."""
-	logger = logging.getLogger()
-	logger.setLevel(logging.DEBUG)
-
-	console_handler = logging.StreamHandler()
-	console_handler.setLevel(logging.DEBUG if debug else logging.INFO)
-
-	file_handler = logging.FileHandler(
-		filename=f"{log_path}/discord.log", encoding="utf-8", mode="w+"
-	)
-	file_handler.setLevel(logging.DEBUG)
-
-	log_fmt = "[{asctime}] [{levelname:<8}] {name}: {message}"
-	dt_fmt = "%Y-%m-%d %H:%M:%S"
-	formatters = {
-		"file": logging.Formatter(
-			log_fmt,
-			dt_fmt,
-			style="{",
-		),
-		"console": _ColourFormatter()
-		if stream_supports_colour(console_handler.stream)
-		else logging.Formatter(log_fmt, dt_fmt, style="{"),
-	}
-
-	for handler in [console_handler, file_handler]:
-		formatter = formatters[
-			"file"
-			if isinstance(handler, logging.FileHandler)
-			else "console"
-		]
-		handler.setFormatter(formatter)
-
-	logger.addHandler(console_handler)
-	logger.addHandler(file_handler)
-
-
-async def setup_codecs(con: Connection):
-	await con.set_type_codec(
-		"modlog_status_enum",
-		encoder=lambda e: e.value,
-		decoder=ModlogStatusEnum,
+	config = Config.load(
+		debug=args.debug,
+		production=args.production,
+		sandbox=args.sandbox,
 	)
 
-	await con.set_type_codec(
-		"modlog_type_enum",
-		encoder=lambda e: e.value,
-		decoder=ModlogTypeEnum,
+	setup_logging("log", debug=config.debug)
+
+	_log.info(
+		"running in %s mode",
+		"SANDBOX"
+		if config.sandbox
+		else ("PRODUCTION" if args.production else "DEVELOP"),
 	)
+	_log.info("prefix is %r, guild_id=%s", config.prefix, config.guild_id)
 
-	await con.set_type_codec(
-		"window_enum", encoder=lambda e: e.value, decoder=WindowEnum
-	)
-
-	await con.set_type_codec(
-		"frog_type_enum", encoder=lambda e: e.value, decoder=FrogTypeEnum
-	)
-
-	await con.set_type_codec(
-		"member_exp_log_source_enum",
-		encoder=lambda e: e.value,
-		decoder=MemberExpLogSourceEnum,
-	)
-
-	await con.set_type_codec(
-		"welcome_mode_enum",
-		encoder=lambda e: e.value,
-		decoder=WelcomeModeEnum,
-	)
-
-	# json objects are treated as normal python objects
-	# does not work well when storing custom types
-	await con.set_type_codec(
-		"json", encoder=dumps, decoder=loads, schema="pg_catalog"
-	)
-
-	await con.set_type_codec(
-		"jsonb", encoder=dumps, decoder=loads, schema="pg_catalog"
-	)
-
-
-def get_script_dir() -> Path:
-	"""Return the directory of the running script regardless of CWD."""
-	this = Path(sys.argv[0]).resolve()
-	return this.parent
+	bot = CazzuBot(config)
+	try:
+		asyncio.run(bot.start(config.token))
+	except KeyboardInterrupt:
+		asyncio.run(bot.close())
 
 
 if __name__ == "__main__":
 	os.system("cls" if os.name == "nt" else "clear")
-	asyncio.run(main())
+	main()

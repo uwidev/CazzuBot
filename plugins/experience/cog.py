@@ -1,0 +1,450 @@
+"""Experience cog — message exp pipeline, membership card, leaderboards."""
+
+import asyncio
+import logging
+from math import trunc
+
+import discord
+import pendulum
+from discord.ext import commands
+
+from cazzubot import leaderboard, levels, utils
+from cazzubot.utils import OldNew
+
+from . import db as exp_db
+
+_log = logging.getLogger(__name__)
+
+# -- experience rates (hard-coded; restart the bot to change) --------------
+
+_BASE = 1
+_BONUS = 20
+_UNTIL_MSG = 77
+_DECAY_FACTOR = 2
+_EXP_COOLDOWN = 15  # seconds
+
+_SCOREBOARD_STAMP = (
+	"https://cdn.discordapp.com/emojis/695126165756837999.webp"
+	"?size=160&quality=lossless"
+)
+
+RE_MSG_EXP_CUMULATIVE: dict[int, int] = {}
+
+
+def _from_msg(msg: int) -> int:
+	"""Expected exp reward for the message at daily count ``msg``."""
+	if msg < 0:
+		raise ValueError("Negative messages should not exist")
+	if msg >= _UNTIL_MSG:
+		return _BASE
+	return round(
+		(_BASE * _BONUS)
+		- (_BASE * _BONUS - _BASE) * (msg / _UNTIL_MSG) ** _DECAY_FACTOR
+	)
+
+
+RE_MSG_EXP_CUMULATIVE[1] = _BASE + _from_msg(0)
+for _i in range(2, _UNTIL_MSG + 1):
+	RE_MSG_EXP_CUMULATIVE[_i] = (
+		RE_MSG_EXP_CUMULATIVE[_i - 1] + _BASE + _from_msg(_i - 1)
+	)
+
+
+class ExperienceCog(commands.Cog):
+	"""Experience scoring and leaderboards."""
+
+	def __init__(self, bot) -> None:
+		self.bot = bot
+		self._exp_locks: dict[int, asyncio.Lock] = {}
+
+	@commands.Cog.listener()
+	async def on_message(self, message: discord.Message) -> None:
+		"""Award exp based on daily message count; handle level/rank ups."""
+		if message.author.bot or message.author.id == self.bot.user.id:
+			return
+		if (
+			message.guild is None
+			or message.guild.id != self.bot.config.guild_id
+		):
+			return
+
+		# serialize exp updates per user so concurrent messages can't race
+		# the msg_cnt/lifetime read-modify-write
+		lock = self._exp_locks.setdefault(
+			message.author.id, asyncio.Lock()
+		)
+		async with lock:
+			await self._award_exp(message)
+
+	async def _award_exp(self, message: discord.Message) -> None:
+		now = pendulum.now("UTC")
+		uid = message.author.id
+
+		member_db = await exp_db.get_member_exp(self.bot.db, uid)
+		if member_db is None:
+			await exp_db.add_member_exp(
+				self.bot.db,
+				uid,
+				cdr=now.subtract(hours=1).isoformat(),
+			)
+			member_db = await exp_db.get_member_exp(self.bot.db, uid)
+
+		cdr = member_db["cdr"]
+		if cdr and now < pendulum.parse(cdr):
+			return  # cooldown not yet expired
+
+		# compute gains
+		msg_cnt = member_db["msg_cnt"] + 1
+		exp_gain = _from_msg(msg_cnt)
+		year, season = now.year, (now.month - 1) // 3
+
+		seasonal_old = await exp_db.seasonal_exp(
+			self.bot.db, uid, year, season
+		)
+		seasonal = OldNew(seasonal_old, seasonal_old + exp_gain)
+
+		lifetime_old = member_db["lifetime"]
+		lifetime = OldNew(lifetime_old, lifetime_old + exp_gain)
+
+		seasonal_level = OldNew(
+			levels.level_from_exp(seasonal.old),
+			levels.level_from_exp(seasonal.new),
+		)
+		lifetime_level = OldNew(
+			levels.level_from_exp(lifetime.old),
+			levels.level_from_exp(lifetime.new),
+		)
+
+		# persist
+		await exp_db.update_member_exp(
+			self.bot.db,
+			uid,
+			lifetime=lifetime.new,
+			msg_cnt=msg_cnt,
+			cdr=now.add(seconds=_EXP_COOLDOWN),
+		)
+		await exp_db.add_exp_log(self.bot.db, uid, exp_gain, now)
+
+		# level-up + rank-up handling
+		from plugins.levels.cog import handle_level_up
+		from plugins.ranks.logic import handle_ranks
+
+		await handle_level_up(
+			self.bot, message, seasonal_level, delete_after=7
+		)
+		await handle_ranks(
+			self.bot,
+			message,
+			seasonal_level,
+			lifetime_level,
+			delete_after=7,
+		)
+
+	# -- commands ----------------------------------------------------------
+
+	@commands.group(
+		aliases=["xp", "experience"], invoke_without_command=True
+	)
+	async def exp(
+		self, ctx: commands.Context, *, user: discord.Member = None
+	) -> None:
+		"""Show this season's experience and leaderboard."""
+		user = user or ctx.author
+		now = pendulum.now("UTC")
+		rows = await exp_db.seasonal_ranked(
+			self.bot.db, now.year, (now.month - 1) // 3
+		)
+		await ctx.send(
+			embed=await self._prepare_personal_summary(ctx, user, rows)
+		)
+
+	@exp.command(name="lifetime")
+	async def exp_lifetime(
+		self, ctx: commands.Context, *, user: discord.Member = None
+	) -> None:
+		"""Lifetime experience variant."""
+		user = user or ctx.author
+		rows = await exp_db.lifetime_ranked(self.bot.db)
+		await ctx.send(
+			embed=await self._prepare_personal_summary(
+				ctx, user, rows, lifetime=True
+			)
+		)
+
+	async def _prepare_personal_summary(
+		self,
+		ctx: commands.Context,
+		user: discord.Member,
+		rows: list[tuple[int, int, int]],
+		*,
+		lifetime: bool = False,
+	) -> discord.Embed:
+		"""The "Club Membership Card" embed."""
+		uid = user.id
+		uids = [r[1] for r in rows]
+		if uid not in uids:
+			embed = discord.Embed(
+				description=f"{user.display_name} has no experience yet.",
+				color=discord.Color.from_str("#a2dcf7"),
+			)
+			embed.set_author(
+				name=f"{user.display_name}'s Club Membership Card",
+				icon_url=_SCOREBOARD_STAMP,
+			)
+			embed.set_thumbnail(url=user.display_avatar.url)
+			return embed
+
+		uid_index = uids.index(uid)
+		subset, subset_i = leaderboard.create_focus_subset(rows, uid_index)
+
+		ranks, _, exps = zip(*subset)
+		lvls = [levels.level_from_exp(e) for e in exps]
+		names = []
+		for uid_ in [r[1] for r in subset]:
+			user = await utils.find_user(self.bot, ctx, uid_)
+			names.append(user.display_name if user else str(uid_))
+
+		window = list(zip(ranks, exps, lvls, names))
+		headers = ["Rank", "Exp", "Lv", "User"]
+		align = ["<", ">", ">", ">"]
+		max_padding = [0, 0, 0, 16]
+
+		scoreboard = leaderboard.format(
+			window, headers, align=align, max_padding=max_padding
+		)
+		col_widths = leaderboard.calc_max_col_width(
+			window, headers, max_padding
+		)
+		leaderboard.highlight_row(scoreboard, subset_i, col_widths)
+		scoreboard_s = "\n".join(scoreboard)
+
+		# member stats
+		from cazzubot.models import WindowEnum
+		from plugins.ranks.db import of_member
+
+		rid = await of_member(
+			self.bot.db,
+			uid,
+			mode=WindowEnum.LIFETIME if lifetime else WindowEnum.SEASONAL,
+		)
+		role = ctx.guild.get_role(rid) if rid else None
+
+		lvl = lvls[subset_i]
+		exp = exps[subset_i]
+		rank = ranks[subset_i]
+
+		if lifetime:
+			total = await exp_db.total_members(self.bot.db)
+		else:
+			now = pendulum.now("UTC")
+			total = await exp_db.seasonal_total_members(
+				self.bot.db, now.year, (now.month - 1) // 3
+			)
+
+		percentile = utils.calc_percentile(rank, total)
+
+		embed = discord.Embed(color=discord.Color.from_str("#a2dcf7"))
+		embed.set_author(
+			name=f"{user.display_name}'s Club Membership Card",
+			icon_url=_SCOREBOARD_STAMP,
+		)
+		embed.set_thumbnail(url=user.display_avatar.url)
+		embed.description = f"""
+		Rank: {role.mention if role else "`None`"}
+		Level: **`{lvl:,}`**
+		Experience: **`{exp:,}`**
+
+		You are currently the `{utils.ordinal(trunc(percentile))}` percentile of all members!
+		```py\n{scoreboard_s}```"""
+		return embed
+
+	@exp.command(name="top")
+	async def exp_top(
+		self,
+		ctx: commands.Context,
+		year: int | None = None,
+		season: int | None = None,
+		page: int | None = None,
+	) -> None:
+		"""Display the seasonal experience leaderboard (reaction-paged)."""
+		now = pendulum.now("UTC")
+		year = year or now.year
+		season = season or (now.month - 1) // 3 + 1
+		page = page or 1
+
+		if not 1 <= season <= 4:
+			raise commands.BadArgument(
+				f"Season {season} is not a valid number (1-4)"
+			)
+		if not 2023 <= year <= now.year:
+			raise commands.BadArgument(
+				f"Year {year} is not a valid year, or is too early."
+			)
+		if page <= 0:
+			raise commands.BadArgument(
+				f"Page {page} must be greater than 0."
+			)
+
+		date = pendulum.datetime(year, ((season - 1) * 3) + 1, 1)
+		rows = await exp_db.seasonal_ranked(
+			self.bot.db, date.year, (date.month - 1) // 3
+		)
+
+		msg = await ctx.send(
+			embed=await self._top_embed(ctx, date, rows, page)
+		)
+		for emoji in ("⬅", "◀", "▶", "➡"):
+			await msg.add_reaction(emoji)
+
+		def check(
+			reaction: discord.Reaction, user: discord.Member
+		) -> bool:
+			return (
+				user == ctx.author
+				and reaction.message.id == msg.id
+				and str(reaction.emoji) in ("⬅", "◀", "▶", "➡")
+			)
+
+		while True:
+			done, pending = await asyncio.wait(
+				[
+					self.bot.wait_for("reaction_add", check=check),
+					self.bot.wait_for("reaction_remove", check=check),
+				],
+				timeout=30,
+				return_when=asyncio.FIRST_COMPLETED,
+			)
+			if not done:
+				break
+
+			try:
+				reaction, _ = done.pop().result()
+			except Exception as err:
+				raise commands.CommandError from err
+			for future in pending:
+				future.cancel()
+
+			if str(reaction.emoji) == "◀":
+				page = max(page - 1, 1)
+			elif str(reaction.emoji) == "▶":
+				max_page = max(len(rows) // 10, 1)
+				page = min(page + 1, max_page)
+			elif str(reaction.emoji) == "⬅":
+				date = date.subtract(months=3)
+				rows = await exp_db.seasonal_ranked(
+					self.bot.db, date.year, (date.month - 1) // 3
+				)
+				page = 1
+			elif str(reaction.emoji) == "➡":
+				date = date.add(months=3)
+				rows = await exp_db.seasonal_ranked(
+					self.bot.db, date.year, (date.month - 1) // 3
+				)
+				page = 1
+
+			await msg.edit(
+				embed=await self._top_embed(ctx, date, rows, page)
+			)
+
+	async def _top_embed(
+		self,
+		ctx: commands.Context,
+		date: pendulum.DateTime,
+		rows: list[tuple[int, int, int]],
+		page: int,
+	) -> discord.Embed:
+		embed = discord.Embed(color=discord.Color.from_str("#a2dcf7"))
+		embed.set_author(
+			name="Club Cirno Leaderboards", icon_url=_SCOREBOARD_STAMP
+		)
+
+		if not rows:
+			scoreboard_s = (
+				"No data has been logged during this time period."
+			)
+		else:
+			if rows and rows[0]:
+				top_user = await utils.find_user(self.bot, ctx, rows[0][1])
+				if top_user:
+					embed.set_thumbnail(url=top_user.display_avatar.url)
+
+			subset = rows[(page - 1) * 10 : page * 10]
+			ranks, uids, exps = zip(*subset)
+			lvls = [levels.level_from_exp(e) for e in exps]
+			names = []
+			for id_ in uids:
+				user = await utils.find_user(self.bot, ctx, id_)
+				names.append(user.display_name if user else str(id_))
+
+			window = list(zip(ranks, exps, lvls, names))
+			headers = ["Rank", "Exp", "Lv", "User"]
+			align = ["<", ">", ">", ">"]
+			max_padding = [0, 0, 0, 16]
+			scoreboard = leaderboard.format(
+				window, headers, align=align, max_padding=max_padding
+			)
+			if ctx.author.id in uids:
+				col_widths = leaderboard.calc_max_col_width(
+					window, headers, max_padding
+				)
+				leaderboard.highlight_row(
+					scoreboard, uids.index(ctx.author.id), col_widths
+				)
+			scoreboard_s = "\n".join(scoreboard)
+
+		embed.description = f"""
+		Year: **`{date.year}`**
+		Season: **`{(date.month - 1) // 3 + 1}`**
+		Page: **`{page}`**
+		```py\n{scoreboard_s}```"""
+		return embed
+
+	@exp.command(name="resync")
+	@commands.is_owner()
+	async def exp_resync(self, ctx: commands.Context) -> None:
+		"""Rebuild every member's lifetime exp from the exp logs."""
+		if not await utils.author_confirm(ctx):
+			return
+		msg = await ctx.send("Starting member lifetime sync...")
+		await exp_db.sync_with_exp_logs(self.bot.db)
+		await msg.edit(content="Synced! ✅")
+
+	@exp.group(name="quiet", invoke_without_command=True)
+	async def quiet(self, ctx: commands.Context) -> None:
+		"""List channels where level-up messages are suppressed."""
+		quiets: list[int] = (
+			await self.bot.settings.get("level.quiet", []) or []
+		)
+		await ctx.send(str(quiets))
+
+	@quiet.command(name="add")
+	@commands.has_permissions(administrator=True)
+	async def quiet_add(
+		self, ctx: commands.Context, channel: discord.TextChannel
+	) -> None:
+		quiets: list[int] = (
+			await self.bot.settings.get("level.quiet", []) or []
+		)
+		if channel.id in quiets:
+			await ctx.send("Channel already exists in quiet list!")
+			return
+		quiets.append(channel.id)
+		await self.bot.settings.set("level.quiet", quiets)
+		await ctx.message.add_reaction("👍")
+
+	@quiet.command(name="del")
+	@commands.has_permissions(administrator=True)
+	async def quiet_del(
+		self, ctx: commands.Context, channel: discord.TextChannel
+	) -> None:
+		quiets: list[int] = (
+			await self.bot.settings.get("level.quiet", []) or []
+		)
+		if channel.id not in quiets:
+			await ctx.send(
+				"Channel was never in quiet list to begin with!"
+			)
+			return
+		quiets.remove(channel.id)
+		await self.bot.settings.set("level.quiet", quiets)
+		await ctx.message.add_reaction("👍")

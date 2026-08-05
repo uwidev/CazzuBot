@@ -1,38 +1,43 @@
 # CazzuBot
 
-Discord bot for Club Cirno: experience/leveling, ranked roles, frog-token spawning, leaderboards, seasonal resets, mod/poll/welcome utilities. Python 3.10 + discord.py 2.3.2 + asyncpg (Postgres 16), managed with uv, dockerized.
+Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. Python 3.10 + discord.py 2.7.1 + aiosqlite, managed with uv. Runs as `main.py`.
 
 ## Project
 
-- Entry point: `main.py` (argparse: `-d` debug, `-p` production, `-s` sandbox; prefix `d!` / `c!`). Reads tokens/DB creds from `.env` (env vars `SECRET`, `TOKEN`, `TOKEN_DEV`, `POSTGRES_*`), opens the asyncpg pool, registers enum/json codecs (`setup_codecs`), then loads extensions.
-- `src/` = non-cog shared logic; `ext/` = one discord.py cog per file; `board/` = image assets (not source); `docs/Tasks.md` = task-loop conventions.
-- No tests exist. Secrets live in `.env` / `secret/` — never log or commit them.
+- Entry point: `main.py` (`-d` debug, `-p` production, `-s` sandbox = only poll/board/dev plugins; prefix `d!` / `c!`). Reads `TOKEN`/`TOKEN_DEV`, `OWNER_ID`, `GUILD_ID`, `DB_PATH` from `.env` (see `.env.example`).
+- `cazzubot/` = core package (bot, db, settings, scheduler, plugin loader, utils, levels, leaderboard, templates, timeparse); `plugins/` = one folder per feature, auto-discovered; `board/`/`download/`/`emojis/` = asset dirs (gitignored).
+- Single sqlite file `data/cazzubot.db`, created on first boot — no docker/Postgres. v1 data is not migrated.
+- Design docs: `docs/ARCHITECTURE.md`, `docs/PLUGINS.md`. **Read PLUGINS.md before adding a feature.**
 
 ## Commands
 
-- Install: `uv sync` (or `pip install -r requirements.txt`)
-- Run (needs Postgres running + `.env`): `uv run python main.py -d` (dev) / `-p` (prod) / `-s` (sandbox only loads `ext.poll`, `board`, `dev`, `hotswap`)
-- Database: `docker compose up -d database` (Postgres 16 on :5432)
-- Full container: `docker compose up --build`
-- Lint: `uv run ruff check .` — format: `uv run ruff format .` — or `uv run pre-commit run --all-files` (black + ruff)
-- There is no test command.
+- Install: `uv sync`
+- Run: `uv run python main.py -d` (dev) / `-p` (prod) / `-s` (sandbox)
+- Lint: `uv run ruff check .` — Format: `uv run ruff format .`
+- Boot check: `uv run python scripts/smoke.py` — data-layer checks: `uv run python scripts/functest.py`
+- No unit-test suite.
 
 ## Architecture
 
-- `src/cazzubot.py` — `CazzuBot(commands.Bot)` subclass: holds `pool`, `ext_path`; auto-loads all `ext/*.py` except `sandbox.py`; `is_dev_mode` gate in debug.
-- `src/db/` — one module per table (level, rank, frog, member_exp, modlog, poll, welcome, …), thin `asyncpg` query wrappers taking `pool` first. `table.py` defines `SnowflakeTable` dataclasses (`from_record()`, `__iter__` for `*level` unpacking) and the enums (`WindowEnum`, `FrogTypeEnum`, `ModlogStatusEnum`, …).
-- `src/*.py` — domain logic: `level.py`/`rank.py` (public-facing per-feature API), `leaderboard.py` (table rendering), `frog_factory.py` (spawn tasks), `ntlp.py` (natural-language time parsing, UTC-internal), `user_json.py` (validates user-defined JSON messages via jsonschema + `utility.deep_map` formatters), `utility.py` (helpers).
-- `ext/` — cogs: experience (exp math, cooldowns), frog (token economy), rank, mod, poll, welcome, board, counter, daily/quarterly (reset tasks), dev, owner, hotswap, echo, inktober, story, member. `sandbox.py` is special-cased.
+- `cazzubot/bot.py` — `CazzuBot(commands.Bot)`: owns `config`, `db`, `settings`, `scheduler`, `plugins`; two-phase plugin load (schemas+cogs first, then `on_load` hooks — no load-order deps); debug gating.
+- `cazzubot/db.py` — `Database`: aiosqlite wrapper (WAL, FK on, explicit `transaction()`), `execute/fetchall/fetchone/fetchval/executemany`, `dump_json/load_json`. Enums → TEXT, timestamps → ISO-8601 UTC.
+- `cazzubot/plugin.py` — `Plugin` base (`name`, `cogs`, `schema`, `scheduled`, `on_load`/`on_unload`) + `discover_plugins()` (packages or single modules; each defines `plugin = MyPlugin()`).
+- `cazzubot/scheduler.py` — one loop over `tasks(tag, run_at, payload)`; tags registered via `Plugin.scheduled`; handlers re-schedule by inserting rows. Replaces frog/counter/mod expiry loops.
+- `cazzubot/settings.py` — JSON key-value store (single guild), namespaced keys (e.g. `frog.enabled`, `rank.seasonal.message`, `level.quiet`).
+- Plugins: experience (message exp pipeline + membership card + `exp top` paging), levels, ranks (thresholds → roles, seasonal/lifetime), frogs (spawn cadence `interval ± fuzzy%`, capture, consume-for-exp, quarterly freeze), daily, quarterly, mod (modlog + scheduled mute/tempban), poll (app commands + modal view), welcome, counter (baka button), board, fun (member/echo/inktober/story), dev (owner tools + `cog reload` hotswap).
+- Cross-plugin flow: `experience.on_message` awards exp then calls `plugins.levels.cog.handle_level_up` and `plugins.ranks.logic.handle_ranks`.
 
 ## Conventions
 
-- **Tabs** for indentation (ruff `indent-style = "tab"`), double quotes, line length 75. Run `ruff format` after edits — the codebase was `retab!` to tabs.
-- Module-private constants prefixed `_` (e.g. `_BASE`, `_BONUS` in `ext/experience.py`); module logger `_log = logging.getLogger(__name__)`.
-- Cogs: `class X(commands.Cog)` + `async def setup(bot)`; import `CazzuBot` from `main` under `if TYPE_CHECKING:`; annotate `ctx: commands.Context`.
-- DB: build queries in `src/db/*.py`, expose dataclasses from `src.db.table`, cast `Record` → table object via `from_record`; guard writes with existence checks (`if not await guild.get(pool, gid)`). New enums stored in Postgres must be registered as codecs in `main.py:setup_codecs`.
-- Success feedback via emoji reaction (`await ctx.message.add_reaction("👍")`); time handled with `pendulum`, always stored/computed in UTC (see `src/ntlp.py`).
-- Ruff select is `["E4", "E7", "E9", "F"]` (pyproject.toml); `basedpyright` config also present (Python 3.10, Linux).
+- **Tabs**, double quotes, line-length 75 (`ruff format`). Run `ruff check` after edits.
+- Plugins reach services via `bot.db`, `bot.settings`, `bot.scheduler`, `bot.config`, `bot.guild`. Plugin db modules take `db: Database` (or `settings: Settings`) as first arg; cogs take the bot.
+- No `gid` columns anywhere; no FK decorators; `INSERT OR IGNORE`/`INSERT OR REPLACE` for idempotent writes.
+- `tasks.loop(time=…)` only for daily/quarterly cadence (with missed-run force check on boot); everything delayed goes through the scheduler.
+- User-configurable message JSON goes through `cazzubot.templates.verify/prepare` (jsonschema-validated); placeholders applied via `utils.deep_map` + per-feature formatters.
+- Time handled with pendulum, always UTC (see `cazzubot/timeparse.py`).
+- Ruff select `["E4", "E7", "E9", "F"]`; basedpyright config present (Python 3.10, Linux).
 
 ## Notes
 
-- (add later)
+- `frog register`/`exp`/`rank`/`level`/`welcome`/`frog set` require admin; `consume` uses a 👍/❌ confirm reaction flow.
+- Deploy: `push_to_prod.sh` (untracked, machine-specific).
