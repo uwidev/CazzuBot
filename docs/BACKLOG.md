@@ -59,3 +59,16 @@ bus), and the levels kernel naming collision (`cazzubot/levels.py` vs
 `plugins/levels/`). See docs/ARCHITECTURE.md and docs/PLUGINS.md. Item #6 was
 parked during the reaction→button conversion (2026) to keep that change
 focused.
+
+---
+
+> Other todos added by the developer.
+
+## Counter DB rework
+A single reaction on the counter should store the following:
+
+mid,user,timestamp
+
+Now we have a history of people who have pressed the button. From this, we can simplify the calls. The recent bakas can be a database call, grouped by user, summed. From this, we can get the most recent bakas.
+
+We can also get the total count for the counter just by a sum call on the mid.
