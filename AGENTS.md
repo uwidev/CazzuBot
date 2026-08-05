@@ -30,7 +30,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 
 ## Conventions
 
-- **Tabs**, double quotes, line-length 75 (`ruff format`). Run `ruff check` after edits.
+- **Spaces**, double quotes, line-length 75 (`ruff format`). Run `ruff check` after edits.
 - Plugins reach services via `bot.db`, `bot.settings`, `bot.scheduler`, `bot.config`, `bot.guild`. Plugin db modules take `db: Database` (or `settings: Settings`) as first arg; cogs take the bot.
 - No `gid` columns anywhere; no FK decorators; `INSERT OR IGNORE`/`INSERT OR REPLACE` for idempotent writes.
 - `tasks.loop(time=…)` only for daily/quarterly cadence (with missed-run force check on boot); everything delayed goes through the scheduler.
@@ -41,5 +41,5 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 
 ## Notes
 
-- `frog register`/`exp`/`rank`/`level`/`welcome`/`frog set` require admin; `consume` uses a 👍/❌ confirm reaction flow.
+- `frog register`/`exp`/`rank`/`level`/`welcome`/`frog set` require admin; `consume` confirms via a Yes/No button view (`cazzubot.utils.ConfirmView`).
 - Deploy: `push_to_prod.sh` (untracked, machine-specific).

@@ -5,10 +5,10 @@ Frogs spawn on a deterministic cadence ``interval ± fuzzy%``; each frog lives
 spawned so a crashed/failed spawn never kills the schedule (as v1 did).
 """
 
+import asyncio
 import logging
 import random
 import time
-from asyncio import TimeoutError
 from typing import Any
 
 import discord
@@ -26,172 +26,202 @@ FROG_NET_EMOJI = "<:cirnoNet:752290769712316506>"
 
 
 def roll_fuzzy(fuzzy: float) -> float:
-	return ((random.random() - 0.5) * 2) * fuzzy
+    return ((random.random() - 0.5) * 2) * fuzzy
 
 
 def roll_future_frog(
-	now: pendulum.DateTime, interval: int, fuzzy: float
+    now: pendulum.DateTime, interval: int, fuzzy: float
 ) -> pendulum.DateTime:
-	"""Next spawn time: ``interval`` seconds, offset by ±``fuzzy``%."""
-	offset = interval * (1 + roll_fuzzy(fuzzy))
-	return now.add(seconds=offset)
+    """Next spawn time: ``interval`` seconds, offset by ±``fuzzy``%."""
+    offset = interval * (1 + roll_fuzzy(fuzzy))
+    return now.add(seconds=offset)
 
 
 async def on_frog_due(bot, payload: dict[str, Any]) -> None:
-	"""Scheduler handler for tag ``frog``."""
-	now = pendulum.now("UTC")
-	cid = payload["cid"]
-	interval = payload["interval"]
-	persist = payload["persist"]
-	fuzzy = payload["fuzzy"]
+    """Scheduler handler for tag ``frog``."""
+    now = pendulum.now("UTC")
+    cid = payload["cid"]
+    interval = payload["interval"]
+    persist = payload["persist"]
+    fuzzy = payload["fuzzy"]
 
-	# Safety: if frogs were disabled, the tasks should have been cleared, but
-	# double-check anyway.
-	if not await frog_db.get_enabled(bot.settings):
-		return
+    # Safety: if frogs were disabled, the tasks should have been cleared, but
+    # double-check anyway.
+    if not await frog_db.get_enabled(bot.settings):
+        return
 
-	# Pre-roll the next spawn (from when this frog despawns) so a failure below
-	# cannot kill the schedule.
-	next_run = roll_future_frog(now.add(seconds=persist), interval, fuzzy)
-	task_id = await bot.scheduler.add("frog", next_run, payload)
+    # Pre-roll the next spawn (from when this frog despawns) so a failure below
+    # cannot kill the schedule.
+    next_run = roll_future_frog(now.add(seconds=persist), interval, fuzzy)
+    task_id = await bot.scheduler.add("frog", next_run, payload)
 
-	try:
-		captured = await spawn_and_wait(bot, persist, cid=cid)
-	except discord.DiscordServerError:
-		_log.warning(
-			"discord server error while spawning frog; rescheduled"
-		)
-		return
+    try:
+        captured = await spawn_and_wait(bot, persist, cid=cid)
+    except discord.DiscordServerError:
+        _log.warning(
+            "discord server error while spawning frog; rescheduled"
+        )
+        return
 
-	if captured:
-		# Reroll from the capture time for the next spawn.
-		run_at = roll_future_frog(pendulum.now("UTC"), interval, fuzzy)
-		await bot.scheduler.update_run_at(task_id, run_at)
+    if captured:
+        # Reroll from the capture time for the next spawn.
+        run_at = roll_future_frog(pendulum.now("UTC"), interval, fuzzy)
+        await bot.scheduler.update_run_at(task_id, run_at)
+
+
+class FrogCatchView(discord.ui.View):
+    """Capture button on a spawned frog; the first click wins.
+
+    The view itself never times out — the frog message's lifetime is owned
+    by :func:`spawn_and_wait`, which deletes the message the moment the
+    frog is caught or once it gets bored.
+    """
+
+    def __init__(self, bot) -> None:
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.captured = False
+        self._spawned_at = time.time()
+
+    @discord.ui.button(
+        # label="Catch",
+        style=discord.ButtonStyle.success,
+        emoji=FROG_NET_EMOJI,
+    )
+    async def catch(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if self.captured:
+            await interaction.response.send_message(
+                "This frog was already caught.", ephemeral=True
+            )
+            return
+        self.captured = True
+        await interaction.response.defer()
+        self.stop()  # unblocks spawn_and_wait, which removes the message
+
+        uid = interaction.user.id
+        now = pendulum.now("UTC")
+        await frog_db.add_capture_log(
+            self.bot.db,
+            uid,
+            now,
+            waited_for=time.time() - self._spawned_at,
+            frog_type=FrogTypeEnum.NORMAL,
+        )
+        await frog_db.modify_frog(
+            self.bot.db, uid, modify=1, frog_type=FrogTypeEnum.NORMAL
+        )
+        await frog_db.modify_capture(self.bot.db, uid, modify=1)
+
+        # send the capture message (user-configured template)
+        msg_json = await frog_db.get_message(self.bot.settings) or {}
+        frog_cnt_total = await frog_db.get_frogs(self.bot.db, uid)
+        seasonal = await frog_db.seasonal_captures(
+            self.bot.db, uid, now.year, (now.month - 1) // 3
+        )
+        utils.deep_map(
+            msg_json,
+            formatter,
+            member=interaction.user,
+            frog_cnt_old=frog_cnt_total - 1,
+            frog_cnt_new=frog_cnt_total,
+            seasonal_cap_old=seasonal - 1,
+            seasonal_cap_new=seasonal,
+        )
+        content, embed, embeds = templates.prepare(msg_json)
+        if embed:
+            msg = await interaction.followup.send(
+                content=content, embed=embed
+            )
+        elif embeds:
+            msg = await interaction.followup.send(
+                content=content, embeds=embeds
+            )
+        else:
+            msg = await interaction.followup.send(content=content or "_ _")
+        # followup.send is a webhook (no delete_after kwarg) — delete manually
+        await msg.delete(delay=7)
 
 
 async def spawn_and_wait(
-	bot,
-	persist: int,
-	*,
-	cid: int,
-	message: discord.Message | None = None,
+    bot,
+    persist: int,
+    interaction: discord.Interaction | None = None,
+    *,
+    cid: int,
 ) -> bool:
-	"""Spawn a frog and wait for someone to capture it.
+    """Spawn a frog and wait for someone to capture it.
 
-	When ``message`` is given it is used as the frog (its reactions are the
-	capture target); otherwise a new frog message is sent to ``cid``.
-	"""
-	if message is None:
-		channel = bot.get_channel(cid)
-		if channel is None:
-			_log.warning("frog channel %s not found; skipping", cid)
-			return False
-		message = await channel.send(FROG_EMOJI)
-	else:
-		channel = message.channel
+    The frog is a fresh message (frog emoji + Catch button) sent to ``cid``
+    in a single payload. It lives ``persist`` seconds: pressing the button
+    catches it and the message is deleted on the spot, otherwise the frog
+    gets bored and the message is removed. Returns True if it was caught.
+    """
+    channel = bot.get_channel(cid)
+    if channel is None:
+        _log.warning("frog channel %s not found; skipping", cid)
+        return False
 
-	msg = message
-	timer_start = time.time()
-	await msg.add_reaction(FROG_NET_EMOJI)
+    view = FrogCatchView(bot)
+    if interaction:
+        await interaction.response.send_message(FROG_EMOJI, view=view)
+        # send_message returns an InteractionCallbackResponse (no .delete);
+        # fetch the actual message so catch/boredom can remove it.
+        message = await interaction.original_response()
+    else:
+        message = await channel.send(FROG_EMOJI, view=view)
 
-	def check(reaction: discord.Reaction, user: discord.User) -> bool:
-		return (
-			reaction.message.id == msg.id
-			and str(reaction.emoji) == FROG_NET_EMOJI
-			and not user.bot
-		)
+    try:
+        await asyncio.wait_for(view.wait(), timeout=persist)
+    except asyncio.TimeoutError:
+        pass  # bored
 
-	try:
-		_, catcher = await bot.wait_for(
-			"reaction_add", timeout=persist, check=check
-		)
-	except TimeoutError:
-		return False
-
-	timer_diff = time.time() - timer_start
-	now = pendulum.now("UTC")
-	uid = catcher.id
-
-	await frog_db.add_capture_log(
-		bot.db,
-		uid,
-		now,
-		waited_for=timer_diff,
-		frog_type=FrogTypeEnum.NORMAL,
-	)
-	await frog_db.modify_frog(
-		bot.db, uid, modify=1, frog_type=FrogTypeEnum.NORMAL
-	)
-	await frog_db.modify_capture(bot.db, uid, modify=1)
-
-	# send the capture message (user-configured template)
-	msg_json = await frog_db.get_message(bot.settings) or {}
-	frog_cnt_total = await frog_db.get_frogs(bot.db, uid)
-	seasonal = await frog_db.seasonal_captures(
-		bot.db, uid, now.year, (now.month - 1) // 3
-	)
-
-	utils.deep_map(
-		msg_json,
-		formatter,
-		member=catcher,
-		frog_cnt_old=frog_cnt_total - 1,
-		frog_cnt_new=frog_cnt_total,
-		seasonal_cap_old=seasonal - 1,
-		seasonal_cap_new=seasonal,
-	)
-	content, embed, embeds = templates.prepare(msg_json)
-
-	msg_caught = await channel.send("_ _", delete_after=7)
-	if embed:
-		await msg_caught.edit(content=content, embed=embed)
-	elif embeds:
-		await msg_caught.edit(content=content, embeds=embeds)
-
-	try:
-		await msg.delete()
-	except discord.NotFound:
-		pass
-	return True
+    # caught or bored — either way the frog message goes away
+    try:
+        await message.delete()
+    except discord.NotFound:
+        pass
+    return view.captured
 
 
 def formatter(
-	s: str,
-	*,
-	member: discord.Member,
-	frog_cnt_old: int | None = None,
-	frog_cnt_new: int | None = None,
-	seasonal_cap_old: int | None = None,
-	seasonal_cap_new: int | None = None,
+    s: str,
+    *,
+    member: discord.Member,
+    frog_cnt_old: int | None = None,
+    frog_cnt_new: int | None = None,
+    seasonal_cap_old: int | None = None,
+    seasonal_cap_new: int | None = None,
 ) -> str:
-	"""Placeholders: {avatar} {name} {mention} {id} {frog_cnt_old}
-	{frog_cnt_new} {seasonal_cap_old} {seasonal_cap_new}"""
-	return s.format(
-		avatar=member.display_avatar.url,
-		name=member.display_name,
-		mention=member.mention,
-		id=member.id,
-		frog_cnt_old=frog_cnt_old,
-		frog_cnt_new=frog_cnt_new,
-		seasonal_cap_old=seasonal_cap_old,
-		seasonal_cap_new=seasonal_cap_new,
-	)
+    """Placeholders: {avatar} {name} {mention} {id} {frog_cnt_old}
+    {frog_cnt_new} {seasonal_cap_old} {seasonal_cap_new}"""
+    return s.format(
+        avatar=member.display_avatar.url,
+        name=member.display_name,
+        mention=member.mention,
+        id=member.id,
+        frog_cnt_old=frog_cnt_old,
+        frog_cnt_new=frog_cnt_new,
+        seasonal_cap_old=seasonal_cap_old,
+        seasonal_cap_new=seasonal_cap_new,
+    )
 
 
 async def reset_frog_tasks(bot) -> None:
-	"""Clear all frog tasks and re-queue from the spawn settings."""
-	_log.info("resetting frog spawn tasks...")
-	await bot.scheduler.drop_tag("frog")
-	if not await frog_db.get_enabled(bot.settings):
-		return
-	await queue_frog_spawns(bot)
+    """Clear all frog tasks and re-queue from the spawn settings."""
+    _log.info("resetting frog spawn tasks...")
+    await bot.scheduler.drop_tag("frog")
+    if not await frog_db.get_enabled(bot.settings):
+        return
+    await queue_frog_spawns(bot)
 
 
 async def queue_frog_spawns(bot) -> None:
-	"""Insert one task per configured spawn channel."""
-	for spawn in await frog_db.get_spawns(bot.db):
-		payload = dict(spawn)
-		run_at = roll_future_frog(
-			pendulum.now("UTC"), payload["interval"], payload["fuzzy"]
-		)
-		await bot.scheduler.add("frog", run_at, payload)
+    """Insert one task per configured spawn channel."""
+    for spawn in await frog_db.get_spawns(bot.db):
+        payload = dict(spawn)
+        run_at = roll_future_frog(
+            pendulum.now("UTC"), payload["interval"], payload["fuzzy"]
+        )
+        await bot.scheduler.add("frog", run_at, payload)

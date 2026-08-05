@@ -1,0 +1,61 @@
+# Backlog
+
+Deferred work, parked by request ("we will work on it later when I request it").
+Pick these up when the owner asks; each item links to the discussion that
+motivated it.
+
+## 1. Plugin dependency policy — `depends_on`
+
+Add `depends_on: list[str]` to the `Plugin` base (`cazzubot/plugin.py`). The
+loader (`cazzubot/bot.py`) should:
+
+- validate declared deps exist and load them first,
+- fail fast with a clear error (not a confusing `ModuleNotFoundError`),
+- respect the sandbox allowlist,
+- detect dependency cycles.
+
+## 2. `bot.get_plugin(name)` + optional-dependency degrade
+
+Public accessor for loaded plugins (today callers reach into
+`bot._plugin_by_name`, e.g. `plugins/dev/__init__.py`). Plus a degrade pattern
+for optional dependencies: if a dependency is unloaded/hotswapped, dependents
+skip their call instead of crashing.
+
+## 3. Core event bus — `bot.events`
+
+`emit`/`on`/`off` for bot-specific events (`member_leveled_up`,
+`frog_captured`, …) so producers never know their consumers. Design decision
+already made: the bus lives in **core** (`cazzubot/events.py`) — a generic
+capability, not feature logic. Caveat to respect: events are less traceable
+than direct calls and ordering isn't guaranteed — reach for them only when the
+producer shouldn't know the consumer exists.
+
+## 4. Event-bus consumer demo
+
+One real consumer (e.g. a "level-up milestone" channel) to validate the bus
+design before wider adoption.
+
+## 5. Levels coupling cleanup
+
+Move `handle_level_up`/`formatter` from `plugins/levels/cog.py` to
+`plugins/levels/logic.py` (mirroring `plugins/ranks/logic.py`) so the
+`experience` plugin imports service→service, not cog→cog. Prerequisite for #1
+to be coherent.
+
+## 6. Register persistent poll button view on boot
+
+`plugins/poll/__init__.py`'s `PollView` is `timeout=None` but is never
+re-registered via `bot.add_view`, so poll buttons die on bot restart (unlike
+the counter button, which does register in `CounterPlugin.on_load`). Fix:
+collect poll message ids (e.g. a `poll` table query in `PollPlugin.on_load`)
+and `bot.add_view(PollView(bot, poll_id), message_id=mid)` for each, mirroring
+the counter plugin.
+
+---
+
+Context: these came out of the architecture discussion about three-tier
+layering, plugin-to-plugin coupling (direct import vs data contract vs event
+bus), and the levels kernel naming collision (`cazzubot/levels.py` vs
+`plugins/levels/`). See docs/ARCHITECTURE.md and docs/PLUGINS.md. Item #6 was
+parked during the reaction→button conversion (2026) to keep that change
+focused.
