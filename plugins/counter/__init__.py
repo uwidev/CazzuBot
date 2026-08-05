@@ -158,7 +158,7 @@ class CounterCog(commands.Cog):
         embed = utils.prepare_embed(
             "Number of times people have touched the baka button", "> 0"
         )
-        embed.set_thumbnail(url=BAKAPPLE)
+        embed.set_thumbnail(url=BORED)
         embed.set_footer(text=NO_BAKAS_TEXT, icon_url=FROG)
         msg = await ctx.send(embed=embed, view=CounterView(self.bot))
         await self.bot.db.execute(
