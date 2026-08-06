@@ -143,9 +143,7 @@ class RanksCog(commands.Cog):
                 )
             mode = parsed
 
-        decoded = await templates.verify(
-            ctx, message, formatter, member=ctx.author
-        )
+        decoded = templates.verify(message, formatter, member=ctx.author)
         await ranks_db.set_message(self.bot.settings, decoded, mode)
         await window_success(ctx, "Rank message set")
 

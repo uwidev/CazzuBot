@@ -232,8 +232,8 @@ class FrogsCog(commands.Cog):
         self, ctx: commands.Context[CazzuBot], *, message: str
     ) -> None:
         """Set the capture message JSON."""
-        decoded = await templates.verify(
-            ctx, message, factory.formatter, member=ctx.author
+        decoded = templates.verify(
+            message, factory.formatter, member=ctx.author
         )
         await frog_db.set_message(self.bot.settings, decoded)
         await window_success(ctx, "Capture message set")

@@ -80,16 +80,16 @@ MESSAGE_SCHEMA: dict[str, Any] = {
 
 
 def verify(
-    _ctx: object,
     raw: str,
     formatter: Callable[..., str] | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Parse + validate user-supplied message JSON.
 
-    Applies the formatter to a copy first so placeholder substitution is
-    dry-run against the actual member. Raises ``commands.BadArgument`` on any
-    parse/validation failure.
+    Pure CPU work (``json.loads`` + jsonschema validation) — deliberately
+    sync; callers must not ``await`` it. Applies the formatter to a copy
+    first so placeholder substitution is dry-run against the actual member.
+    Raises ``commands.BadArgument`` on any parse/validation failure.
     """
     try:
         decoded = json.loads(raw)

@@ -73,14 +73,25 @@ Now we have a history of people who have pressed the button. From this, we can s
 
 We can also get the total count for the counter just by a sum call on the mid.
 
-## templates.verify is sync but callers await it
+## Basedpyright cleanup follow-ups (review nits)
 
-`cazzubot/templates.py:verify` is a plain `def` returning `dict`, yet all four
-call sites (`plugins/{levels,frogs,ranks}/cog.py`, `plugins/welcome/__init__.py`)
-do `decoded = await templates.verify(...)`. That raises
-`TypeError: object dict can't be used in 'await' expression` at runtime — a
-latent bug caught by basedpyright (`"dict[Unknown, Unknown]" is not awaitable`).
-Fix: make `verify` `async` (call sites already await it) and change its return
-annotation to `dict[str, Any]`. Parked by request during the basedpyright
-cleanup (2026); the four `reportGeneralTypeIssues` diagnostics remain until
-fixed.
+Non-blocking findings from the pre-commit review of the typing refactor
+(`dfe217e`); parked here so they aren't lost.
+
+1. `register_inktober` rejects threads — `plugins/fun/__init__.py` narrows
+   the target with `isinstance(target, discord.abc.GuildChannel)`, but a
+   `Thread` is a `Messageable`, not a `GuildChannel`; a thread-based
+   inktober channel that previously worked now gets "Inktober needs a
+   server channel". Include `discord.Thread` or narrow to
+   `discord.abc.Messageable` instead.
+2. Silent no-ops when `ctx.guild is None` — `unmute`/`unban`
+   (`plugins/mod/__init__.py`) and `rank_clean` (`plugins/ranks/cog.py`)
+   now `return` without feedback (previously a loud AttributeError). Send
+   a short error message for friendliness.
+3. `story_write` dropped its `ctx.message is not None` guard
+   (`plugins/fun/__init__.py`) — safe in practice (interaction is None ⟺
+   prefix command ⟹ message exists) but worth a comment or keeping the
+   guard.
+4. Redundant `content if content is not None else MISSING` in
+   `plugins/frogs/factory.py` — discord.py treats `None` content as "not
+   provided"; the dance is harmless but noisy, simplify to `content=content`.

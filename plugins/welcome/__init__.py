@@ -163,9 +163,7 @@ class WelcomeCog(commands.Cog):
         Use https://message.style/ or discohook.org to build one; placeholders
         {avatar} {name} {mention} {id} are supported.
         """
-        decoded = await templates.verify(
-            ctx, message, formatter, member=ctx.author
-        )
+        decoded = templates.verify(message, formatter, member=ctx.author)
         await self.bot.settings.set("welcome.message", decoded)
         await window_success(ctx, "Welcome message set")
 

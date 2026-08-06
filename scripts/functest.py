@@ -197,20 +197,17 @@ async def main() -> None:
         mention = "<@123>"
         id = 123
 
-    class FakeCtx:
-        author = FakeMember()
-
     msg: dict[str, Any] = {
         "content": "hi {mention}",
         "embed": {"title": "t", "description": "{name}", "fields": []},
     }
     valid = templates.verify(
-        FakeCtx(), json.dumps(msg), formatter, member=FakeMember()
+        json.dumps(msg), formatter, member=FakeMember()
     )
     assert valid["embed"]["description"] == "{name}"
     bad = '{"attachments": [1]}'
     try:
-        templates.verify(FakeCtx(), bad)
+        templates.verify(bad)
         raise AssertionError("should have rejected attachments")
     except Exception:
         pass
