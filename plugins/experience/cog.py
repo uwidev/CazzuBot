@@ -203,12 +203,12 @@ class ExperienceCog(commands.Cog):
             )
             return
 
-        cdr = member_db["cdr"]
+        cdr = member_db.cdr
         if cdr and now < parse_iso8601(cdr):
             return  # cooldown not yet expired
 
         # compute gains
-        msg_cnt = member_db["msg_cnt"] + 1
+        msg_cnt = member_db.msg_cnt + 1
         exp_gain = _from_msg(msg_cnt)
         year, season = now.year, (now.month - 1) // 3
 
@@ -217,7 +217,7 @@ class ExperienceCog(commands.Cog):
         )
         seasonal = OldNew(seasonal_old, seasonal_old + exp_gain)
 
-        lifetime_old = member_db["lifetime"]
+        lifetime_old = member_db.lifetime
         lifetime = OldNew(lifetime_old, lifetime_old + exp_gain)
 
         seasonal_level = OldNew(

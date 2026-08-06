@@ -9,6 +9,7 @@ every existing poll message on boot via ``on_load`` + ``bot.add_view``.
 
 import logging
 import random
+from dataclasses import dataclass
 from typing import Any
 
 import discord
@@ -54,6 +55,34 @@ EMOJI_CLOSED = "https://files.catbox.moe/b67ajq.webp"
 EMOJI_OPEN = "https://files.catbox.moe/xd4h7v.webp"
 
 
+@dataclass(slots=True)
+class Poll:
+    """One ``poll`` row (``mid`` = the message id hosting the vote button)."""
+
+    id: int
+    title: str
+    description: str
+    max_vote: int
+    mid: int | None
+    open: int
+
+
+@dataclass(slots=True)
+class PollResult:
+    """Aggregate vote counts per poll item (``iid`` → ``count``)."""
+
+    iid: int
+    count: int
+
+
+@dataclass(slots=True)
+class PollRow:
+    """Narrow rows used for view re-attachment (``id`` + ``mid``)."""
+
+    id: int
+    mid: int | None
+
+
 # -- db ---------------------------------------------------------------------
 
 
@@ -71,9 +100,10 @@ async def add_poll(
     )
 
 
-async def get_poll(db: Database, pid: int) -> dict[str, Any] | None:
-    row = await db.fetchone("SELECT * FROM poll WHERE id = ?", pid)
-    return {k: row[k] for k in row.keys()} if row else None
+async def get_poll(db: Database, pid: int) -> Poll | None:
+    return await db.fetch_model(
+        Poll, "SELECT * FROM poll WHERE id = ?", pid
+    )
 
 
 async def set_mid(db: Database, pid: int, mid: int) -> None:
@@ -92,11 +122,12 @@ async def add_items_dummy(db: Database, pid: int, n: int) -> None:
     )
 
 
-async def get_items(db: Database, pid: int) -> list[dict[str, Any]]:
+async def get_items(db: Database, pid: int) -> list[int]:
+    """Poll item ids, ordered (used for vote validation ranges)."""
     rows = await db.fetchall(
         "SELECT id FROM poll_item WHERE pid = ? ORDER BY id", pid
     )
-    return [{k: r[k] for k in r.keys()} for r in rows]
+    return [int(r[0]) for r in rows]
 
 
 async def add_votes(
@@ -118,8 +149,9 @@ async def drop_user_on_poll(db: Database, pid: int, uid: int) -> None:
     )
 
 
-async def get_results(db: Database, pid: int) -> list[dict[str, Any]]:
-    rows = await db.fetchall(
+async def get_results(db: Database, pid: int) -> list[PollResult]:
+    return await db.fetch_models(
+        PollResult,
         """
 		SELECT vote.iid, SUM(vote.count) AS count
 		FROM poll_vote AS vote
@@ -129,7 +161,6 @@ async def get_results(db: Database, pid: int) -> list[dict[str, Any]]:
 		""",
         pid,
     )
-    return [{k: r[k] for k in r.keys()} for r in rows]
 
 
 # -- cog --------------------------------------------------------------------
@@ -214,10 +245,10 @@ class PollCog(commands.Cog):
             )
             return
 
-        embed = utils.prepare_embed(poll["title"], poll["description"])
+        embed = utils.prepare_embed(poll.title, poll.description)
         embed.set_footer(
             text=f"Poll ID#{poll_id}",
-            icon_url=EMOJI_OPEN if poll["open"] else EMOJI_CLOSED,
+            icon_url=EMOJI_OPEN if poll.open else EMOJI_CLOSED,
         )
 
         view = PollView(self.bot, poll_id)
@@ -261,9 +292,9 @@ class PollCog(commands.Cog):
             )
             return
 
-        total = sum(v["count"] for v in votes)
+        total = sum(v.count for v in votes)
         lines = "\n".join(
-            f"{v['iid']:<8}{v['count']:>8}{v['count'] / total:>10.2%}"
+            f"{v.iid:<8}{v.count:>8}{v.count / total:>10.2%}"
             for v in votes[:10]
         )
         await interaction.response.send_message(
@@ -309,14 +340,14 @@ class PollModal(discord.ui.Modal, title="Vote on the poll"):
     def __init__(
         self,
         bot: CazzuBot,
-        poll: dict[str, Any],
-        items: list[dict[str, Any]],
+        poll: Poll,
+        items: list[int],
     ) -> None:
         super().__init__(timeout=300)
         self.bot = bot
         self.poll = poll
         self.items = items
-        self.max_vote = poll["max_vote"]
+        self.max_vote = poll.max_vote
         self.upper = len(items)
 
         self.rules: discord.ui.TextDisplay[Any] = discord.ui.TextDisplay(
@@ -355,7 +386,7 @@ class PollModal(discord.ui.Modal, title="Vote on the poll"):
                 )
                 return
 
-            pid = self.poll["id"]
+            pid = self.poll.id
             uid = interaction.user.id
             await drop_user_on_poll(self.bot.db, pid, uid)
             await add_votes(self.bot.db, pid, votes, uid)
@@ -405,11 +436,12 @@ class PollPlugin(Plugin):
     @override
     async def on_load(self, bot: CazzuBot) -> None:
         """Re-attach the vote button to every existing poll message."""
-        rows = await bot.db.fetchall(
-            "SELECT id, mid FROM poll WHERE mid IS NOT NULL"
+        rows = await bot.db.fetch_models(
+            PollRow, "SELECT id, mid FROM poll WHERE mid IS NOT NULL"
         )
         for row in rows:
-            bot.add_view(PollView(bot, row["id"]), message_id=row["mid"])
+            assert row.mid is not None  # WHERE mid IS NOT NULL
+            bot.add_view(PollView(bot, row.id), message_id=row.mid)
 
 
 plugin = PollPlugin()

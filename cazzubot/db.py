@@ -11,9 +11,11 @@ import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import aiosqlite
+
+_T = TypeVar("_T")
 
 _log = logging.getLogger(__name__)
 
@@ -88,6 +90,20 @@ class Database:
         row = await self.fetchone(sql, *args)
         return row[0] if row else None
 
+    async def fetch_model(
+        self, model: type[_T], sql: str, *args: Any
+    ) -> _T | None:
+        """Fetch one row and build a dataclass model from it (see row_to)."""
+        row = await self.fetchone(sql, *args)
+        return row_to(model, row) if row is not None else None
+
+    async def fetch_models(
+        self, model: type[_T], sql: str, *args: Any
+    ) -> list[_T]:
+        """Fetch rows and build dataclass models from them (see row_to)."""
+        rows = await self.fetchall(sql, *args)
+        return rows_to(model, rows)
+
     async def execute_lastrowid(self, sql: str, *args: Any) -> int | None:
         """Run an INSERT and return the new rowid."""
         cur = await self.conn.execute(sql, args)
@@ -120,6 +136,21 @@ class Database:
 
 
 # -- helpers for (de)serializing values ---------------------------------
+
+
+def row_to(model: type[_T], row: aiosqlite.Row) -> _T:
+    """Build a dataclass from a row; column names must match field names.
+
+    The constructor is the honest boundary between sqlite's dynamic rows and
+    static types: a column/field mismatch raises here instead of returning a
+    wrong-typed dict.
+    """
+    return model(**{k: row[k] for k in row.keys()})
+
+
+def rows_to(model: type[_T], rows: Sequence[aiosqlite.Row]) -> list[_T]:
+    """Build dataclasses from rows (see :func:`row_to`)."""
+    return [row_to(model, r) for r in rows]
 
 
 def dump_json(value: Any) -> str:

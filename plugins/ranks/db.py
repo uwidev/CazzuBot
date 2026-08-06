@@ -6,6 +6,7 @@ generic settings store under ``rank.{mode}.`` keys.
 """
 
 import logging
+from dataclasses import dataclass
 
 import pendulum
 
@@ -27,6 +28,15 @@ SCHEMA = [
 	)
 	""",
 ]
+
+
+@dataclass(slots=True)
+class RankThreshold:
+    """One ``rank_threshold`` row for a window."""
+
+    rid: int
+    threshold: int
+    mode: str
 
 
 def _key(mode: WindowEnum, field: str) -> str:
@@ -101,8 +111,9 @@ async def add(
 
 async def get(
     db: Database, *, mode: WindowEnum = WindowEnum.SEASONAL
-) -> list[dict[str, Any]]:
-    rows = await db.fetchall(
+) -> list[RankThreshold]:
+    return await db.fetch_models(
+        RankThreshold,
         """
 		SELECT rid, threshold, mode
 		FROM rank_threshold
@@ -111,7 +122,6 @@ async def get(
 		""",
         mode.value,
     )
-    return [{k: r[k] for k in r.keys()} for r in rows]
 
 
 async def delete(db: Database, arg: int, mode: WindowEnum) -> None:
@@ -160,21 +170,23 @@ async def of_member(
 
         level = await seasonal_exp(db, uid, now.year, (now.month - 1) // 3)
     else:
-        row = await db.fetchone(
-            "SELECT lifetime FROM member_exp WHERE uid = ?", uid
+        level = int(
+            await db.fetchval(
+                "SELECT lifetime FROM member_exp WHERE uid = ?", uid
+            )
+            or 0
         )
-        level = row["lifetime"] if row else 0
 
     return calc_min_rank(thresholds, level)[0]
 
 
 def calc_min_rank(
-    thresholds: list[dict[str, Any]], level: int
+    thresholds: list[RankThreshold], level: int
 ) -> tuple[int | None, int | None]:
     """Naive scan: (rid, index) of the highest threshold <= level."""
-    if not thresholds or level < thresholds[0]["threshold"]:
+    if not thresholds or level < thresholds[0].threshold:
         return None, None
     for i in range(1, len(thresholds)):
-        if level < thresholds[i]["threshold"]:
-            return thresholds[i - 1]["rid"], i - 1
-    return thresholds[-1]["rid"], len(thresholds) - 1
+        if level < thresholds[i].threshold:
+            return thresholds[i - 1].rid, i - 1
+    return thresholds[-1].rid, len(thresholds) - 1

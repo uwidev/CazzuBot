@@ -64,7 +64,7 @@ async def main() -> None:
     await exp_db.add_exp_log(bot.db, uid, 30, now.add(seconds=1))
     await exp_db.add_exp_log(bot.db, 777, 100, now)
     member = await exp_db.get_member_exp(bot.db, uid)
-    assert member is not None and member["lifetime"] == 0
+    assert member is not None and member.lifetime == 0
     seasonal = await exp_db.seasonal_exp(
         bot.db, uid, now.year, (now.month - 1) // 3
     )
@@ -75,7 +75,7 @@ async def main() -> None:
     assert ranked[0] == (1, 777, 100) and ranked[1][0] == 2, ranked
     await exp_db.sync_with_exp_logs(bot.db)
     member = await exp_db.get_member_exp(bot.db, uid)
-    assert member is not None and member["lifetime"] == 80
+    assert member is not None and member.lifetime == 80
     await exp_db.update_member_exp(
         bot.db,
         uid,
@@ -84,7 +84,7 @@ async def main() -> None:
         cdr=now.add(seconds=15),
     )
     member = await exp_db.get_member_exp(bot.db, uid)
-    assert member is not None and member["msg_cnt"] == 5
+    assert member is not None and member.msg_cnt == 5
     ok("exp award/log/sync/ranked roundtrip")
 
     # -- level math ---------------------------------------------------------
@@ -100,7 +100,7 @@ async def main() -> None:
     await ranks_db.add(bot.db, 222, 10)
     await ranks_db.add(bot.db, 333, 20)
     thresholds = await ranks_db.get(bot.db)
-    assert [t["threshold"] for t in thresholds] == [5, 10, 20], thresholds
+    assert [t.threshold for t in thresholds] == [5, 10, 20], thresholds
     rid, idx = ranks_db.calc_min_rank(thresholds, 12)
     assert rid == 222 and idx == 1, (rid, idx)
     rid_none, _ = ranks_db.calc_min_rank(thresholds, 2)
@@ -160,6 +160,47 @@ async def main() -> None:
     assert await frog_db.get_frogs(bot.db, uid) == 0  # normal drained
     assert await frog_db.get_frogs(bot.db, uid, FrogTypeEnum.FROZEN) == 5
     ok("frog inventory / freeze / capture log")
+
+    # -- typed row models -------------------------------------------------
+    # Column names must match dataclass fields; drift raises here.
+    await frog_db.upsert_spawn(bot.db, 123, 300, 60, 0.2)
+    spawns = await frog_db.get_spawns(bot.db)
+    assert len(spawns) == 1, spawns
+    assert spawns[0].interval == 300 and spawns[0].fuzzy == 0.2, spawns
+
+    from plugins.poll import (
+        Poll,
+        PollResult,
+        PollRow,
+        add_items_dummy,
+        add_poll,
+        add_votes,
+        get_items,
+        get_poll,
+        get_results,
+    )
+
+    pid = await add_poll(bot.db, "title", "desc", 2)
+    assert pid is not None
+    poll = await get_poll(bot.db, pid)
+    assert (
+        poll is not None
+        and poll.title == "title"
+        and poll.max_vote == 2
+        and isinstance(poll, Poll)
+    )
+    await add_items_dummy(bot.db, pid, 3)
+    items = await get_items(bot.db, pid)
+    assert items == [1, 2, 3], items
+    await add_votes(bot.db, pid, [1, 2], uid)
+    results = await get_results(bot.db, pid)
+    assert len(results) == 2, results
+    assert all(isinstance(r, PollResult) and r.count == 1 for r in results)
+    rows = await bot.db.fetch_models(
+        PollRow, "SELECT id, mid FROM poll WHERE mid IS NOT NULL"
+    )
+    assert rows == []
+    ok("typed row models construct from real rows (spawn + poll)")
 
     # -- modlog -------------------------------------------------------------
     from plugins.mod import add_log
@@ -260,7 +301,7 @@ async def main() -> None:
     await bot2.setup_hook()
     try:
         member = await exp_db.get_member_exp(bot2.db, uid)
-        assert member is not None and member["lifetime"] == 80
+        assert member is not None and member.lifetime == 80
         assert (
             await frog_db.get_frogs(bot2.db, uid, FrogTypeEnum.FROZEN)
         ) == 5

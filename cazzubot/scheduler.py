@@ -9,8 +9,10 @@ Replaces v1's per-cog ``@tasks.loop(seconds=1)`` polling of the same table.
 
 import json
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+import aiosqlite
 import pendulum
 from discord.ext import tasks
 
@@ -39,6 +41,26 @@ SCHEMA = _SCHEMA
 
 def _now() -> str:
     return pendulum.now("UTC").isoformat()
+
+
+@dataclass(slots=True)
+class Task:
+    """One ``tasks`` row with the JSON ``payload`` already parsed."""
+
+    id: int
+    tag: str
+    run_at: str
+    payload: dict[str, Any]
+
+    @classmethod
+    def from_row(cls, row: aiosqlite.Row) -> Task:
+        """Parse a raw task row (payload column is JSON text)."""
+        return cls(
+            id=row["id"],
+            tag=row["tag"],
+            run_at=row["run_at"],
+            payload=json.loads(row["payload"]),
+        )
 
 
 class Scheduler:
@@ -89,17 +111,17 @@ class Scheduler:
 
     async def get(
         self, tag: str, payload: dict[str, Any] | None = None
-    ) -> list[dict[str, Any]]:
+    ) -> list[Task]:
         """Fetch task rows; payload filters as a JSON-superset match."""
         rows = await self.bot.db.fetchall(
             "SELECT * FROM tasks WHERE tag = ?", tag
         )
         payload = payload or {}
-        out: list[dict[str, Any]] = []
+        out: list[Task] = []
         for row in rows:
-            row_payload: dict[str, Any] = json.loads(row["payload"])
-            if all(row_payload.get(k) == v for k, v in payload.items()):
-                out.append({key: row[key] for key in row.keys()})
+            task = Task.from_row(row)
+            if all(task.payload.get(k) == v for k, v in payload.items()):
+                out.append(task)
         return out
 
     async def drop(self, task_id: int) -> None:
@@ -129,9 +151,10 @@ class Scheduler:
             "SELECT * FROM tasks WHERE run_at <= ?", now
         )
         for row in rows:
-            payload: dict[str, Any] = json.loads(row["payload"])
-            tag: str = row["tag"]
-            task_id: int = row["id"]
+            task = Task.from_row(row)
+            payload = task.payload
+            tag = task.tag
+            task_id = task.id
             handler = self.handlers.get(tag)
             if handler is None:
                 _log.warning(

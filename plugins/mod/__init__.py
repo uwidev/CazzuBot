@@ -289,12 +289,12 @@ class ModCog(commands.Cog):
         if role and role in member.roles:
             await member.remove_roles(role, reason="Unmuted.")
         for task in await self.bot.scheduler.get("modlog"):
-            payload = task["payload"]
+            payload = task.payload
             if (
                 payload.get("uid") == member.id
                 and payload.get("log_type") == "mute"
             ):
-                await self.bot.scheduler.drop(task["id"])
+                await self.bot.scheduler.drop(task.id)
         await window_info(ctx, f"Unmuted {member}")
 
     @commands.hybrid_command()
@@ -308,12 +308,12 @@ class ModCog(commands.Cog):
             return
         await guild.unban(user, reason="Unbanned.")
         for task in await self.bot.scheduler.get("modlog"):
-            payload = task["payload"]
+            payload = task.payload
             if (
                 payload.get("uid") == user.id
                 and payload.get("log_type") == "tempban"
             ):
-                await self.bot.scheduler.drop(task["id"])
+                await self.bot.scheduler.drop(task.id)
         await window_info(ctx, f"Unbanned {user}")
 
     @commands.hybrid_group()

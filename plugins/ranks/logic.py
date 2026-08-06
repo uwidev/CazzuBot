@@ -1,7 +1,6 @@
 """Ranks plugin — shared rank-change logic (role integrity + rank-up messages)."""
 
 import logging
-from typing import Any
 
 import discord
 
@@ -11,6 +10,7 @@ from cazzubot.models import WindowEnum
 from cazzubot.utils import OldNew
 
 from . import db as ranks_db
+from .db import RankThreshold
 
 _log = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def formatter(
 
 
 def rank_difference(
-    level: OldNew, thresholds: list[dict[str, Any]]
+    level: OldNew, thresholds: list[RankThreshold]
 ) -> tuple[OldNew, OldNew]:
     """(rid_old->rid_new, index_old->index_new) across the thresholds."""
     rid_new, idx_new = ranks_db.calc_min_rank(thresholds, level.new)
@@ -123,7 +123,7 @@ async def _determine_rank_changes(
     if not isinstance(member, discord.Member):
         return [], []
     rid, ind = rank_difference(level, thresholds)
-    ranks = [guild.get_role(row["rid"]) for row in thresholds]
+    ranks = [guild.get_role(row.rid) for row in thresholds]
 
     # rank-up notification
     if notify and rid.new is not None and rid.new != rid.old:

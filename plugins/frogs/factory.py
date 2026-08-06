@@ -9,6 +9,7 @@ import asyncio
 import logging
 import random
 import time
+from dataclasses import asdict
 from typing import Any
 
 import discord
@@ -215,8 +216,8 @@ async def reset_frog_tasks(bot: CazzuBot) -> None:
 async def queue_frog_spawns(bot: CazzuBot) -> None:
     """Insert one task per configured spawn channel."""
     for spawn in await frog_db.get_spawns(bot.db):
-        payload = dict(spawn)
+        payload = asdict(spawn)
         run_at = roll_future_frog(
-            pendulum.now("UTC"), payload["interval"], payload["fuzzy"]
+            pendulum.now("UTC"), spawn.interval, spawn.fuzzy
         )
         await bot.scheduler.add("frog", run_at, payload)

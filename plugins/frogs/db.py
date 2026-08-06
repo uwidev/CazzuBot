@@ -6,6 +6,7 @@ Single-guild port of v1's ``ext/frog.py`` + ``src/frog_factory.py`` +
 """
 
 import logging
+from dataclasses import dataclass
 
 import pendulum
 
@@ -47,6 +48,16 @@ SCHEMA = [
 
 MESSAGE_KEY = "frog.message"
 ENABLED_KEY = "frog.enabled"
+
+
+@dataclass(slots=True)
+class Spawn:
+    """One ``frog_spawn`` row: a channel's spawn cadence config."""
+
+    cid: int
+    interval: int
+    persist: int
+    fuzzy: float
 
 
 # -- settings --------------------------------------------------------------
@@ -273,8 +284,7 @@ async def clear_spawns(db: Database) -> None:
     await db.execute("DELETE FROM frog_spawn")
 
 
-async def get_spawns(db: Database) -> list[dict[str, Any]]:
-    rows = await db.fetchall(
-        "SELECT cid, interval, persist, fuzzy FROM frog_spawn"
+async def get_spawns(db: Database) -> list[Spawn]:
+    return await db.fetch_models(
+        Spawn, "SELECT cid, interval, persist, fuzzy FROM frog_spawn"
     )
-    return [{k: r[k] for k in r.keys()} for r in rows]

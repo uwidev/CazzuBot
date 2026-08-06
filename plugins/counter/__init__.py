@@ -89,7 +89,7 @@ class CounterView(discord.ui.View):
     async def _schedule_expiry(self, mid: int, cid: int) -> None:
         """Reset the 2h footer timer, replacing any pending wipe."""
         for task in await self.bot.scheduler.get("counter", {"mid": mid}):
-            await self.bot.scheduler.drop(task["id"])
+            await self.bot.scheduler.drop(task.id)
         await self.bot.scheduler.add(
             "counter",
             pendulum.now("UTC").add(hours=2),

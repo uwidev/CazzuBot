@@ -6,6 +6,7 @@ seasonal totals are summed from the log; lifetime is precomputed on the member.
 """
 
 import logging
+from dataclasses import dataclass
 
 import pendulum
 
@@ -38,9 +39,20 @@ SCHEMA = [
 ]
 
 
-async def get_member_exp(db: Database, uid: int) -> dict[str, Any] | None:
-    row = await db.fetchone("SELECT * FROM member_exp WHERE uid = ?", uid)
-    return {k: row[k] for k in row.keys()} if row else None
+@dataclass(slots=True)
+class MemberExp:
+    """One ``member_exp`` row (``cdr`` is the exp cooldown ISO timestamp)."""
+
+    uid: int
+    lifetime: int
+    msg_cnt: int
+    cdr: str | None
+
+
+async def get_member_exp(db: Database, uid: int) -> MemberExp | None:
+    return await db.fetch_model(
+        MemberExp, "SELECT * FROM member_exp WHERE uid = ?", uid
+    )
 
 
 async def add_member_exp(
