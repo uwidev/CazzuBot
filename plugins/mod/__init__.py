@@ -15,7 +15,7 @@ from cazzubot import Plugin
 from cazzubot.bot import CazzuBot
 from cazzubot.db import Database
 from cazzubot.settings import Settings
-from cazzubot.window import window_info, window_success
+from cazzubot.window import window_error, window_info, window_success
 from cazzubot.models import ModlogStatusEnum, ModlogTypeEnum
 from cazzubot.timeparse import (
     InvalidTimeError,
@@ -283,6 +283,7 @@ class ModCog(commands.Cog):
         mute_id = await get_mute_role(self.bot.settings)
         guild = ctx.guild
         if guild is None:
+            await window_error(ctx, "Run unmute in the server, not DMs.")
             return
         role = guild.get_role(mute_id) if mute_id else None
         if role and role in member.roles:
@@ -303,6 +304,7 @@ class ModCog(commands.Cog):
         """Unban a user and drop any pending tempban expiry."""
         guild = ctx.guild
         if guild is None:
+            await window_error(ctx, "Run unban in the server, not DMs.")
             return
         await guild.unban(user, reason="Unbanned.")
         for task in await self.bot.scheduler.get("modlog"):

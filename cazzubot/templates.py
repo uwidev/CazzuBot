@@ -3,7 +3,8 @@
 Admins can configure messages (level-ups, rank-ups, frog spawns, welcomes) as
 JSON with ``{placeholder}`` tokens, validated against a jsonschema that mirrors
 ``discord.Embed``. ``verify`` checks + dry-runs a template; ``prepare`` turns a
-stored dict into sendable content/embeds.
+stored dict into sendable content/embeds; ``send`` delivers one through any
+send target.
 """
 
 import copy
@@ -14,6 +15,7 @@ from typing import Any, cast
 
 import discord
 from discord.ext import commands
+from discord.utils import MISSING
 from jsonschema import ValidationError, validate
 
 _log = logging.getLogger(__name__)
@@ -132,3 +134,34 @@ def embed_from_decoding(message: dict[str, Any]) -> discord.Embed | None:
 def embeds_from_decoding(message: dict[str, Any]) -> list[discord.Embed]:
     raws: list[dict[str, Any]] = message.get("embeds") or []
     return [discord.Embed.from_dict(raw) for raw in raws if raw]
+
+
+async def send(
+    destination: Any,
+    message: dict[str, Any],
+    **kwargs: Any,
+) -> Any:
+    """Send a stored template message via ``destination.send(**kwargs)``.
+
+    ``destination`` is any send target (a ``Messageable``, ``Context``, or
+    webhook ``followup``); extra kwargs (``delete_after``, ``wait``, ...) are
+    forwarded unchanged.
+
+    ``embed`` must use an explicit ``is not None`` check, not ``or``:
+    ``discord.Embed`` defines ``__len__`` (title/description/fields/footer/
+    author character counts), so a valid embed that only sets color/timestamp/
+    url/image is falsy and ``embed or MISSING`` would silently drop it.
+    ``embeds or MISSING`` is fine — list truthiness is exactly "non-empty".
+    """
+    content, embed, embeds = prepare(message)
+    if embed is not None:
+        # a single embed wins over embeds (old if/elif order)
+        embeds = None
+    if embed is None and not embeds:
+        content = content or "_ _"  # API rejects fully-empty messages
+    return await destination.send(
+        content=content,
+        embed=embed if embed is not None else MISSING,
+        embeds=embeds or MISSING,
+        **kwargs,
+    )

@@ -259,13 +259,7 @@ class FrogsCog(commands.Cog):
             await ctx.send("No capture message has been set.")
             return
         utils.deep_map(msg_json, factory.formatter, member=ctx.author)
-        content, embed, embeds = templates.prepare(msg_json)
-        if embed:
-            await ctx.send(content=content, embed=embed)
-        elif embeds:
-            await ctx.send(content=content, embeds=embeds)
-        else:
-            await ctx.send(content=content or "_ _")
+        await templates.send(ctx, msg_json)
 
     @frog.command(name="raw")
     @commands.has_permissions(administrator=True)

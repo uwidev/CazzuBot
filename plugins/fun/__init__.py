@@ -106,7 +106,15 @@ class InktoberCog(commands.Cog):
     ) -> None:
         """Set the channel to watch for inktober submissions."""
         target = channel or ctx.channel
-        if not isinstance(target, discord.abc.GuildChannel):
+        if not isinstance(
+            target,
+            (
+                discord.TextChannel,
+                discord.Thread,
+                discord.VoiceChannel,
+                discord.StageChannel,
+            ),
+        ):
             await ctx.send("Inktober needs a server channel.")
             return
         await self.bot.settings.set("inktober.cid", target.id)
@@ -256,6 +264,8 @@ class StoryCog(commands.Cog):
                         break
                     await ctx.send(chunk)
                     await asyncio.sleep(2)
+        # prefix invocation implies a real message: interaction is None
+        # exactly when the command came from a prefix message
         if ctx.interaction is None:
             await ctx.message.delete()
 

@@ -97,13 +97,7 @@ class WelcomeCog(commands.Cog):
         if not msg_json:
             return
         utils.deep_map(msg_json, formatter, member=member)
-        content, embed, embeds = templates.prepare(msg_json)
-        if embed:
-            await sendable.send(content=content, embed=embed)
-        elif embeds:
-            await sendable.send(content=content, embeds=embeds)
-        else:
-            await sendable.send(content=content or "_ _")
+        await templates.send(sendable, msg_json)
 
     # -- configuration ------------------------------------------------------
 
@@ -195,13 +189,7 @@ class WelcomeCog(commands.Cog):
             await ctx.send("No welcome message has been set.")
             return
         utils.deep_map(msg_json, formatter, member=ctx.author)
-        content, embed, embeds = templates.prepare(msg_json)
-        if embed:
-            await ctx.send(content=content, embed=embed)
-        elif embeds:
-            await ctx.send(content=content, embeds=embeds)
-        else:
-            await ctx.send(content=content or "_ _")
+        await templates.send(ctx, msg_json)
 
     @welcome.command(name="raw")
     async def welcome_raw(self, ctx: commands.Context[CazzuBot]) -> None:

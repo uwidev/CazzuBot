@@ -143,24 +143,9 @@ async def _determine_rank_changes(
                     level_old=level.old,
                     level_new=level.new,
                 )
-                content, embed, embeds = templates.prepare(msg_json)
-                if embed:
-                    await message.channel.send(
-                        content=content,
-                        embed=embed,
-                        delete_after=delete_after,
-                    )
-                elif embeds:
-                    await message.channel.send(
-                        content=content,
-                        embeds=embeds,
-                        delete_after=delete_after,
-                    )
-                else:
-                    await message.channel.send(
-                        content=content or "_ _",
-                        delete_after=delete_after,
-                    )
+                await templates.send(
+                    message.channel, msg_json, delete_after=delete_after
+                )
 
     # role integrity
     if rid.new is not None:

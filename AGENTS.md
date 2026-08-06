@@ -34,7 +34,10 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - Plugins reach services via `bot.db`, `bot.settings`, `bot.scheduler`, `bot.config`, `bot.guild`. Plugin db modules take `db: Database` (or `settings: Settings`) as first arg; cogs take the bot.
 - No `gid` columns anywhere; no FK decorators; `INSERT OR IGNORE`/`INSERT OR REPLACE` for idempotent writes.
 - `tasks.loop(time=…)` only for daily/quarterly cadence (with missed-run force check on boot); everything delayed goes through the scheduler.
-- User-configurable message JSON goes through `cazzubot.templates.verify/prepare` (jsonschema-validated); placeholders applied via `utils.deep_map` + per-feature formatters.
+- User-configurable message JSON goes through `cazzubot.templates.verify`
+  (jsonschema-validated), is readied by `prepare`, and delivered by `send`
+  (single `embed`/`embeds`/empty-content handling, any send target);
+  placeholders applied via `utils.deep_map` + per-feature formatters.
 - Time handled with pendulum, always UTC (see `cazzubot/timeparse.py`).
 - Command feedback goes through `cazzubot.window` (levels debug/info/success/warn/error; success/warn/error prefix ✓/⚠︎/✖) — no emoji-reaction feedback. CLI `logging` stays for bot internals (db, connection, plugin hooks); command-local state goes to the user via the window, flushed before blocking ops and always at command end (even on error).
 - Ruff select `["E4", "E7", "E9", "F"]`; basedpyright config present (Python 3.14, Linux).

@@ -13,7 +13,6 @@ from typing import Any
 
 import discord
 import pendulum
-from discord.utils import MISSING
 
 from cazzubot import templates, utils
 from cazzubot.bot import CazzuBot
@@ -133,24 +132,10 @@ class FrogCatchView(discord.ui.View):
             seasonal_cap_old=seasonal - 1,
             seasonal_cap_new=seasonal,
         )
-        content, embed, embeds = templates.prepare(msg_json)
-        if embed:
-            msg = await interaction.followup.send(
-                content=content if content is not None else MISSING,
-                embed=embed,
-                wait=True,
-            )
-        elif embeds:
-            msg = await interaction.followup.send(
-                content=content if content is not None else MISSING,
-                embeds=embeds,
-                wait=True,
-            )
-        else:
-            msg = await interaction.followup.send(
-                content=content or "_ _", wait=True
-            )
         # followup.send is a webhook (no delete_after kwarg) — delete manually
+        msg = await templates.send(
+            interaction.followup, msg_json, wait=True
+        )
         await msg.delete(delay=7)
 
 

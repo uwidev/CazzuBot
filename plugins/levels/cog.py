@@ -68,23 +68,9 @@ async def handle_level_up(
         level_old=level.old,
         level_new=level.new,
     )
-    content, embed, embeds = templates.prepare(msg_json)
-    if embed:
-        await message.channel.send(
-            content=content,
-            embed=embed,
-            delete_after=delete_after,
-        )
-    elif embeds:
-        await message.channel.send(
-            content=content,
-            embeds=embeds,
-            delete_after=delete_after,
-        )
-    else:
-        await message.channel.send(
-            content=content or "_ _", delete_after=delete_after
-        )
+    await templates.send(
+        message.channel, msg_json, delete_after=delete_after
+    )
 
 
 class LevelsCog(commands.Cog):
@@ -121,13 +107,7 @@ class LevelsCog(commands.Cog):
             level_old=1,
             level_new=2,
         )
-        content, embed, embeds = templates.prepare(msg_json)
-        if embed:
-            await ctx.send(content=content, embed=embed)
-        elif embeds:
-            await ctx.send(content=content, embeds=embeds)
-        else:
-            await ctx.send(content=content or "_ _")
+        await templates.send(ctx, msg_json)
 
     @level.command(name="raw")
     async def level_raw(self, ctx: commands.Context[CazzuBot]) -> None:

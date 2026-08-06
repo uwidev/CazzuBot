@@ -100,3 +100,13 @@ Non-blocking findings from the pre-commit review of the typing refactor
 4. Redundant `content if content is not None else MISSING` in
    `plugins/frogs/factory.py` — discord.py treats `None` content as "not
    provided"; the dance is harmless but noisy, simplify to `content=content`.
+
+> **Done** — all four nits resolved: `register_inktober` accepts
+> `TextChannel`/`Thread`/`VoiceChannel`/`StageChannel`; `unmute`/`unban`/
+> `rank_clean` send a `window_error` when `ctx.guild is None`; `story_write`
+> documents why `ctx.message` exists on prefix invocation; the `content`/
+> `MISSING` dance in `factory.py` collapsed into a shared `templates.send`
+> helper (`cazzubot/templates.py`) that all 8 template call sites use —
+> the webhook's `str`-only `content`/`embed`/`embeds` typing is bridged
+> once inside the helper via `MISSING` normalization, so no per-site `cast`
+> remains. basedpyright clean, `0 errors, 0 warnings`.

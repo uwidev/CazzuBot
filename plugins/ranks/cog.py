@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from cazzubot import templates, utils
 from cazzubot.bot import CazzuBot
-from cazzubot.window import window_success
+from cazzubot.window import window_error, window_success
 from cazzubot.models import WindowEnum
 from typing_extensions import override
 
@@ -73,6 +73,9 @@ class RanksCog(commands.Cog):
         rows = await ranks_db.get(self.bot.db)
         guild = ctx.guild
         if guild is None:
+            await window_error(
+                ctx, "Run rank clean in the server, not DMs."
+            )
             return
         removed = [r["rid"] for r in rows if not guild.get_role(r["rid"])]
         await ranks_db.batch_delete(self.bot.db, removed)
@@ -158,13 +161,7 @@ class RanksCog(commands.Cog):
             await ctx.send("No rank-up message has been set.")
             return
         utils.deep_map(msg_json, formatter, member=ctx.author)
-        content, embed, embeds = templates.prepare(msg_json)
-        if embed:
-            await ctx.send(content=content, embed=embed)
-        elif embeds:
-            await ctx.send(content=content, embeds=embeds)
-        else:
-            await ctx.send(content=content or "_ _")
+        await templates.send(ctx, msg_json)
 
     @rank.command(name="raw")
     async def rank_raw(
