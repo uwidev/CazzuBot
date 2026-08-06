@@ -2,7 +2,9 @@
 
 Single-guild port of v1's ``ext/poll.py`` + ``src/db/poll.py``. V1's half-
 finished ``open`` command is replaced with a working flag toggle; voting stays
-available whenever the poll message exists (as v1 effectively behaved).
+available whenever the poll message exists (as v1 effectively behaved). The
+vote button view is persistent (``custom_id="poll:vote"``) and re-attached to
+every existing poll message on boot via ``on_load`` + ``bot.add_view``.
 """
 
 import logging
@@ -279,7 +281,10 @@ class PollView(discord.ui.View):
         self.message: discord.InteractionMessage | None = None
 
     @discord.ui.button(
-        label="Vote", style=discord.ButtonStyle.primary, emoji="📥"
+        label="Vote",
+        style=discord.ButtonStyle.primary,
+        emoji="📥",
+        custom_id="poll:vote",
     )
     async def vote(
         self,
@@ -396,6 +401,15 @@ class PollPlugin(Plugin):
     name = "poll"
     schema = SCHEMA
     cogs = [PollCog]
+
+    @override
+    async def on_load(self, bot: CazzuBot) -> None:
+        """Re-attach the vote button to every existing poll message."""
+        rows = await bot.db.fetchall(
+            "SELECT id, mid FROM poll WHERE mid IS NOT NULL"
+        )
+        for row in rows:
+            bot.add_view(PollView(bot, row["id"]), message_id=row["mid"])
 
 
 plugin = PollPlugin()

@@ -51,6 +51,11 @@ collect poll message ids (e.g. a `poll` table query in `PollPlugin.on_load`)
 and `bot.add_view(PollView(bot, poll_id), message_id=mid)` for each, mirroring
 the counter plugin.
 
+> **Done** — `PollPlugin.on_load` re-registers every poll with a stored `mid`,
+> and the Vote button got a stable `custom_id="poll:vote"` (without it,
+> `bot.add_view` rejects the view as non-persistent and the random per-instance
+> custom_id could never match the button baked into existing messages).
+
 ---
 
 Context: these came out of the architecture discussion about three-tier
