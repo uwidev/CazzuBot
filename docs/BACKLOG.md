@@ -106,6 +106,11 @@ Non-blocking findings from the pre-commit review of the typing refactor
    `plugins/frogs/factory.py` — discord.py treats `None` content as "not
    provided"; the dance is harmless but noisy, simplify to `content=content`.
 
+## LSP Hints for Data
+Have the LSP do as much hinting as we can for data so development is as seamless and frictionless as possible. No trying to guess what an object has, the LSP should be able to trivially determine what it is.
+
+This is especially important for information retrieved from the database. It should cast into some type that can be trivially understood.
+
 > **Done** — all four nits resolved: `register_inktober` accepts
 > `TextChannel`/`Thread`/`VoiceChannel`/`StageChannel`; `unmute`/`unban`/
 > `rank_clean` send a `window_error` when `ctx.guild is None`; `story_write`
