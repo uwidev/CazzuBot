@@ -22,6 +22,10 @@ _SCHEMA = [
 	""",
 ]
 
+# Public alias for tooling (e.g. scripts/migrate_pg_to_sqlite.py) that needs
+# the DDL without instantiating the class.
+SCHEMA = _SCHEMA
+
 
 class Settings:
     """Key-value access layered on the ``settings`` table."""

@@ -32,6 +32,10 @@ _SCHEMA = [
     "CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks (run_at)",
 ]
 
+# Public alias for tooling (e.g. scripts/migrate_pg_to_sqlite.py) that needs
+# the DDL without instantiating the class.
+SCHEMA = _SCHEMA
+
 
 def _now() -> str:
     return pendulum.now("UTC").isoformat()
@@ -70,7 +74,7 @@ class Scheduler:
         self,
         tag: str,
         run_at: pendulum.DateTime,
-        payload: dict | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> int | None:
         """Insert a task; returns its row id."""
         return await self.bot.db.execute_lastrowid(
@@ -84,18 +88,18 @@ class Scheduler:
         )
 
     async def get(
-        self, tag: str, payload: dict | None = None
+        self, tag: str, payload: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         """Fetch task rows; payload filters as a JSON-superset match."""
         rows = await self.bot.db.fetchall(
             "SELECT * FROM tasks WHERE tag = ?", tag
         )
         payload = payload or {}
-        out = []
+        out: list[dict[str, Any]] = []
         for row in rows:
-            row_payload = json.loads(row["payload"])
+            row_payload: dict[str, Any] = json.loads(row["payload"])
             if all(row_payload.get(k) == v for k, v in payload.items()):
-                out.append(dict(row))
+                out.append({key: row[key] for key in row.keys()})
         return out
 
     async def drop(self, task_id: int) -> None:
@@ -125,15 +129,17 @@ class Scheduler:
             "SELECT * FROM tasks WHERE run_at <= ?", now
         )
         for row in rows:
-            payload = json.loads(row["payload"])
-            handler = self.handlers.get(row["tag"])
+            payload: dict[str, Any] = json.loads(row["payload"])
+            tag: str = row["tag"]
+            task_id: int = row["id"]
+            handler = self.handlers.get(tag)
             if handler is None:
                 _log.warning(
                     "no handler for task tag %r (dropped)",
-                    row["tag"],
+                    tag,
                 )
                 await self.bot.db.execute(
-                    "DELETE FROM tasks WHERE id = ?", row["id"]
+                    "DELETE FROM tasks WHERE id = ?", task_id
                 )
                 continue
 
@@ -144,8 +150,8 @@ class Scheduler:
                 # mute that never expires); retry shortly after.
                 _log.exception(
                     "task %s (%r) handler failed; retrying in 30s",
-                    row["id"],
-                    row["tag"],
+                    task_id,
+                    tag,
                 )
                 await self.bot.db.execute(
                     """
@@ -153,10 +159,10 @@ class Scheduler:
 					WHERE id = ?
 					""",
                     pendulum.now("UTC").add(seconds=30).isoformat(),
-                    row["id"],
+                    task_id,
                 )
                 continue
 
             await self.bot.db.execute(
-                "DELETE FROM tasks WHERE id = ?", row["id"]
+                "DELETE FROM tasks WHERE id = ?", task_id
             )

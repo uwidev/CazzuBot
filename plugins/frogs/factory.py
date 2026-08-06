@@ -13,8 +13,10 @@ from typing import Any
 
 import discord
 import pendulum
+from discord.utils import MISSING
 
 from cazzubot import templates, utils
+from cazzubot.bot import CazzuBot
 from cazzubot.models import FrogTypeEnum
 
 from . import db as frog_db
@@ -37,7 +39,7 @@ def roll_future_frog(
     return now.add(seconds=offset)
 
 
-async def on_frog_due(bot, payload: dict[str, Any]) -> None:
+async def on_frog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
     """Scheduler handler for tag ``frog``."""
     now = pendulum.now("UTC")
     cid = payload["cid"]
@@ -63,7 +65,7 @@ async def on_frog_due(bot, payload: dict[str, Any]) -> None:
         )
         return
 
-    if captured:
+    if captured and task_id is not None:
         # Reroll from the capture time for the next spawn.
         run_at = roll_future_frog(pendulum.now("UTC"), interval, fuzzy)
         await bot.scheduler.update_run_at(task_id, run_at)
@@ -77,7 +79,7 @@ class FrogCatchView(discord.ui.View):
     frog is caught or once it gets bored.
     """
 
-    def __init__(self, bot) -> None:
+    def __init__(self, bot: CazzuBot) -> None:
         super().__init__(timeout=None)
         self.bot = bot
         self.captured = False
@@ -89,7 +91,9 @@ class FrogCatchView(discord.ui.View):
         emoji=FROG_NET_EMOJI,
     )
     async def catch(
-        self, interaction: discord.Interaction, button: discord.ui.Button
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[Any],
     ) -> None:
         if self.captured:
             await interaction.response.send_message(
@@ -132,20 +136,26 @@ class FrogCatchView(discord.ui.View):
         content, embed, embeds = templates.prepare(msg_json)
         if embed:
             msg = await interaction.followup.send(
-                content=content, embed=embed
+                content=content if content is not None else MISSING,
+                embed=embed,
+                wait=True,
             )
         elif embeds:
             msg = await interaction.followup.send(
-                content=content, embeds=embeds
+                content=content if content is not None else MISSING,
+                embeds=embeds,
+                wait=True,
             )
         else:
-            msg = await interaction.followup.send(content=content or "_ _")
+            msg = await interaction.followup.send(
+                content=content or "_ _", wait=True
+            )
         # followup.send is a webhook (no delete_after kwarg) — delete manually
         await msg.delete(delay=7)
 
 
 async def spawn_and_wait(
-    bot,
+    bot: CazzuBot,
     persist: int,
     interaction: discord.Interaction | None = None,
     *,
@@ -159,7 +169,7 @@ async def spawn_and_wait(
     gets bored and the message is removed. Returns True if it was caught.
     """
     channel = bot.get_channel(cid)
-    if channel is None:
+    if not isinstance(channel, discord.abc.Messageable):
         _log.warning("frog channel %s not found; skipping", cid)
         return False
 
@@ -208,7 +218,7 @@ def formatter(
     )
 
 
-async def reset_frog_tasks(bot) -> None:
+async def reset_frog_tasks(bot: CazzuBot) -> None:
     """Clear all frog tasks and re-queue from the spawn settings."""
     _log.info("resetting frog spawn tasks...")
     await bot.scheduler.drop_tag("frog")
@@ -217,7 +227,7 @@ async def reset_frog_tasks(bot) -> None:
     await queue_frog_spawns(bot)
 
 
-async def queue_frog_spawns(bot) -> None:
+async def queue_frog_spawns(bot: CazzuBot) -> None:
     """Insert one task per configured spawn channel."""
     for spawn in await frog_db.get_spawns(bot.db):
         payload = dict(spawn)

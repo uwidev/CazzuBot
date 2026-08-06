@@ -8,12 +8,15 @@ existing counter message on boot via ``on_load`` + ``bot.add_view``.
 """
 
 import logging
+from typing import Any
 
 import discord
 import pendulum
 from discord.ext import commands
 
 from cazzubot import Plugin, utils
+from cazzubot.bot import CazzuBot
+from typing_extensions import override
 
 _log = logging.getLogger(__name__)
 
@@ -44,14 +47,26 @@ CIRNO_HELP = "<:cirnoHelp:695126168227151954>"
 NO_BAKAS_TEXT = "There are no bakas as of recently..."
 
 
-async def on_counter_expire(bot, payload: dict) -> None:
+async def on_counter_expire(
+    bot: CazzuBot, payload: dict[str, Any]
+) -> None:
     """Scheduler handler for tag ``counter`` — reset the embed footer."""
     cid, mid = payload["cid"], payload["mid"]
     # clear the recent-baka list even if the message is already gone
     await bot.db.execute("DELETE FROM counter_baka WHERE mid = ?", mid)
 
     channel = bot.get_channel(cid)
-    if channel is None:
+    if not isinstance(
+        channel,
+        (
+            discord.TextChannel,
+            discord.VoiceChannel,
+            discord.StageChannel,
+            discord.Thread,
+            discord.DMChannel,
+            discord.GroupChannel,
+        ),
+    ):
         return
     try:
         msg = await channel.fetch_message(mid)
@@ -67,7 +82,7 @@ async def on_counter_expire(bot, payload: dict) -> None:
 class CounterView(discord.ui.View):
     """Persistent baka button — one press = one count."""
 
-    def __init__(self, bot) -> None:
+    def __init__(self, bot: CazzuBot) -> None:
         super().__init__(timeout=None)
         self.bot = bot
 
@@ -88,7 +103,9 @@ class CounterView(discord.ui.View):
         custom_id="counter:baka",
     )
     async def baka(
-        self, interaction: discord.Interaction, button: discord.ui.Button
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[Any],
     ) -> None:
         if interaction.message is None:
             return
@@ -110,7 +127,7 @@ class CounterView(discord.ui.View):
 
         await self.bot.db.execute(
             "INSERT OR REPLACE INTO counter_baka (mid, uid, name, updated_at)"
-            " VALUES (?, ?, ?, ?)",
+            + " VALUES (?, ?, ?, ?)",
             mid,
             interaction.user.id,
             interaction.user.display_name,
@@ -119,7 +136,7 @@ class CounterView(discord.ui.View):
 
         rows = await self.bot.db.fetchall(
             "SELECT name FROM counter_baka WHERE mid = ?"
-            " ORDER BY updated_at DESC",
+            + " ORDER BY updated_at DESC",
             mid,
         )
         names = [r["name"] for r in rows]
@@ -139,21 +156,25 @@ class CounterView(discord.ui.View):
 
         await interaction.response.edit_message(embed=embed)
 
+        if interaction.channel_id is None:
+            return
         await self._schedule_expiry(mid, interaction.channel_id)
 
 
 class CounterCog(commands.Cog):
     """Baka button counter."""
 
-    def __init__(self, bot) -> None:
+    def __init__(self, bot: CazzuBot) -> None:
         self.bot = bot
 
     @commands.hybrid_group()
-    async def counter(self, ctx: commands.Context) -> None:
+    async def counter(self, _ctx: commands.Context[CazzuBot]) -> None:
         """Baka counter management."""
 
     @counter.command(name="create")
-    async def counter_create(self, ctx: commands.Context) -> None:
+    async def counter_create(
+        self, ctx: commands.Context[CazzuBot]
+    ) -> None:
         """Create the baka counter message in this channel."""
         embed = utils.prepare_embed(
             "Number of times people have touched the baka button", "> 0"
@@ -173,7 +194,8 @@ class CounterPlugin(Plugin):
     cogs = [CounterCog]
     scheduled = {"counter": on_counter_expire}
 
-    async def on_load(self, bot) -> None:
+    @override
+    async def on_load(self, bot: CazzuBot) -> None:
         """Re-attach the persistent button to every existing counter."""
         rows = await bot.db.fetchall("SELECT mid FROM counter")
         for row in rows:

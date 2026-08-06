@@ -10,6 +10,7 @@ import pendulum
 from discord.ext import commands
 
 from cazzubot import leaderboard, templates, timeparse, utils
+from cazzubot.bot import CazzuBot
 from cazzubot.window import command_window, window_success
 from cazzubot.models import (
     FrogTypeEnum,
@@ -30,22 +31,25 @@ _SCOREBOARD_STAMP = (
 class _ExpFrog(Enum):
     """Exp granted per frog consumed."""
 
-    NORMAL: int = 10
-    FROZEN: int = 3
+    NORMAL = 10
+    FROZEN = 3
 
 
 class FrogsCog(commands.Cog):
     """Frog token economy."""
 
-    def __init__(self, bot) -> None:
+    def __init__(self, bot: CazzuBot) -> None:
         self.bot = bot
 
-    @commands.hybrid_group(invoke_without_command=True, aliases=["frogs"])
+    @commands.hybrid_group(aliases=["frogs"])
     async def frog(
-        self, ctx: commands.Context, *, member: discord.Member = None
+        self,
+        ctx: commands.Context[CazzuBot],
+        *,
+        member: discord.Member | None = None,
     ) -> None:
         """Show this user's current frog profile."""
-        member = member or ctx.author
+        target = member or ctx.author
         now = pendulum.now("UTC")
         rows = await frog_db.seasonal_ranked(
             self.bot.db, now.year, (now.month - 1) // 3
@@ -53,40 +57,43 @@ class FrogsCog(commands.Cog):
         if not rows:
             await ctx.send("No one has yet captured frogs in this server!")
             return
-        if member.id not in [r[1] for r in rows]:
+        if target.id not in [r[1] for r in rows]:
             await ctx.send(
                 "You have not yet captured any frogs this season!"
             )
             return
         await ctx.send(
-            embed=await self._prepare_personal_summary(ctx, member, rows)
+            embed=await self._prepare_personal_summary(ctx, target, rows)
         )
 
     @frog.command(name="lifetime")
     async def frog_lifetime(
-        self, ctx: commands.Context, *, user: discord.Member = None
+        self,
+        ctx: commands.Context[CazzuBot],
+        *,
+        user: discord.Member | None = None,
     ) -> None:
         """Lifetime frog variant."""
-        user = user or ctx.author
+        target = user or ctx.author
         rows = await frog_db.lifetime_ranked(self.bot.db)
         if not rows:
             await ctx.send("No one has yet captured frogs in this server!")
             return
-        if user.id not in [r[1] for r in rows]:
+        if target.id not in [r[1] for r in rows]:
             await ctx.send(
                 "You have not yet captured any frogs this season!"
             )
             return
         await ctx.send(
             embed=await self._prepare_personal_summary(
-                ctx, user, rows, lifetime=True
+                ctx, target, rows, lifetime=True
             )
         )
 
     async def _prepare_personal_summary(
         self,
-        ctx: commands.Context,
-        user: discord.Member,
+        ctx: commands.Context[CazzuBot],
+        user: discord.Member | discord.User,
         rows: list[tuple[int, int, int]],
         *,
         lifetime: bool = False,
@@ -97,8 +104,9 @@ class FrogsCog(commands.Cog):
         uid_index = uids.index(uid)
         subset, subset_i = leaderboard.create_focus_subset(rows, uid_index)
 
-        ranks, _, frog_cnt = zip(*subset)
-        names = []
+        ranks = [r[0] for r in subset]
+        frog_cnt = [r[2] for r in subset]
+        names: list[str] = []
         for uid_ in [r[1] for r in subset]:
             member = await utils.find_user(self.bot, ctx, uid_)
             names.append(member.display_name if member else str(uid_))
@@ -160,11 +168,11 @@ class FrogsCog(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def frog_register(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         interval: str,
         persist: str = "30",
         fuzzy: float = 0.5,
-        channel: discord.TextChannel = None,
+        channel: discord.TextChannel | None = None,
     ) -> None:
         """Register this channel as a frog spawn channel.
 
@@ -172,7 +180,7 @@ class FrogsCog(commands.Cog):
         Persist is in seconds, how many seconds a frog stays until disappearing.
         Fuzzy is a decimal percent, the randomness of spawning intervals.
         """
-        channel = channel or ctx.channel
+        cid = (channel or ctx.channel).id
 
         try:
             interval_s = timeparse.parse_duration(interval).in_seconds()
@@ -201,14 +209,14 @@ class FrogsCog(commands.Cog):
             raise commands.BadArgument("Fuzzy must be between 0 and 1.")
 
         await frog_db.upsert_spawn(
-            self.bot.db, channel.id, interval_s, persist_s, fuzzy
+            self.bot.db, cid, interval_s, persist_s, fuzzy
         )
         await factory.reset_frog_tasks(self.bot)
         await window_success(ctx, "Spawn channel registered")
 
     @frog.command(name="clear")
     @commands.has_permissions(administrator=True)
-    async def frog_clear(self, ctx: commands.Context) -> None:
+    async def frog_clear(self, ctx: commands.Context[CazzuBot]) -> None:
         """Remove all frog settings and stop frog spawning."""
         await frog_db.clear_spawns(self.bot.db)
         await self.bot.scheduler.drop_tag("frog")
@@ -216,12 +224,12 @@ class FrogsCog(commands.Cog):
 
     @frog.group(name="set")
     @commands.has_permissions(administrator=True)
-    async def frog_set(self, ctx: commands.Context) -> None:
+    async def frog_set(self, _ctx: commands.Context[CazzuBot]) -> None:
         pass
 
     @frog_set.command(name="message", aliases=["msg"])
     async def frog_set_message(
-        self, ctx: commands.Context, *, message: str
+        self, ctx: commands.Context[CazzuBot], *, message: str
     ) -> None:
         """Set the capture message JSON."""
         decoded = await templates.verify(
@@ -232,7 +240,7 @@ class FrogsCog(commands.Cog):
 
     @frog_set.command(name="enabled", aliases=["on"])
     async def frog_set_enabled(
-        self, ctx: commands.Context, val: bool
+        self, ctx: commands.Context[CazzuBot], val: bool
     ) -> None:
         """Enable/disable frog spawns (re-queues or clears spawn tasks)."""
         await frog_db.set_enabled(self.bot.settings, val)
@@ -244,7 +252,7 @@ class FrogsCog(commands.Cog):
 
     @frog.command(name="demo")
     @commands.has_permissions(administrator=True)
-    async def frog_demo(self, ctx: commands.Context) -> None:
+    async def frog_demo(self, ctx: commands.Context[CazzuBot]) -> None:
         """Preview the capture message as yourself."""
         msg_json = await frog_db.get_message(self.bot.settings)
         if not msg_json:
@@ -252,11 +260,16 @@ class FrogsCog(commands.Cog):
             return
         utils.deep_map(msg_json, factory.formatter, member=ctx.author)
         content, embed, embeds = templates.prepare(msg_json)
-        await ctx.send(content, embed=embed, embeds=embeds)
+        if embed:
+            await ctx.send(content=content, embed=embed)
+        elif embeds:
+            await ctx.send(content=content, embeds=embeds)
+        else:
+            await ctx.send(content=content or "_ _")
 
     @frog.command(name="raw")
     @commands.has_permissions(administrator=True)
-    async def frog_raw(self, ctx: commands.Context) -> None:
+    async def frog_raw(self, ctx: commands.Context[CazzuBot]) -> None:
         """Dump the raw stored capture message JSON."""
         msg_json = await frog_db.get_message(self.bot.settings)
         await ctx.send(f"```{json.dumps(msg_json, indent=2)}```")
@@ -266,7 +279,7 @@ class FrogsCog(commands.Cog):
     @frog.command(name="consume")
     async def frog_consume(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         amount: int = 1,
         frog_type: FrogTypeEnum = FrogTypeEnum.NORMAL,
     ) -> None:
@@ -317,7 +330,7 @@ class FrogsCog(commands.Cog):
         if balance_now < amount:
             raise commands.BadArgument(
                 f"Member does not have enough frogs ({balance_now}) "
-                "to consume."
+                + "to consume."
             )
 
         now = pendulum.now("UTC")
@@ -337,7 +350,7 @@ class FrogsCog(commands.Cog):
         embed_post = utils.prepare_embed(
             "Frog(s) have been consumed!",
             f"Resulting {frog_type.value} frogs\n"
-            f"**`{balance}`** -> **`{balance - amount}`**",
+            + f"**`{balance}`** -> **`{balance - amount}`**",
         )
         embed_post.set_thumbnail(url="https://i.imgur.com/kCHjymJ.png")
         await msg.edit(embed=embed_post)
@@ -346,7 +359,7 @@ class FrogsCog(commands.Cog):
 
     @frog.command(name="spawn")
     @commands.is_owner()
-    async def frog_spawn(self, ctx: commands.Context) -> None:
+    async def frog_spawn(self, ctx: commands.Context[CazzuBot]) -> None:
         """Force-spawn a frog in this channel."""
         # the frog message is the success signal — no separate confirmation
         await factory.spawn_and_wait(
@@ -355,7 +368,7 @@ class FrogsCog(commands.Cog):
 
     @frog.command(name="fake")
     @commands.is_owner()
-    async def frog_fake(self, ctx: commands.Context) -> None:
+    async def frog_fake(self, ctx: commands.Context[CazzuBot]) -> None:
         """Post a fake frog with its capture button."""
         await factory.spawn_and_wait(
             self.bot, 30, ctx.interaction, cid=ctx.channel.id
@@ -363,7 +376,7 @@ class FrogsCog(commands.Cog):
 
     @frog.command(name="resync")
     @commands.is_owner()
-    async def frog_resync(self, ctx: commands.Context) -> None:
+    async def frog_resync(self, ctx: commands.Context[CazzuBot]) -> None:
         """Rebuild lifetime capture counts from the frog logs."""
         if not await utils.author_confirm(ctx):
             return

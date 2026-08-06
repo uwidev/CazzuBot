@@ -10,7 +10,7 @@ import copy
 import json
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import discord
 from discord.ext import commands
@@ -80,11 +80,11 @@ MESSAGE_SCHEMA: dict[str, Any] = {
 
 
 def verify(
-    ctx: commands.Context,
+    _ctx: object,
     raw: str,
     formatter: Callable[..., str] | None = None,
     **kwargs: Any,
-) -> dict:
+) -> dict[str, Any]:
     """Parse + validate user-supplied message JSON.
 
     Applies the formatter to a copy first so placeholder substitution is
@@ -98,9 +98,10 @@ def verify(
 
     if not isinstance(decoded, dict):
         raise commands.BadArgument("Message must be a JSON object")
+    message = cast(dict[str, Any], decoded)
 
     if formatter is not None:
-        demo = copy.deepcopy(decoded)
+        demo: dict[str, Any] = copy.deepcopy(message)
         from cazzubot.utils import deep_map
 
         deep_map(demo, formatter, **kwargs)
@@ -110,11 +111,11 @@ def verify(
             raise commands.BadArgument(
                 f"Invalid message template: {err.message}"
             ) from err
-    return decoded
+    return message
 
 
 def prepare(
-    message: dict,
+    message: dict[str, Any],
 ) -> tuple[str | None, discord.Embed | None, list[discord.Embed]]:
     """Turn a stored message dict into ``(content, embed, embeds)``."""
     content = message.get("content")
@@ -123,11 +124,11 @@ def prepare(
     return content, embed, embeds
 
 
-def embed_from_decoding(message: dict) -> discord.Embed | None:
+def embed_from_decoding(message: dict[str, Any]) -> discord.Embed | None:
     raw = message.get("embed")
     return discord.Embed.from_dict(raw) if raw else None
 
 
-def embeds_from_decoding(message: dict) -> list[discord.Embed]:
-    raws = message.get("embeds") or []
+def embeds_from_decoding(message: dict[str, Any]) -> list[discord.Embed]:
+    raws: list[dict[str, Any]] = message.get("embeds") or []
     return [discord.Embed.from_dict(raw) for raw in raws if raw]

@@ -9,7 +9,7 @@ integrity after the item-id renumbering.
 
 Usage::
 
-    PGPASSWORD=... uv run --with asyncpg python scripts/verify_migration.py
+    PGPASSWORD=... uv run --group migration python scripts/verify_migration.py
                            [--gid 293796316193095690] [--db data/cazzubot.migrated.db]
 """
 
@@ -22,6 +22,7 @@ import sqlite3
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 # make the project root importable when run as ``python scripts/<name>.py``
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -47,11 +48,11 @@ def check(cond: bool, label: str, detail: str = "") -> None:
     print(f"  [{status}] {label}" + (f" — {detail}" if detail else ""))
 
 
-def iso(v):
+def iso(v: Any) -> str | None:
     return v.isoformat() if v is not None else None
 
 
-def norm(v):
+def norm(v: Any) -> Any:
     """Normalize a value for PG-vs-sqlite row comparison."""
     if v is None:
         return ""
@@ -64,11 +65,13 @@ def norm(v):
     return v
 
 
-async def table_parity(pg, sqlite, gid: int) -> None:
+async def table_parity(
+    pg: Any, sqlite: sqlite3.Connection, gid: int
+) -> None:
     """Compare full per-uid aggregates between postgres and sqlite."""
 
-    def sql_map(rows, keys):
-        out = {}
+    def sql_map(rows: Any, keys: tuple[str, ...]) -> dict[Any, Any]:
+        out: dict[Any, Any] = {}
         for r in rows:
             k = tuple(r[k] for k in keys)
             out[k[0] if len(k) == 1 else k] = r
@@ -100,7 +103,7 @@ async def table_parity(pg, sqlite, gid: int) -> None:
     # (dated-row count intentionally differs: 5680 NULL-at rows are sentineled)
     pg_rows = await pg.fetch(
         "SELECT uid, COUNT(*) AS n, SUM(exp) AS s "
-        "FROM member_exp_log WHERE gid = $1 GROUP BY uid",
+        + "FROM member_exp_log WHERE gid = $1 GROUP BY uid",
         gid,
     )
     pg_map = sql_map(pg_rows, ("uid",))
@@ -122,7 +125,7 @@ async def table_parity(pg, sqlite, gid: int) -> None:
     # member_frog: normal, frozen, capture
     pg_rows = await pg.fetch(
         "SELECT uid, COALESCE(normal,0) AS normal, COALESCE(frozen,0) AS frozen, "
-        "COALESCE(capture,0) AS capture FROM member_frog WHERE gid = $1",
+        + "COALESCE(capture,0) AS capture FROM member_frog WHERE gid = $1",
         gid,
     )
     pg_map = sql_map(pg_rows, ("uid",))
@@ -149,13 +152,13 @@ async def table_parity(pg, sqlite, gid: int) -> None:
     # (PG float4 vs SQLite REAL precision)
     pg_rows = await pg.fetch(
         "SELECT uid, COUNT(*) AS n, COALESCE(SUM(waited_for),0) AS w "
-        "FROM member_frog_log WHERE gid = $1 OR gid IS NULL GROUP BY uid",
+        + "FROM member_frog_log WHERE gid = $1 OR gid IS NULL GROUP BY uid",
         gid,
     )
     pg_map = sql_map(pg_rows, ("uid",))
     sl_rows = sqlite.execute(
         "SELECT uid, COUNT(*), COALESCE(SUM(waited_for),0) "
-        "FROM member_frog_log GROUP BY uid"
+        + "FROM member_frog_log GROUP BY uid"
     ).fetchall()
     sl_map = {r[0]: r for r in sl_rows}
     bad = 0
@@ -217,7 +220,7 @@ async def table_parity(pg, sqlite, gid: int) -> None:
         )
 
 
-async def seasonal_parity(pg, db, gid: int) -> None:
+async def seasonal_parity(pg: Any, db: Database, gid: int) -> None:
     """Compare v2 seasonal rankings (migrated DB) against postgres sums.
 
     ``db`` is a ``cazzubot.db.Database`` so v2's own query paths run verbatim.
@@ -228,8 +231,8 @@ async def seasonal_parity(pg, db, gid: int) -> None:
         end = start.add(months=3)
         pg_rows = await pg.fetch(
             "SELECT uid, SUM(exp) AS exp FROM member_exp_log "
-            "WHERE gid = $1 AND at >= $2 AND at < $3 "
-            "GROUP BY uid ORDER BY exp DESC",
+            + "WHERE gid = $1 AND at >= $2 AND at < $3 "
+            + "GROUP BY uid ORDER BY exp DESC",
             gid,
             start,
             end,
@@ -253,7 +256,9 @@ async def resync_no_drift(path: Path) -> None:
         copy = Path(tmp) / "copy.db"
         shutil.copy2(path, copy)
 
-        def snapshot(conn):
+        def snapshot(
+            conn: sqlite3.Connection,
+        ) -> tuple[dict[Any, Any], dict[Any, Any]]:
             exp = dict(
                 conn.execute(
                     "SELECT uid, lifetime FROM member_exp"
@@ -301,7 +306,7 @@ async def resync_no_drift(path: Path) -> None:
             len(frog_drift) <= 1,
             "sync_with_frog_logs drift",
             f"{len(frog_drift)} uids changed (expected <=1: capture is a "
-            f"lifetime counter, logs may predate it / NULL-gid attributed)",
+            + "lifetime counter, logs may predate it / NULL-gid attributed)",
         )
         if frog_drift:
             detail = ", ".join(
@@ -346,20 +351,20 @@ def poll_integrity(path: Path) -> None:
     conn = sqlite3.connect(path)
     votes_orphan_poll = conn.execute(
         "SELECT COUNT(*) FROM poll_vote v "
-        "WHERE NOT EXISTS (SELECT 1 FROM poll p WHERE p.id = v.pid)"
+        + "WHERE NOT EXISTS (SELECT 1 FROM poll p WHERE p.id = v.pid)"
     ).fetchone()[0]
     votes_orphan_item = conn.execute(
         "SELECT COUNT(*) FROM poll_vote v "
-        "WHERE NOT EXISTS "
-        "(SELECT 1 FROM poll_item i WHERE i.id = v.iid AND i.pid = v.pid)"
+        + "WHERE NOT EXISTS "
+        + "(SELECT 1 FROM poll_item i WHERE i.id = v.iid AND i.pid = v.pid)"
     ).fetchone()[0]
     itemless_polls = conn.execute(
         "SELECT COUNT(*) FROM poll p "
-        "WHERE NOT EXISTS (SELECT 1 FROM poll_item i WHERE i.pid = p.id)"
+        + "WHERE NOT EXISTS (SELECT 1 FROM poll_item i WHERE i.pid = p.id)"
     ).fetchone()[0]
     dupe_votes = conn.execute(
         "SELECT COUNT(*) FROM (SELECT 1 FROM poll_vote "
-        "GROUP BY pid, iid, uid HAVING COUNT(*) > 1)"
+        + "GROUP BY pid, iid, uid HAVING COUNT(*) > 1)"
     ).fetchone()[0]
     check(
         votes_orphan_poll == 0,
@@ -375,9 +380,9 @@ def poll_integrity(path: Path) -> None:
     check(dupe_votes == 0, "poll_vote PK unique", f"{dupe_votes}")
     rows = conn.execute(
         "SELECT p.id, COUNT(DISTINCT i.id) AS items, "
-        "(SELECT COUNT(*) FROM poll_vote v WHERE v.pid = p.id) AS votes "
-        "FROM poll p LEFT JOIN poll_item i ON i.pid = p.id GROUP BY p.id "
-        "ORDER BY p.id"
+        + "(SELECT COUNT(*) FROM poll_vote v WHERE v.pid = p.id) AS votes "
+        + "FROM poll p LEFT JOIN poll_item i ON i.pid = p.id GROUP BY p.id "
+        + "ORDER BY p.id"
     ).fetchall()
     for r in rows:
         print(f"  poll {r[0]:>3}: items={r[1]:>3} votes={r[2]:>4}")
@@ -412,14 +417,18 @@ async def main() -> int:
         level=logging.INFO, format="[%(levelname)s] %(message)s"
     )
 
-    pg = await asyncpg.connect(
-        host=args.host,
-        port=args.port,
-        user=args.user,
-        password=os.getenv("PGPASSWORD"),
-        database=args.db,
-        ssl=False,
-        timeout=15,
+    # asyncpg is untyped (no py.typed); the cast is the boundary to Any.
+    pg = cast(
+        Any,
+        await asyncpg.connect(
+            host=args.host,
+            port=args.port,
+            user=args.user,
+            password=os.getenv("PGPASSWORD"),
+            database=args.db,
+            ssl=False,
+            timeout=15,
+        ),
     )
     sqlite = sqlite3.connect(args.sqlite)
     path = Path(args.sqlite)

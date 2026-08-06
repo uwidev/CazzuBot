@@ -9,6 +9,8 @@ import logging
 
 import pendulum
 
+from typing import Any
+
 from cazzubot.db import Database
 from cazzubot.models import WindowEnum
 from cazzubot.settings import Settings
@@ -36,13 +38,13 @@ def _key(mode: WindowEnum, field: str) -> str:
 
 async def get_message(
     settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
-) -> dict | None:
+) -> dict[str, Any] | None:
     return await settings.get(_key(mode, "message"))
 
 
 async def set_message(
     settings: Settings,
-    message: dict,
+    message: dict[str, Any],
     mode: WindowEnum = WindowEnum.SEASONAL,
 ) -> None:
     await settings.set(_key(mode, "message"), message)
@@ -99,7 +101,7 @@ async def add(
 
 async def get(
     db: Database, *, mode: WindowEnum = WindowEnum.SEASONAL
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     rows = await db.fetchall(
         """
 		SELECT rid, threshold, mode
@@ -109,7 +111,7 @@ async def get(
 		""",
         mode.value,
     )
-    return [dict(r) for r in rows]
+    return [{k: r[k] for k in r.keys()} for r in rows]
 
 
 async def delete(db: Database, arg: int, mode: WindowEnum) -> None:
@@ -167,7 +169,7 @@ async def of_member(
 
 
 def calc_min_rank(
-    thresholds: list[dict], level: int
+    thresholds: list[dict[str, Any]], level: int
 ) -> tuple[int | None, int | None]:
     """Naive scan: (rid, index) of the highest threshold <= level."""
     if not thresholds or level < thresholds[0]["threshold"]:

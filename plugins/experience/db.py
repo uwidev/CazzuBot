@@ -9,6 +9,8 @@ import logging
 
 import pendulum
 
+from typing import Any
+
 from cazzubot.db import Database
 from cazzubot.models import MemberExpLogSourceEnum
 
@@ -36,9 +38,9 @@ SCHEMA = [
 ]
 
 
-async def get_member_exp(db: Database, uid: int) -> dict | None:
+async def get_member_exp(db: Database, uid: int) -> dict[str, Any] | None:
     row = await db.fetchone("SELECT * FROM member_exp WHERE uid = ?", uid)
-    return dict(row) if row else None
+    return {k: row[k] for k in row.keys()} if row else None
 
 
 async def add_member_exp(
@@ -102,7 +104,7 @@ async def add_exp_log(
     )
 
 
-def _ranked(rows: list[dict]) -> list[tuple[int, int, int]]:
+def _ranked(rows: list[dict[str, Any]]) -> list[tuple[int, int, int]]:
     """Attach RANK()-style ranks (ties share, then skip) to (uid, exp) rows."""
     out: list[tuple[int, int, int]] = []
     prev_exp = None

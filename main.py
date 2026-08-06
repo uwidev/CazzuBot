@@ -13,9 +13,13 @@ import argparse
 import asyncio
 import logging
 import os
+import subprocess
 from pathlib import Path
 
-from discord.utils import _ColourFormatter, stream_supports_colour
+from discord.utils import (
+    _ColourFormatter,  # pyright: ignore[reportPrivateUsage]  # discord's own pattern
+    stream_supports_colour,
+)
 
 from cazzubot import CazzuBot, Config
 
@@ -87,5 +91,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    os.system("cls" if os.name == "nt" else "clear")
+    subprocess.run("cls" if os.name == "nt" else "clear", shell=True)
     main()

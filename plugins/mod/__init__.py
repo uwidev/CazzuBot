@@ -5,12 +5,16 @@ temp-ban expirations are handled by the central scheduler (tag ``modlog``).
 """
 
 import logging
+from typing import Any
 
 import discord
 import pendulum
 from discord.ext import commands
 
 from cazzubot import Plugin
+from cazzubot.bot import CazzuBot
+from cazzubot.db import Database
+from cazzubot.settings import Settings
 from cazzubot.window import window_info, window_success
 from cazzubot.models import ModlogStatusEnum, ModlogTypeEnum
 from cazzubot.timeparse import (
@@ -18,6 +22,7 @@ from cazzubot.timeparse import (
     is_future,
     normalize_time_str,
 )
+from typing_extensions import override
 
 _log = logging.getLogger(__name__)
 
@@ -42,7 +47,7 @@ MUTE_ROLE_KEY = "mod.mute_role"
 
 
 async def add_log(
-    db,
+    db: Database,
     uid: int,
     log_type: ModlogTypeEnum,
     given_on: pendulum.DateTime,
@@ -64,15 +69,15 @@ async def add_log(
     )
 
 
-async def get_mute_role(settings) -> int | None:
+async def get_mute_role(settings: Settings) -> int | None:
     return await settings.get(MUTE_ROLE_KEY)
 
 
-async def set_mute_role(settings, rid: int) -> None:
+async def set_mute_role(settings: Settings, rid: int) -> None:
     await settings.set(MUTE_ROLE_KEY, rid)
 
 
-async def on_modlog_due(bot, payload: dict) -> None:
+async def on_modlog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
     """Scheduler handler for tag ``modlog`` (mute/tempban expiry)."""
     log_type = ModlogTypeEnum(payload["log_type"])
     uid = payload["uid"]
@@ -107,7 +112,9 @@ async def on_modlog_due(bot, payload: dict) -> None:
     )
 
 
-def split_duration_reason(raw: str | None) -> tuple[object, str]:
+def split_duration_reason(
+    raw: str | None,
+) -> tuple[pendulum.DateTime | None, str]:
     """Parse an optional leading duration from the rest of the string."""
     if not raw:
         return None, ""
@@ -124,11 +131,15 @@ def split_duration_reason(raw: str | None) -> tuple[object, str]:
 class ModCog(commands.Cog):
     """Moderation actions with a persistent modlog."""
 
-    def __init__(self, bot) -> None:
+    def __init__(self, bot: CazzuBot) -> None:
         self.bot = bot
 
-    async def cog_check(self, ctx: commands.Context) -> bool:
-        perms = ctx.channel.permissions_for(ctx.author)
+    @override
+    async def cog_check(self, ctx: commands.Context[Any]) -> bool:
+        author = ctx.author
+        if not isinstance(author, discord.Member):
+            return False
+        perms = ctx.channel.permissions_for(author)
         return any(
             [
                 perms.moderate_members,
@@ -138,13 +149,17 @@ class ModCog(commands.Cog):
         )
 
     @commands.hybrid_command()
-    async def mod_check(self, ctx: commands.Context) -> None:
+    async def mod_check(self, ctx: commands.Context[CazzuBot]) -> None:
         """Check if you have moderator permissions."""
         await ctx.send("You have moderator permissions!")
 
     @commands.hybrid_command()
     async def warn(
-        self, ctx: commands.Context, member: discord.Member, *, reason: str
+        self,
+        ctx: commands.Context[CazzuBot],
+        member: discord.Member,
+        *,
+        reason: str,
     ) -> None:
         """Warn the member, writing a modlog entry."""
         await add_log(
@@ -159,10 +174,10 @@ class ModCog(commands.Cog):
     @commands.hybrid_command()
     async def mute(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         member: discord.Member,
         *,
-        raw: str = None,
+        raw: str | None = None,
     ) -> None:
         """Mute the user until the given time (relative or absolute, UTC)."""
         mute_id = await get_mute_role(self.bot.settings)
@@ -194,7 +209,11 @@ class ModCog(commands.Cog):
                 {"uid": member.id, "log_type": ModlogTypeEnum.MUTE.value},
             )
 
-        role = ctx.guild.get_role(mute_id)
+        guild = ctx.guild
+        if guild is None:
+            await ctx.send("Not in a guild.")
+            return
+        role = guild.get_role(mute_id)
         if role is None:
             await ctx.send("Mute role no longer exists in this server.")
             return
@@ -204,10 +223,10 @@ class ModCog(commands.Cog):
     @commands.hybrid_command()
     async def kick(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         member: discord.Member,
         *,
-        reason: str = None,
+        reason: str | None = None,
     ) -> None:
         """Kick a member, writing a modlog entry."""
         await add_log(
@@ -223,10 +242,10 @@ class ModCog(commands.Cog):
     @commands.hybrid_command()
     async def ban(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         member: discord.Member,
         *,
-        raw: str = None,
+        raw: str | None = None,
     ) -> None:
         """Ban the user until the given time; without one, forever."""
         now = pendulum.now("UTC")
@@ -258,11 +277,14 @@ class ModCog(commands.Cog):
 
     @commands.hybrid_command()
     async def unmute(
-        self, ctx: commands.Context, member: discord.Member
+        self, ctx: commands.Context[CazzuBot], member: discord.Member
     ) -> None:
         """Remove the mute role and any pending mute expiry."""
         mute_id = await get_mute_role(self.bot.settings)
-        role = ctx.guild.get_role(mute_id) if mute_id else None
+        guild = ctx.guild
+        if guild is None:
+            return
+        role = guild.get_role(mute_id) if mute_id else None
         if role and role in member.roles:
             await member.remove_roles(role, reason="Unmuted.")
         for task in await self.bot.scheduler.get("modlog"):
@@ -276,10 +298,13 @@ class ModCog(commands.Cog):
 
     @commands.hybrid_command()
     async def unban(
-        self, ctx: commands.Context, user: discord.User
+        self, ctx: commands.Context[CazzuBot], user: discord.User
     ) -> None:
         """Unban a user and drop any pending tempban expiry."""
-        await ctx.guild.unban(user, reason="Unbanned.")
+        guild = ctx.guild
+        if guild is None:
+            return
+        await guild.unban(user, reason="Unbanned.")
         for task in await self.bot.scheduler.get("modlog"):
             payload = task["payload"]
             if (
@@ -290,12 +315,12 @@ class ModCog(commands.Cog):
         await window_info(ctx, f"Unbanned {user}")
 
     @commands.hybrid_group()
-    async def set(self, ctx: commands.Context) -> None:
+    async def set(self, _ctx: commands.Context[CazzuBot]) -> None:
         """Mod settings."""
 
     @set.command(name="mute")
     async def set_mute(
-        self, ctx: commands.Context, *, role: discord.Role
+        self, ctx: commands.Context[CazzuBot], *, role: discord.Role
     ) -> None:
         await set_mute_role(self.bot.settings, role.id)
         await window_success(ctx, f"Mute role set to {role}")
@@ -303,18 +328,29 @@ class ModCog(commands.Cog):
     @commands.hybrid_command()
     async def slowmode(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         cooldown: int = 0,
-        channel: discord.TextChannel = None,
+        channel: discord.TextChannel | None = None,
     ) -> None:
-        channel = channel or ctx.channel
-        await channel.edit(slowmode_delay=cooldown)
+        target = channel or ctx.channel
+        if not isinstance(
+            target,
+            (
+                discord.TextChannel,
+                discord.VoiceChannel,
+                discord.StageChannel,
+                discord.Thread,
+            ),
+        ):
+            await ctx.send("Slowmode needs a text or voice channel.")
+            return
+        await target.edit(slowmode_delay=cooldown)
         if cooldown == 0:
             await ctx.send("Slowmode has been turned **off**.")
         else:
             await ctx.send(
                 f"Slowmode has been turned **on** with a {cooldown} "
-                "delay per message."
+                + "delay per message."
             )
 
 

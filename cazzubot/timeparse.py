@@ -7,7 +7,8 @@ boundary.
 
 import logging
 import re
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, cast
 
 import parsedatetime
 import pendulum
@@ -51,8 +52,9 @@ def normalize_time_str(arg: str) -> pendulum.DateTime:
     """
     arg = _shorthand_tmr.sub("tomorrow", _spaces_out_shorthands(arg))
     cal = parsedatetime.Calendar()
-    parsed, status = cal.parseDT(
-        arg, sourceTime=pendulum.now("UTC").naive()
+    parsed, status = cast(
+        tuple[datetime, int],
+        cal.parseDT(arg, sourceTime=pendulum.now("UTC").naive()),
     )
     if not status:
         raise InvalidTimeError(f"{arg} is not a valid time")
@@ -62,6 +64,11 @@ def normalize_time_str(arg: str) -> pendulum.DateTime:
 
 def is_future(past: pendulum.DateTime, future: pendulum.DateTime) -> bool:
     return past < future
+
+
+def parse_iso8601(raw: str) -> pendulum.DateTime:
+    """Parse an ISO-8601 timestamp we stored (always a UTC DateTime)."""
+    return cast(pendulum.DateTime, pendulum.parse(raw))
 
 
 def parse_duration(arg: str) -> pendulum.Duration:

@@ -37,6 +37,7 @@ from cazzubot import CazzuBot, Config  # noqa: E402
 from cazzubot import levels  # noqa: E402
 from cazzubot.models import WindowEnum  # noqa: E402
 from cazzubot.settings import Settings  # noqa: E402
+from cazzubot.timeparse import parse_iso8601  # noqa: E402
 
 from plugins.experience import db as exp_db  # noqa: E402
 from plugins.ranks import db as ranks_db  # noqa: E402
@@ -53,11 +54,11 @@ def check(cond: bool, label: str, detail: str = "") -> None:
     print(f"  [{status}] {label}" + (f" — {detail}" if detail else ""))
 
 
-def snapshot() -> dict:
+def snapshot() -> dict[int, dict[str, int]]:
     conn = sqlite3.connect(DB)
     rows = conn.execute(
         "SELECT uid, normal, frozen, capture, msg_cnt FROM member_frog f "
-        "JOIN member_exp e USING (uid)"
+        + "JOIN member_exp e USING (uid)"
     ).fetchall()
     conn.close()
     return {
@@ -72,7 +73,7 @@ async def main() -> None:
     total_frozen_before = sum(s["f"] for s in before.values())
     print(
         f"  before: members={len(before)} normal={total_normal_before} "
-        f"frozen={total_frozen_before}"
+        + f"frozen={total_frozen_before}"
     )
 
     bot = CazzuBot(
@@ -103,7 +104,7 @@ async def main() -> None:
         last_q_raw = await settings_store.get("quarterly.last_quarterly")
         freeze_expected = True
         if last_q_raw:
-            last_q = pendulum.parse(last_q_raw)
+            last_q = parse_iso8601(last_q_raw)
             freeze_expected = this_quarter > (
                 last_q.year,
                 (last_q.month - 1) // 3,
@@ -117,7 +118,7 @@ async def main() -> None:
                 == total_frozen_before + total_normal_before,
                 "quarterly catch-up freeze ran (normal -> frozen)",
                 f"normal {total_normal_before} -> {total_normal_after}, "
-                f"frozen {total_frozen_before} -> {total_frozen_after}",
+                + f"frozen {total_frozen_before} -> {total_frozen_after}",
             )
         else:
             # live/steady state: this boot must not change balances
@@ -129,7 +130,7 @@ async def main() -> None:
             )
 
         # daily reset must NOT have forced (last_daily is today)
-        msg_drift = [
+        msg_drift: list[int] = [
             uid
             for uid, s in before.items()
             if after[uid]["msg"] != s["msg"]

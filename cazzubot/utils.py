@@ -2,11 +2,13 @@
 
 import logging
 from collections.abc import Callable
-from typing import Any, NamedTuple, TypeVar
+from typing import Any, NamedTuple, TypeVar, cast
 
 import discord
 import pendulum
 from discord.ext import commands
+
+from cazzubot.bot import CazzuBot
 
 _log = logging.getLogger(__name__)
 
@@ -73,7 +75,7 @@ def prepare_embed(
 
 
 async def find_user(
-    bot: commands.Bot, ctx: commands.Context, uid: int
+    bot: commands.Bot, _ctx: commands.Context[Any], uid: int
 ) -> discord.User | discord.Member | None:
     """Resolve a user id from member cache, user cache, or a fetch."""
     for guild in bot.guilds:
@@ -132,7 +134,9 @@ class ConfirmView(discord.ui.View):
         label="Yes", style=discord.ButtonStyle.success, emoji="👍"
     )
     async def yes(
-        self, interaction: discord.Interaction, button: discord.ui.Button
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[Any],
     ) -> None:
         await self._finish(interaction, True)
 
@@ -140,13 +144,15 @@ class ConfirmView(discord.ui.View):
         label="No", style=discord.ButtonStyle.danger, emoji="❌"
     )
     async def no(
-        self, interaction: discord.Interaction, button: discord.ui.Button
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[Any],
     ) -> None:
         await self._finish(interaction, False)
 
 
 async def author_confirm(
-    ctx: commands.Context,
+    ctx: commands.Context[CazzuBot],
     confirmation_msg: str = "Please confirm.",
     *,
     delete_after: bool = True,
@@ -173,13 +179,15 @@ def deep_map(
 ) -> Any:
     """In-place walk over dicts/lists applying ``formatter`` to every string."""
     if isinstance(value, dict):
-        for k, v in value.items():
-            value[k] = deep_map(v, formatter, **kwargs)
-        return value
+        mapping = cast(dict[Any, Any], value)
+        for k, v in mapping.items():
+            mapping[k] = deep_map(v, formatter, **kwargs)
+        return mapping
     if isinstance(value, list):
-        for i, v in enumerate(value):
-            value[i] = deep_map(v, formatter, **kwargs)
-        return value
+        items = cast(list[Any], value)
+        for i, v in enumerate(items):
+            items[i] = deep_map(v, formatter, **kwargs)
+        return items
     if isinstance(value, str):
         return formatter(value, **kwargs)
     return value

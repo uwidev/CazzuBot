@@ -3,14 +3,18 @@
 import asyncio
 import logging
 from math import trunc
+from typing import Any
 
 import discord
 import pendulum
 from discord.ext import commands
 
 from cazzubot import leaderboard, levels, utils
+from cazzubot.bot import CazzuBot
+from cazzubot.timeparse import parse_iso8601
 from cazzubot.utils import OldNew
 from cazzubot.window import command_window, window_success, window_warn
+from typing_extensions import override
 
 from . import db as exp_db
 
@@ -56,8 +60,8 @@ class TopView(discord.ui.View):
 
     def __init__(
         self,
-        cog,
-        ctx: commands.Context,
+        cog: "ExperienceCog",
+        ctx: commands.Context[CazzuBot],
         date: pendulum.DateTime,
         rows: list[tuple[int, int, int]],
         page: int = 1,
@@ -74,7 +78,7 @@ class TopView(discord.ui.View):
         self.message: discord.Message | None = None
 
     async def _edit(self, interaction: discord.Interaction) -> None:
-        embed = await self.cog._top_embed(
+        embed = await self.cog.top_embed(
             self.ctx, self.date, self.rows, self.page
         )
         await interaction.response.edit_message(embed=embed)
@@ -86,7 +90,9 @@ class TopView(discord.ui.View):
 
     @discord.ui.button(emoji="⬅", style=discord.ButtonStyle.secondary)
     async def prev_season(
-        self, interaction: discord.Interaction, button: discord.ui.Button
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[Any],
     ) -> None:
         if interaction.user.id != self.author_id:
             await self._deny(interaction)
@@ -100,7 +106,9 @@ class TopView(discord.ui.View):
 
     @discord.ui.button(emoji="◀", style=discord.ButtonStyle.secondary)
     async def prev_page(
-        self, interaction: discord.Interaction, button: discord.ui.Button
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[Any],
     ) -> None:
         if interaction.user.id != self.author_id:
             await self._deny(interaction)
@@ -110,7 +118,9 @@ class TopView(discord.ui.View):
 
     @discord.ui.button(emoji="▶", style=discord.ButtonStyle.secondary)
     async def next_page(
-        self, interaction: discord.Interaction, button: discord.ui.Button
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[Any],
     ) -> None:
         if interaction.user.id != self.author_id:
             await self._deny(interaction)
@@ -120,7 +130,9 @@ class TopView(discord.ui.View):
 
     @discord.ui.button(emoji="➡", style=discord.ButtonStyle.secondary)
     async def next_season(
-        self, interaction: discord.Interaction, button: discord.ui.Button
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[Any],
     ) -> None:
         if interaction.user.id != self.author_id:
             await self._deny(interaction)
@@ -132,6 +144,7 @@ class TopView(discord.ui.View):
         self.page = 1
         await self._edit(interaction)
 
+    @override
     async def on_timeout(self) -> None:
         """Strip the buttons once idle."""
         if self.message is not None:
@@ -144,14 +157,19 @@ class TopView(discord.ui.View):
 class ExperienceCog(commands.Cog):
     """Experience scoring and leaderboards."""
 
-    def __init__(self, bot) -> None:
+    def __init__(self, bot: CazzuBot) -> None:
         self.bot = bot
         self._exp_locks: dict[int, asyncio.Lock] = {}
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         """Award exp based on daily message count; handle level/rank ups."""
-        if message.author.bot or message.author.id == self.bot.user.id:
+        if message.author.bot:
+            return
+        if (
+            self.bot.user is not None
+            and message.author.id == self.bot.user.id
+        ):
             return
         if (
             message.guild is None
@@ -179,9 +197,14 @@ class ExperienceCog(commands.Cog):
                 cdr=now.subtract(hours=1).isoformat(),
             )
             member_db = await exp_db.get_member_exp(self.bot.db, uid)
+        if member_db is None:
+            _log.error(
+                "member exp row missing after insert for uid %s", uid
+            )
+            return
 
         cdr = member_db["cdr"]
-        if cdr and now < pendulum.parse(cdr):
+        if cdr and now < parse_iso8601(cdr):
             return  # cooldown not yet expired
 
         # compute gains
@@ -233,39 +256,43 @@ class ExperienceCog(commands.Cog):
 
     # -- commands ----------------------------------------------------------
 
-    @commands.hybrid_group(
-        aliases=["xp", "experience"], invoke_without_command=True
-    )
+    @commands.hybrid_group(aliases=["xp", "experience"])
     async def exp(
-        self, ctx: commands.Context, *, user: discord.Member = None
+        self,
+        ctx: commands.Context[CazzuBot],
+        *,
+        user: discord.Member | None = None,
     ) -> None:
         """Show this season's experience and leaderboard."""
-        user = user or ctx.author
+        target = user or ctx.author
         now = pendulum.now("UTC")
         rows = await exp_db.seasonal_ranked(
             self.bot.db, now.year, (now.month - 1) // 3
         )
         await ctx.send(
-            embed=await self._prepare_personal_summary(ctx, user, rows)
+            embed=await self._prepare_personal_summary(ctx, target, rows)
         )
 
     @exp.command(name="lifetime")
     async def exp_lifetime(
-        self, ctx: commands.Context, *, user: discord.Member = None
+        self,
+        ctx: commands.Context[CazzuBot],
+        *,
+        user: discord.Member | None = None,
     ) -> None:
         """Lifetime experience variant."""
-        user = user or ctx.author
+        target = user or ctx.author
         rows = await exp_db.lifetime_ranked(self.bot.db)
         await ctx.send(
             embed=await self._prepare_personal_summary(
-                ctx, user, rows, lifetime=True
+                ctx, target, rows, lifetime=True
             )
         )
 
     async def _prepare_personal_summary(
         self,
-        ctx: commands.Context,
-        user: discord.Member,
+        ctx: commands.Context[CazzuBot],
+        user: discord.Member | discord.User,
         rows: list[tuple[int, int, int]],
         *,
         lifetime: bool = False,
@@ -288,12 +315,13 @@ class ExperienceCog(commands.Cog):
         uid_index = uids.index(uid)
         subset, subset_i = leaderboard.create_focus_subset(rows, uid_index)
 
-        ranks, _, exps = zip(*subset)
+        ranks = [r[0] for r in subset]
+        exps = [r[2] for r in subset]
         lvls = [levels.level_from_exp(e) for e in exps]
-        names = []
+        names: list[str] = []
         for uid_ in [r[1] for r in subset]:
-            user = await utils.find_user(self.bot, ctx, uid_)
-            names.append(user.display_name if user else str(uid_))
+            found = await utils.find_user(self.bot, ctx, uid_)
+            names.append(found.display_name if found else str(uid_))
 
         window = list(zip(ranks, exps, lvls, names))
         headers = ["Rank", "Exp", "Lv", "User"]
@@ -318,7 +346,9 @@ class ExperienceCog(commands.Cog):
             uid,
             mode=WindowEnum.LIFETIME if lifetime else WindowEnum.SEASONAL,
         )
-        role = ctx.guild.get_role(rid) if rid else None
+        role = None
+        if rid is not None and ctx.guild is not None:
+            role = ctx.guild.get_role(rid)
 
         lvl = lvls[subset_i]
         exp = exps[subset_i]
@@ -352,7 +382,7 @@ class ExperienceCog(commands.Cog):
     @exp.command(name="top")
     async def exp_top(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         year: int | None = None,
         season: int | None = None,
         page: int | None = None,
@@ -383,14 +413,14 @@ class ExperienceCog(commands.Cog):
 
         view = TopView(self, ctx, date, rows, page=page)
         msg = await ctx.send(
-            embed=await self._top_embed(ctx, date, rows, page), view=view
+            embed=await self.top_embed(ctx, date, rows, page), view=view
         )
         view.message = msg
         await view.wait()
 
-    async def _top_embed(
+    async def top_embed(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         date: pendulum.DateTime,
         rows: list[tuple[int, int, int]],
         page: int,
@@ -411,9 +441,11 @@ class ExperienceCog(commands.Cog):
                     embed.set_thumbnail(url=top_user.display_avatar.url)
 
             subset = rows[(page - 1) * 10 : page * 10]
-            ranks, uids, exps = zip(*subset)
+            ranks = [r[0] for r in subset]
+            uids = [r[1] for r in subset]
+            exps = [r[2] for r in subset]
             lvls = [levels.level_from_exp(e) for e in exps]
-            names = []
+            names: list[str] = []
             for id_ in uids:
                 user = await utils.find_user(self.bot, ctx, id_)
                 names.append(user.display_name if user else str(id_))
@@ -443,7 +475,7 @@ class ExperienceCog(commands.Cog):
 
     @exp.command(name="resync")
     @commands.is_owner()
-    async def exp_resync(self, ctx: commands.Context) -> None:
+    async def exp_resync(self, ctx: commands.Context[CazzuBot]) -> None:
         """Rebuild every member's lifetime exp from the exp logs."""
         if not await utils.author_confirm(ctx):
             return
@@ -453,8 +485,8 @@ class ExperienceCog(commands.Cog):
             await exp_db.sync_with_exp_logs(self.bot.db)
             window.success("Lifetime exp synced.")
 
-    @exp.group(name="quiet", invoke_without_command=True)
-    async def quiet(self, ctx: commands.Context) -> None:
+    @exp.group(name="quiet")
+    async def quiet(self, ctx: commands.Context[CazzuBot]) -> None:
         """List channels where level-up messages are suppressed."""
         quiets: list[int] = (
             await self.bot.settings.get("level.quiet", []) or []
@@ -464,7 +496,7 @@ class ExperienceCog(commands.Cog):
     @quiet.command(name="add")
     @commands.has_permissions(administrator=True)
     async def quiet_add(
-        self, ctx: commands.Context, channel: discord.TextChannel
+        self, ctx: commands.Context[CazzuBot], channel: discord.TextChannel
     ) -> None:
         quiets: list[int] = (
             await self.bot.settings.get("level.quiet", []) or []
@@ -481,7 +513,7 @@ class ExperienceCog(commands.Cog):
     @quiet.command(name="del")
     @commands.has_permissions(administrator=True)
     async def quiet_del(
-        self, ctx: commands.Context, channel: discord.TextChannel
+        self, ctx: commands.Context[CazzuBot], channel: discord.TextChannel
     ) -> None:
         quiets: list[int] = (
             await self.bot.settings.get("level.quiet", []) or []

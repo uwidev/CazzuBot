@@ -44,7 +44,7 @@ class Config:
         if token is None:
             raise RuntimeError(
                 "Missing discord token: set TOKEN_DEV (dev) or TOKEN "
-                "(production) in .env"
+                + "(production) in .env"
             )
         if owner_id is None:
             raise RuntimeError("Missing OWNER_ID in .env")

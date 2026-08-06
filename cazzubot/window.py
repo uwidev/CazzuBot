@@ -31,7 +31,9 @@ One-off::
 
 import functools
 import logging
-from typing import Any
+from collections.abc import Callable
+from types import TracebackType
+from typing import Any, Protocol, TypeVar, cast
 
 _log = logging.getLogger(__name__)
 
@@ -40,10 +42,21 @@ _WARN = "\u26a0\ufe0e"  # ⚠︎ (text presentation, not emoji)
 _ERROR = "\u2716"  # ✖
 
 
+class Sendable(Protocol):
+    """Anything a window can flush to (a command ``ctx`` in practice)."""
+
+    async def send(
+        self,
+        content: str | None = None,
+        *,
+        ephemeral: bool = False,
+    ) -> Any: ...
+
+
 class CommandWindow:
     """Buffered level-tagged reporting for one command invocation."""
 
-    def __init__(self, ctx: Any) -> None:
+    def __init__(self, ctx: Sendable) -> None:
         self._ctx = ctx
         self._lines: list[str] = []
 
@@ -81,7 +94,12 @@ class CommandWindow:
     async def __aenter__(self) -> "CommandWindow":
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> bool:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
         if exc_type is not None:
             self.error(f"{exc_type.__name__}: {exc}")
         try:
@@ -92,12 +110,15 @@ class CommandWindow:
         return False  # re-raise
 
 
-def command_window(ctx: Any) -> CommandWindow:
+def command_window(ctx: Sendable) -> CommandWindow:
     """Open a window into a command's internal state."""
     return CommandWindow(ctx)
 
 
-def windowed(func):
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def windowed(func: F) -> F:
     """Attach a CommandWindow to the command's ``ctx`` as ``ctx.window``.
 
     Auto-flushes at the end of the command and on error. Stack it below
@@ -106,9 +127,11 @@ def windowed(func):
     """
 
     @functools.wraps(func)
-    async def wrapper(self, ctx, *args, **kwargs):
+    async def wrapper(
+        self: Any, ctx: Any, *args: Any, **kwargs: Any
+    ) -> Any:
         window = CommandWindow(ctx)
-        ctx.window = window  # type: ignore[attr-defined]
+        ctx.window = window
         try:
             result = await func(self, ctx, *args, **kwargs)
         except BaseException as exc:
@@ -121,30 +144,30 @@ def windowed(func):
                 _log.exception("failed to flush command window")
         return result
 
-    return wrapper
+    return cast(F, wrapper)
 
 
-async def _one_off(ctx: Any, level: str, msg: object) -> None:
+async def _one_off(ctx: Sendable, level: str, msg: object) -> None:
     window = CommandWindow(ctx)
     getattr(window, level)(msg)
     await window.flush()
 
 
-async def window_debug(ctx: Any, msg: object) -> None:
+async def window_debug(ctx: Sendable, msg: object) -> None:
     await _one_off(ctx, "debug", msg)
 
 
-async def window_info(ctx: Any, msg: object) -> None:
+async def window_info(ctx: Sendable, msg: object) -> None:
     await _one_off(ctx, "info", msg)
 
 
-async def window_success(ctx: Any, msg: object) -> None:
+async def window_success(ctx: Sendable, msg: object) -> None:
     await _one_off(ctx, "success", msg)
 
 
-async def window_warn(ctx: Any, msg: object) -> None:
+async def window_warn(ctx: Sendable, msg: object) -> None:
     await _one_off(ctx, "warn", msg)
 
 
-async def window_error(ctx: Any, msg: object) -> None:
+async def window_error(ctx: Sendable, msg: object) -> None:
     await _one_off(ctx, "error", msg)

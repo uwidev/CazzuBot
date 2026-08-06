@@ -9,6 +9,8 @@ import logging
 
 import pendulum
 
+from typing import Any
+
 from cazzubot.db import Database
 from cazzubot.settings import Settings
 from cazzubot.models import FrogTypeEnum
@@ -50,11 +52,11 @@ ENABLED_KEY = "frog.enabled"
 # -- settings --------------------------------------------------------------
 
 
-async def get_message(settings: Settings) -> dict | None:
+async def get_message(settings: Settings) -> dict[str, Any] | None:
     return await settings.get(MESSAGE_KEY)
 
 
-async def set_message(settings: Settings, message: dict) -> None:
+async def set_message(settings: Settings, message: dict[str, Any]) -> None:
     await settings.set(MESSAGE_KEY, message)
 
 
@@ -152,7 +154,7 @@ async def freeze_frogs(db: Database) -> None:
 # -- member_frog_log -------------------------------------------------------
 
 
-def _ranked(rows: list[dict]) -> list[tuple[int, int, int]]:
+def _ranked(rows: list[dict[str, Any]]) -> list[tuple[int, int, int]]:
     """Attach RANK()-style ranks (ties share, then skip) to (uid, cnt) rows."""
     out: list[tuple[int, int, int]] = []
     prev = None
@@ -271,8 +273,8 @@ async def clear_spawns(db: Database) -> None:
     await db.execute("DELETE FROM frog_spawn")
 
 
-async def get_spawns(db: Database) -> list[dict]:
+async def get_spawns(db: Database) -> list[dict[str, Any]]:
     rows = await db.fetchall(
         "SELECT cid, interval, persist, fuzzy FROM frog_spawn"
     )
-    return [dict(r) for r in rows]
+    return [{k: r[k] for k in r.keys()} for r in rows]

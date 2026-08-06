@@ -7,7 +7,7 @@ schema is imported from the real v2 DDL lists (settings, scheduler, plugins).
 
 Usage::
 
-    PGPASSWORD=... uv run --with asyncpg python scripts/migrate_pg_to_sqlite.py
+    PGPASSWORD=... uv run --group migration python scripts/migrate_pg_to_sqlite.py
                            [--gid 293796316193095690] [--out data/cazzubot.migrated.db]
 
 Defaults: host 192.168.1.3, port 5432, db main, user cazzubot, no SSL,
@@ -22,7 +22,9 @@ import logging
 import os
 import sqlite3
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 # make the project root importable when run as ``python scripts/<name>.py``
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -32,8 +34,8 @@ from dotenv import load_dotenv
 
 # -- schema: import the real v2 DDL lists ----------------------------------
 from cazzubot.db import dump_json
-from cazzubot.scheduler import _SCHEMA as _TASKS_SCHEMA
-from cazzubot.settings import _SCHEMA as _SETTINGS_SCHEMA
+from cazzubot.scheduler import SCHEMA as _TASKS_SCHEMA
+from cazzubot.settings import SCHEMA as _SETTINGS_SCHEMA
 from plugins.counter import SCHEMA as _COUNTER_SCHEMA
 from plugins.experience.db import SCHEMA as _EXP_SCHEMA
 from plugins.frogs.db import SCHEMA as _FROGS_SCHEMA
@@ -67,31 +69,36 @@ CREATE TABLE IF NOT EXISTS _archive_member_frog_deprecated_normal (
 
 # -- transforms -------------------------------------------------------------
 
+#: asyncpg returns untyped Record mappings; transforms read named columns.
+RowTransform = Callable[[dict[str, Any]], tuple[Any, ...]]
+#: (sqlite table, select, count-sql, insert, transform)
+TableSpec = tuple[str, str, str, str, RowTransform]
 
-def iso(value):
+
+def iso(value: Any) -> str | None:
     """datetime | None -> ISO-8601 string | None."""
     return value.isoformat() if value is not None else None
 
 
-def to0(value):
+def to0(value: Any) -> Any:
     """None -> 0 (v2 columns are NOT NULL DEFAULT 0)."""
     return 0 if value is None else value
 
 
-def to_flag(value):
+def to_flag(value: Any) -> int:
     """bool -> 1/0 for v2 integer flags."""
     return 1 if value else 0
 
 
-def exp_row(r):
+def exp_row(r: dict[str, Any]) -> tuple[Any, ...]:
     return (r["uid"], r["exp"], iso(r["at"]) or SENTINEL_AT, r["source"])
 
 
-def exp_stats_row(r):
+def exp_stats_row(r: dict[str, Any]) -> tuple[Any, ...]:
     return (r["uid"], r["lifetime"], r["msg_cnt"], iso(r["cdr"]))
 
 
-def frog_row(r):
+def frog_row(r: dict[str, Any]) -> tuple[Any, ...]:
     return (
         r["uid"],
         to0(r["normal"]),
@@ -100,7 +107,7 @@ def frog_row(r):
     )
 
 
-def frog_log_row(r):
+def frog_log_row(r: dict[str, Any]) -> tuple[Any, ...]:
     return (
         r["uid"],
         r["type"],
@@ -109,15 +116,15 @@ def frog_log_row(r):
     )
 
 
-def spawn_row(r):
+def spawn_row(r: dict[str, Any]) -> tuple[Any, ...]:
     return (r["cid"], r["interval"], r["persist"], r["fuzzy"])
 
 
-def threshold_row(r):
+def threshold_row(r: dict[str, Any]) -> tuple[Any, ...]:
     return (r["rid"], to0(r["threshold"]), r["mode"])
 
 
-def modlog_row(r):
+def modlog_row(r: dict[str, Any]) -> tuple[Any, ...]:
     return (
         r["case_id"],
         r["uid"],
@@ -129,11 +136,11 @@ def modlog_row(r):
     )
 
 
-def counter_row(r):
+def counter_row(r: dict[str, Any]) -> tuple[Any, ...]:
     return (r["mid"], r["count"])
 
 
-def poll_row(r):
+def poll_row(r: dict[str, Any]) -> tuple[Any, ...]:
     return (
         r["id"],
         r["title"],
@@ -145,7 +152,7 @@ def poll_row(r):
 
 
 # (sqlite table, select, count-sql, insert, transform)
-TABLES = [
+TABLES: list[TableSpec] = [
     (
         "member_exp",
         "SELECT uid, lifetime, msg_cnt, cdr FROM member_exp WHERE gid = $1",
@@ -170,7 +177,7 @@ TABLES = [
     (
         "member_frog_log",
         "SELECT uid, type, at, waited_for FROM member_frog_log "
-        "WHERE gid = $1 OR gid IS NULL",
+        + "WHERE gid = $1 OR gid IS NULL",
         "SELECT COUNT(*) FROM member_frog_log WHERE gid = $1 OR gid IS NULL",
         "INSERT INTO member_frog_log (uid, type, at, waited_for) VALUES (?, ?, ?, ?)",
         frog_log_row,
@@ -192,10 +199,10 @@ TABLES = [
     (
         "modlog",
         "SELECT uid, case_id, log_type, given_on, status, expires_on, reason "
-        "FROM modlog WHERE gid = $1",
+        + "FROM modlog WHERE gid = $1",
         "SELECT COUNT(*) FROM modlog WHERE gid = $1",
         "INSERT INTO modlog (id, uid, log_type, given_on, status, expires_on, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
         modlog_row,
     ),
     (
@@ -210,13 +217,15 @@ TABLES = [
         "SELECT id, title, description, max_vote, mid, open FROM poll WHERE gid = $1",
         "SELECT COUNT(*) FROM poll WHERE gid = $1",
         "INSERT INTO poll (id, title, description, max_vote, mid, open) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        + "VALUES (?, ?, ?, ?, ?, ?)",
         poll_row,
     ),
 ]
 
 
-async def migrate_table(pg, sqlite, gid: int, spec) -> dict:
+async def migrate_table(
+    pg: Any, sqlite: sqlite3.Connection, gid: int, spec: TableSpec
+) -> dict[str, Any]:
     """Stream rows from postgres, transform, batch-insert into sqlite."""
     name, select, count_sql, insert_sql, transform = spec
     src_count = await pg.fetchval(count_sql, gid)
@@ -232,21 +241,23 @@ async def migrate_table(pg, sqlite, gid: int, spec) -> dict:
     return {"table": name, "source": src_count, "inserted": inserted}
 
 
-async def migrate_polls(pg, sqlite, gid: int) -> list[dict]:
+async def migrate_polls(
+    pg: Any, sqlite: sqlite3.Connection, gid: int
+) -> list[dict[str, Any]]:
     """Migrate poll items + votes, renumbering per-poll item ids.
 
     v1 ``poll_item.id`` is unique only per (gid, pid); v2 requires globally
     unique item ids (``poll_vote.iid`` references them by a single column).
     Assign new global ids in (pid, id) order and rewrite vote ``iid``s.
     """
-    report: list[dict] = []
+    report: list[dict[str, Any]] = []
 
     items = await pg.fetch(
         "SELECT id, pid FROM poll_item WHERE gid = $1 ORDER BY pid, id",
         gid,
     )
     mapping: dict[tuple[int, int], int] = {}
-    rows = []
+    rows: list[tuple[int, Any]] = []
     for new_id, item in enumerate(items, start=1):
         mapping[(item["pid"], item["id"])] = new_id
         rows.append((new_id, item["pid"]))
@@ -262,7 +273,7 @@ async def migrate_polls(pg, sqlite, gid: int) -> list[dict]:
         "SELECT pid, iid, uid, count FROM poll_vote WHERE gid = $1", gid
     )
     inserted = skipped = 0
-    batch = []
+    batch: list[tuple[Any, ...]] = []
     for v in votes:
         new_iid = mapping.get((v["pid"], v["iid"]))
         if new_iid is None:
@@ -286,16 +297,18 @@ async def migrate_polls(pg, sqlite, gid: int) -> list[dict]:
     return report
 
 
-async def migrate_settings(pg, sqlite, gid: int) -> list[dict]:
+async def migrate_settings(
+    pg: Any, sqlite: sqlite3.Connection, gid: int
+) -> list[tuple[str, bool]]:
     """Port v1 config tables into v2 ``settings`` rows (JSON-encoded)."""
-    report = []
+    report: list[tuple[str, bool]] = []
 
-    def put(key, value):
+    def put(key: str, value: Any) -> bool:
         if value is None:
             return False
         sqlite.execute(
             "INSERT INTO settings (key, value) VALUES (?, ?) "
-            "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            + "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
             (key, dump_json(value)),
         )
         return True
@@ -389,24 +402,26 @@ async def migrate_settings(pg, sqlite, gid: int) -> list[dict]:
     return report
 
 
-async def migrate_archive(pg, sqlite, gid: int) -> int:
+async def migrate_archive(
+    pg: Any, sqlite: sqlite3.Connection, gid: int
+) -> int:
     """Archive v1 ``member_frog.deprecated_normal`` (see MAPPING.md)."""
     sqlite.execute(ARCHIVE_DDL)
     rows = await pg.fetch(
         "SELECT uid, deprecated_normal FROM member_frog "
-        "WHERE gid = $1 AND deprecated_normal <> 0",
+        + "WHERE gid = $1 AND deprecated_normal <> 0",
         gid,
     )
     sqlite.executemany(
         "INSERT INTO _archive_member_frog_deprecated_normal (uid, deprecated_normal) "
-        "VALUES (?, ?)",
+        + "VALUES (?, ?)",
         [(r["uid"], r["deprecated_normal"]) for r in rows],
     )
     sqlite.commit()
     return len(rows)
 
 
-def verify_sqlite(sqlite, gid: int) -> list[str]:
+def verify_sqlite(sqlite: sqlite3.Connection, _gid: int) -> list[str]:
     """Post-load sanity checks; returns a list of problem strings (empty = ok)."""
     problems: list[str] = []
 
@@ -495,14 +510,18 @@ async def main() -> int:
         level=logging.INFO, format="[%(levelname)s] %(message)s"
     )
 
-    pg = await asyncpg.connect(
-        host=args.host,
-        port=args.port,
-        user=args.user,
-        password=password,
-        database=args.db,
-        ssl=False,
-        timeout=15,
+    # asyncpg is untyped (no py.typed); the cast is the boundary to Any.
+    pg = cast(
+        Any,
+        await asyncpg.connect(
+            host=args.host,
+            port=args.port,
+            user=args.user,
+            password=password,
+            database=args.db,
+            ssl=False,
+            timeout=15,
+        ),
     )
     _log.info(
         "connected to postgres %s:%s/%s", args.host, args.port, args.db
@@ -522,7 +541,7 @@ async def main() -> int:
     sqlite.commit()
     _log.info("schema applied from %d DDL sources", len(SCHEMA_SOURCES))
 
-    report = []
+    report: list[dict[str, Any]] = []
     try:
         # asyncpg cursors need a transaction; SELECT-only, never mutates source
         async with pg.transaction():
@@ -573,7 +592,7 @@ async def main() -> int:
             # special-case counters for the report
             null_at = await pg.fetchval(
                 "SELECT COUNT(*) FROM member_exp_log "
-                "WHERE gid = $1 AND at IS NULL",
+                + "WHERE gid = $1 AND at IS NULL",
                 args.gid,
             )
             null_gid_logs = await pg.fetchval(
@@ -581,7 +600,7 @@ async def main() -> int:
             )
             frozen_src = await pg.fetchval(
                 "SELECT COUNT(*) FROM member_exp_log "
-                "WHERE gid = $1 AND source = 'frozen'",
+                + "WHERE gid = $1 AND source = 'frozen'",
                 args.gid,
             )
             _log.info(

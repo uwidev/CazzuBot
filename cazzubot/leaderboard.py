@@ -34,7 +34,7 @@ def create_focus_subset(
 
 
 def calc_max_col_width(
-    entries: list[list[Any]],
+    entries: Sequence[Sequence[str | int]],
     headers: list[str] | None = None,
     max_padding: list[int] | None = None,
 ) -> list[int]:
@@ -44,16 +44,14 @@ def calc_max_col_width(
     if not max_padding:
         max_padding = [999] * len(headers)
 
-    padding = []
+    padding: list[int] = []
     for col in range(len(entries[0])):
-        entire_col = [
-            (
-                str(entries[row][col])
-                if isinstance(entries[row][col], str)
-                else f"{entries[row][col]:,}"
+        entire_col: list[str] = []
+        for row in range(len(entries)):
+            cell = entries[row][col]
+            entire_col.append(
+                str(cell) if isinstance(cell, str) else f"{cell:,}"
             )
-            for row in range(len(entries))
-        ]
         widest_val = len(sorted(entire_col, key=len)[-1])
         width = min(max(widest_val, len(headers[col])), max_padding[col])
         padding.append(width)
@@ -61,7 +59,7 @@ def calc_max_col_width(
 
 
 def format(
-    entries: list[list[Any]],
+    entries: Sequence[Sequence[str | int]],
     headers: list[str],
     *,
     align: list[str],
@@ -76,7 +74,7 @@ def format(
         f"{headers[i]:{align[i]}{padding[i]}}" for i in range(len(padding))
     )
 
-    rows_s = []
+    rows_s: list[str] = []
     for row_i, row in enumerate(entries):
         row_fill = "" if row_i % 2 else fill
         row_s = f"{(' ' if row_i % 2 else fill) * spacing}".join(
@@ -118,7 +116,9 @@ async def format_leaderboard_embed(
     Columns: Rank / Exp / Lv / User. ``names`` must be user-resolved display
     names in the same order. Highlights the user's row with ``@``.
     """
-    ranks, uids, exps = zip(*rows)
+    ranks = [r[0] for r in rows]
+    uids = [r[1] for r in rows]
+    exps = [r[2] for r in rows]
     lvls = [levels.level_from_exp(e) for e in exps]
 
     window = list(zip(ranks, exps, lvls, names))

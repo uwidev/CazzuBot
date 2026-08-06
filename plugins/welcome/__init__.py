@@ -12,11 +12,13 @@ A ``last_welcomed_id`` guard prevents double welcomes (v1's hard-won fix).
 import asyncio
 import json
 import logging
+from typing import Any
 
 import discord
 from discord.ext import commands
 
 from cazzubot import Plugin, templates, utils
+from cazzubot.bot import CazzuBot
 from cazzubot.window import window_success
 from cazzubot.models import WelcomeModeEnum
 
@@ -38,7 +40,7 @@ def formatter(s: str, *, member: discord.Member) -> str:
 class WelcomeCog(commands.Cog):
     """Welcomes new members and configures the welcome message."""
 
-    def __init__(self, bot) -> None:
+    def __init__(self, bot: CazzuBot) -> None:
         self.bot = bot
         self.last_welcomed_id: int | None = None
 
@@ -53,7 +55,7 @@ class WelcomeCog(commands.Cog):
 
         cid = await self.bot.settings.get("welcome.cid")
         channel = before.guild.get_channel(cid) if cid else None
-        if channel is None:
+        if not isinstance(channel, discord.abc.Messageable):
             _log.warning("welcome channel %s not found", cid)
             return
 
@@ -87,31 +89,36 @@ class WelcomeCog(commands.Cog):
 
     async def _send_welcome(
         self,
-        sendable: discord.PartialMessageable,
+        sendable: discord.abc.Messageable,
         member: discord.Member,
-        msg_json: dict | None,
+        msg_json: dict[str, Any] | None,
     ) -> None:
         await asyncio.sleep(1)  # let user UI update so the ping works
         if not msg_json:
             return
         utils.deep_map(msg_json, formatter, member=member)
         content, embed, embeds = templates.prepare(msg_json)
-        await sendable.send(content, embed=embed, embeds=embeds)
+        if embed:
+            await sendable.send(content=content, embed=embed)
+        elif embeds:
+            await sendable.send(content=content, embeds=embeds)
+        else:
+            await sendable.send(content=content or "_ _")
 
     # -- configuration ------------------------------------------------------
 
     @commands.hybrid_group()
     @commands.has_permissions(administrator=True)
-    async def welcome(self, ctx: commands.Context) -> None:
+    async def welcome(self, _ctx: commands.Context[CazzuBot]) -> None:
         """Entry command for welcome settings."""
 
     @welcome.group(name="set")
-    async def welcome_set(self, ctx: commands.Context) -> None:
+    async def welcome_set(self, _ctx: commands.Context[CazzuBot]) -> None:
         """Set command entry."""
 
     @welcome_set.command(name="enabled")
     async def welcome_set_enabled(
-        self, ctx: commands.Context, enabled: bool
+        self, ctx: commands.Context[CazzuBot], enabled: bool
     ) -> None:
         await self.bot.settings.set("welcome.enabled", enabled)
         await window_success(
@@ -123,7 +130,7 @@ class WelcomeCog(commands.Cog):
 
     @welcome_set.command(name="verify")
     async def welcome_set_verify_first(
-        self, ctx: commands.Context, verify_first: bool
+        self, ctx: commands.Context[CazzuBot], verify_first: bool
     ) -> None:
         await self.bot.settings.set("welcome.verify_first", verify_first)
         await window_success(
@@ -135,21 +142,21 @@ class WelcomeCog(commands.Cog):
 
     @welcome_set.command(name="role")
     async def welcome_set_rid(
-        self, ctx: commands.Context, role: discord.Role
+        self, ctx: commands.Context[CazzuBot], role: discord.Role
     ) -> None:
         await self.bot.settings.set("welcome.default_rid", role.id)
         await window_success(ctx, f"Default role set to {role}")
 
     @welcome_set.command(name="channel")
     async def welcome_set_cid(
-        self, ctx: commands.Context, channel: discord.TextChannel
+        self, ctx: commands.Context[CazzuBot], channel: discord.TextChannel
     ) -> None:
         await self.bot.settings.set("welcome.cid", channel.id)
         await window_success(ctx, f"Welcome channel set to {channel}")
 
     @welcome_set.command(name="message", aliases=["msg"])
     async def welcome_set_message(
-        self, ctx: commands.Context, *, message: str
+        self, ctx: commands.Context[CazzuBot], *, message: str
     ) -> None:
         """Set the welcome message JSON (embed-capable).
 
@@ -164,7 +171,7 @@ class WelcomeCog(commands.Cog):
 
     @welcome_set.command(name="mode")
     async def welcome_set_mode(
-        self, ctx: commands.Context, *, mode: str
+        self, ctx: commands.Context[CazzuBot], *, mode: str
     ) -> None:
         try:
             mode_enum = WelcomeModeEnum(mode.lower())
@@ -177,13 +184,13 @@ class WelcomeCog(commands.Cog):
 
     @welcome_set.command(name="monitor")
     async def welcome_set_monitor(
-        self, ctx: commands.Context, *, role: discord.Role
+        self, ctx: commands.Context[CazzuBot], *, role: discord.Role
     ) -> None:
         await self.bot.settings.set("welcome.monitor_rid", role.id)
         await window_success(ctx, f"Monitored role set to {role}")
 
     @welcome.command(name="demo")
-    async def welcome_demo(self, ctx: commands.Context) -> None:
+    async def welcome_demo(self, ctx: commands.Context[CazzuBot]) -> None:
         """Preview the welcome message with you as the new user."""
         msg_json = await self.bot.settings.get("welcome.message")
         if not msg_json:
@@ -191,10 +198,15 @@ class WelcomeCog(commands.Cog):
             return
         utils.deep_map(msg_json, formatter, member=ctx.author)
         content, embed, embeds = templates.prepare(msg_json)
-        await ctx.send(content, embed=embed, embeds=embeds)
+        if embed:
+            await ctx.send(content=content, embed=embed)
+        elif embeds:
+            await ctx.send(content=content, embeds=embeds)
+        else:
+            await ctx.send(content=content or "_ _")
 
     @welcome.command(name="raw")
-    async def welcome_raw(self, ctx: commands.Context) -> None:
+    async def welcome_raw(self, ctx: commands.Context[CazzuBot]) -> None:
         """Dump the raw stored welcome message JSON."""
         msg_json = await self.bot.settings.get("welcome.message")
         await ctx.send(f"```{json.dumps(msg_json, indent=2)}```")

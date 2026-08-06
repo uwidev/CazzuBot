@@ -1,13 +1,16 @@
 """Ranks plugin cog — per-window rank threshold management."""
 
 import json
+from typing import Any
 
 import discord
 from discord.ext import commands
 
 from cazzubot import templates, utils
+from cazzubot.bot import CazzuBot
 from cazzubot.window import window_success
 from cazzubot.models import WindowEnum
+from typing_extensions import override
 
 from . import db as ranks_db
 from .logic import formatter
@@ -23,23 +26,25 @@ def _parse_mode(raw: str) -> WindowEnum | None:
 class RanksCog(commands.Cog):
     """Ranked roles based on level thresholds."""
 
-    def __init__(self, bot) -> None:
+    def __init__(self, bot: CazzuBot) -> None:
         self.bot = bot
 
-    async def cog_check(self, ctx: commands.Context) -> bool:
-        perms = ctx.channel.permissions_for(ctx.author)
+    @override
+    async def cog_check(self, ctx: commands.Context[Any]) -> bool:
+        author = ctx.author
+        if not isinstance(author, discord.Member):
+            return False
+        perms = ctx.channel.permissions_for(author)
         return bool(perms.administrator)
 
-    @commands.hybrid_group(
-        name="rank", aliases=["ranks"], invoke_without_command=True
-    )
-    async def rank(self, ctx: commands.Context) -> None:
+    @commands.hybrid_group(name="rank", aliases=["ranks"])
+    async def rank(self, _ctx: commands.Context[CazzuBot]) -> None:
         """Manage ranked roles."""
 
     @rank.command(name="add")
     async def rank_add(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         level: int,
         role: discord.Role,
         mode: WindowEnum = WindowEnum.SEASONAL,
@@ -54,7 +59,7 @@ class RanksCog(commands.Cog):
     @rank.command(name="remove", aliases=["del"])
     async def rank_remove(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         arg: discord.Role,
         mode: WindowEnum = WindowEnum.SEASONAL,
     ) -> None:
@@ -63,12 +68,13 @@ class RanksCog(commands.Cog):
         await window_success(ctx, f"Removed {arg}")
 
     @rank.command(name="clean")
-    async def rank_clean(self, ctx: commands.Context) -> None:
+    async def rank_clean(self, ctx: commands.Context[CazzuBot]) -> None:
         """Remove ranks whose roles no longer exist in the guild."""
         rows = await ranks_db.get(self.bot.db)
-        removed = [
-            r["rid"] for r in rows if not ctx.guild.get_role(r["rid"])
-        ]
+        guild = ctx.guild
+        if guild is None:
+            return
+        removed = [r["rid"] for r in rows if not guild.get_role(r["rid"])]
         await ranks_db.batch_delete(self.bot.db, removed)
         await window_success(
             ctx, f"Removed {len(removed)} stale rank roles"
@@ -77,7 +83,7 @@ class RanksCog(commands.Cog):
     @rank.command(name="clear", aliases=["purge", "drop"])
     async def rank_clear(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         mode: WindowEnum = WindowEnum.SEASONAL,
     ) -> None:
         """Drop all rank thresholds for a window."""
@@ -85,13 +91,13 @@ class RanksCog(commands.Cog):
         await window_success(ctx, "Cleared rank thresholds")
 
     @rank.group(name="set")
-    async def rank_set(self, ctx: commands.Context) -> None:
+    async def rank_set(self, _ctx: commands.Context[CazzuBot]) -> None:
         """Configure rank settings."""
 
     @rank_set.command(name="enabled")
     async def rank_set_enabled(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         val: bool,
         mode: WindowEnum = WindowEnum.SEASONAL,
     ) -> None:
@@ -105,7 +111,7 @@ class RanksCog(commands.Cog):
     @rank_set.command(name="keep_old", aliases=["keepOld"])
     async def rank_set_keep_old(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         val: bool,
         mode: WindowEnum = WindowEnum.SEASONAL,
     ) -> None:
@@ -116,7 +122,7 @@ class RanksCog(commands.Cog):
     @rank_set.command(name="message", aliases=["msg"])
     async def rank_set_message(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         *,
         message: str,
         mode: WindowEnum = WindowEnum.SEASONAL,
@@ -146,7 +152,7 @@ class RanksCog(commands.Cog):
     @rank.command(name="demo")
     async def rank_demo(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         mode: WindowEnum = WindowEnum.SEASONAL,
     ) -> None:
         msg_json = await ranks_db.get_message(self.bot.settings, mode)
@@ -155,12 +161,17 @@ class RanksCog(commands.Cog):
             return
         utils.deep_map(msg_json, formatter, member=ctx.author)
         content, embed, embeds = templates.prepare(msg_json)
-        await ctx.send(content, embed=embed, embeds=embeds)
+        if embed:
+            await ctx.send(content=content, embed=embed)
+        elif embeds:
+            await ctx.send(content=content, embeds=embeds)
+        else:
+            await ctx.send(content=content or "_ _")
 
     @rank.command(name="raw")
     async def rank_raw(
         self,
-        ctx: commands.Context,
+        ctx: commands.Context[CazzuBot],
         mode: WindowEnum = WindowEnum.SEASONAL,
     ) -> None:
         msg_json = await ranks_db.get_message(self.bot.settings, mode)

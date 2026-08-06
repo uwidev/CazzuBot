@@ -10,6 +10,7 @@ import sys
 
 import discord
 from discord.ext import commands
+from typing_extensions import override
 
 from cazzubot.config import Config
 from cazzubot.db import Database
@@ -58,7 +59,7 @@ class CazzuBot(commands.Bot):
         return self.get_guild(self.config.guild_id)
 
     @staticmethod
-    async def is_debug_mode(ctx: commands.Context) -> bool:
+    async def is_debug_mode(ctx: "commands.Context[CazzuBot]") -> bool:
         """In debug mode only the owner (and configured debug users) may run."""
         bot = ctx.bot
         if ctx.author.id in bot.config.debug_users:
@@ -134,6 +135,7 @@ class CazzuBot(commands.Bot):
 
     # -- bot lifecycle -----------------------------------------------------
 
+    @override
     async def setup_hook(self) -> None:
         _log.info("connecting to database...")
         await self.db.connect()
@@ -160,6 +162,7 @@ class CazzuBot(commands.Bot):
         # central task scheduler
         await self.scheduler.start()
 
+    @override
     async def close(self) -> None:
         await self.scheduler.stop()
         for plugin in list(self.plugins):
@@ -168,7 +171,8 @@ class CazzuBot(commands.Bot):
         await super().close()
 
     async def on_ready(self) -> None:
-        _log.info("logged in as %s (%s)", self.user, self.user.id)
+        if self.user is not None:
+            _log.info("logged in as %s (%s)", self.user, self.user.id)
         if self.guild is None:
             _log.warning(
                 "configured guild %s not found — commands will not work",
@@ -179,11 +183,15 @@ class CazzuBot(commands.Bot):
         except discord.HTTPException:
             _log.exception("failed to sync command tree")
 
+    @override
     async def on_command_error(
-        self, ctx: commands.Context, err: commands.CommandError, /
+        self,
+        ctx: "commands.Context[commands.Bot | commands.AutoShardedBot]",
+        err: commands.CommandError,
+        /,
     ) -> None:
         if isinstance(err, commands.BadArgument):
-            await ctx.reply(err)
+            await ctx.reply(str(err))
             return
         if isinstance(err, discord.Forbidden):
             return

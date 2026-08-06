@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import tempfile
+from typing import Any
 
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -73,7 +74,8 @@ async def main() -> None:
     )
     assert ranked[0] == (1, 777, 100) and ranked[1][0] == 2, ranked
     await exp_db.sync_with_exp_logs(bot.db)
-    assert (await exp_db.get_member_exp(bot.db, uid))["lifetime"] == 80
+    member = await exp_db.get_member_exp(bot.db, uid)
+    assert member is not None and member["lifetime"] == 80
     await exp_db.update_member_exp(
         bot.db,
         uid,
@@ -81,7 +83,8 @@ async def main() -> None:
         msg_cnt=5,
         cdr=now.add(seconds=15),
     )
-    assert (await exp_db.get_member_exp(bot.db, uid))["msg_cnt"] == 5
+    member = await exp_db.get_member_exp(bot.db, uid)
+    assert member is not None and member["msg_cnt"] == 5
     ok("exp award/log/sync/ranked roundtrip")
 
     # -- level math ---------------------------------------------------------
@@ -110,16 +113,16 @@ async def main() -> None:
     ok("rank thresholds + rank_difference")
 
     # -- scheduler ----------------------------------------------------------
-    fired = []
+    fired: list[dict[str, Any]] = []
 
-    async def handler(bot_, payload):
+    async def handler(_bot: CazzuBot, payload: dict[str, Any]) -> None:
         fired.append(payload)
 
     bot.scheduler.register("test", handler)
     await bot.scheduler.add(
         "test", pendulum.now("UTC").subtract(seconds=1), {"x": 1}
     )
-    await bot.scheduler._tick()
+    await bot.scheduler._tick()  # pyright: ignore[reportPrivateUsage]  # pump
     assert fired == [{"x": 1}]
     assert await bot.scheduler.get("test") == []
     ok("scheduler dispatch + row cleanup")
@@ -127,14 +130,16 @@ async def main() -> None:
     # failing handler keeps its row for retry (e.g. mute expiry)
     fired.clear()
 
-    async def bad_handler(bot_, payload):
+    async def bad_handler(
+        _bot: CazzuBot, _payload: dict[str, Any]
+    ) -> None:
         raise RuntimeError("transient")
 
     bot.scheduler.register("flaky", bad_handler)
     await bot.scheduler.add(
         "flaky", pendulum.now("UTC").subtract(seconds=1)
     )
-    await bot.scheduler._tick()
+    await bot.scheduler._tick()  # pyright: ignore[reportPrivateUsage]  # pump
     rows = await bot.scheduler.get("flaky")
     assert len(rows) == 1, rows  # kept, pushed 30s into the future
     ok("scheduler keeps failed tasks (retry)")
@@ -168,6 +173,7 @@ async def main() -> None:
         reason="test",
     )
     row = await bot.db.fetchone("SELECT * FROM modlog")
+    assert row is not None
     assert row["log_type"] == "mute" and row["status"] == "active"
     ok("modlog insert")
 
@@ -194,7 +200,7 @@ async def main() -> None:
     class FakeCtx:
         author = FakeMember()
 
-    msg = {
+    msg: dict[str, Any] = {
         "content": "hi {mention}",
         "embed": {"title": "t", "description": "{name}", "fields": []},
     }
@@ -223,11 +229,22 @@ async def main() -> None:
     ok("timeparse duration + natural time")
 
     # -- runtime pipeline imports (exp on_message deps) ----------------------
-    from plugins.levels.cog import handle_level_up  # noqa: F401
-    from plugins.ranks.logic import handle_ranks, is_ranked_up  # noqa: F401
-    from plugins.frogs.factory import on_frog_due  # noqa: F401
-    from plugins.mod import on_modlog_due  # noqa: F401
-    from plugins.counter import on_counter_expire  # noqa: F401
+    from plugins.levels.cog import handle_level_up  # noqa: E402
+    from plugins.ranks.logic import handle_ranks, is_ranked_up  # noqa: E402
+    from plugins.frogs.factory import on_frog_due  # noqa: E402
+    from plugins.mod import on_modlog_due  # noqa: E402
+    from plugins.counter import on_counter_expire  # noqa: E402
+
+    # referenced so the import graph is exercised at runtime (typos surface
+    # here rather than on the first real message)
+    _pipeline = (
+        handle_level_up,
+        handle_ranks,
+        is_ranked_up,
+        on_frog_due,
+        on_modlog_due,
+        on_counter_expire,
+    )
 
     ok("on_message/scheduler pipeline imports resolve")
 
@@ -245,15 +262,13 @@ async def main() -> None:
     bot2.wait_until_ready = _ready2  # type: ignore[method-assign]
     await bot2.setup_hook()
     try:
-        assert (await exp_db.get_member_exp(bot2.db, uid))[
-            "lifetime"
-        ] == 80
+        member = await exp_db.get_member_exp(bot2.db, uid)
+        assert member is not None and member["lifetime"] == 80
         assert (
             await frog_db.get_frogs(bot2.db, uid, FrogTypeEnum.FROZEN)
         ) == 5
-        assert (await bot2.settings.get("welcome.message"))[
-            "content"
-        ] == "hi {name}"
+        msg = await bot2.settings.get("welcome.message")
+        assert msg is not None and msg["content"] == "hi {name}"
     finally:
         await bot2.close()
     ok("data persists across database reopen")
@@ -261,11 +276,13 @@ async def main() -> None:
     # -- window: buffered internal-state reporting --------------------------
 
     class FakeSendCtx:
-        def __init__(self, interaction=None) -> None:
+        def __init__(self, interaction: Any = None) -> None:
             self.interaction = interaction
-            self.sent: list[tuple[str, dict]] = []
+            self.sent: list[tuple[str | None, dict[str, Any]]] = []
 
-        async def send(self, content=None, **kwargs) -> None:
+        async def send(
+            self, content: str | None = None, **kwargs: Any
+        ) -> None:
             self.sent.append((content, kwargs))
 
     ctx_fake = FakeSendCtx()
@@ -277,6 +294,7 @@ async def main() -> None:
         window.error("boom")
     assert len(ctx_fake.sent) == 1  # one message, not one per line
     text, kwargs = ctx_fake.sent[0]
+    assert text is not None
     assert text.splitlines()[2] == "✓ done"
     assert text.splitlines()[3] == "⚠︎ slow"
     assert text.splitlines()[4] == "✖ boom"
@@ -298,6 +316,7 @@ async def main() -> None:
     except RuntimeError:
         pass
     text, _ = ctx_fake.sent[0]
+    assert text is not None
     assert "partial" in text and "✖ RuntimeError: kaboom" in text
     ok("window flushes state + error on exception")
 
@@ -306,11 +325,12 @@ async def main() -> None:
         window.info("a|b")
         await window.flush(monospace=True)
     text, _ = ctx_fake.sent[0]
+    assert text is not None
     assert text == "```\na|b\n```"
     ok("window monospace flush wraps in code block")
 
     @windowed
-    async def _windowed_cmd(self, ctx, val: int) -> int:
+    async def _windowed_cmd(_self: object, ctx: Any, val: int) -> int:
         ctx.window.success(f"val={val}")
         return val
 

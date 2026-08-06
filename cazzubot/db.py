@@ -8,7 +8,7 @@ ISO-8601 strings, dicts/lists are JSON text, enums are their ``.value``.
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Iterable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -96,7 +96,7 @@ class Database:
 
     # -- transactions -----------------------------------------------------
 
-    @asynccontextmanager
+    @asynccontextmanager  # pyright: ignore[reportDeprecated]  # correct on py3.10
     async def transaction(self) -> AsyncIterator[None]:
         """Explicit transaction; serialized against other transactions."""
         async with self._tx_lock:
@@ -110,7 +110,7 @@ class Database:
 
     # -- schema -----------------------------------------------------------
 
-    async def run_schema(self, statements: Iterable[str]) -> None:
+    async def run_schema(self, statements: Sequence[str]) -> None:
         """Execute idempotent DDL statements (``CREATE TABLE IF NOT EXISTS``…)."""
         async with self.transaction():
             for statement in statements:

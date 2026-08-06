@@ -11,6 +11,7 @@ dependencies = [
     "parsedatetime>=2.6",
     "pendulum>=2.1.2",
     "python-dotenv>=0.9.9",
+    "typing_extensions>=4.3",
 ]
 
 [dependency-groups]
@@ -18,6 +19,9 @@ dev = [
     "basedpyright>=1.20.0",
     "pre-commit>=3.7.0",
     "ruff>=0.3.5",
+]
+migration = [
+    "asyncpg>=0.29.0",
 ]
 
 [tool.ruff]
@@ -51,4 +55,29 @@ docstring-code-line-length = "dynamic"
 [tool.basedpyright]
 pythonVersion = "3.10"
 pythonPlatform = "Linux"
-allowedUntypedLibraries = []
+# Match the editor's recommended mode so the CLI and LSP agree, then tune the
+# rules that don't fit this codebase below.
+typeCheckingMode = "recommended"
+
+# Libraries without type info (no py.typed): their symbols become Any instead
+# of Unknown so the reportUnknown* rules stay quiet.
+allowedUntypedLibraries = ["parsedatetime", "asyncpg"]
+
+# -- rule overrides -------------------------------------------------------
+# await db.execute(...) / ctx.send(...) and ignoring the result is the
+# discord.py idiom; "_ = await ..." everywhere would hurt readability.
+reportUnusedCallResult = "none"
+# TYPE_CHECKING guards (cazzubot core referencing CazzuBot) and plugin
+# packages importing their own submodules are deliberate and safe; the rule
+# can't distinguish them from accidental cycles. See docs/ARCHITECTURE.md.
+reportImportCycles = "none"
+# Library-author strictness: instance attrs set in __init__ are already
+# inferred, and plugin classes are configuration singletons.
+reportUnannotatedClassAttribute = "none"
+# The JSON/sqlite layer intentionally uses Any (heterogeneous rows).
+reportExplicitAny = "none"
+# Any is inherent to this codebase's dynamic layer: aiosqlite rows,
+# discord.py's API surface, and the JSON template store. reportAny would
+# flag every row value / Any annotation, drowning out real findings; the
+# reportUnknown* rules (missing annotations) stay enabled.
+reportAny = "none"

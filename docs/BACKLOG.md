@@ -72,3 +72,15 @@ mid,user,timestamp
 Now we have a history of people who have pressed the button. From this, we can simplify the calls. The recent bakas can be a database call, grouped by user, summed. From this, we can get the most recent bakas.
 
 We can also get the total count for the counter just by a sum call on the mid.
+
+## templates.verify is sync but callers await it
+
+`cazzubot/templates.py:verify` is a plain `def` returning `dict`, yet all four
+call sites (`plugins/{levels,frogs,ranks}/cog.py`, `plugins/welcome/__init__.py`)
+do `decoded = await templates.verify(...)`. That raises
+`TypeError: object dict can't be used in 'await' expression` at runtime — a
+latent bug caught by basedpyright (`"dict[Unknown, Unknown]" is not awaitable`).
+Fix: make `verify` `async` (call sites already await it) and change its return
+annotation to `dict[str, Any]`. Parked by request during the basedpyright
+cleanup (2026); the four `reportGeneralTypeIssues` diagnostics remain until
+fixed.

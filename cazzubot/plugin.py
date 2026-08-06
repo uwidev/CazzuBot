@@ -52,10 +52,10 @@ class Plugin:
     schema: list[str] = []
     scheduled: dict[str, TaskHandler] = {}
 
-    async def on_load(self, bot: "CazzuBot") -> None:
+    async def on_load(self, _bot: "CazzuBot") -> None:
         """Hook called after schema + cogs are registered (before ready)."""
 
-    async def on_unload(self, bot: "CazzuBot") -> None:
+    async def on_unload(self, _bot: "CazzuBot") -> None:
         """Hook called when the plugin is unloaded (bot shutdown / hotswap)."""
 
 

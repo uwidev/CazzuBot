@@ -11,6 +11,9 @@ import pendulum
 from discord.ext import commands, tasks
 
 from cazzubot import Plugin
+from cazzubot.bot import CazzuBot
+from cazzubot.timeparse import parse_iso8601
+from typing_extensions import override
 
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
@@ -24,16 +27,20 @@ LAST_KEY = "daily.last_daily"
 class DailyCog(commands.Cog):
     """Daily exp/frog resets."""
 
-    def __init__(self, bot, *, force_reset: bool = False) -> None:
+    def __init__(
+        self, bot: CazzuBot, *, force_reset: bool = False
+    ) -> None:
         self.bot = bot
         self.force_reset = force_reset
         self.daily_reset.start()
 
+    @override
     async def cog_load(self) -> None:
         if self.force_reset:
             await self.reset()
             self.force_reset = False
 
+    @override
     async def cog_unload(self) -> None:
         self.daily_reset.cancel()
 
@@ -41,7 +48,7 @@ class DailyCog(commands.Cog):
     async def daily_reset(self) -> None:
         last: str | None = await self.bot.settings.get(LAST_KEY)
         now = pendulum.now("UTC")
-        if last is None or pendulum.parse(last) < now.subtract(hours=24):
+        if last is None or parse_iso8601(last) < now.subtract(hours=24):
             await self.reset()
 
     async def reset(self) -> None:
@@ -58,16 +65,17 @@ class DailyPlugin(Plugin):
     name = "daily"
     cogs = [DailyCog]
 
-    async def on_load(self, bot) -> None:
+    @override
+    async def on_load(self, bot: CazzuBot) -> None:
         """Run a missed daily reset (bot was down at midnight)."""
         last = await bot.settings.get(LAST_KEY)
         now = pendulum.now("UTC")
-        if last is None or pendulum.parse(last) < now.subtract(hours=24):
+        if last is None or parse_iso8601(last) < now.subtract(hours=24):
             _log.warning(
                 "daily reset was missed (last: %r); forcing now", last
             )
             cog = bot.get_cog("DailyCog")
-            if cog is not None:
+            if isinstance(cog, DailyCog):
                 await cog.reset()
 
 

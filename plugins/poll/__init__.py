@@ -7,16 +7,16 @@ available whenever the poll message exists (as v1 effectively behaved).
 
 import logging
 import random
-from typing import TYPE_CHECKING
+from typing import Any
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from cazzubot import Plugin, utils
-
-if TYPE_CHECKING:
-    pass
+from cazzubot.bot import CazzuBot
+from cazzubot.db import Database
+from typing_extensions import override
 
 _log = logging.getLogger(__name__)
 
@@ -55,7 +55,9 @@ EMOJI_OPEN = "https://files.catbox.moe/xd4h7v.webp"
 # -- db ---------------------------------------------------------------------
 
 
-async def add_poll(db, title: str, description: str, max_vote: int) -> int:
+async def add_poll(
+    db: Database, title: str, description: str, max_vote: int
+) -> int | None:
     return await db.execute_lastrowid(
         """
 		INSERT INTO poll (title, description, max_vote)
@@ -67,35 +69,37 @@ async def add_poll(db, title: str, description: str, max_vote: int) -> int:
     )
 
 
-async def get_poll(db, pid: int) -> dict | None:
+async def get_poll(db: Database, pid: int) -> dict[str, Any] | None:
     row = await db.fetchone("SELECT * FROM poll WHERE id = ?", pid)
-    return dict(row) if row else None
+    return {k: row[k] for k in row.keys()} if row else None
 
 
-async def set_mid(db, pid: int, mid: int) -> None:
+async def set_mid(db: Database, pid: int, mid: int) -> None:
     await db.execute("UPDATE poll SET mid = ? WHERE id = ?", mid, pid)
 
 
-async def set_open(db, pid: int, val: bool) -> None:
+async def set_open(db: Database, pid: int, val: bool) -> None:
     await db.execute(
         "UPDATE poll SET open = ? WHERE id = ?", int(val), pid
     )
 
 
-async def add_items_dummy(db, pid: int, n: int) -> None:
+async def add_items_dummy(db: Database, pid: int, n: int) -> None:
     await db.executemany(
         "INSERT INTO poll_item (pid) VALUES (?)", [(pid,)] * n
     )
 
 
-async def get_items(db, pid: int) -> list[dict]:
+async def get_items(db: Database, pid: int) -> list[dict[str, Any]]:
     rows = await db.fetchall(
         "SELECT id FROM poll_item WHERE pid = ? ORDER BY id", pid
     )
-    return [dict(r) for r in rows]
+    return [{k: r[k] for k in r.keys()} for r in rows]
 
 
-async def add_votes(db, pid: int, iids: list[int], uid: int) -> None:
+async def add_votes(
+    db: Database, pid: int, iids: list[int], uid: int
+) -> None:
     await db.executemany(
         """
 		INSERT INTO poll_vote (pid, iid, uid) VALUES (?, ?, ?)
@@ -106,13 +110,13 @@ async def add_votes(db, pid: int, iids: list[int], uid: int) -> None:
     )
 
 
-async def drop_user_on_poll(db, pid: int, uid: int) -> None:
+async def drop_user_on_poll(db: Database, pid: int, uid: int) -> None:
     await db.execute(
         "DELETE FROM poll_vote WHERE pid = ? AND uid = ?", pid, uid
     )
 
 
-async def get_results(db, pid: int) -> list[dict]:
+async def get_results(db: Database, pid: int) -> list[dict[str, Any]]:
     rows = await db.fetchall(
         """
 		SELECT vote.iid, SUM(vote.count) AS count
@@ -123,7 +127,7 @@ async def get_results(db, pid: int) -> list[dict]:
 		""",
         pid,
     )
-    return [dict(r) for r in rows]
+    return [{k: r[k] for k in r.keys()} for r in rows]
 
 
 # -- cog --------------------------------------------------------------------
@@ -132,10 +136,11 @@ async def get_results(db, pid: int) -> list[dict]:
 class PollCog(commands.Cog):
     """Poll management (app commands)."""
 
-    def __init__(self, bot) -> None:
+    def __init__(self, bot: CazzuBot) -> None:
         self.bot = bot
 
-    async def cog_check(self, ctx: commands.Context) -> bool:
+    @override
+    async def cog_check(self, ctx: commands.Context[Any]) -> bool:
         return ctx.author.id == self.bot.owner_id
 
     poll_group = app_commands.Group(
@@ -235,7 +240,7 @@ class PollCog(commands.Cog):
         await set_open(self.bot.db, poll_id, open)
         await interaction.response.send_message(
             f"Voting on poll ID#{poll_id} is now "
-            f"{'**open**' if open else '**closed**'}.",
+            + f"{'**open**' if open else '**closed**'}.",
             ephemeral=True,
         )
 
@@ -267,7 +272,7 @@ class PollCog(commands.Cog):
 class PollView(discord.ui.View):
     """Persistent poll message view with the vote button."""
 
-    def __init__(self, bot, poll_id: int) -> None:
+    def __init__(self, bot: CazzuBot, poll_id: int) -> None:
         super().__init__(timeout=None)
         self.bot = bot
         self.poll_id = poll_id
@@ -277,7 +282,9 @@ class PollView(discord.ui.View):
         label="Vote", style=discord.ButtonStyle.primary, emoji="📥"
     )
     async def vote(
-        self, interaction: discord.Interaction, button: discord.ui.Button
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[Any],
     ) -> None:
         poll = await get_poll(self.bot.db, self.poll_id)
         items = await get_items(self.bot.db, self.poll_id)
@@ -286,20 +293,28 @@ class PollView(discord.ui.View):
                 "❌ This poll no longer exists.", ephemeral=True
             )
             return
-        await interaction.response.send_modal(PollModal(poll, items))
+        await interaction.response.send_modal(
+            PollModal(self.bot, poll, items)
+        )
 
 
 class PollModal(discord.ui.Modal, title="Vote on the poll"):
     """Comma-separated item votes, validated against the poll's rules."""
 
-    def __init__(self, poll: dict, items: list[dict]) -> None:
+    def __init__(
+        self,
+        bot: CazzuBot,
+        poll: dict[str, Any],
+        items: list[dict[str, Any]],
+    ) -> None:
         super().__init__(timeout=300)
+        self.bot = bot
         self.poll = poll
         self.items = items
         self.max_vote = poll["max_vote"]
         self.upper = len(items)
 
-        self.rules = discord.ui.TextDisplay(
+        self.rules: discord.ui.TextDisplay[Any] = discord.ui.TextDisplay(
             f"""
 ### Rules
 - Max votes: {self.max_vote}
@@ -310,7 +325,7 @@ class PollModal(discord.ui.Modal, title="Vote on the poll"):
         )
         self.add_item(self.rules)
 
-        self.vote_input = discord.ui.TextInput(
+        self.vote_input: discord.ui.TextInput[Any] = discord.ui.TextInput(
             label="Vote",
             placeholder=(
                 "Example: "
@@ -323,6 +338,7 @@ class PollModal(discord.ui.Modal, title="Vote on the poll"):
         )
         self.add_item(self.vote_input)
 
+    @override
     async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
             votes = self.parse_votes(self.vote_input.value)
@@ -361,7 +377,7 @@ class PollModal(discord.ui.Modal, title="Vote on the poll"):
         return [int(v) for v in votes]
 
     def validate_votes(self, votes: list[int]) -> list[str]:
-        errors = []
+        errors: list[str] = []
         out_of_range = [
             v for v in votes if v not in range(1, self.upper + 1)
         ]
