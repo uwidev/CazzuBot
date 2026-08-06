@@ -186,7 +186,7 @@ async def main() -> None:
 
     # -- templates ----------------------------------------------------------
     from cazzubot import templates
-    from plugins.levels.cog import formatter
+    from plugins.levels.logic import formatter
 
     class FakeAvatar:
         url = "https://example.com/avatar.png"
@@ -226,7 +226,7 @@ async def main() -> None:
     ok("timeparse duration + natural time")
 
     # -- runtime pipeline imports (exp on_message deps) ----------------------
-    from plugins.levels.cog import handle_level_up  # noqa: E402
+    from plugins.levels.logic import handle_level_up  # noqa: E402
     from plugins.ranks.logic import handle_ranks, is_ranked_up  # noqa: E402
     from plugins.frogs.factory import on_frog_due  # noqa: E402
     from plugins.mod import on_modlog_due  # noqa: E402

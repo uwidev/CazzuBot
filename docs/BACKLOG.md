@@ -42,6 +42,11 @@ Move `handle_level_up`/`formatter` from `plugins/levels/cog.py` to
 `experience` plugin imports service→service, not cog→cog. Prerequisite for #1
 to be coherent.
 
+> **Done** — `MESSAGE_KEY`/`formatter`/`handle_level_up` live in
+> `plugins/levels/logic.py`; the cog is config-only and re-imports them.
+> `experience` and `scripts/functest.py` import from `plugins.levels.logic`,
+> so no plugin reaches into another plugin's cog (mirrors `ranks/logic.py`).
+
 ## 6. Register persistent poll button view on boot
 
 `plugins/poll/__init__.py`'s `PollView` is `timeout=None` but is never

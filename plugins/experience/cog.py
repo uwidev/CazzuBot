@@ -240,7 +240,7 @@ class ExperienceCog(commands.Cog):
         await exp_db.add_exp_log(self.bot.db, uid, exp_gain, now)
 
         # level-up + rank-up handling
-        from plugins.levels.cog import handle_level_up
+        from plugins.levels.logic import handle_level_up
         from plugins.ranks.logic import handle_ranks
 
         await handle_level_up(
