@@ -1,6 +1,6 @@
 # CazzuBot
 
-Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. Python 3.10 + discord.py 2.7.1 + aiosqlite, managed with uv. Runs as `main.py`.
+Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. Python 3.14 + discord.py 2.7.1 + aiosqlite, managed with uv. Runs as `main.py`.
 
 ## Project
 
@@ -37,7 +37,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - User-configurable message JSON goes through `cazzubot.templates.verify/prepare` (jsonschema-validated); placeholders applied via `utils.deep_map` + per-feature formatters.
 - Time handled with pendulum, always UTC (see `cazzubot/timeparse.py`).
 - Command feedback goes through `cazzubot.window` (levels debug/info/success/warn/error; success/warn/error prefix ✓/⚠︎/✖) — no emoji-reaction feedback. CLI `logging` stays for bot internals (db, connection, plugin hooks); command-local state goes to the user via the window, flushed before blocking ops and always at command end (even on error).
-- Ruff select `["E4", "E7", "E9", "F"]`; basedpyright config present (Python 3.10, Linux).
+- Ruff select `["E4", "E7", "E9", "F"]`; basedpyright config present (Python 3.14, Linux).
 
 ## Notes
 

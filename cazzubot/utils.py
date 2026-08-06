@@ -204,6 +204,6 @@ def split_duration_and_text(raw: str) -> tuple[str, str]:
     first = raw.split(maxsplit=1)
     try:
         parse_duration(first[0])
-    except (InvalidTimeError, ValueError, IndexError):
+    except InvalidTimeError, ValueError, IndexError:
         return raw, ""
     return first[0], first[1] if len(first) > 1 else ""

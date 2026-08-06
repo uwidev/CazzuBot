@@ -3,7 +3,7 @@ name = "cazzubot"
 version = "2.0.0"
 description = "Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild."
 readme = "README.md"
-requires-python = ">=3.10.11"
+requires-python = ">=3.14"
 dependencies = [
     "aiosqlite>=0.20.0",
     "discord.py>=2.7.1",
@@ -18,7 +18,7 @@ dependencies = [
 dev = [
     "basedpyright>=1.20.0",
     "pre-commit>=3.7.0",
-    "ruff>=0.3.5",
+    "ruff>=0.16.1,<0.17",
 ]
 migration = [
     "asyncpg>=0.29.0",
@@ -35,7 +35,7 @@ exclude = [
 ]
 line-length = 75
 indent-width = 4
-target-version = "py310"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
@@ -53,7 +53,7 @@ docstring-code-format = false
 docstring-code-line-length = "dynamic"
 
 [tool.basedpyright]
-pythonVersion = "3.10"
+pythonVersion = "3.14"
 pythonPlatform = "Linux"
 # Match the editor's recommended mode so the CLI and LSP agree, then tune the
 # rules that don't fit this codebase below.
