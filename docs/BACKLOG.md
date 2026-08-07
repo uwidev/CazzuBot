@@ -141,6 +141,12 @@ We can also get the total count for the counter just by a sum call on the mid.
 > the item remains.
 
 ## Fix mod duration parsing (single-token footgun)
+> **Done** — `split_duration_reason` takes the first parseable leading
+> prefix, extended greedily over duration-like tokens, so multi-word
+> phrasing (`ban @x 2 hours bad`) no longer silently becomes a no-expiry
+> ban and compounds fold in (`2 hours 5 minutes`, `2h 5m`, `tomorrow 5pm`).
+> Characterized in `tests/plugins/mod/test_cog.py::test_split_duration_reason`.
+
 `split_duration_reason` (`plugins/mod/logic.py`) splits the raw argument on the
 first space, so only **single-token** durations parse (`2h`, `tomorrow`,
 `2026-05-01`). Natural phrasing like `mute @x 2 hours being bad` fails to

@@ -21,15 +21,35 @@ _any_shorthand_time = re.compile(
 )
 _shorthand_tmr = re.compile(r"tmr")
 
-_SHORTHAND_PATTERNS: dict[str, re.Pattern[str]] = {
-    "years": re.compile(r"(\d+)\s*(year[s]|y)"),
-    "months": re.compile(r"(\d+)\s*(month[s]|M)"),
-    "weeks": re.compile(r"(\d+)\s*(week[s]|w)"),
-    "days": re.compile(r"(\d+)\s*(day[s]|d)"),
-    "hours": re.compile(r"(\d+)\s*(hour[s]|h)"),
-    "minutes": re.compile(r"(\d+)\s*(minute[s]|m)"),
-    "seconds": re.compile(r"(\d+)\s*(second[s]|s)?$"),
+# Shared duration-unit vocabulary. ``parse_duration`` derives its
+# per-unit shorthand patterns from it, and the mod plugin's duration-token
+# guard (``plugins/mod/logic.py``) builds on ``DURATION_UNITS`` — one
+# source so the two never drift apart.
+_DURATION_UNIT_ALTERNATIONS: dict[str, str] = {
+    "years": r"years?|y",
+    "months": r"months?|M",
+    "weeks": r"weeks?|w",
+    "days": r"days?|d",
+    "hours": r"hours?|hrs?|h",
+    "minutes": r"minutes?|mins?|m",
+    "seconds": r"seconds?|secs?|s",
 }
+
+# Bare-unit alternation for embedding in other patterns (e.g. the mod
+# plugin's token guard): "(?:years?|y|...)".
+DURATION_UNITS = "|".join(
+    f"(?:{alt})" for alt in _DURATION_UNIT_ALTERNATIONS.values()
+)
+
+_SHORTHAND_PATTERNS: dict[str, re.Pattern[str]] = {
+    unit: re.compile(rf"(\d+)\s*({alt})")
+    for unit, alt in _DURATION_UNIT_ALTERNATIONS.items()
+}
+# seconds keeps the end-anchored, unit-optional form so a bare number
+# ("90") still reads as 90 seconds
+_SHORTHAND_PATTERNS["seconds"] = re.compile(
+    rf"(\d+)\s*({_DURATION_UNIT_ALTERNATIONS['seconds']})?$"
+)
 
 
 class InvalidTimeError(Exception):

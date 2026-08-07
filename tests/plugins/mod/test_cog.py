@@ -58,12 +58,30 @@ def _ctx_for(
 
 
 def test_split_duration_reason() -> None:
-    # durations are single tokens ("2h", "tomorrow"); split on first space
+    # the first leading prefix that parses is the duration, extended
+    # greedily over duration-like tokens; the remainder is the reason
     dur, rest = split_duration_reason("1h rule break")
     assert dur is not None and rest == "rule break"
     dur2, rest2 = split_duration_reason("no duration")
     assert dur2 is None and rest2 == "no duration"
     assert split_duration_reason(None) == (None, "")
+    # natural multi-word phrasings (regression: used to silently become
+    # a no-expiry mute/ban)
+    dur3, rest3 = split_duration_reason("2 hours being bad")
+    assert dur3 is not None and rest3 == "being bad"
+    dur4, rest4 = split_duration_reason("in 2 hours spam")
+    assert dur4 is not None and rest4 == "spam"
+    dur5, rest5 = split_duration_reason("for being bad")
+    assert dur5 is None and rest5 == "for being bad"
+    # compound durations fold in, reason words don't
+    dur6, rest6 = split_duration_reason("2 hours 5 minutes being bad")
+    assert dur6 is not None and rest6 == "being bad"
+    assert 7490 <= (dur6 - pendulum.now("UTC")).in_seconds() <= 7510
+    dur7, rest7 = split_duration_reason("2h 5m being bad")
+    assert dur7 is not None and rest7 == "being bad"
+    assert 7490 <= (dur7 - pendulum.now("UTC")).in_seconds() <= 7510
+    dur8, rest8 = split_duration_reason("2 hours minutes")
+    assert dur8 is not None and rest8 == "minutes"
 
 
 # -- warn / mute / unmute -------------------------------------------------
