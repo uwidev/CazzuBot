@@ -53,86 +53,6 @@ class CazzuBot(commands.Bot):
         if config.debug:
             self.add_check(CazzuBot.is_debug_mode)
 
-    @property
-    def guild(self) -> discord.Guild | None:
-        """The one guild this bot serves."""
-        return self.get_guild(self.config.guild_id)
-
-    @staticmethod
-    async def is_debug_mode(ctx: "commands.Context[CazzuBot]") -> bool:
-        """In debug mode only the owner (and configured debug users) may run."""
-        bot = ctx.bot
-        if ctx.author.id in bot.config.debug_users:
-            return True
-        return await bot.is_owner(ctx.author)
-
-    # -- plugin lifecycle --------------------------------------------------
-
-    def _plugin_module(self, name: str):
-        return importlib.import_module(f"{self.plugins_dir}.{name}")
-
-    async def load_plugin(
-        self, plugin: Plugin, *, run_hooks: bool = True
-    ) -> None:
-        """Apply a plugin's schema, cogs and scheduled handlers."""
-        await self.db.run_schema(plugin.schema)
-        for tag, handler in plugin.scheduled.items():
-            self.scheduler.register(tag, handler)
-        for cog in plugin.cogs:
-            await self.add_cog(cog(self))
-        self.plugins.append(plugin)
-        self._plugin_by_name[plugin.name] = plugin
-        if run_hooks:
-            await plugin.on_load(self)
-        _log.info("loaded plugin: %s", plugin.name)
-
-    async def unload_plugin(self, plugin: Plugin) -> None:
-        """Remove a plugin's cogs, handlers and run its teardown hook."""
-        await plugin.on_unload(self)
-        for tag in plugin.scheduled:
-            self.scheduler.handlers.pop(tag, None)
-        for cog in plugin.cogs:
-            await self.remove_cog(cog.__cog_name__)
-        self.plugins.remove(plugin)
-        self._plugin_by_name.pop(plugin.name, None)
-        _log.info("unloaded plugin: %s", plugin.name)
-
-    async def reload_plugin(self, name: str) -> Plugin:
-        """Re-import a plugin (including its submodules) and swap in new cogs."""
-        old = self._plugin_by_name.get(name)
-        if old is not None:
-            await self.unload_plugin(old)
-
-        # purge the whole plugins.<name> module tree so importlib.reload
-        # actually picks up changes in cog.py / db.py / logic.py
-        prefix = f"{self.plugins_dir}.{name}"
-        for mod_name in list(sys.modules):
-            if mod_name == prefix or mod_name.startswith(prefix + "."):
-                del sys.modules[mod_name]
-
-        module = importlib.import_module(prefix)
-        plugin = module.plugin
-        if not isinstance(plugin, Plugin):
-            raise commands.BadArgument(f"{name} is not a plugin package")
-        await self.load_plugin(plugin)
-        return plugin
-
-    async def load_plugin_by_name(self, name: str) -> Plugin:
-        """Import and load a plugin that isn't currently loaded."""
-        module = importlib.import_module(f"{self.plugins_dir}.{name}")
-        plugin = getattr(module, "plugin", None)
-        if not isinstance(plugin, Plugin):
-            raise commands.BadArgument(f"{name} is not a plugin")
-        await self.load_plugin(plugin)
-        return plugin
-
-    async def unload_plugin_by_name(self, name: str) -> None:
-        """Unload a loaded plugin by name."""
-        plugin = self._plugin_by_name.get(name)
-        if plugin is None:
-            raise commands.BadArgument(f"plugin {name} is not loaded")
-        await self.unload_plugin(plugin)
-
     # -- bot lifecycle -----------------------------------------------------
 
     @override
@@ -211,3 +131,83 @@ class CazzuBot(commands.Bot):
         if isinstance(err, discord.Forbidden):
             return
         await super().on_command_error(ctx, err)
+
+    async def load_plugin(
+        self, plugin: Plugin, *, run_hooks: bool = True
+    ) -> None:
+        """Apply a plugin's schema, cogs and scheduled handlers."""
+        await self.db.run_schema(plugin.schema)
+        for tag, handler in plugin.scheduled.items():
+            self.scheduler.register(tag, handler)
+        for cog in plugin.cogs:
+            await self.add_cog(cog(self))
+        self.plugins.append(plugin)
+        self._plugin_by_name[plugin.name] = plugin
+        if run_hooks:
+            await plugin.on_load(self)
+        _log.info("loaded plugin: %s", plugin.name)
+
+    async def unload_plugin(self, plugin: Plugin) -> None:
+        """Remove a plugin's cogs, handlers and run its teardown hook."""
+        await plugin.on_unload(self)
+        for tag in plugin.scheduled:
+            self.scheduler.handlers.pop(tag, None)
+        for cog in plugin.cogs:
+            await self.remove_cog(cog.__cog_name__)
+        self.plugins.remove(plugin)
+        self._plugin_by_name.pop(plugin.name, None)
+        _log.info("unloaded plugin: %s", plugin.name)
+
+    async def reload_plugin(self, name: str) -> Plugin:
+        """Re-import a plugin (including its submodules) and swap in new cogs."""
+        old = self._plugin_by_name.get(name)
+        if old is not None:
+            await self.unload_plugin(old)
+
+        # purge the whole plugins.<name> module tree so importlib.reload
+        # actually picks up changes in cog.py / db.py / logic.py
+        prefix = f"{self.plugins_dir}.{name}"
+        for mod_name in list(sys.modules):
+            if mod_name == prefix or mod_name.startswith(prefix + "."):
+                del sys.modules[mod_name]
+
+        module = importlib.import_module(prefix)
+        plugin = module.plugin
+        if not isinstance(plugin, Plugin):
+            raise commands.BadArgument(f"{name} is not a plugin package")
+        await self.load_plugin(plugin)
+        return plugin
+
+    async def load_plugin_by_name(self, name: str) -> Plugin:
+        """Import and load a plugin that isn't currently loaded."""
+        module = importlib.import_module(f"{self.plugins_dir}.{name}")
+        plugin = getattr(module, "plugin", None)
+        if not isinstance(plugin, Plugin):
+            raise commands.BadArgument(f"{name} is not a plugin")
+        await self.load_plugin(plugin)
+        return plugin
+
+    async def unload_plugin_by_name(self, name: str) -> None:
+        """Unload a loaded plugin by name."""
+        plugin = self._plugin_by_name.get(name)
+        if plugin is None:
+            raise commands.BadArgument(f"plugin {name} is not loaded")
+        await self.unload_plugin(plugin)
+
+    # -- plugin lifecycle --------------------------------------------------
+
+    def _plugin_module(self, name: str):
+        return importlib.import_module(f"{self.plugins_dir}.{name}")
+
+    @property
+    def guild(self) -> discord.Guild | None:
+        """The one guild this bot serves."""
+        return self.get_guild(self.config.guild_id)
+
+    @staticmethod
+    async def is_debug_mode(ctx: "commands.Context[CazzuBot]") -> bool:
+        """In debug mode only the owner (and configured debug users) may run."""
+        bot = ctx.bot
+        if ctx.author.id in bot.config.debug_users:
+            return True
+        return await bot.is_owner(ctx.author)

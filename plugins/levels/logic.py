@@ -12,24 +12,6 @@ _log = logging.getLogger(__name__)
 MESSAGE_KEY = "level.message"
 
 
-def formatter(
-    s: str,
-    *,
-    member: discord.Member,
-    level_old: int | None = None,
-    level_new: int | None = None,
-) -> str:
-    """Placeholders: {avatar} {name} {mention} {id} {level_old} {level_new}"""
-    return s.format(
-        avatar=member.display_avatar.url,
-        name=member.display_name,
-        mention=member.mention,
-        id=member.id,
-        level_old=level_old,
-        level_new=level_new,
-    )
-
-
 async def handle_level_up(
     bot: CazzuBot,
     message: discord.Message,
@@ -64,4 +46,22 @@ async def handle_level_up(
     )
     await templates.send(
         message.channel, msg_json, delete_after=delete_after
+    )
+
+
+def formatter(
+    s: str,
+    *,
+    member: discord.Member,
+    level_old: int | None = None,
+    level_new: int | None = None,
+) -> str:
+    """Placeholders: {avatar} {name} {mention} {id} {level_old} {level_new}"""
+    return s.format(
+        avatar=member.display_avatar.url,
+        name=member.display_name,
+        mention=member.mention,
+        id=member.id,
+        level_old=level_old,
+        level_new=level_new,
     )

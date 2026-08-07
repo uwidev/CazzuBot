@@ -15,47 +15,6 @@ from .db import RankThreshold
 _log = logging.getLogger(__name__)
 
 
-def formatter(
-    s: str,
-    *,
-    member: discord.Member,
-    rank_old: discord.Role | None = None,
-    rank_new: discord.Role | None = None,
-    level_old: int | None = None,
-    level_new: int | None = None,
-) -> str:
-    """Placeholders: {avatar} {name} {mention} {id} {rank_old} {rank_new}
-    {level_old} {level_new}"""
-    return s.format(
-        avatar=member.display_avatar.url,
-        name=member.display_name,
-        mention=member.mention,
-        id=member.id,
-        rank_old=rank_old.mention if rank_old else None,
-        rank_new=rank_new.mention if rank_new else None,
-        level_old=level_old,
-        level_new=level_new,
-    )
-
-
-def rank_difference(
-    level: OldNew, thresholds: list[RankThreshold]
-) -> tuple[OldNew, OldNew]:
-    """(rid_old->rid_new, index_old->index_new) across the thresholds."""
-    rid_new, idx_new = ranks_db.calc_min_rank(thresholds, level.new)
-    rid_old, idx_old = ranks_db.calc_min_rank(thresholds, level.old)
-    return OldNew(rid_old, rid_new), OldNew(idx_old, idx_new)
-
-
-async def is_ranked_up(bot: CazzuBot, level: OldNew) -> bool:
-    """True if going level.old -> level.new crosses a rank threshold."""
-    thresholds = await ranks_db.get(bot.db)
-    if not thresholds:
-        return False
-    _, index = rank_difference(level, thresholds)
-    return index.new != index.old
-
-
 async def handle_ranks(
     bot: CazzuBot,
     message: discord.Message,
@@ -164,3 +123,44 @@ async def _determine_rank_changes(
         r for r in ranks_to_remove if r and r in member.roles
     ]
     return ranks_to_add, ranks_to_remove
+
+
+def rank_difference(
+    level: OldNew, thresholds: list[RankThreshold]
+) -> tuple[OldNew, OldNew]:
+    """(rid_old->rid_new, index_old->index_new) across the thresholds."""
+    rid_new, idx_new = ranks_db.calc_min_rank(thresholds, level.new)
+    rid_old, idx_old = ranks_db.calc_min_rank(thresholds, level.old)
+    return OldNew(rid_old, rid_new), OldNew(idx_old, idx_new)
+
+
+async def is_ranked_up(bot: CazzuBot, level: OldNew) -> bool:
+    """True if going level.old -> level.new crosses a rank threshold."""
+    thresholds = await ranks_db.get(bot.db)
+    if not thresholds:
+        return False
+    _, index = rank_difference(level, thresholds)
+    return index.new != index.old
+
+
+def formatter(
+    s: str,
+    *,
+    member: discord.Member,
+    rank_old: discord.Role | None = None,
+    rank_new: discord.Role | None = None,
+    level_old: int | None = None,
+    level_new: int | None = None,
+) -> str:
+    """Placeholders: {avatar} {name} {mention} {id} {rank_old} {rank_new}
+    {level_old} {level_new}"""
+    return s.format(
+        avatar=member.display_avatar.url,
+        name=member.display_name,
+        mention=member.mention,
+        id=member.id,
+        rank_old=rank_old.mention if rank_old else None,
+        rank_new=rank_new.mention if rank_new else None,
+        level_old=level_old,
+        level_new=level_new,
+    )

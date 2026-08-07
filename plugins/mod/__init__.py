@@ -40,75 +40,6 @@ SCHEMA = [
 MUTE_ROLE_KEY = "mod.mute_role"
 
 
-# -- db ---------------------------------------------------------------------
-
-
-async def add_log(
-    db: Database,
-    uid: int,
-    log_type: ModlogTypeEnum,
-    given_on: pendulum.DateTime,
-    *,
-    expires_on: pendulum.DateTime | None = None,
-    reason: str | None = None,
-) -> None:
-    await db.execute(
-        """
-		INSERT INTO modlog (uid, log_type, given_on, status, expires_on, reason)
-		VALUES (?, ?, ?, ?, ?, ?)
-		""",
-        uid,
-        log_type.value,
-        given_on.isoformat(),
-        ModlogStatusEnum.ACTIVE.value,
-        expires_on.isoformat() if expires_on else None,
-        reason,
-    )
-
-
-async def get_mute_role(settings: Settings) -> int | None:
-    return await settings.get(MUTE_ROLE_KEY)
-
-
-async def set_mute_role(settings: Settings, rid: int) -> None:
-    await settings.set(MUTE_ROLE_KEY, rid)
-
-
-async def on_modlog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
-    """Scheduler handler for tag ``modlog`` (mute/tempban expiry)."""
-    log_type = ModlogTypeEnum(payload["log_type"])
-    uid = payload["uid"]
-    guild = bot.guild
-    if guild is None:
-        return
-
-    try:
-        if log_type is ModlogTypeEnum.MUTE:
-            mute_id = await get_mute_role(bot.settings)
-            role = guild.get_role(mute_id) if mute_id else None
-            if role is None:
-                _log.warning(
-                    "mute role %s missing; cannot lift mute for %s",
-                    mute_id,
-                    uid,
-                )
-                return
-            member = await guild.fetch_member(uid)
-            await member.remove_roles(role, reason="Mute expired.")
-
-        elif log_type is ModlogTypeEnum.TEMPBAN:
-            user = await bot.fetch_user(uid)
-            await guild.unban(user, reason="Tempban expired.")
-    except discord.NotFound:
-        _log.info("user %s no longer around; nothing to revert", uid)
-
-    _log.info(
-        "%s's %s expired; reverting infraction actions...",
-        uid,
-        log_type.value,
-    )
-
-
 class ModCog(commands.Cog):
     """Moderation actions with a persistent modlog."""
 
@@ -327,6 +258,75 @@ class ModCog(commands.Cog):
                 f"Slowmode has been turned **on** with a {cooldown} "
                 + "delay per message."
             )
+
+
+# -- db ---------------------------------------------------------------------
+
+
+async def add_log(
+    db: Database,
+    uid: int,
+    log_type: ModlogTypeEnum,
+    given_on: pendulum.DateTime,
+    *,
+    expires_on: pendulum.DateTime | None = None,
+    reason: str | None = None,
+) -> None:
+    await db.execute(
+        """
+		INSERT INTO modlog (uid, log_type, given_on, status, expires_on, reason)
+		VALUES (?, ?, ?, ?, ?, ?)
+		""",
+        uid,
+        log_type.value,
+        given_on.isoformat(),
+        ModlogStatusEnum.ACTIVE.value,
+        expires_on.isoformat() if expires_on else None,
+        reason,
+    )
+
+
+async def get_mute_role(settings: Settings) -> int | None:
+    return await settings.get(MUTE_ROLE_KEY)
+
+
+async def set_mute_role(settings: Settings, rid: int) -> None:
+    await settings.set(MUTE_ROLE_KEY, rid)
+
+
+async def on_modlog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
+    """Scheduler handler for tag ``modlog`` (mute/tempban expiry)."""
+    log_type = ModlogTypeEnum(payload["log_type"])
+    uid = payload["uid"]
+    guild = bot.guild
+    if guild is None:
+        return
+
+    try:
+        if log_type is ModlogTypeEnum.MUTE:
+            mute_id = await get_mute_role(bot.settings)
+            role = guild.get_role(mute_id) if mute_id else None
+            if role is None:
+                _log.warning(
+                    "mute role %s missing; cannot lift mute for %s",
+                    mute_id,
+                    uid,
+                )
+                return
+            member = await guild.fetch_member(uid)
+            await member.remove_roles(role, reason="Mute expired.")
+
+        elif log_type is ModlogTypeEnum.TEMPBAN:
+            user = await bot.fetch_user(uid)
+            await guild.unban(user, reason="Tempban expired.")
+    except discord.NotFound:
+        _log.info("user %s no longer around; nothing to revert", uid)
+
+    _log.info(
+        "%s's %s expired; reverting infraction actions...",
+        uid,
+        log_type.value,
+    )
 
 
 class ModPlugin(Plugin):

@@ -16,13 +16,6 @@ from . import db as ranks_db
 from .logic import formatter
 
 
-def _parse_mode(raw: str) -> WindowEnum | None:
-    try:
-        return WindowEnum(raw.strip().lower())
-    except ValueError:
-        return None
-
-
 class RanksCog(commands.Cog):
     """Ranked roles based on level thresholds."""
 
@@ -171,3 +164,10 @@ class RanksCog(commands.Cog):
     ) -> None:
         msg_json = await ranks_db.get_message(self.bot.settings, mode)
         await ctx.send(f"```{json.dumps(msg_json, indent=2)}```")
+
+
+def _parse_mode(raw: str) -> WindowEnum | None:
+    try:
+        return WindowEnum(raw.strip().lower())
+    except ValueError:
+        return None

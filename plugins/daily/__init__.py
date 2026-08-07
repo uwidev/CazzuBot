@@ -34,16 +34,6 @@ class DailyCog(commands.Cog):
         self.force_reset = force_reset
         self.daily_reset.start()
 
-    @override
-    async def cog_load(self) -> None:
-        if self.force_reset:
-            await self.reset()
-            self.force_reset = False
-
-    @override
-    async def cog_unload(self) -> None:
-        self.daily_reset.cancel()
-
     @tasks.loop(time=RESET_TIME)
     async def daily_reset(self) -> None:
         last: str | None = await self.bot.settings.get(LAST_KEY)
@@ -59,6 +49,16 @@ class DailyCog(commands.Cog):
         await exp_db.sync_with_exp_logs(self.bot.db)
         await frog_db.sync_with_frog_logs(self.bot.db)
         await self.bot.settings.set(LAST_KEY, pendulum.now("UTC"))
+
+    @override
+    async def cog_load(self) -> None:
+        if self.force_reset:
+            await self.reset()
+            self.force_reset = False
+
+    @override
+    async def cog_unload(self) -> None:
+        self.daily_reset.cancel()
 
 
 class DailyPlugin(Plugin):

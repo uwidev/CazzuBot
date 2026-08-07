@@ -8,54 +8,40 @@ import discord
 from cazzubot import levels
 
 
-def create_focus_subset(
-    rows: list[Any], focus_index: int, *, size: int = 5
-) -> tuple[list[Any], int]:
-    """Sliding window of ``size`` centered on ``focus_index``.
+async def format_leaderboard_embed(
+    rows: Sequence[tuple[int, int, int]],
+    names: Sequence[str],
+    *,
+    uid: int | None = None,
+) -> discord.Embed:
+    """Render ``(rank, uid, exp)`` rows into the standard leaderboard embed.
 
-    Edge-corrected; returns (window, corrected_focus_index).
+    Columns: Rank / Exp / Lv / User. ``names`` must be user-resolved display
+    names in the same order. Highlights the user's row with ``@``.
     """
-    if len(rows) <= size:
-        return rows, focus_index
+    ranks = [r[0] for r in rows]
+    uids = [r[1] for r in rows]
+    exps = [r[2] for r in rows]
+    lvls = [levels.level_from_exp(e) for e in exps]
 
-    extends = (size - 1) // 2
-    lower = focus_index - extends
-    upper = focus_index + extends
+    window = list(zip(ranks, exps, lvls, names))
+    headers = ["Rank", "Exp", "Lv", "User"]
+    align = ["<", ">", ">", ">"]
+    max_padding = [0, 0, 0, 16]
 
-    if lower < 0:
-        upper -= lower
-        lower = 0
-    elif upper > len(rows) - 1:
-        lower -= upper - (len(rows) - 1)
-        upper = len(rows) - 1
+    scoreboard = format(
+        window, headers, align=align, max_padding=max_padding
+    )
 
-    window = rows[lower : upper + 1]
-    return window, focus_index - lower
+    if uid is not None and uid in uids:
+        col_widths = calc_max_col_width(window, headers, max_padding)
+        highlight_row(scoreboard, uids.index(uid), col_widths)
 
-
-def calc_max_col_width(
-    entries: Sequence[Sequence[str | int]],
-    headers: list[str] | None = None,
-    max_padding: list[int] | None = None,
-) -> list[int]:
-    """Per-column max rendered width (commas for ints, header respected)."""
-    headers = headers or [""] * len(entries[0])
-    max_padding = [x if x else 999 for x in (max_padding or [])]
-    if not max_padding:
-        max_padding = [999] * len(headers)
-
-    padding: list[int] = []
-    for col in range(len(entries[0])):
-        entire_col: list[str] = []
-        for row in range(len(entries)):
-            cell = entries[row][col]
-            entire_col.append(
-                str(cell) if isinstance(cell, str) else f"{cell:,}"
-            )
-        widest_val = len(sorted(entire_col, key=len)[-1])
-        width = min(max(widest_val, len(headers[col])), max_padding[col])
-        padding.append(width)
-    return padding
+    embed = discord.Embed(
+        description=f"```py\n{chr(10).join(scoreboard)}```",
+        color=discord.Color.from_str("#a2dcf7"),
+    )
+    return embed
 
 
 def format(
@@ -105,37 +91,51 @@ def highlight_row(
     return scoreboard
 
 
-async def format_leaderboard_embed(
-    rows: Sequence[tuple[int, int, int]],
-    names: Sequence[str],
-    *,
-    uid: int | None = None,
-) -> discord.Embed:
-    """Render ``(rank, uid, exp)`` rows into the standard leaderboard embed.
+def calc_max_col_width(
+    entries: Sequence[Sequence[str | int]],
+    headers: list[str] | None = None,
+    max_padding: list[int] | None = None,
+) -> list[int]:
+    """Per-column max rendered width (commas for ints, header respected)."""
+    headers = headers or [""] * len(entries[0])
+    max_padding = [x if x else 999 for x in (max_padding or [])]
+    if not max_padding:
+        max_padding = [999] * len(headers)
 
-    Columns: Rank / Exp / Lv / User. ``names`` must be user-resolved display
-    names in the same order. Highlights the user's row with ``@``.
+    padding: list[int] = []
+    for col in range(len(entries[0])):
+        entire_col: list[str] = []
+        for row in range(len(entries)):
+            cell = entries[row][col]
+            entire_col.append(
+                str(cell) if isinstance(cell, str) else f"{cell:,}"
+            )
+        widest_val = len(sorted(entire_col, key=len)[-1])
+        width = min(max(widest_val, len(headers[col])), max_padding[col])
+        padding.append(width)
+    return padding
+
+
+def create_focus_subset(
+    rows: list[Any], focus_index: int, *, size: int = 5
+) -> tuple[list[Any], int]:
+    """Sliding window of ``size`` centered on ``focus_index``.
+
+    Edge-corrected; returns (window, corrected_focus_index).
     """
-    ranks = [r[0] for r in rows]
-    uids = [r[1] for r in rows]
-    exps = [r[2] for r in rows]
-    lvls = [levels.level_from_exp(e) for e in exps]
+    if len(rows) <= size:
+        return rows, focus_index
 
-    window = list(zip(ranks, exps, lvls, names))
-    headers = ["Rank", "Exp", "Lv", "User"]
-    align = ["<", ">", ">", ">"]
-    max_padding = [0, 0, 0, 16]
+    extends = (size - 1) // 2
+    lower = focus_index - extends
+    upper = focus_index + extends
 
-    scoreboard = format(
-        window, headers, align=align, max_padding=max_padding
-    )
+    if lower < 0:
+        upper -= lower
+        lower = 0
+    elif upper > len(rows) - 1:
+        lower -= upper - (len(rows) - 1)
+        upper = len(rows) - 1
 
-    if uid is not None and uid in uids:
-        col_widths = calc_max_col_width(window, headers, max_padding)
-        highlight_row(scoreboard, uids.index(uid), col_widths)
-
-    embed = discord.Embed(
-        description=f"```py\n{chr(10).join(scoreboard)}```",
-        color=discord.Color.from_str("#a2dcf7"),
-    )
-    return embed
+    window = rows[lower : upper + 1]
+    return window, focus_index - lower

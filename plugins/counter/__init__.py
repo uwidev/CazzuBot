@@ -47,36 +47,31 @@ CIRNO_HELP = "<:cirnoHelp:695126168227151954>"
 NO_BAKAS_TEXT = "There are no bakas as of recently..."
 
 
-async def on_counter_expire(
-    bot: CazzuBot, payload: dict[str, Any]
-) -> None:
-    """Scheduler handler for tag ``counter`` — reset the embed footer."""
-    cid, mid = payload["cid"], payload["mid"]
-    # clear the recent-baka list even if the message is already gone
-    await bot.db.execute("DELETE FROM counter_baka WHERE mid = ?", mid)
+class CounterCog(commands.Cog):
+    """Baka button counter."""
 
-    channel = bot.get_channel(cid)
-    if not isinstance(
-        channel,
-        (
-            discord.TextChannel,
-            discord.VoiceChannel,
-            discord.StageChannel,
-            discord.Thread,
-            discord.DMChannel,
-            discord.GroupChannel,
-        ),
-    ):
-        return
-    try:
-        msg = await channel.fetch_message(mid)
-    except discord.NotFound:
-        return
+    def __init__(self, bot: CazzuBot) -> None:
+        self.bot = bot
 
-    embed = msg.embeds[-1]
-    embed.set_footer(text=NO_BAKAS_TEXT, icon_url=FROG)
-    embed.set_thumbnail(url=BORED)
-    await msg.edit(embed=embed)
+    @commands.hybrid_group()
+    async def counter(self, _ctx: commands.Context[CazzuBot]) -> None:
+        """Baka counter management."""
+
+    @counter.command(name="create")
+    async def counter_create(
+        self, ctx: commands.Context[CazzuBot]
+    ) -> None:
+        """Create the baka counter message in this channel."""
+        embed = utils.prepare_embed(
+            "Number of times people have touched the baka button", "> 0"
+        )
+        embed.set_thumbnail(url=BORED)
+        embed.set_footer(text=NO_BAKAS_TEXT, icon_url=FROG)
+        msg = await ctx.send(embed=embed, view=CounterView(self.bot))
+        await self.bot.db.execute(
+            "INSERT OR IGNORE INTO counter (mid, count) VALUES (?, 0)",
+            msg.id,
+        )
 
 
 class CounterView(discord.ui.View):
@@ -161,31 +156,36 @@ class CounterView(discord.ui.View):
         await self._schedule_expiry(mid, interaction.channel_id)
 
 
-class CounterCog(commands.Cog):
-    """Baka button counter."""
+async def on_counter_expire(
+    bot: CazzuBot, payload: dict[str, Any]
+) -> None:
+    """Scheduler handler for tag ``counter`` — reset the embed footer."""
+    cid, mid = payload["cid"], payload["mid"]
+    # clear the recent-baka list even if the message is already gone
+    await bot.db.execute("DELETE FROM counter_baka WHERE mid = ?", mid)
 
-    def __init__(self, bot: CazzuBot) -> None:
-        self.bot = bot
+    channel = bot.get_channel(cid)
+    if not isinstance(
+        channel,
+        (
+            discord.TextChannel,
+            discord.VoiceChannel,
+            discord.StageChannel,
+            discord.Thread,
+            discord.DMChannel,
+            discord.GroupChannel,
+        ),
+    ):
+        return
+    try:
+        msg = await channel.fetch_message(mid)
+    except discord.NotFound:
+        return
 
-    @commands.hybrid_group()
-    async def counter(self, _ctx: commands.Context[CazzuBot]) -> None:
-        """Baka counter management."""
-
-    @counter.command(name="create")
-    async def counter_create(
-        self, ctx: commands.Context[CazzuBot]
-    ) -> None:
-        """Create the baka counter message in this channel."""
-        embed = utils.prepare_embed(
-            "Number of times people have touched the baka button", "> 0"
-        )
-        embed.set_thumbnail(url=BORED)
-        embed.set_footer(text=NO_BAKAS_TEXT, icon_url=FROG)
-        msg = await ctx.send(embed=embed, view=CounterView(self.bot))
-        await self.bot.db.execute(
-            "INSERT OR IGNORE INTO counter (mid, count) VALUES (?, 0)",
-            msg.id,
-        )
+    embed = msg.embeds[-1]
+    embed.set_footer(text=NO_BAKAS_TEXT, icon_url=FROG)
+    embed.set_thumbnail(url=BORED)
+    await msg.edit(embed=embed)
 
 
 class CounterPlugin(Plugin):

@@ -39,55 +39,6 @@ class RankThreshold:
     mode: str
 
 
-def _key(mode: WindowEnum, field: str) -> str:
-    return f"rank.{mode.value}.{field}"
-
-
-# -- settings --------------------------------------------------------------
-
-
-async def get_message(
-    settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
-) -> dict[str, Any] | None:
-    return await settings.get(_key(mode, "message"))
-
-
-async def set_message(
-    settings: Settings,
-    message: dict[str, Any],
-    mode: WindowEnum = WindowEnum.SEASONAL,
-) -> None:
-    await settings.set(_key(mode, "message"), message)
-
-
-async def get_enabled(
-    settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
-) -> bool:
-    return bool(await settings.get(_key(mode, "enabled"), False))
-
-
-async def set_enabled(
-    settings: Settings,
-    val: bool,
-    mode: WindowEnum = WindowEnum.SEASONAL,
-) -> None:
-    await settings.set(_key(mode, "enabled"), val)
-
-
-async def get_keep_old(
-    settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
-) -> bool:
-    return bool(await settings.get(_key(mode, "keep_old"), True))
-
-
-async def set_keep_old(
-    settings: Settings,
-    val: bool,
-    mode: WindowEnum = WindowEnum.SEASONAL,
-) -> None:
-    await settings.set(_key(mode, "keep_old"), val)
-
-
 # -- rank_threshold table --------------------------------------------------
 
 
@@ -190,3 +141,52 @@ def calc_min_rank(
         if level < thresholds[i].threshold:
             return thresholds[i - 1].rid, i - 1
     return thresholds[-1].rid, len(thresholds) - 1
+
+
+# -- settings --------------------------------------------------------------
+
+
+async def get_message(
+    settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
+) -> dict[str, Any] | None:
+    return await settings.get(_key(mode, "message"))
+
+
+async def set_message(
+    settings: Settings,
+    message: dict[str, Any],
+    mode: WindowEnum = WindowEnum.SEASONAL,
+) -> None:
+    await settings.set(_key(mode, "message"), message)
+
+
+async def get_enabled(
+    settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
+) -> bool:
+    return bool(await settings.get(_key(mode, "enabled"), False))
+
+
+async def set_enabled(
+    settings: Settings,
+    val: bool,
+    mode: WindowEnum = WindowEnum.SEASONAL,
+) -> None:
+    await settings.set(_key(mode, "enabled"), val)
+
+
+async def get_keep_old(
+    settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
+) -> bool:
+    return bool(await settings.get(_key(mode, "keep_old"), True))
+
+
+async def set_keep_old(
+    settings: Settings,
+    val: bool,
+    mode: WindowEnum = WindowEnum.SEASONAL,
+) -> None:
+    await settings.set(_key(mode, "keep_old"), val)
+
+
+def _key(mode: WindowEnum, field: str) -> str:
+    return f"rank.{mode.value}.{field}"

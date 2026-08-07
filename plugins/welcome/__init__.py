@@ -29,16 +29,6 @@ _log = logging.getLogger(__name__)
 KEYS = ("enabled", "cid", "default_rid", "monitor_rid", "mode", "message")
 
 
-def formatter(s: str, *, member: discord.Member) -> str:
-    """Placeholders: {avatar} {name} {mention} {id}"""
-    return s.format(
-        avatar=member.display_avatar.url,
-        name=member.display_name,
-        mention=member.mention,
-        id=member.id,
-    )
-
-
 class WelcomeCog(commands.Cog):
     """Welcomes new members and configures the welcome message."""
 
@@ -200,6 +190,16 @@ class WelcomeCog(commands.Cog):
         """Dump the raw stored welcome message JSON."""
         msg_json = await self.bot.settings.get("welcome.message")
         await ctx.send(f"```{json.dumps(msg_json, indent=2)}```")
+
+
+def formatter(s: str, *, member: discord.Member) -> str:
+    """Placeholders: {avatar} {name} {mention} {id}"""
+    return s.format(
+        avatar=member.display_avatar.url,
+        name=member.display_name,
+        mention=member.mention,
+        id=member.id,
+    )
 
 
 class WelcomePlugin(Plugin):

@@ -48,19 +48,6 @@ _DURATION_AMOUNT_UNIT = re.compile(
 _DURATION_UNIT = re.compile(rf"^(?:{DURATION_UNITS})$", re.IGNORECASE)
 
 
-def _extends_duration(tokens: list[str], end: int) -> bool:
-    """Can the token at ``end`` extend the parsed duration prefix?"""
-    token = tokens[end]
-    if _DURATION_AMOUNT_UNIT.match(token) or _DURATION_AMOUNT.match(token):
-        return True
-    # a bare unit extends only after a bare quantity, so "2 hours 5
-    # minutes" folds in but "2 hours minutes" leaves "minutes" as reason
-    return bool(
-        _DURATION_UNIT.match(token)
-        and _DURATION_AMOUNT.match(tokens[end - 1])
-    )
-
-
 def split_duration_reason(
     raw: str | None,
 ) -> tuple[pendulum.DateTime | None, str]:
@@ -109,3 +96,16 @@ def resolve_ban_type(
 ) -> ModlogTypeEnum:
     """A duration makes a ban temporary; without one, permanent."""
     return ModlogTypeEnum.TEMPBAN if duration else ModlogTypeEnum.BAN
+
+
+def _extends_duration(tokens: list[str], end: int) -> bool:
+    """Can the token at ``end`` extend the parsed duration prefix?"""
+    token = tokens[end]
+    if _DURATION_AMOUNT_UNIT.match(token) or _DURATION_AMOUNT.match(token):
+        return True
+    # a bare unit extends only after a bare quantity, so "2 hours 5
+    # minutes" folds in but "2 hours minutes" leaves "minutes" as reason
+    return bool(
+        _DURATION_UNIT.match(token)
+        and _DURATION_AMOUNT.match(tokens[end - 1])
+    )

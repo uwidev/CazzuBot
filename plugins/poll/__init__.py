@@ -83,86 +83,6 @@ class PollRow:
     mid: int | None
 
 
-# -- db ---------------------------------------------------------------------
-
-
-async def add_poll(
-    db: Database, title: str, description: str, max_vote: int
-) -> int | None:
-    return await db.execute_lastrowid(
-        """
-		INSERT INTO poll (title, description, max_vote)
-		VALUES (?, ?, ?)
-		""",
-        title,
-        description,
-        max_vote,
-    )
-
-
-async def get_poll(db: Database, pid: int) -> Poll | None:
-    return await db.fetch_model(
-        Poll, "SELECT * FROM poll WHERE id = ?", pid
-    )
-
-
-async def set_mid(db: Database, pid: int, mid: int) -> None:
-    await db.execute("UPDATE poll SET mid = ? WHERE id = ?", mid, pid)
-
-
-async def set_open(db: Database, pid: int, val: bool) -> None:
-    await db.execute(
-        "UPDATE poll SET open = ? WHERE id = ?", int(val), pid
-    )
-
-
-async def add_items_dummy(db: Database, pid: int, n: int) -> None:
-    await db.executemany(
-        "INSERT INTO poll_item (pid) VALUES (?)", [(pid,)] * n
-    )
-
-
-async def get_items(db: Database, pid: int) -> list[int]:
-    """Poll item ids, ordered (used for vote validation ranges)."""
-    rows = await db.fetchall(
-        "SELECT id FROM poll_item WHERE pid = ? ORDER BY id", pid
-    )
-    return [int(r[0]) for r in rows]
-
-
-async def add_votes(
-    db: Database, pid: int, iids: list[int], uid: int
-) -> None:
-    await db.executemany(
-        """
-		INSERT INTO poll_vote (pid, iid, uid) VALUES (?, ?, ?)
-		ON CONFLICT (pid, iid, uid) DO UPDATE SET
-			count = poll_vote.count + 1
-		""",
-        [(pid, iid, uid) for iid in iids],
-    )
-
-
-async def drop_user_on_poll(db: Database, pid: int, uid: int) -> None:
-    await db.execute(
-        "DELETE FROM poll_vote WHERE pid = ? AND uid = ?", pid, uid
-    )
-
-
-async def get_results(db: Database, pid: int) -> list[PollResult]:
-    return await db.fetch_models(
-        PollResult,
-        """
-		SELECT vote.iid, SUM(vote.count) AS count
-		FROM poll_vote AS vote
-		WHERE vote.pid = ?
-		GROUP BY vote.iid
-		ORDER BY count DESC
-		""",
-        pid,
-    )
-
-
 # -- cog --------------------------------------------------------------------
 
 
@@ -426,6 +346,86 @@ class PollModal(discord.ui.Modal, title="Vote on the poll"):
                 f"Too many votes (max {self.max_vote}): got {len(votes)}"
             )
         return errors
+
+
+# -- db ---------------------------------------------------------------------
+
+
+async def add_poll(
+    db: Database, title: str, description: str, max_vote: int
+) -> int | None:
+    return await db.execute_lastrowid(
+        """
+		INSERT INTO poll (title, description, max_vote)
+		VALUES (?, ?, ?)
+		""",
+        title,
+        description,
+        max_vote,
+    )
+
+
+async def get_poll(db: Database, pid: int) -> Poll | None:
+    return await db.fetch_model(
+        Poll, "SELECT * FROM poll WHERE id = ?", pid
+    )
+
+
+async def set_mid(db: Database, pid: int, mid: int) -> None:
+    await db.execute("UPDATE poll SET mid = ? WHERE id = ?", mid, pid)
+
+
+async def set_open(db: Database, pid: int, val: bool) -> None:
+    await db.execute(
+        "UPDATE poll SET open = ? WHERE id = ?", int(val), pid
+    )
+
+
+async def add_items_dummy(db: Database, pid: int, n: int) -> None:
+    await db.executemany(
+        "INSERT INTO poll_item (pid) VALUES (?)", [(pid,)] * n
+    )
+
+
+async def get_items(db: Database, pid: int) -> list[int]:
+    """Poll item ids, ordered (used for vote validation ranges)."""
+    rows = await db.fetchall(
+        "SELECT id FROM poll_item WHERE pid = ? ORDER BY id", pid
+    )
+    return [int(r[0]) for r in rows]
+
+
+async def add_votes(
+    db: Database, pid: int, iids: list[int], uid: int
+) -> None:
+    await db.executemany(
+        """
+		INSERT INTO poll_vote (pid, iid, uid) VALUES (?, ?, ?)
+		ON CONFLICT (pid, iid, uid) DO UPDATE SET
+			count = poll_vote.count + 1
+		""",
+        [(pid, iid, uid) for iid in iids],
+    )
+
+
+async def drop_user_on_poll(db: Database, pid: int, uid: int) -> None:
+    await db.execute(
+        "DELETE FROM poll_vote WHERE pid = ? AND uid = ?", pid, uid
+    )
+
+
+async def get_results(db: Database, pid: int) -> list[PollResult]:
+    return await db.fetch_models(
+        PollResult,
+        """
+		SELECT vote.iid, SUM(vote.count) AS count
+		FROM poll_vote AS vote
+		WHERE vote.pid = ?
+		GROUP BY vote.iid
+		ORDER BY count DESC
+		""",
+        pid,
+    )
 
 
 class PollPlugin(Plugin):

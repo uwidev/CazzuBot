@@ -116,25 +116,6 @@ async def add_exp_log(
     )
 
 
-def _ranked(rows: list[dict[str, Any]]) -> list[tuple[int, int, int]]:
-    """Attach RANK()-style ranks (ties share, then skip) to (uid, exp) rows."""
-    out: list[tuple[int, int, int]] = []
-    prev_exp = None
-    rank = 0
-    for i, row in enumerate(rows, start=1):
-        if row["exp"] != prev_exp:
-            rank = i
-        out.append((rank, row["uid"], row["exp"]))
-        prev_exp = row["exp"]
-    return out
-
-
-def _season_bounds(year: int, season: int) -> tuple[str, str]:
-    start = pendulum.datetime(year, 1 + 3 * season, 1, tz="UTC")
-    end = start.add(months=3)
-    return start.isoformat(), end.isoformat()
-
-
 async def seasonal_ranked(
     db: Database, year: int, season: int
 ) -> list[tuple[int, int, int]]:
@@ -221,3 +202,22 @@ async def sync_with_exp_logs(db: Database) -> None:
 		)
 		"""
     )
+
+
+def _season_bounds(year: int, season: int) -> tuple[str, str]:
+    start = pendulum.datetime(year, 1 + 3 * season, 1, tz="UTC")
+    end = start.add(months=3)
+    return start.isoformat(), end.isoformat()
+
+
+def _ranked(rows: list[dict[str, Any]]) -> list[tuple[int, int, int]]:
+    """Attach RANK()-style ranks (ties share, then skip) to (uid, exp) rows."""
+    out: list[tuple[int, int, int]] = []
+    prev_exp = None
+    rank = 0
+    for i, row in enumerate(rows, start=1):
+        if row["exp"] != prev_exp:
+            rank = i
+        out.append((rank, row["uid"], row["exp"]))
+        prev_exp = row["exp"]
+    return out

@@ -126,16 +126,6 @@ def prepare(
     return content, embed, embeds
 
 
-def embed_from_decoding(message: dict[str, Any]) -> discord.Embed | None:
-    raw = message.get("embed")
-    return discord.Embed.from_dict(raw) if raw else None
-
-
-def embeds_from_decoding(message: dict[str, Any]) -> list[discord.Embed]:
-    raws: list[dict[str, Any]] = message.get("embeds") or []
-    return [discord.Embed.from_dict(raw) for raw in raws if raw]
-
-
 async def send(
     destination: Any,
     message: dict[str, Any],
@@ -165,3 +155,13 @@ async def send(
         embeds=embeds or MISSING,
         **kwargs,
     )
+
+
+def embeds_from_decoding(message: dict[str, Any]) -> list[discord.Embed]:
+    raws: list[dict[str, Any]] = message.get("embeds") or []
+    return [discord.Embed.from_dict(raw) for raw in raws if raw]
+
+
+def embed_from_decoding(message: dict[str, Any]) -> discord.Embed | None:
+    raw = message.get("embed")
+    return discord.Embed.from_dict(raw) if raw else None

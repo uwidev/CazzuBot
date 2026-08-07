@@ -165,19 +165,6 @@ async def freeze_frogs(db: Database) -> None:
 # -- member_frog_log -------------------------------------------------------
 
 
-def _ranked(rows: list[dict[str, Any]]) -> list[tuple[int, int, int]]:
-    """Attach RANK()-style ranks (ties share, then skip) to (uid, cnt) rows."""
-    out: list[tuple[int, int, int]] = []
-    prev = None
-    rank = 0
-    for i, row in enumerate(rows, start=1):
-        if row["cnt"] != prev:
-            rank = i
-        out.append((rank, row["uid"], row["cnt"]))
-        prev = row["cnt"]
-    return out
-
-
 async def add_capture_log(
     db: Database,
     uid: int,
@@ -288,3 +275,16 @@ async def get_spawns(db: Database) -> list[Spawn]:
     return await db.fetch_models(
         Spawn, "SELECT cid, interval, persist, fuzzy FROM frog_spawn"
     )
+
+
+def _ranked(rows: list[dict[str, Any]]) -> list[tuple[int, int, int]]:
+    """Attach RANK()-style ranks (ties share, then skip) to (uid, cnt) rows."""
+    out: list[tuple[int, int, int]] = []
+    prev = None
+    rank = 0
+    for i, row in enumerate(rows, start=1):
+        if row["cnt"] != prev:
+            rank = i
+        out.append((rank, row["uid"], row["cnt"]))
+        prev = row["cnt"]
+    return out

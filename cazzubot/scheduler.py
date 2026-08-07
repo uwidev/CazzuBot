@@ -39,30 +39,6 @@ _SCHEMA = [
 SCHEMA = _SCHEMA
 
 
-def _now() -> str:
-    return pendulum.now("UTC").isoformat()
-
-
-@dataclass(slots=True)
-class Task:
-    """One ``tasks`` row with the JSON ``payload`` already parsed."""
-
-    id: int
-    tag: str
-    run_at: str
-    payload: dict[str, Any]
-
-    @classmethod
-    def from_row(cls, row: aiosqlite.Row) -> Task:
-        """Parse a raw task row (payload column is JSON text)."""
-        return cls(
-            id=row["id"],
-            tag=row["tag"],
-            run_at=row["run_at"],
-            payload=json.loads(row["payload"]),
-        )
-
-
 class Scheduler:
     """Owns the task table and runs due tasks once per second."""
 
@@ -189,3 +165,27 @@ class Scheduler:
             await self.bot.db.execute(
                 "DELETE FROM tasks WHERE id = ?", task_id
             )
+
+
+@dataclass(slots=True)
+class Task:
+    """One ``tasks`` row with the JSON ``payload`` already parsed."""
+
+    id: int
+    tag: str
+    run_at: str
+    payload: dict[str, Any]
+
+    @classmethod
+    def from_row(cls, row: aiosqlite.Row) -> Task:
+        """Parse a raw task row (payload column is JSON text)."""
+        return cls(
+            id=row["id"],
+            tag=row["tag"],
+            run_at=row["run_at"],
+            payload=json.loads(row["payload"]),
+        )
+
+
+def _now() -> str:
+    return pendulum.now("UTC").isoformat()

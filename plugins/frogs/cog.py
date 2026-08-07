@@ -63,6 +63,75 @@ class FrogsCog(commands.Cog):
             embed=await self._prepare_personal_summary(ctx, target, rows)
         )
 
+    # -- consumption --------------------------------------------------------
+
+    @frog.command(name="consume")
+    async def frog_consume(
+        self,
+        ctx: commands.Context[CazzuBot],
+        amount: int = 1,
+        frog_type: FrogTypeEnum = FrogTypeEnum.NORMAL,
+    ) -> None:
+        """Consume frogs for seasonal experience (10 exp normal / 3 frozen)."""
+        uid = ctx.author.id
+        balance = await frog_db.get_frogs(self.bot.db, uid, frog_type)
+        ensure_consume_amount(amount, balance)
+
+        exp_per = exp_per_frog(frog_type)
+        total_exp = consume_total_exp(frog_type, amount)
+        now = pendulum.now("UTC")
+
+        from plugins.experience.db import seasonal_exp
+
+        exp_old = await seasonal_exp(
+            self.bot.db, uid, now.year, (now.month - 1) // 3
+        )
+
+        desc = (
+            f"You are about to consume **`{amount}` {frog_type.value} "
+            f"frog(s)**.\n\n"
+            f"These types of frogs grant `{exp_per}` exp per frog, for a "
+            f"total of **`{total_exp}`**.\n\n"
+            f"Resulting frogs\n**`{balance}`** -> **`{balance - amount}`**\n"
+            f"Resulting exp\n**`{exp_old:,}`** -> "
+            f"**`{exp_old + total_exp:,}`**\n\n"
+            "Please confirm."
+        )
+        embed = utils.prepare_embed("**Confirmation**", desc)
+        embed.set_thumbnail(url="https://i.imgur.com/ybxI7pu.png")
+        view = utils.ConfirmView(uid, timeout=120, delete_after=False)
+        msg = await ctx.send(embed=embed, view=view)
+        await view.wait()
+        if view.value is None or not view.value:
+            await msg.delete()
+            return
+
+        # re-check balance at the very moment of consumption
+        balance_now = await frog_db.get_frogs(self.bot.db, uid, frog_type)
+        ensure_consume_amount(amount, balance_now)
+
+        now = pendulum.now("UTC")
+        from plugins.experience.db import add_exp_log
+
+        await add_exp_log(
+            self.bot.db,
+            uid,
+            total_exp,
+            now,
+            source=MemberExpLogSourceEnum.FROG,
+        )
+        await frog_db.modify_frog(
+            self.bot.db, uid, modify=-amount, frog_type=frog_type
+        )
+
+        embed_post = utils.prepare_embed(
+            "Frog(s) have been consumed!",
+            f"Resulting {frog_type.value} frogs\n"
+            + f"**`{balance}`** -> **`{balance - amount}`**",
+        )
+        embed_post.set_thumbnail(url="https://i.imgur.com/kCHjymJ.png")
+        await msg.edit(embed=embed_post)
+
     @frog.command(name="lifetime")
     async def frog_lifetime(
         self,
@@ -86,78 +155,6 @@ class FrogsCog(commands.Cog):
                 ctx, target, rows, lifetime=True
             )
         )
-
-    async def _prepare_personal_summary(
-        self,
-        ctx: commands.Context[CazzuBot],
-        user: discord.Member | discord.User,
-        rows: list[tuple[int, int, int]],
-        *,
-        lifetime: bool = False,
-    ) -> discord.Embed:
-        """The "Frog Capture Permit" embed."""
-        uid = user.id
-        uids = [r[1] for r in rows]
-        uid_index = uids.index(uid)
-        subset, subset_i = leaderboard.create_focus_subset(rows, uid_index)
-
-        ranks = [r[0] for r in subset]
-        frog_cnt = [r[2] for r in subset]
-        names: list[str] = []
-        for uid_ in [r[1] for r in subset]:
-            member = await utils.find_user(self.bot, ctx, uid_)
-            names.append(member.display_name if member else str(uid_))
-
-        window = list(zip(ranks, frog_cnt, names))
-        headers = ["Rank", "Frogs", "User"]
-        align = ["<", ">", ">"]
-        max_padding = [0, 0, 16]
-
-        scoreboard = leaderboard.format(
-            window, headers, align=align, max_padding=max_padding
-        )
-        col_widths = leaderboard.calc_max_col_width(
-            window, headers, max_padding
-        )
-        leaderboard.highlight_row(scoreboard, subset_i, col_widths)
-        scoreboard_s = "\n".join(scoreboard)
-
-        user_frog_cnt = frog_cnt[subset_i]
-        normal_inv = await frog_db.get_frogs(
-            self.bot.db, uid, FrogTypeEnum.NORMAL
-        )
-        frozen_inv = await frog_db.get_frogs(
-            self.bot.db, uid, FrogTypeEnum.FROZEN
-        )
-        rank = ranks[subset_i]
-
-        now = pendulum.now("UTC")
-        if lifetime:
-            total = await frog_db.total_members(self.bot.db)
-        else:
-            total = await frog_db.seasonal_total_members(
-                self.bot.db, now.year, (now.month - 1) // 3
-            )
-
-        percentile = utils.calc_percentile(rank, total)
-
-        embed = discord.Embed(color=discord.Color.from_str("#a2dcf7"))
-        embed.set_author(
-            name=f"{user.display_name}'s Frog Capture Permit",
-            icon_url=_SCOREBOARD_STAMP,
-        )
-        embed.set_thumbnail(url=user.display_avatar.url)
-        embed.description = f"""
-		Total Frogs Captured: **`{user_frog_cnt}`**
-
-		**__Inventory__**
-		Frogs (Seasonal): **`{normal_inv}`**
-		Frogs (Frozen): **`{frozen_inv}`**
-
-		You are currently the `{utils.ordinal(trunc(percentile))}` percentile of all members!
-		```py\n{scoreboard_s}```
-		"""
-        return embed
 
     # -- configuration ------------------------------------------------------
 
@@ -265,75 +262,6 @@ class FrogsCog(commands.Cog):
         msg_json = await frog_db.get_message(self.bot.settings)
         await ctx.send(f"```{json.dumps(msg_json, indent=2)}```")
 
-    # -- consumption --------------------------------------------------------
-
-    @frog.command(name="consume")
-    async def frog_consume(
-        self,
-        ctx: commands.Context[CazzuBot],
-        amount: int = 1,
-        frog_type: FrogTypeEnum = FrogTypeEnum.NORMAL,
-    ) -> None:
-        """Consume frogs for seasonal experience (10 exp normal / 3 frozen)."""
-        uid = ctx.author.id
-        balance = await frog_db.get_frogs(self.bot.db, uid, frog_type)
-        ensure_consume_amount(amount, balance)
-
-        exp_per = exp_per_frog(frog_type)
-        total_exp = consume_total_exp(frog_type, amount)
-        now = pendulum.now("UTC")
-
-        from plugins.experience.db import seasonal_exp
-
-        exp_old = await seasonal_exp(
-            self.bot.db, uid, now.year, (now.month - 1) // 3
-        )
-
-        desc = (
-            f"You are about to consume **`{amount}` {frog_type.value} "
-            f"frog(s)**.\n\n"
-            f"These types of frogs grant `{exp_per}` exp per frog, for a "
-            f"total of **`{total_exp}`**.\n\n"
-            f"Resulting frogs\n**`{balance}`** -> **`{balance - amount}`**\n"
-            f"Resulting exp\n**`{exp_old:,}`** -> "
-            f"**`{exp_old + total_exp:,}`**\n\n"
-            "Please confirm."
-        )
-        embed = utils.prepare_embed("**Confirmation**", desc)
-        embed.set_thumbnail(url="https://i.imgur.com/ybxI7pu.png")
-        view = utils.ConfirmView(uid, timeout=120, delete_after=False)
-        msg = await ctx.send(embed=embed, view=view)
-        await view.wait()
-        if view.value is None or not view.value:
-            await msg.delete()
-            return
-
-        # re-check balance at the very moment of consumption
-        balance_now = await frog_db.get_frogs(self.bot.db, uid, frog_type)
-        ensure_consume_amount(amount, balance_now)
-
-        now = pendulum.now("UTC")
-        from plugins.experience.db import add_exp_log
-
-        await add_exp_log(
-            self.bot.db,
-            uid,
-            total_exp,
-            now,
-            source=MemberExpLogSourceEnum.FROG,
-        )
-        await frog_db.modify_frog(
-            self.bot.db, uid, modify=-amount, frog_type=frog_type
-        )
-
-        embed_post = utils.prepare_embed(
-            "Frog(s) have been consumed!",
-            f"Resulting {frog_type.value} frogs\n"
-            + f"**`{balance}`** -> **`{balance - amount}`**",
-        )
-        embed_post.set_thumbnail(url="https://i.imgur.com/kCHjymJ.png")
-        await msg.edit(embed=embed_post)
-
     # -- owner/debug --------------------------------------------------------
 
     @frog.command(name="spawn")
@@ -364,3 +292,75 @@ class FrogsCog(commands.Cog):
             await window.flush()  # ack early before the big UPDATE
             await frog_db.sync_with_frog_logs(self.bot.db)
             window.success("Lifetime captures synced.")
+
+    async def _prepare_personal_summary(
+        self,
+        ctx: commands.Context[CazzuBot],
+        user: discord.Member | discord.User,
+        rows: list[tuple[int, int, int]],
+        *,
+        lifetime: bool = False,
+    ) -> discord.Embed:
+        """The "Frog Capture Permit" embed."""
+        uid = user.id
+        uids = [r[1] for r in rows]
+        uid_index = uids.index(uid)
+        subset, subset_i = leaderboard.create_focus_subset(rows, uid_index)
+
+        ranks = [r[0] for r in subset]
+        frog_cnt = [r[2] for r in subset]
+        names: list[str] = []
+        for uid_ in [r[1] for r in subset]:
+            member = await utils.find_user(self.bot, ctx, uid_)
+            names.append(member.display_name if member else str(uid_))
+
+        window = list(zip(ranks, frog_cnt, names))
+        headers = ["Rank", "Frogs", "User"]
+        align = ["<", ">", ">"]
+        max_padding = [0, 0, 16]
+
+        scoreboard = leaderboard.format(
+            window, headers, align=align, max_padding=max_padding
+        )
+        col_widths = leaderboard.calc_max_col_width(
+            window, headers, max_padding
+        )
+        leaderboard.highlight_row(scoreboard, subset_i, col_widths)
+        scoreboard_s = "\n".join(scoreboard)
+
+        user_frog_cnt = frog_cnt[subset_i]
+        normal_inv = await frog_db.get_frogs(
+            self.bot.db, uid, FrogTypeEnum.NORMAL
+        )
+        frozen_inv = await frog_db.get_frogs(
+            self.bot.db, uid, FrogTypeEnum.FROZEN
+        )
+        rank = ranks[subset_i]
+
+        now = pendulum.now("UTC")
+        if lifetime:
+            total = await frog_db.total_members(self.bot.db)
+        else:
+            total = await frog_db.seasonal_total_members(
+                self.bot.db, now.year, (now.month - 1) // 3
+            )
+
+        percentile = utils.calc_percentile(rank, total)
+
+        embed = discord.Embed(color=discord.Color.from_str("#a2dcf7"))
+        embed.set_author(
+            name=f"{user.display_name}'s Frog Capture Permit",
+            icon_url=_SCOREBOARD_STAMP,
+        )
+        embed.set_thumbnail(url=user.display_avatar.url)
+        embed.description = f"""
+		Total Frogs Captured: **`{user_frog_cnt}`**
+
+		**__Inventory__**
+		Frogs (Seasonal): **`{normal_inv}`**
+		Frogs (Frozen): **`{frozen_inv}`**
+
+		You are currently the `{utils.ordinal(trunc(percentile))}` percentile of all members!
+		```py\n{scoreboard_s}```
+		"""
+        return embed

@@ -33,16 +33,6 @@ class QuarterlyCog(commands.Cog):
         self.force_reset = force_reset
         self.quarterly_reset.start()
 
-    @override
-    async def cog_load(self) -> None:
-        if self.force_reset:
-            await self.reset()
-            self.force_reset = False
-
-    @override
-    async def cog_unload(self) -> None:
-        self.quarterly_reset.cancel()
-
     @tasks.loop(time=CHECK_TIME)
     async def quarterly_reset(self) -> None:
         last_raw = await self.bot.settings.get(LAST_KEY)
@@ -60,6 +50,16 @@ class QuarterlyCog(commands.Cog):
         _log.info("Running quarterly reset — freezing frogs")
         await frog_db.freeze_frogs(self.bot.db)
         await self.bot.settings.set(LAST_KEY, pendulum.now("UTC"))
+
+    @override
+    async def cog_load(self) -> None:
+        if self.force_reset:
+            await self.reset()
+            self.force_reset = False
+
+    @override
+    async def cog_unload(self) -> None:
+        self.quarterly_reset.cancel()
 
 
 class QuarterlyPlugin(Plugin):

@@ -27,18 +27,6 @@ FROG_EMOJI = "<:cirnoFrog:695126166301835304>"
 FROG_NET_EMOJI = "<:cirnoNet:752290769712316506>"
 
 
-def roll_fuzzy(fuzzy: float) -> float:
-    return ((random.random() - 0.5) * 2) * fuzzy
-
-
-def roll_future_frog(
-    now: pendulum.DateTime, interval: int, fuzzy: float
-) -> pendulum.DateTime:
-    """Next spawn time: ``interval`` seconds, offset by ±``fuzzy``%."""
-    offset = interval * (1 + roll_fuzzy(fuzzy))
-    return now.add(seconds=offset)
-
-
 async def on_frog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
     """Scheduler handler for tag ``frog``."""
     now = pendulum.now("UTC")
@@ -69,6 +57,47 @@ async def on_frog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
         # Reroll from the capture time for the next spawn.
         run_at = roll_future_frog(pendulum.now("UTC"), interval, fuzzy)
         await bot.scheduler.update_run_at(task_id, run_at)
+
+
+async def spawn_and_wait(
+    bot: CazzuBot,
+    persist: int,
+    interaction: discord.Interaction | None = None,
+    *,
+    cid: int,
+) -> bool:
+    """Spawn a frog and wait for someone to capture it.
+
+    The frog is a fresh message (frog emoji + Catch button) sent to ``cid``
+    in a single payload. It lives ``persist`` seconds: pressing the button
+    catches it and the message is deleted on the spot, otherwise the frog
+    gets bored and the message is removed. Returns True if it was caught.
+    """
+    channel = bot.get_channel(cid)
+    if not isinstance(channel, discord.abc.Messageable):
+        _log.warning("frog channel %s not found; skipping", cid)
+        return False
+
+    view = FrogCatchView(bot)
+    if interaction:
+        await interaction.response.send_message(FROG_EMOJI, view=view)
+        # send_message returns an InteractionCallbackResponse (no .delete);
+        # fetch the actual message so catch/boredom can remove it.
+        message = await interaction.original_response()
+    else:
+        message = await channel.send(FROG_EMOJI, view=view)
+
+    try:
+        await asyncio.wait_for(view.wait(), timeout=persist)
+    except asyncio.TimeoutError:
+        pass  # bored
+
+    # caught or bored — either way the frog message goes away
+    try:
+        await message.delete()
+    except discord.NotFound:
+        pass
+    return view.captured
 
 
 class FrogCatchView(discord.ui.View):
@@ -140,45 +169,35 @@ class FrogCatchView(discord.ui.View):
         await msg.delete(delay=7)
 
 
-async def spawn_and_wait(
-    bot: CazzuBot,
-    persist: int,
-    interaction: discord.Interaction | None = None,
-    *,
-    cid: int,
-) -> bool:
-    """Spawn a frog and wait for someone to capture it.
+async def queue_frog_spawns(bot: CazzuBot) -> None:
+    """Insert one task per configured spawn channel."""
+    for spawn in await frog_db.get_spawns(bot.db):
+        payload = asdict(spawn)
+        run_at = roll_future_frog(
+            pendulum.now("UTC"), spawn.interval, spawn.fuzzy
+        )
+        await bot.scheduler.add("frog", run_at, payload)
 
-    The frog is a fresh message (frog emoji + Catch button) sent to ``cid``
-    in a single payload. It lives ``persist`` seconds: pressing the button
-    catches it and the message is deleted on the spot, otherwise the frog
-    gets bored and the message is removed. Returns True if it was caught.
-    """
-    channel = bot.get_channel(cid)
-    if not isinstance(channel, discord.abc.Messageable):
-        _log.warning("frog channel %s not found; skipping", cid)
-        return False
 
-    view = FrogCatchView(bot)
-    if interaction:
-        await interaction.response.send_message(FROG_EMOJI, view=view)
-        # send_message returns an InteractionCallbackResponse (no .delete);
-        # fetch the actual message so catch/boredom can remove it.
-        message = await interaction.original_response()
-    else:
-        message = await channel.send(FROG_EMOJI, view=view)
+async def reset_frog_tasks(bot: CazzuBot) -> None:
+    """Clear all frog tasks and re-queue from the spawn settings."""
+    _log.info("resetting frog spawn tasks...")
+    await bot.scheduler.drop_tag("frog")
+    if not await frog_db.get_enabled(bot.settings):
+        return
+    await queue_frog_spawns(bot)
 
-    try:
-        await asyncio.wait_for(view.wait(), timeout=persist)
-    except asyncio.TimeoutError:
-        pass  # bored
 
-    # caught or bored — either way the frog message goes away
-    try:
-        await message.delete()
-    except discord.NotFound:
-        pass
-    return view.captured
+def roll_future_frog(
+    now: pendulum.DateTime, interval: int, fuzzy: float
+) -> pendulum.DateTime:
+    """Next spawn time: ``interval`` seconds, offset by ±``fuzzy``%."""
+    offset = interval * (1 + roll_fuzzy(fuzzy))
+    return now.add(seconds=offset)
+
+
+def roll_fuzzy(fuzzy: float) -> float:
+    return ((random.random() - 0.5) * 2) * fuzzy
 
 
 def formatter(
@@ -202,22 +221,3 @@ def formatter(
         seasonal_cap_old=seasonal_cap_old,
         seasonal_cap_new=seasonal_cap_new,
     )
-
-
-async def reset_frog_tasks(bot: CazzuBot) -> None:
-    """Clear all frog tasks and re-queue from the spawn settings."""
-    _log.info("resetting frog spawn tasks...")
-    await bot.scheduler.drop_tag("frog")
-    if not await frog_db.get_enabled(bot.settings):
-        return
-    await queue_frog_spawns(bot)
-
-
-async def queue_frog_spawns(bot: CazzuBot) -> None:
-    """Insert one task per configured spawn channel."""
-    for spawn in await frog_db.get_spawns(bot.db):
-        payload = asdict(spawn)
-        run_at = roll_future_frog(
-            pendulum.now("UTC"), spawn.interval, spawn.fuzzy
-        )
-        await bot.scheduler.add("frog", run_at, payload)

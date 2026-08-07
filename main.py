@@ -26,6 +26,36 @@ from cazzubot import CazzuBot, Config
 _log = logging.getLogger(__name__)
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="CazzuBot")
+    parser.add_argument("-d", "--debug", action="store_true")
+    parser.add_argument("-p", "--production", action="store_true")
+    parser.add_argument("-s", "--sandbox", action="store_true")
+    args = parser.parse_args()
+
+    config = Config.load(
+        debug=args.debug,
+        production=args.production,
+        sandbox=args.sandbox,
+    )
+
+    setup_logging("log", debug=config.debug)
+
+    _log.info(
+        "running in %s mode",
+        "SANDBOX"
+        if config.sandbox
+        else ("PRODUCTION" if args.production else "DEVELOP"),
+    )
+    _log.info("prefix is %r, guild_id=%s", config.prefix, config.guild_id)
+
+    bot = CazzuBot(config)
+    try:
+        asyncio.run(bot.start(config.token))
+    except KeyboardInterrupt:
+        asyncio.run(bot.close())
+
+
 def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
     """Write INFO to console and DEBUG to a rotating-ish log file."""
     logger = logging.getLogger()
@@ -58,36 +88,6 @@ def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
             ]
         )
         logger.addHandler(handler)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(prog="CazzuBot")
-    parser.add_argument("-d", "--debug", action="store_true")
-    parser.add_argument("-p", "--production", action="store_true")
-    parser.add_argument("-s", "--sandbox", action="store_true")
-    args = parser.parse_args()
-
-    config = Config.load(
-        debug=args.debug,
-        production=args.production,
-        sandbox=args.sandbox,
-    )
-
-    setup_logging("log", debug=config.debug)
-
-    _log.info(
-        "running in %s mode",
-        "SANDBOX"
-        if config.sandbox
-        else ("PRODUCTION" if args.production else "DEVELOP"),
-    )
-    _log.info("prefix is %r, guild_id=%s", config.prefix, config.guild_id)
-
-    bot = CazzuBot(config)
-    try:
-        asyncio.run(bot.start(config.token))
-    except KeyboardInterrupt:
-        asyncio.run(bot.close())
 
 
 if __name__ == "__main__":
