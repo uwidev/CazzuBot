@@ -1,8 +1,8 @@
-"""Poll cog tests — app commands, vote modal, persistent view, #6 regression.
+"""Poll cog tests — app commands, vote modal, persistent view re-registration.
 
 App-command methods take an ``Interaction``; ``cog_check`` (owner-only) is
-bypassed by direct invocation. The vote button's persistence is the #6
-regression: ``PollPlugin.on_load`` must re-attach views for stored ``mid``s.
+bypassed by direct invocation. The vote button's persistence regression:
+``PollPlugin.on_load`` must re-attach views for stored ``mid``s.
 """
 
 from __future__ import annotations
@@ -250,7 +250,7 @@ async def test_auto_populate_bounds(
     )
 
 
-# -- #6 regression: persistent view re-attachment on boot ------------------
+# -- regression: persistent view re-attachment on boot ------------------
 
 
 async def test_on_load_reattaches_poll_views(

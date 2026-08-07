@@ -71,7 +71,7 @@ Every cog gets the bot injected; use these instead of reaching into internals:
   boundary (pure-data `discord.Embed`/`Permissions`/`Colour` are fine). A new
   plugin may start monolithic, but settles into this split via
   test-then-extract. Enforced by `tests/core/test_csr_boundary.py`; the
-  allowlisted exceptions are the tracked remainder of backlog #7.
+  allowlisted exceptions are the tracked remainder of the CSR backlog item.
 - Enums are stored as TEXT; timestamps as ISO-8601 UTC strings; dicts/lists as
   JSON text (see `bot.db.dump_json` / `load_json`).
 - No `gid` columns — this bot serves one guild. Check `bot.config.guild_id`

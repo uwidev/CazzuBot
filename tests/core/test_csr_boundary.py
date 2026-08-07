@@ -9,7 +9,7 @@ One carve-out: ``from discord.ext import commands`` is allowed in service
 modules for the plain ``commands.BadArgument`` exception (validation errors)
 — it holds no ConnectionState. Anything else under ``discord`` is flagged.
 
-Still-pure-pending (tracked in docs/BACKLOG.md #7): the presentation modules
+Still-pure-pending (tracked in the docs/BACKLOG.md CSR item): the presentation modules
 below remain coupled to the core package until their extraction step. New
 service modules must NOT join this allowlist.
 """
@@ -21,7 +21,8 @@ from pathlib import Path
 
 SERVICE_FILENAMES = ("logic.py", "factory.py", "db.py")
 
-# Tracked remainder of the #7 extraction order.
+# Tracked remainder — see the docs/BACKLOG.md entries "Levels/ranks
+# presentation split" and "Template formatters take Member".
 _ALLOWLIST = {
     "plugins.levels.logic",  # handle_level_up presentation
     "plugins.ranks.logic",  # handle_ranks presentation
