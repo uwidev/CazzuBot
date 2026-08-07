@@ -36,11 +36,11 @@ from dotenv import load_dotenv
 from cazzubot.db import dump_json
 from cazzubot.scheduler import SCHEMA as _TASKS_SCHEMA
 from cazzubot.settings import SCHEMA as _SETTINGS_SCHEMA
-from plugins.counter import SCHEMA as _COUNTER_SCHEMA
+from plugins.counter.db import SCHEMA as _COUNTER_SCHEMA
 from plugins.experience.db import SCHEMA as _EXP_SCHEMA
 from plugins.frogs.db import SCHEMA as _FROGS_SCHEMA
-from plugins.mod import SCHEMA as _MOD_SCHEMA
-from plugins.poll import SCHEMA as _POLL_SCHEMA
+from plugins.mod.db import SCHEMA as _MOD_SCHEMA
+from plugins.poll.db import SCHEMA as _POLL_SCHEMA
 from plugins.ranks.db import SCHEMA as _RANKS_SCHEMA
 
 _log = logging.getLogger("migrate_pg_to_sqlite")

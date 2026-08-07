@@ -6,9 +6,9 @@ import pytest
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
-from plugins.counter import (
+from plugins.counter import CounterPlugin
+from plugins.counter.cog import (
     CounterCog,
-    CounterPlugin,
     CounterView,
     NO_BAKAS_TEXT,
     on_counter_expire,

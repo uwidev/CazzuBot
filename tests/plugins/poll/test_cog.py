@@ -10,10 +10,9 @@ from __future__ import annotations
 import pytest
 
 from cazzubot.bot import CazzuBot
-from tests.fakes import first_button_custom_id
-from plugins.poll import (
-    PollPlugin,
-    PollView,
+from plugins.poll import PollPlugin
+from plugins.poll.cog import PollCog, PollModal, PollView
+from plugins.poll.db import (
     add_items_dummy,
     add_poll,
     add_votes,
@@ -21,8 +20,12 @@ from plugins.poll import (
     get_results,
     set_mid,
 )
-from plugins.poll import PollCog, PollModal
-from tests.fakes import FakeInteraction, FakeMember
+from plugins.poll.logic import parse_votes, validate_votes
+from tests.fakes import (
+    FakeInteraction,
+    FakeMember,
+    first_button_custom_id,
+)
 
 _UID = 424242
 
@@ -58,26 +61,25 @@ async def _poll_with_items(
     return pid
 
 
-# -- modal: pure parsing ----------------------------------------------------
+# -- logic: pure parsing -------------------------------------------------
 
 
 def test_parse_votes() -> None:
-    modal = PollModal.__new__(PollModal)  # type: ignore[call-arg]
-    assert modal.parse_votes("1,2") == [1, 2]
-    assert modal.parse_votes("1, 2 ,3") == [1, 2, 3]
-    assert modal.parse_votes("-1") == [-1]
+    assert parse_votes("1,2") == [1, 2]
+    assert parse_votes("1, 2 ,3") == [1, 2, 3]
+    assert parse_votes("-1") == [-1]
     with pytest.raises(ValueError):
-        modal.parse_votes("")
+        parse_votes("")
     with pytest.raises(TypeError):
-        modal.parse_votes("1,x")
+        parse_votes("1,x")
 
 
 def test_validate_votes() -> None:
-    modal = PollModal.__new__(PollModal)  # type: ignore[call-arg]
-    modal.upper, modal.max_vote = 3, 2
-    assert modal.validate_votes([1, 2]) == []
-    assert modal.validate_votes([9]) == ["Numbers out of range (1-3): [9]"]
-    assert modal.validate_votes([1, 2, 3]) == [
+    assert validate_votes([1, 2], upper=3, max_vote=2) == []
+    assert validate_votes([9], upper=3, max_vote=2) == [
+        "Numbers out of range (1-3): [9]"
+    ]
+    assert validate_votes([1, 2, 3], upper=3, max_vote=2) == [
         "Too many votes (max 2): got 3"
     ]
 

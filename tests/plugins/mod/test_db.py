@@ -6,7 +6,7 @@ import pendulum
 
 from cazzubot.bot import CazzuBot
 from cazzubot.models import ModlogTypeEnum
-from plugins.mod import add_log
+from plugins.mod.db import add_log
 
 
 async def test_modlog_insert(bot: CazzuBot) -> None:

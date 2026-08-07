@@ -12,11 +12,8 @@ import pytest
 from discord.ext import commands
 
 from cazzubot.bot import CazzuBot
-from plugins.mod import (
-    MUTE_ROLE_KEY,
-    ModCog,
-    on_modlog_due,
-)
+from plugins.mod.cog import ModCog, on_modlog_due
+from plugins.mod.db import MUTE_ROLE_KEY
 from plugins.mod.logic import split_duration_reason
 from tests.fakes import (
     FakeChannel,

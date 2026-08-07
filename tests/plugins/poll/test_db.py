@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cazzubot.bot import CazzuBot
-from plugins.poll import (
+from plugins.poll.db import (
     Poll,
     PollResult,
     PollRow,
