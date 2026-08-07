@@ -65,6 +65,13 @@ Every cog gets the bot injected; use these instead of reaching into internals:
 
 - One plugin = one feature. Split big features into `db.py` (queries/schema),
   `cog.py` (commands), `logic.py` (pure logic) inside the plugin folder.
+- **CSR boundary:** service (`logic.py`/`factory.py`) and repository (`db.py`)
+  modules take `db`/`settings` + plain values (+ injected `now`) and must
+  **not** `import discord` — discord objects cross only the controller
+  boundary (pure-data `discord.Embed`/`Permissions`/`Colour` are fine). A new
+  plugin may start monolithic, but settles into this split via
+  test-then-extract. Enforced by `tests/core/test_csr_boundary.py`; the
+  allowlisted exceptions are the tracked remainder of backlog #7.
 - Enums are stored as TEXT; timestamps as ISO-8601 UTC strings; dicts/lists as
   JSON text (see `bot.db.dump_json` / `load_json`).
 - No `gid` columns — this bot serves one guild. Check `bot.config.guild_id`

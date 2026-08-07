@@ -31,9 +31,8 @@ handlers. See [docs/PLUGINS.md](docs/PLUGINS.md).
 
 - Run: `uv run python main.py [-d|-p|-s]`
 - Lint: `uv run ruff check .` — Format: `uv run ruff format .`
-- Boot check: `uv run python scripts/smoke.py`
-- Data-layer checks: `uv run python scripts/functest.py`
-- No unit-test suite (yet).
+- Tests: `uv run pytest` — offline unit/integration tests (per-feature, see
+  `tests/`); no Discord connection, typed fakes in `tests/fakes.py`.
 
 ## Features
 

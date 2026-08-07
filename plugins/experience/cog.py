@@ -1,7 +1,6 @@
 """Experience cog — message exp pipeline, membership card, leaderboards."""
 
 import asyncio
-import logging
 from math import trunc
 from typing import Any
 
@@ -11,48 +10,18 @@ from discord.ext import commands
 
 from cazzubot import leaderboard, levels, utils
 from cazzubot.bot import CazzuBot
-from cazzubot.timeparse import parse_iso8601
-from cazzubot.utils import OldNew
 from cazzubot.window import command_window, window_success, window_warn
 from typing_extensions import override
 
 from . import db as exp_db
+from .logic import award_exp
 
-_log = logging.getLogger(__name__)
-
-# -- experience rates (hard-coded; restart the bot to change) --------------
-
-_BASE = 1
-_BONUS = 20
-_UNTIL_MSG = 77
-_DECAY_FACTOR = 2
-_EXP_COOLDOWN = 15  # seconds
+# -- experience rates live in ``plugins/experience/logic.py`` --------------
 
 _SCOREBOARD_STAMP = (
     "https://cdn.discordapp.com/emojis/695126165756837999.webp"
     "?size=160&quality=lossless"
 )
-
-RE_MSG_EXP_CUMULATIVE: dict[int, int] = {}
-
-
-def _from_msg(msg: int) -> int:
-    """Expected exp reward for the message at daily count ``msg``."""
-    if msg < 0:
-        raise ValueError("Negative messages should not exist")
-    if msg >= _UNTIL_MSG:
-        return _BASE
-    return round(
-        (_BASE * _BONUS)
-        - (_BASE * _BONUS - _BASE) * (msg / _UNTIL_MSG) ** _DECAY_FACTOR
-    )
-
-
-RE_MSG_EXP_CUMULATIVE[1] = _BASE + _from_msg(0)
-for _i in range(2, _UNTIL_MSG + 1):
-    RE_MSG_EXP_CUMULATIVE[_i] = (
-        RE_MSG_EXP_CUMULATIVE[_i - 1] + _BASE + _from_msg(_i - 1)
-    )
 
 
 class TopView(discord.ui.View):
@@ -186,71 +155,25 @@ class ExperienceCog(commands.Cog):
             await self._award_exp(message)
 
     async def _award_exp(self, message: discord.Message) -> None:
+        """Controller: resolve, call the service, present the outcome."""
         now = pendulum.now("UTC")
         uid = message.author.id
+        result = await award_exp(self.bot.db, uid=uid, now=now)
+        if result is None:
+            return  # cooldown active or row missing
 
-        member_db = await exp_db.get_member_exp(self.bot.db, uid)
-        if member_db is None:
-            await exp_db.add_member_exp(
-                self.bot.db,
-                uid,
-                cdr=now.subtract(hours=1).isoformat(),
-            )
-            member_db = await exp_db.get_member_exp(self.bot.db, uid)
-        if member_db is None:
-            _log.error(
-                "member exp row missing after insert for uid %s", uid
-            )
-            return
-
-        cdr = member_db.cdr
-        if cdr and now < parse_iso8601(cdr):
-            return  # cooldown not yet expired
-
-        # compute gains
-        msg_cnt = member_db.msg_cnt + 1
-        exp_gain = _from_msg(msg_cnt)
-        year, season = now.year, (now.month - 1) // 3
-
-        seasonal_old = await exp_db.seasonal_exp(
-            self.bot.db, uid, year, season
-        )
-        seasonal = OldNew(seasonal_old, seasonal_old + exp_gain)
-
-        lifetime_old = member_db.lifetime
-        lifetime = OldNew(lifetime_old, lifetime_old + exp_gain)
-
-        seasonal_level = OldNew(
-            levels.level_from_exp(seasonal.old),
-            levels.level_from_exp(seasonal.new),
-        )
-        lifetime_level = OldNew(
-            levels.level_from_exp(lifetime.old),
-            levels.level_from_exp(lifetime.new),
-        )
-
-        # persist
-        await exp_db.update_member_exp(
-            self.bot.db,
-            uid,
-            lifetime=lifetime.new,
-            msg_cnt=msg_cnt,
-            cdr=now.add(seconds=_EXP_COOLDOWN),
-        )
-        await exp_db.add_exp_log(self.bot.db, uid, exp_gain, now)
-
-        # level-up + rank-up handling
+        # presentation — level-up/rank-up notifications (cross-plugin)
         from plugins.levels.logic import handle_level_up
         from plugins.ranks.logic import handle_ranks
 
         await handle_level_up(
-            self.bot, message, seasonal_level, delete_after=7
+            self.bot, message, result.seasonal_level, delete_after=7
         )
         await handle_ranks(
             self.bot,
             message,
-            seasonal_level,
-            lifetime_level,
+            result.seasonal_level,
+            result.lifetime_level,
             delete_after=7,
         )
 

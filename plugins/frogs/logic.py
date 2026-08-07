@@ -1,0 +1,40 @@
+"""Frogs service layer — pure economy decisions, no discord objects.
+
+Spawn math already lives (pure) in ``factory.py`` (``roll_fuzzy``,
+``roll_future_frog``); this module holds the consume-side decisions. The
+scheduler handler and capture view remain controllers (scheduling + discord
+side effects).
+"""
+
+from __future__ import annotations
+
+from discord.ext import commands
+
+from cazzubot.models import FrogTypeEnum
+
+_EXP_PER_FROG: dict[FrogTypeEnum, int] = {
+    FrogTypeEnum.NORMAL: 10,
+    FrogTypeEnum.FROZEN: 3,
+}
+
+
+def exp_per_frog(frog_type: FrogTypeEnum) -> int:
+    """Exp granted per frog consumed."""
+    return _EXP_PER_FROG[frog_type]
+
+
+def consume_total_exp(frog_type: FrogTypeEnum, amount: int) -> int:
+    """Total exp for consuming ``amount`` frogs of a type."""
+    return exp_per_frog(frog_type) * amount
+
+
+def ensure_consume_amount(amount: int, balance: int) -> None:
+    """Raise ``BadArgument`` when a consume request is impossible."""
+    if amount < 1:
+        raise commands.BadArgument(
+            "Amount of frogs to consume must be greater than 0."
+        )
+    if balance < amount:
+        raise commands.BadArgument(
+            f"Member does not have enough frogs ({balance}) to consume."
+        )

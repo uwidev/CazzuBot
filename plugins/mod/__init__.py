@@ -17,12 +17,9 @@ from cazzubot.db import Database
 from cazzubot.settings import Settings
 from cazzubot.window import window_error, window_info, window_success
 from cazzubot.models import ModlogStatusEnum, ModlogTypeEnum
-from cazzubot.timeparse import (
-    InvalidTimeError,
-    is_future,
-    normalize_time_str,
-)
 from typing_extensions import override
+
+from .logic import ensure_future, resolve_ban_type, split_duration_reason
 
 _log = logging.getLogger(__name__)
 
@@ -112,22 +109,6 @@ async def on_modlog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
     )
 
 
-def split_duration_reason(
-    raw: str | None,
-) -> tuple[pendulum.DateTime | None, str]:
-    """Parse an optional leading duration from the rest of the string."""
-    if not raw:
-        return None, ""
-    if " " in raw:
-        dur_raw, rest = raw.split(" ", 1)
-    else:
-        dur_raw, rest = raw, ""
-    try:
-        return normalize_time_str(dur_raw), rest
-    except InvalidTimeError:
-        return None, raw
-
-
 class ModCog(commands.Cog):
     """Moderation actions with a persistent modlog."""
 
@@ -189,10 +170,7 @@ class ModCog(commands.Cog):
 
         now = pendulum.now("UTC")
         duration, reason = split_duration_reason(raw)
-        if duration and not is_future(now, duration):
-            raise commands.BadArgument(
-                f"{duration} is not a time in the future!"
-            )
+        ensure_future(now, duration)
 
         await add_log(
             self.bot.db,
@@ -250,14 +228,9 @@ class ModCog(commands.Cog):
         """Ban the user until the given time; without one, forever."""
         now = pendulum.now("UTC")
         duration, reason = split_duration_reason(raw)
-        if duration and not is_future(now, duration):
-            raise commands.BadArgument(
-                f"{duration} is not a time in the future!"
-            )
+        ensure_future(now, duration)
 
-        ban_type = (
-            ModlogTypeEnum.TEMPBAN if duration else ModlogTypeEnum.BAN
-        )
+        ban_type = resolve_ban_type(duration)
         await add_log(
             self.bot.db,
             member.id,

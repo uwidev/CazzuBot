@@ -22,6 +22,8 @@ from cazzubot.bot import CazzuBot
 from cazzubot.window import window_success
 from cazzubot.models import WelcomeModeEnum
 
+from .logic import should_welcome
+
 _log = logging.getLogger(__name__)
 
 KEYS = ("enabled", "cid", "default_rid", "monitor_rid", "mode", "message")
@@ -73,19 +75,21 @@ class WelcomeCog(commands.Cog):
 
         role = before.guild.get_role(default_rid) if default_rid else None
 
-        if mode is WelcomeModeEnum.PENDING:
-            if (
-                before.pending != after.pending
-                and after.id != self.last_welcomed_id
-            ):
+        if should_welcome(
+            mode,
+            before_pending=before.pending,
+            after_pending=after.pending,
+            before_role_ids={r.id for r in before.roles},
+            after_role_ids={r.id for r in after.roles},
+            monitor_rid=monitor_rid,
+            member_id=after.id,
+            last_welcomed_id=self.last_welcomed_id,
+        ):
+            if mode is WelcomeModeEnum.PENDING:
                 self.last_welcomed_id = after.id  # race guard
-                await self._send_welcome(channel, after, message)
-                if role:
-                    await after.add_roles(role)
-        elif mode is WelcomeModeEnum.ROLE:
-            roles_diff = set(after.roles) - set(before.roles)
-            if roles_diff and monitor_rid == roles_diff.pop().id:
-                await self._send_welcome(channel, after, message)
+            await self._send_welcome(channel, after, message)
+            if mode is WelcomeModeEnum.PENDING and role:
+                await after.add_roles(role)
 
     async def _send_welcome(
         self,

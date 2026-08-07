@@ -2,7 +2,6 @@
 
 import json
 import logging
-from enum import Enum
 from math import trunc
 
 import discord
@@ -19,6 +18,11 @@ from cazzubot.models import (
 
 from . import db as frog_db
 from . import factory
+from .logic import (
+    consume_total_exp,
+    ensure_consume_amount,
+    exp_per_frog,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -26,13 +30,6 @@ _SCOREBOARD_STAMP = (
     "https://cdn.discordapp.com/emojis/752290769712316506.webp"
     "?size=160&quality=lossless"
 )
-
-
-class _ExpFrog(Enum):
-    """Exp granted per frog consumed."""
-
-    NORMAL = 10
-    FROZEN = 3
 
 
 class FrogsCog(commands.Cog):
@@ -278,20 +275,12 @@ class FrogsCog(commands.Cog):
         frog_type: FrogTypeEnum = FrogTypeEnum.NORMAL,
     ) -> None:
         """Consume frogs for seasonal experience (10 exp normal / 3 frozen)."""
-        if amount < 1:
-            raise commands.BadArgument(
-                "Amount of frogs to consume must be greater than 0."
-            )
-
         uid = ctx.author.id
         balance = await frog_db.get_frogs(self.bot.db, uid, frog_type)
-        if balance < amount:
-            raise commands.BadArgument(
-                f"Member does not have enough frogs ({balance}) to consume."
-            )
+        ensure_consume_amount(amount, balance)
 
-        exp_per = _ExpFrog[frog_type.name].value
-        total_exp = exp_per * amount
+        exp_per = exp_per_frog(frog_type)
+        total_exp = consume_total_exp(frog_type, amount)
         now = pendulum.now("UTC")
 
         from plugins.experience.db import seasonal_exp
@@ -321,11 +310,7 @@ class FrogsCog(commands.Cog):
 
         # re-check balance at the very moment of consumption
         balance_now = await frog_db.get_frogs(self.bot.db, uid, frog_type)
-        if balance_now < amount:
-            raise commands.BadArgument(
-                f"Member does not have enough frogs ({balance_now}) "
-                + "to consume."
-            )
+        ensure_consume_amount(amount, balance_now)
 
         now = pendulum.now("UTC")
         from plugins.experience.db import add_exp_log

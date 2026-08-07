@@ -18,10 +18,21 @@ dependencies = [
 dev = [
     "basedpyright>=1.20.0",
     "pre-commit>=3.7.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
     "ruff>=0.16.1,<0.17",
 ]
 migration = [
     "asyncpg>=0.29.0",
+]
+# Library-swap prototype (branch proto/lib-swap-eval): the counter plugin
+# ported to hikari+arc+miru and interactions.py for an LSP/typing comparison.
+# Installed only via `uv sync --group proto`; remove with the branch.
+proto = [
+    "hikari>=2.5",
+    "hikari-arc>=2.3",
+    "hikari-miru>=3",
+    "discord-py-interactions==5.16.0",
 ]
 
 [tool.ruff]
@@ -81,3 +92,17 @@ reportExplicitAny = "none"
 # flag every row value / Any annotation, drowning out real findings; the
 # reportUnknown* rules (missing annotations) stay enabled.
 reportAny = "none"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    # discord.py 2.7.1 still uses asyncio.iscoroutinefunction, deprecated in
+    # Python 3.14 and removed in 3.16 — third-party noise, not ours to fix.
+    "ignore:.*iscoroutinefunction.*:DeprecationWarning",
+    # parsedatetime 1.x's flag-style API is deprecated ahead of 2.0 (its own
+    # pdt20DeprecationWarning class) — the natural-language layer we call.
+    "ignore:.*Flag style will be deprecated.*",
+]

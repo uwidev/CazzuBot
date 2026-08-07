@@ -14,7 +14,8 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - Install: `uv sync`
 - Run: `uv run python main.py -d` (dev) / `-p` (prod) / `-s` (sandbox)
 - Lint: `uv run ruff check .` — Format: `uv run ruff format .`
-- Boot check: `uv run python scripts/smoke.py` — data-layer checks: `uv run python scripts/functest.py`
+- Tests: `uv run pytest` (offline; per-feature tests in `tests/`, booted-bot
+  fixtures in `tests/conftest.py`, typed discord fakes in `tests/fakes.py`).
 - No unit-test suite.
 
 ## Architecture
