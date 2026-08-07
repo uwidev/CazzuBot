@@ -20,7 +20,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 ## Architecture
 
 - `cazzubot/bot.py` — `CazzuBot(commands.Bot)`: owns `config`, `db`, `settings`, `scheduler`, `plugins`; two-phase plugin load (schemas+cogs first, then `on_load` hooks — no load-order deps); debug gating.
-- `cazzubot/db.py` — `Database`: aiosqlite wrapper (WAL, FK on, explicit `transaction()`), `execute/fetchall/fetchone/fetchval/executemany`, `dump_json/load_json`. Enums → TEXT, timestamps → ISO-8601 UTC.
+- `cazzubot/db.py` — `Database`: aiosqlite wrapper (WAL, FK on, explicit `transaction()`), `execute/fetchall/fetchone/fetchval/executemany`, `dump_json/load_json`, `verify_schema` (boot-time drift check: DB schema must match the Python DDL exactly, extra tables allowed; mismatch → boot aborts). Enums → TEXT, timestamps → ISO-8601 UTC.
 - `cazzubot/plugin.py` — `Plugin` base (`name`, `cogs`, `schema`, `scheduled`, `on_load`/`on_unload`) + `discover_plugins()` (packages or single modules; each defines `plugin = MyPlugin()`).
 - `cazzubot/scheduler.py` — one loop over `tasks(tag, run_at, payload)`; tags registered via `Plugin.scheduled`; handlers re-schedule by inserting rows. Replaces frog/counter/mod expiry loops.
 - `cazzubot/settings.py` — JSON key-value store (single guild), namespaced keys (e.g. `frog.enabled`, `rank.seasonal.message`, `level.quiet`).

@@ -9,6 +9,7 @@ Usage: .venv/bin/python scripts/functest.py
 import asyncio
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 from typing import Any
@@ -21,6 +22,7 @@ import pendulum  # noqa: E402
 
 from cazzubot import CazzuBot, Config  # noqa: E402
 from cazzubot import levels, timeparse  # noqa: E402
+from cazzubot.db import Database, SchemaMismatchError  # noqa: E402
 from cazzubot.models import FrogTypeEnum, ModlogTypeEnum  # noqa: E402
 from cazzubot.utils import OldNew  # noqa: E402
 from cazzubot.window import (  # noqa: E402
@@ -224,6 +226,69 @@ async def main() -> None:
         "content"
     ] == "hi {name}"
     ok("settings roundtrip (json)")
+
+    # -- schema guard ------------------------------------------------------
+    # the boot-time drift check must reject a table whose columns don't
+    # match the DDL, while tolerating tables that only exist in the DB.
+    drift_path = os.path.join(tempfile.mkdtemp(), "drift.db")
+    drift_raw = sqlite3.connect(drift_path)
+    drift_raw.execute(
+        """
+        CREATE TABLE member_exp (
+            uid INTEGER PRIMARY KEY,
+            lifetime INTEGER NOT NULL DEFAULT 0,
+            msg_cnt INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    drift_raw.execute(
+        """
+        CREATE TABLE member_exp_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid INTEGER NOT NULL,
+            exp INTEGER NOT NULL,
+            at TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'message'
+        )
+        """
+    )
+    drift_raw.execute(
+        "CREATE INDEX idx_exp_log_uid_at ON member_exp_log (uid, at)"
+    )
+    drift_raw.execute(
+        "CREATE TABLE extra_thing (x TEXT)"
+    )  # extras allowed
+    drift_raw.commit()
+    drift_raw.close()
+    drift = Database(drift_path)
+    await drift.connect()
+    try:
+        await drift.verify_schema(exp_db.SCHEMA)
+        raise AssertionError("verify_schema should have rejected drift")
+    except SchemaMismatchError:
+        pass
+    finally:
+        await drift.close()
+    ok("schema guard rejects drifted tables (extra tables allowed)")
+
+    # ...and the full boot refuses to start on a drifted database
+    drift_bot = CazzuBot(
+        Config(token="fake", owner_id=1, guild_id=2, db_path=drift_path)
+    )
+
+    async def _ready_drift() -> None:
+        pass
+
+    drift_bot.wait_until_ready = _ready_drift  # type: ignore[method-assign]
+    try:
+        try:
+            await drift_bot.setup_hook()
+            raise AssertionError("boot should have aborted")
+        except SystemExit:
+            pass
+    finally:
+        await drift_bot.close()
+    ok("boot aborts (SystemExit) on schema mismatch")
 
     # -- templates ----------------------------------------------------------
     from cazzubot import templates

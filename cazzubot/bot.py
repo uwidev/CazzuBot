@@ -13,7 +13,7 @@ from discord.ext import commands
 from typing_extensions import override
 
 from cazzubot.config import Config
-from cazzubot.db import Database
+from cazzubot.db import Database, SchemaMismatchError
 from cazzubot.plugin import Plugin, discover_plugins
 from cazzubot.scheduler import Scheduler
 from cazzubot.settings import Settings
@@ -156,6 +156,21 @@ class CazzuBot(commands.Bot):
 
         for plugin in plugins:
             await self.load_plugin(plugin, run_hooks=False)
+
+        # boot-time schema guard: every table the DDL defines must exist in
+        # the database exactly as defined. Terminate rather than let the
+        # on-disk schema silently diverge (extra DB tables are allowed).
+        statements = [*self.settings.schema, *self.scheduler.schema]
+        for plugin in plugins:
+            statements.extend(plugin.schema)
+        try:
+            await self.db.verify_schema(statements)
+        except SchemaMismatchError as err:
+            _log.critical(
+                "database schema mismatch — refusing to boot:\n%s", err
+            )
+            raise SystemExit(1) from err
+
         for plugin in plugins:
             await plugin.on_load(self)
 

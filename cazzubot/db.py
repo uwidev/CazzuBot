@@ -20,6 +20,10 @@ _T = TypeVar("_T")
 _log = logging.getLogger(__name__)
 
 
+class SchemaMismatchError(Exception):
+    """Raised when the on-disk sqlite schema differs from the DDL."""
+
+
 class Database:
     """Owns the sqlite connection and provides query helpers."""
 
@@ -133,6 +137,172 @@ class Database:
                 await self.conn.execute(statement)
             await self.conn.execute("PRAGMA user_version = 1")
         _log.info("schema applied (%d statements)", len(statements))
+
+    async def verify_schema(self, statements: Sequence[str]) -> None:
+        """Check the on-disk schema matches the Python-defined DDL exactly.
+
+        Every table the DDL statements create must exist in the database with
+        identical columns, constraints and indexes; tables that only exist in
+        the database are allowed. Raises :class:`SchemaMismatchError` listing
+        every difference — the caller decides how to fail.
+        """
+        ref = await aiosqlite.connect(":memory:")
+        ref.row_factory = aiosqlite.Row
+        try:
+            for statement in statements:
+                await ref.execute(statement)
+            problems = await _schema_diff(self.conn, ref)
+        finally:
+            await ref.close()
+        if problems:
+            detail = "\n".join(f"  - {p}" for p in problems)
+            raise SchemaMismatchError(
+                "database schema does not match the Python-defined "
+                + f"schema ({self.path}):\n{detail}"
+            )
+
+
+# -- schema comparison helpers --------------------------------------------
+
+
+def _quote(name: str) -> str:
+    """Quote an identifier for use inside a PRAGMA statement."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+async def _table_names(conn: aiosqlite.Connection) -> set[str]:
+    """Names of user tables (sqlite-internal tables excluded)."""
+    rows = await conn.execute_fetchall(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    )
+    return {r["name"] for r in rows if not r["name"].startswith("sqlite_")}
+
+
+async def _columns(
+    conn: aiosqlite.Connection, table: str
+) -> tuple[tuple[Any, ...], ...]:
+    """PRAGMA table_info rows: (name, type, notnull, default, pk position)."""
+    rows = await conn.execute_fetchall(
+        f"PRAGMA table_info({_quote(table)})"
+    )
+    return tuple(
+        (r["name"], r["type"], r["notnull"], r["dflt_value"], r["pk"])
+        for r in rows
+    )
+
+
+async def _indexes(
+    conn: aiosqlite.Connection, table: str
+) -> frozenset[tuple[Any, ...]]:
+    """Indexes (incl. sqlite's automatic PK/UNIQUE ones) with column lists."""
+    out: set[tuple[Any, ...]] = set()
+    rows = await conn.execute_fetchall(
+        f"PRAGMA index_list({_quote(table)})"
+    )
+    for row in rows:
+        cols = tuple(
+            (c["seqno"], c["name"] if c["name"] is not None else c["cid"])
+            for c in await conn.execute_fetchall(
+                f"PRAGMA index_info({_quote(row['name'])})"
+            )
+        )
+        out.add(
+            (
+                row["name"],
+                row["unique"],
+                row["origin"],
+                row["partial"],
+                cols,
+            )
+        )
+    return frozenset(out)
+
+
+async def _foreign_keys(
+    conn: aiosqlite.Connection, table: str
+) -> tuple[tuple[Any, ...], ...]:
+    """PRAGMA foreign_key_list rows (id, seq, table, from, to, actions)."""
+    rows = await conn.execute_fetchall(
+        f"PRAGMA foreign_key_list({_quote(table)})"
+    )
+    return tuple(
+        (
+            r["id"],
+            r["seq"],
+            r["table"],
+            r["from"],
+            r["to"],
+            r["on_update"],
+            r["on_delete"],
+            r["match"],
+        )
+        for r in rows
+    )
+
+
+async def _has_sql_keyword(
+    conn: aiosqlite.Connection, table: str, keyword: str
+) -> bool:
+    """Whether the stored CREATE TABLE text contains a keyword (e.g.
+    AUTOINCREMENT) that PRAGMA introspection cannot see."""
+    rows = list(
+        await conn.execute_fetchall(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        )
+    )
+    return bool(rows and keyword in (rows[0]["sql"] or "").upper())
+
+
+async def _schema_diff(
+    actual: aiosqlite.Connection, expected: aiosqlite.Connection
+) -> list[str]:
+    """Human-readable differences between the real and the DDL-defined schema.
+
+    Extra tables in ``actual`` are ignored; every expected table must exist
+    with exactly matching columns, indexes, foreign keys and rowid keywords.
+    """
+    want_tables = await _table_names(expected)
+    got_tables = await _table_names(actual)
+    problems: list[str] = []
+    for table in sorted(want_tables):
+        if table not in got_tables:
+            problems.append(
+                f"table {table!r} is missing from the database"
+            )
+            continue
+        want = await _columns(expected, table)
+        got = await _columns(actual, table)
+        if want != got:
+            problems.append(
+                f"""table {table!r}: columns differ
+    expected: {want}
+    actual:   {got}"""
+            )
+        want = await _indexes(expected, table)
+        got = await _indexes(actual, table)
+        if want != got:
+            problems.append(
+                f"""table {table!r}: indexes differ
+    expected: {sorted(want)}
+    actual:   {sorted(got)}"""
+            )
+        want = await _foreign_keys(expected, table)
+        got = await _foreign_keys(actual, table)
+        if want != got:
+            problems.append(
+                f"""table {table!r}: foreign keys differ
+    expected: {want}
+    actual:   {got}"""
+            )
+        for keyword in ("AUTOINCREMENT", "WITHOUT ROWID"):
+            want = await _has_sql_keyword(expected, table, keyword)
+            got = await _has_sql_keyword(actual, table, keyword)
+            if want != got:
+                problems.append(
+                    f"table {table!r}: {keyword} expected={want} actual={got}"
+                )
+    return problems
 
 
 # -- helpers for (de)serializing values ---------------------------------
