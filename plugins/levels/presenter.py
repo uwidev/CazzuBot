@@ -7,7 +7,7 @@ configured template. Everything below the decisions in ``logic.py`` stays.
 from __future__ import annotations
 
 import logging
-from typing import cast
+from typing import Any, cast
 
 import hikari
 
@@ -76,5 +76,5 @@ def _guild_channel(
         return None
     channel = bot.cache.get_guild_channel(message.channel_id)
     if channel is not None and hasattr(channel, "send"):
-        return cast(hikari.TextableGuildChannel, channel)
+        return cast(Any, channel)
     return None

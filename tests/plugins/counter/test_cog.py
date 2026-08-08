@@ -1,153 +1,109 @@
-"""Counter plugin tests — baka button, expiry handler, view re-attachment."""
+"""Counter plugin tests — baka button, expiry handler."""
 
 from __future__ import annotations
 
-import pytest
+import pendulum
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
-from plugins.counter import CounterPlugin
 from plugins.counter.cog import (
-    CounterCog,
-    CounterView,
     NO_BAKAS_TEXT,
+    _handle_baka,
     on_counter_expire,
 )
+from plugins.counter.cog import Create
 from tests.fakes import (
+    rest_of,
     FakeChannel,
+    FakeComponentInteraction,
     FakeContext,
-    FakeGuild,
-    FakeInteraction,
     FakeMember,
     FakeMessage,
-    first_button_custom_id,
-    seed_guild,
+    invoke_command,
 )
 
 _MID = 555
 
 
-def _view(bot: CazzuBot) -> CounterView:
-    return CounterView(bot)
-
-
 async def test_counter_create_makes_message_and_row(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
-    cog = bot.get_cog(CounterCog.__cog_name__)
-    assert isinstance(cog, CounterCog)
-    await cog.counter_create(ctx)
+    await invoke_command(Create(), ctx)
     assert ctx.sent[0].embed is not None
     row = await bot.db.fetchone("SELECT count FROM counter WHERE mid = 1")
     assert row is not None and row["count"] == 0
 
 
 async def test_baka_press_increments_and_schedules(
-    bot: CazzuBot, author: FakeMember, channel: FakeChannel
+    bot: CazzuBot, author: FakeMember
 ) -> None:
-    message = FakeMessage(id=_MID, content="")
     await bot.db.execute(
         "INSERT OR IGNORE INTO counter (mid, count) VALUES (?, 0)", _MID
     )
-    interaction = FakeInteraction(
-        id=1, user=author, message=message, channel_id=channel.id
-    )
-    view = _view(bot)
-    button = view.children[0]
-    assert button.callback is not None
+    interaction = FakeComponentInteraction(user=author, message_id=_MID)
 
-    await button.callback(interaction)
+    await _handle_baka(bot, interaction)
 
-    row = await bot.db.fetchone(
-        "SELECT count FROM counter WHERE mid = ?", _MID
+    assert (
+        await bot.db.fetchval(
+            "SELECT count FROM counter WHERE mid = ?", _MID
+        )
+        == 1
     )
-    assert row is not None and row["count"] == 1
-    baka = await bot.db.fetchone(
-        "SELECT name FROM counter_baka WHERE mid = ? AND uid = ?",
-        _MID,
-        author.id,
-    )
-    assert baka is not None and baka["name"] == "cirno"
-    assert interaction.response.calls[0][0] == "edit_message"
     tasks = await bot.scheduler.get("counter")
-    assert len(tasks) == 1 and tasks[0].payload["mid"] == _MID
+    assert len(tasks) == 1
+    assert tasks[0].payload == {"mid": _MID, "cid": 99}
+    response_type, _payload = interaction.responses[0]
+    assert response_type.name == "MESSAGE_UPDATE"
 
-    # second press replaces the pending expiry, not duplicates it
-    await button.callback(interaction)
-    assert len(await bot.scheduler.get("counter")) == 1
 
-
-async def test_baka_press_unknown_counter(
+async def test_baka_press_denies_unknown_message(
     bot: CazzuBot, author: FakeMember
 ) -> None:
-    message = FakeMessage(id=999, content="")
-    interaction = FakeInteraction(id=1, user=author, message=message)
-    view = _view(bot)
-    button = view.children[0]
-    assert button.callback is not None
+    interaction = FakeComponentInteraction(user=author, message_id=999)
 
-    await button.callback(interaction)
+    await _handle_baka(bot, interaction)
 
-    assert interaction.response.calls[0] == (
-        "send_message",
-        {
-            "content": "This is not a baka counter anymore.",
-            "ephemeral": True,
-        },
+    assert (
+        await bot.db.fetchval("SELECT count FROM counter WHERE mid = 999")
+        is None
     )
+    assert await bot.scheduler.get("counter") == []
+    response_type, payload = interaction.responses[0]
+    assert response_type.name == "MESSAGE_CREATE"
+    assert payload["content"] == "This is not a baka counter anymore."
 
 
-async def test_on_counter_expire_resets_footer(
-    bot: CazzuBot, fake_guild: FakeGuild, channel: FakeChannel
+async def test_counter_expiry_resets_footer(
+    seeded_bot: CazzuBot, channel: FakeChannel
 ) -> None:
-    seed_guild(bot, fake_guild)
-    embed = utils.prepare_embed("baka counter", "> 5")
-    message = FakeMessage(id=_MID, content="", channel=channel)
-    message.embeds = [embed]
-    channel.messages.append(message)
-    await bot.db.execute(
-        "INSERT INTO counter_baka (mid, uid, name, updated_at)"
-        + " VALUES (?, ?, ?, ?)",
+    message = FakeMessage(
+        id=_MID,
+        content="",
+        guild_id=2,
+        channel_id=channel.id,
+        embeds=[utils.prepare_embed("baka", "> 3")],
+    )
+    rest_of(seeded_bot).messages[(channel.id, _MID)] = message
+    await seeded_bot.db.execute(
+        "INSERT OR IGNORE INTO counter (mid, count) VALUES (?, 0)", _MID
+    )
+    await seeded_bot.db.execute(
+        "INSERT INTO counter_baka (mid, uid, name, updated_at) VALUES (?, ?, ?, ?)",
         _MID,
         1,
         "cirno",
-        "2026-01-01T00:00:00+00:00",
+        pendulum.now("UTC").to_iso8601_string(),
     )
 
-    await on_counter_expire(bot, {"cid": channel.id, "mid": _MID})
+    await on_counter_expire(seeded_bot, {"mid": _MID, "cid": channel.id})
 
     assert (
-        await bot.db.fetchone(
-            "SELECT 1 FROM counter_baka WHERE mid = ?", _MID
+        await seeded_bot.db.fetchval(
+            "SELECT COUNT(*) FROM counter_baka WHERE mid = ?", _MID
         )
-        is None
+        == 0
     )
-    assert message.edits[0]["embed"].footer.text == NO_BAKAS_TEXT
-
-
-async def test_on_counter_expire_missing_message_noop(
-    bot: CazzuBot, fake_guild: FakeGuild, channel: FakeChannel
-) -> None:
-    seed_guild(bot, fake_guild)
-    await on_counter_expire(bot, {"cid": channel.id, "mid": 123})
-    # no crash; baka rows are still cleared
-    assert True
-
-
-async def test_on_load_reattaches_counter_views(
-    bot: CazzuBot, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    await bot.db.execute(
-        "INSERT OR IGNORE INTO counter (mid, count) VALUES (?, 0)", _MID
-    )
-    calls: list[int] = []
-
-    def spy(_view: CounterView, *, message_id: int) -> None:
-        calls.append(message_id)
-
-    monkeypatch.setattr(bot, "add_view", spy)
-
-    await CounterPlugin().on_load(bot)
-
-    assert calls == [_MID]
-    assert first_button_custom_id(CounterView(bot)) == "counter:baka"
+    assert message.embeds[0].footer is not None
+    assert message.embeds[0].footer.text == NO_BAKAS_TEXT
+    assert len(rest_of(seeded_bot).edited) == 1

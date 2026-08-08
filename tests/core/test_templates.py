@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 """Template verification — ported from scripts/functest.py."""
 
 from __future__ import annotations

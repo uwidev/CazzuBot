@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,23 @@ CHANNEL_TYPE = {
     "category": discord.ChannelType.category,
 }
 
+# Kind lookup by the channel type's *name* so both discord.py and hikari
+# channel objects resolve (hikari's enum names are GUILD_* prefixed).
+_KIND_BY_TYPE_NAME = {
+    "text": "text",
+    "news": "announcement",
+    "voice": "voice",
+    "forum": "forum",
+    "stage_voice": "stage",
+    "category": "category",
+    "GUILD_TEXT": "text",
+    "GUILD_NEWS": "announcement",
+    "GUILD_VOICE": "voice",
+    "GUILD_FORUM": "forum",
+    "GUILD_STAGE_VOICE": "stage",
+    "GUILD_CATEGORY": "category",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class ApplyResult:
@@ -58,17 +76,19 @@ class ApplyResult:
 
 
 async def snapshot_guild(guild: discord.Guild) -> list[ChannelSnapshot]:
-    """The guild's channels as plain dicts, from a fresh API fetch.
+    """The guild's channels as plain dicts, from a fresh API fetch."""
+    return snapshot_channels(await guild.fetch_channels())
+
+
+def snapshot_channels(channels: Sequence[Any]) -> list[ChannelSnapshot]:
+    """The channels as plain dicts (works on discord.py or hikari objects).
 
     Discord allows duplicate channel names; the engine keys channels by
     name, so every channel after the first with a given name is marked
     ``unsupported`` — it is kept as-is and never managed.
     """
-    channels = await guild.fetch_channels()
     cats = {
-        ch.id: ch.name
-        for ch in channels
-        if isinstance(ch, discord.CategoryChannel)
+        ch.id: ch.name for ch in channels if _kind_of(ch)[0] == "category"
     }
     # duplicate (non-first) categories are unmanaged; channels inside
     # them are unaddressable by name too — mark them unsupported so they
@@ -76,7 +96,7 @@ async def snapshot_guild(guild: discord.Guild) -> list[ChannelSnapshot]:
     seen_cats: set[str] = set()
     dup_cat_ids: set[int] = set()
     for ch in channels:
-        if isinstance(ch, discord.CategoryChannel):
+        if _kind_of(ch)[0] == "category":
             if ch.name in seen_cats:
                 dup_cat_ids.add(ch.id)
             seen_cats.add(ch.name)
@@ -127,7 +147,7 @@ def _representable_name(name: str) -> bool:
 
 
 def _kind_of(ch: GuildChannel) -> tuple[str, bool]:
-    """(kind, unsupported) for a live channel object."""
+    """(kind, unsupported) for a live channel object (discord.py or hikari)."""
     if isinstance(ch, discord.CategoryChannel):
         return "category", False
     if isinstance(ch, discord.StageChannel):
@@ -140,7 +160,16 @@ def _kind_of(ch: GuildChannel) -> tuple[str, bool]:
         if ch.type == discord.ChannelType.news:
             return "announcement", False
         return "text", False
-    return ch.type.name, True
+    # hikari channels and anything unknown: resolve by the type name
+    type_name = getattr(getattr(ch, "type", None), "name", None)
+    kind = (
+        _KIND_BY_TYPE_NAME.get(type_name)
+        if type_name is not None
+        else None
+    )
+    if kind is not None:
+        return kind, False
+    return type_name or "unknown", True
 
 
 def _snapshot_channel(

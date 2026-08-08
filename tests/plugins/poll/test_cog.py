@@ -1,8 +1,9 @@
-"""Poll cog tests — app commands, vote modal, persistent view re-registration.
+# pyright: reportArgumentType=false
+"""Poll plugin tests — commands, vote modal, persistent vote button.
 
-App-command methods take an ``Interaction``; ``cog_check`` (owner-only) is
-bypassed by direct invocation. The vote button's persistence regression:
-``PollPlugin.on_load`` must re-attach views for stored ``mid``s.
+The commands are invoked directly (owner hooks bypassed); the vote flow
+drives ``_handle_vote`` with a fake component interaction and the modal
+submission with a fake modal context.
 """
 
 from __future__ import annotations
@@ -10,46 +11,33 @@ from __future__ import annotations
 import pytest
 
 from cazzubot.bot import CazzuBot
-from plugins.poll import PollPlugin
-from plugins.poll.cog import PollCog, PollModal, PollView
+from plugins.poll.cog import (
+    AutoPopulate,
+    Open,
+    PollModal,
+    Register,
+    Send,
+    Stats,
+    _handle_vote,
+)
 from plugins.poll.db import (
     add_items_dummy,
     add_poll,
     add_votes,
     get_poll,
     get_results,
-    set_mid,
 )
 from plugins.poll.logic import parse_votes, validate_votes
 from tests.fakes import (
-    FakeInteraction,
+    FakeComponentInteraction,
+    FakeContext,
     FakeMember,
+    FakeModalContext,
     first_button_custom_id,
+    invoke_command,
 )
 
 _UID = 424242
-
-
-def _cog(bot: CazzuBot) -> PollCog:
-    cog = bot.get_cog(PollCog.__cog_name__)
-    assert isinstance(cog, PollCog)
-    return cog
-
-
-async def _invoke(bot: CazzuBot, command: str, *args: object) -> None:
-    """Invoke an app-command callback directly (app commands aren't callable).
-
-    ``app_commands.Command`` objects have no ``__call__``; their raw callback
-    is ``Command.callback`` (bound ``self`` is the cog).
-    """
-    cmd = getattr(_cog(bot), command)
-    callback = getattr(cmd, "callback")
-    assert callback is not None
-    await callback(_cog(bot), *args)
-
-
-def _interaction(_bot: CazzuBot, author: FakeMember) -> FakeInteraction:
-    return FakeInteraction(id=1, user=author)
 
 
 async def _poll_with_items(
@@ -94,16 +82,16 @@ async def test_modal_submit_records_and_replaces_votes(
     poll = await get_poll(bot.db, pid)
     assert poll is not None
     modal = PollModal(bot, poll, [1, 2, 3])
-    interaction = _interaction(bot, author)
-    modal.vote_input._value = "1,2"  # pyright: ignore[reportPrivateUsage]
-    await modal.on_submit(interaction)
+
+    mctx = FakeModalContext(values={modal.vote_input: "1,2"}, user=author)
+    await modal.on_submit(mctx)
     results = await get_results(bot.db, pid)
     assert [(r.iid, r.count) for r in results] == [(1, 1), (2, 1)]
-    assert interaction.response.calls[-1][0] == "send_message"
+    assert mctx.sent[-1]["ephemeral"] is True
 
     # a second submit replaces the user's previous votes
-    modal.vote_input._value = "3"  # pyright: ignore[reportPrivateUsage]
-    await modal.on_submit(interaction)
+    mctx2 = FakeModalContext(values={modal.vote_input: "3"}, user=author)
+    await modal.on_submit(mctx2)
     results = await get_results(bot.db, pid)
     assert [(r.iid, r.count) for r in results] == [(3, 1)]
 
@@ -115,163 +103,118 @@ async def test_modal_submit_rejects_invalid(
     poll = await get_poll(bot.db, pid)
     assert poll is not None
     modal = PollModal(bot, poll, [1, 2, 3])
-    interaction = _interaction(bot, author)
 
-    modal.vote_input._value = "9"  # pyright: ignore[reportPrivateUsage]
-    await modal.on_submit(interaction)
-    assert (
-        "❌ Invalid vote" in interaction.response.calls[-1][1]["content"]
-    )
+    mctx = FakeModalContext(values={modal.vote_input: "9"}, user=author)
+    await modal.on_submit(mctx)
+    assert "❌ Invalid vote" in mctx.sent[-1]["content"]
     assert await get_results(bot.db, pid) == []
 
-    modal.vote_input._value = "x"  # pyright: ignore[reportPrivateUsage]
-    await modal.on_submit(interaction)
-    assert (
-        "❌ Format error" in interaction.response.calls[-1][1]["content"]
-    )
+    mctx2 = FakeModalContext(values={modal.vote_input: "x"}, user=author)
+    await modal.on_submit(mctx2)
+    assert "❌ Format error" in mctx2.sent[-1]["content"]
 
 
-# -- view + send ------------------------------------------------------------
+# -- vote button + send ------------------------------------------------------
 
 
-async def test_poll_view_opens_vote_modal(
+async def test_poll_vote_opens_modal(
     bot: CazzuBot, author: FakeMember
 ) -> None:
     pid = await _poll_with_items(bot)
-    view = PollView(bot, pid)
-    interaction = _interaction(bot, author)
-    button = view.children[0]
-    assert button.callback is not None
+    interaction = FakeComponentInteraction(
+        user=author, custom_id=f"poll:vote:{pid}"
+    )
 
-    await button.callback(interaction)
+    await _handle_vote(bot, interaction, pid)
 
-    call = interaction.response.calls[-1]
-    assert call[0] == "send_modal"
-    assert isinstance(call[1]["modal"], PollModal)
+    assert len(interaction.modals) == 1
+    assert interaction.modals[0]["custom_id"] == f"poll:submit:{pid}"
+    assert isinstance(interaction.modals[0]["component"], PollModal)
 
 
-async def test_poll_view_missing_poll(
+async def test_poll_vote_missing_poll(
     bot: CazzuBot, author: FakeMember
 ) -> None:
-    view = PollView(bot, 9999)
-    interaction = _interaction(bot, author)
-    button = view.children[0]
-    assert button.callback is not None
+    interaction = FakeComponentInteraction(
+        user=author, custom_id="poll:vote:9999"
+    )
 
-    await button.callback(interaction)
+    await _handle_vote(bot, interaction, 9999)
 
-    assert interaction.response.calls[-1] == (
-        "send_message",
-        {"content": "❌ This poll no longer exists.", "ephemeral": True},
+    assert interaction.responses[-1][0].name == "MESSAGE_CREATE"
+    assert (
+        interaction.responses[-1][1]["content"]
+        == "❌ This poll no longer exists."
     )
 
 
 async def test_poll_send_records_message_id(
-    bot: CazzuBot, author: FakeMember
+    bot: CazzuBot, ctx: FakeContext
 ) -> None:
     pid = await _poll_with_items(bot)
-    interaction = _interaction(bot, author)
 
-    await _invoke(bot, "poll_send", interaction, pid)
+    await invoke_command(Send(), ctx, poll_id=pid)
 
-    sent = interaction.response.calls[-1]
-    assert sent[0] == "send_message"
-    assert isinstance(sent[1]["embed"], object)
-    assert sent[1]["view"] is not None
+    assert ctx.sent[0].embed is not None
+    assert (
+        first_button_custom_id(ctx.sent[0].component) == f"poll:vote:{pid}"
+    )
     poll = await get_poll(bot.db, pid)
-    assert poll is not None and poll.mid == 555
+    assert poll is not None and poll.mid == 1  # FakeContext response id
 
     # missing poll -> error
-    await _invoke(bot, "poll_send", interaction, 9999)
-    assert "does not exist" in interaction.response.calls[-1][1]["content"]
+    await invoke_command(Send(), ctx, poll_id=9999)
+    assert "does not exist" in (ctx.sent[-1].content or "")
 
 
 # -- register / open / stats / populate ------------------------------------
 
 
 async def test_poll_register_creates_poll(
-    bot: CazzuBot, author: FakeMember
+    bot: CazzuBot, ctx: FakeContext
 ) -> None:
-    interaction = _interaction(bot, author)
-    await _invoke(bot, "poll_register", interaction, "title", "desc", 2)
-    assert "ID#" in interaction.response.calls[-1][1]["content"]
+    await invoke_command(
+        Register(), ctx, title="title", desc="desc", max_vote=2
+    )
+    assert "ID#" in (ctx.sent[-1].content or "")
     pid_row = await bot.db.fetchone("SELECT id FROM poll")
     assert pid_row is not None
-    pid = pid_row["id"]
-    poll = await get_poll(bot.db, pid)
+    poll = await get_poll(bot.db, pid_row["id"])
     assert poll is not None and poll.max_vote == 2
 
 
-async def test_poll_open_toggles(
-    bot: CazzuBot, author: FakeMember
-) -> None:
+async def test_poll_open_toggles(bot: CazzuBot, ctx: FakeContext) -> None:
     pid = await _poll_with_items(bot)
-    interaction = _interaction(bot, author)
 
-    await _invoke(bot, "poll_open", interaction, pid, False)
+    await invoke_command(Open(), ctx, poll_id=pid, open=False)
+
     poll = await get_poll(bot.db, pid)
     assert poll is not None and poll.open == 0
-    assert "closed" in interaction.response.calls[-1][1]["content"]
+    assert "closed" in (ctx.sent[-1].content or "")
 
 
 async def test_poll_stats_formats_results(
-    bot: CazzuBot, author: FakeMember
+    bot: CazzuBot, ctx: FakeContext
 ) -> None:
     pid = await _poll_with_items(bot)
     await add_votes(bot.db, pid, [1, 1, 2], _UID)
-    interaction = _interaction(bot, author)
 
-    await _invoke(bot, "poll_stats", interaction, pid)
+    await invoke_command(Stats(), ctx, poll_id=pid)
 
-    content = interaction.response.calls[-1][1]["content"]
-    assert "1" in content and "2" in content
+    content = ctx.sent[-1].content
+    assert content is not None and "1" in content and "2" in content
 
-    await _invoke(bot, "poll_stats", interaction, 9999)
-    assert (
-        "No votes have been cast yet."
-        in interaction.response.calls[-1][1]["content"]
-    )
+    await invoke_command(Stats(), ctx, poll_id=9999)
+    assert "No votes have been cast yet." in (ctx.sent[-1].content or "")
 
 
 async def test_auto_populate_bounds(
-    bot: CazzuBot, author: FakeMember
+    bot: CazzuBot, ctx: FakeContext
 ) -> None:
     pid = await _poll_with_items(bot, n_items=0)
-    interaction = _interaction(bot, author)
 
-    await _invoke(bot, "poll_item_auto_populate", interaction, pid, 2)
-    assert (
-        "👍 Items have been added."
-        in interaction.response.calls[-1][1]["content"]
-    )
+    await invoke_command(AutoPopulate(), ctx, pid=pid, n=2)
+    assert "👍 Items have been added." in (ctx.sent[-1].content or "")
 
-    await _invoke(bot, "poll_item_auto_populate", interaction, pid, 0)
-    assert (
-        "n must be between 1 and 50."
-        in interaction.response.calls[-1][1]["content"]
-    )
-
-
-# -- regression: persistent view re-attachment on boot ------------------
-
-
-async def test_on_load_reattaches_poll_views(
-    bot: CazzuBot, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    pid = await add_poll(bot.db, "t", "d", 1)
-    assert pid is not None
-    await set_mid(bot.db, pid, 12345)
-    calls: list[tuple[int, int]] = []
-
-    def spy(view: PollView, *, message_id: int) -> None:
-        calls.append((view.poll_id, message_id))
-
-    monkeypatch.setattr(bot, "add_view", spy)
-
-    await PollPlugin().on_load(bot)
-
-    assert calls == [(pid, 12345)]
-    # the button that gets baked into messages carries the stable id
-    assert (
-        calls and first_button_custom_id(PollView(bot, pid)) == "poll:vote"
-    )
+    await invoke_command(AutoPopulate(), ctx, pid=pid, n=0)
+    assert "n must be between 1 and 50." in (ctx.sent[-1].content or "")

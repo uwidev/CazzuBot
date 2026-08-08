@@ -189,6 +189,7 @@ class FakeMessage:
         self.channel_id = channel_id
         self.created_at = created_at or datetime.now(timezone.utc)
         self.embeds = embeds or []
+        self.attachments: list[object] = []
         self.reactions: list[str] = []
         self.deleted = False
         self.edits: list[dict[str, Any]] = []
@@ -343,14 +344,21 @@ class FakeRest:
             raise _not_found("message not found")
         return message
 
-    async def fetch_messages(
-        self, channel_id: int, **kwargs: Any
-    ) -> list[FakeMessage]:
-        return [
-            m
-            for (cid, _mid), m in sorted(self.messages.items())
-            if cid == channel_id
-        ]
+    def fetch_messages(self, channel_id: int, **kwargs: Any) -> Any:
+        """Async-iterate the recorded messages for a channel."""
+
+        async def _gen() -> Any:
+            for m in sorted(
+                (
+                    m
+                    for (cid, _mid), m in self.messages.items()
+                    if cid == channel_id
+                ),
+                key=lambda m: m.id,
+            ):
+                yield m
+
+        return _gen()
 
     async def edit_message(
         self,
@@ -360,6 +368,7 @@ class FakeRest:
     ) -> FakeMessage:
         message = await self.fetch_message(channel_id, message_id)
         message.edits.append(kwargs)
+        self.edited.append((message, kwargs))
         return message
 
     async def delete_message(
@@ -422,7 +431,9 @@ class FakeClient:
     def __init__(self, app: Any) -> None:
         self.app = app
         self._attached_menus: set[object] = set()
+        self._attached_modals: dict[str, object] = {}
         self._features: set[object] = set()
+        self._owner_ids: set[int] | None = {1}
 
 
 class FakeContext:
@@ -456,6 +467,7 @@ class FakeContext:
             channel_id=channel.id,
         )
         self.client = FakeClient(bot)
+        self.window: Any = None  # set by the windowed decorator
         self.sent: list[SentMessage] = []
         self.deferred: bool = False
         self.modals: list[Any] = []
@@ -472,7 +484,7 @@ class FakeContext:
         components: list[Any] | None = None,
         flags: int = 0,
         **kwargs: Any,
-    ) -> FakeMessage:
+    ) -> int:
         self.sent.append(
             SentMessage(
                 content=content,
@@ -484,13 +496,7 @@ class FakeContext:
                 ephemeral=bool(flags & hikari.MessageFlag.EPHEMERAL),
             )
         )
-        return FakeMessage(
-            id=1,
-            content=content or "",
-            author=self.member,
-            guild_id=self.guild_id,
-            channel_id=self.channel_id,
-        )
+        return 1  # the response message id
 
     async def defer(self, *, flags: int = 0) -> None:
         self.deferred = True
@@ -566,6 +572,110 @@ class FakeMessageCreateEvent:
         )
 
 
+class FakeMemberUpdateEvent:
+    """hikari.MemberUpdateEvent stand-in for the welcome listener."""
+
+    def __init__(
+        self,
+        *,
+        member: FakeMember,
+        old_member: FakeMember | None = None,
+        guild_id: int = 2,
+        app: Any = None,
+    ) -> None:
+        self.member = member
+        self.old_member = old_member
+        self.guild_id = guild_id
+        self.app = app
+
+
+class FakeComponentInteraction:
+    """hikari.ComponentInteraction stand-in for persistent-button handlers."""
+
+    def __init__(
+        self,
+        *,
+        user: FakeMember | FakeUser,
+        message_id: int = 555,
+        channel_id: int = 99,
+        custom_id: str = "counter:baka",
+    ) -> None:
+        self.id = 1
+        self.user = user
+        self.message = FakeMessage(id=message_id, channel_id=channel_id)
+        self.channel_id = channel_id
+        self.custom_id = custom_id
+        self.responses: list[
+            tuple[hikari.ResponseType, dict[str, Any]]
+        ] = []
+        self.modals: list[dict[str, Any]] = []
+
+    async def create_initial_response(
+        self,
+        response_type: hikari.ResponseType,
+        content: str | None = None,
+        *,
+        embed: hikari.Embed | None = None,
+        embeds: list[hikari.Embed] | None = None,
+        flags: int = 0,
+        **kwargs: Any,
+    ) -> None:
+        self.responses.append(
+            (
+                response_type,
+                {
+                    "content": content,
+                    "embed": embed,
+                    "embeds": embeds,
+                    "flags": flags,
+                    **kwargs,
+                },
+            )
+        )
+
+    async def create_modal_response(
+        self,
+        title: str,
+        custom_id: str,
+        *,
+        component: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        self.modals.append(
+            {
+                "title": title,
+                "custom_id": custom_id,
+                "component": component,
+            }
+        )
+
+
+class FakeModalContext:
+    """lightbulb ModalContext stand-in: value lookup + respond recording."""
+
+    def __init__(
+        self,
+        values: dict[object, str] | None = None,
+        user: FakeMember | FakeUser | None = None,
+    ) -> None:
+        self._values = values or {}
+        self.user = user
+        self.sent: list[dict[str, Any]] = []
+
+    def value_for(self, input: object) -> str | None:
+        return self._values.get(input)
+
+    async def respond(
+        self,
+        content: str | None = None,
+        *,
+        ephemeral: bool = False,
+        **kwargs: Any,
+    ) -> int:
+        self.sent.append({"content": content, "ephemeral": ephemeral})
+        return 1
+
+
 def first_button_custom_id(
     component: hikari.api.ComponentBuilder,
 ) -> str:
@@ -577,6 +687,11 @@ def first_button_custom_id(
         if isinstance(child, InteractiveButtonBuilder):
             return child.custom_id or ""
     return ""
+
+
+def rest_of(bot: Any) -> FakeRest:
+    """The bot's rest client, typed as the fake (it IS the fake in tests)."""
+    return cast(FakeRest, bot.rest)
 
 
 async def invoke_command(

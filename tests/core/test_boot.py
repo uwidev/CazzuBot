@@ -11,7 +11,6 @@ from pathlib import Path
 
 import hikari
 import pendulum
-import pytest
 
 from cazzubot import CazzuBot, Config
 from cazzubot.models import FrogTypeEnum
@@ -50,22 +49,37 @@ async def _shutdown(instance: CazzuBot) -> None:
     )
 
 
-@pytest.mark.skip(
-    reason="awaits the plugin port — cogs are still discord.py"
-)
-async def test_boot_loads_plugins_and_commands(bot: CazzuBot) -> None:
-    names = {p.name for p in bot.plugins}
-    assert {
-        "experience",
-        "levels",
-        "ranks",
-        "frogs",
-        "mod",
-        "poll",
-        "counter",
-        "dev",
-    } <= names
-    assert bot.lightbulb.registered_commands
+async def test_boot_loads_plugins_and_commands(
+    tmp_path: Path,
+) -> None:
+    """A real boot with the actual plugin set: schemas, extensions, tasks."""
+    instance = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=str(tmp_path / "full.db"),
+        ),
+        plugins_dir="plugins",
+    )
+    await _boot(instance)
+    try:
+        names = {p.name for p in instance.plugins}
+        assert {
+            "experience",
+            "levels",
+            "ranks",
+            "frogs",
+            "mod",
+            "poll",
+            "counter",
+            "dev",
+        } <= names
+        assert instance.lightbulb.registered_commands
+        # every extension registered its commands with the client
+        assert instance.lightbulb._extensions  # pyright: ignore[reportPrivateUsage]
+    finally:
+        await _shutdown(instance)
 
 
 async def test_data_layer_roundtrip(bot: CazzuBot) -> None:

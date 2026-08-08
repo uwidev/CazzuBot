@@ -8,6 +8,7 @@ stays.
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 import hikari
 
@@ -41,6 +42,7 @@ async def present_ranks(
     member_role_ids = getattr(member, "role_ids", None)
     if member_role_ids is None:
         return  # rank roles only exist for guild members
+    member = cast(hikari.Member, member)
     member_role_ids = list(map(int, member_role_ids))
     add_ids: list[int] = []
     remove_ids: list[int] = []

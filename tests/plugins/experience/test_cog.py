@@ -55,7 +55,7 @@ async def test_exp_no_experience_embed(
 ) -> None:
     await invoke_command(Card(), ctx, user=author)
     embed = ctx.sent[0].embed
-    assert embed is not None
+    assert embed is not None and embed.author is not None
     assert embed.author.name == "cirno's Club Membership Card"
     assert embed.description is not None
     assert "has no experience yet." in embed.description
@@ -75,7 +75,7 @@ async def test_exp_membership_card(
     await invoke_command(Card(), ctx, user=author)
 
     embed = ctx.sent[0].embed
-    assert embed is not None
+    assert embed is not None and embed.author is not None
     assert embed.author.name == "cirno's Club Membership Card"
     assert embed.description is not None
     assert "reimu" in embed.description  # resolved via find_user stub
@@ -92,7 +92,9 @@ async def test_exp_top_rejects_invalid_season(
 
 def _make_menu(bot: CazzuBot, ctx: FakeContext) -> TopMenu:
     rows = [(1, ctx.member.id, 100)]
-    return TopMenu(bot, ctx, pendulum.datetime(2026, 1, 1), rows, page=1)
+    return TopMenu(
+        bot, cast(Any, ctx), pendulum.datetime(2026, 1, 1), rows, page=1
+    )
 
 
 def _buttons(menu: TopMenu) -> list[Any]:

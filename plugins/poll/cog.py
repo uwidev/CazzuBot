@@ -1,153 +1,177 @@
-"""Poll plugin — controller: app commands, vote button view, vote modal.
+"""Poll plugin extension — poll management commands, vote button, vote modal.
 
-Single-guild port of v1's ``ext/poll.py``. V1's half-finished ``open`` command
-is replaced with a working flag toggle; voting stays available whenever the
-poll message exists (as v1 effectively behaved). The vote button view is
-persistent (``custom_id="poll:vote"``) and re-attached to every existing poll
-message on boot via ``on_load`` + ``bot.add_view``.
+Single-guild port of v1's ``ext/poll.py``. Voting stays available whenever
+the poll message exists. The vote button is a plain component whose custom id
+carries the poll id (``poll:vote:<pid>``), handled by a component-interaction
+listener so it survives restarts; the modal submission dispatches through
+lightbulb's ``Modal.attach``.
 """
 
+import asyncio
 import random
-from typing import Any
+from typing import Any, cast
 
-import discord
-from discord import app_commands
-from discord.ext import commands
+import hikari
+import lightbulb
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
-from typing_extensions import override
+from lightbulb.components import modals
+from lightbulb.prefab import checks as prefab_checks
 
 from . import db
 from .logic import parse_votes, validate_votes
 
+loader = lightbulb.Loader()
+
 EMOJI_CLOSED = "https://files.catbox.moe/b67ajq.webp"
 EMOJI_OPEN = "https://files.catbox.moe/xd4h7v.webp"
 
+_OWNER = prefab_checks.owner_only
 
-class PollCog(commands.Cog):
-    """Poll management (app commands)."""
+poll = lightbulb.Group("poll", "Poll management.")
+poll_item = poll.subgroup("item", "Poll item management.")
 
-    def __init__(self, bot: CazzuBot) -> None:
-        self.bot = bot
 
-    @override
-    async def cog_check(self, ctx: commands.Context[Any]) -> bool:
-        return ctx.author.id == self.bot.owner_id
+def _bot(ctx: lightbulb.Context) -> CazzuBot:
+    return cast(CazzuBot, ctx.client.app)
 
-    poll_group = app_commands.Group(
-        name="poll", description="Poll management"
+
+@poll.register
+class Register(
+    lightbulb.SlashCommand,
+    name="register",
+    description="Register a poll and get its ID.",
+    hooks=[_OWNER],
+):
+    title = lightbulb.string("title", "The poll title")
+    desc = lightbulb.string("desc", "The poll description", default=None)
+    max_vote = lightbulb.integer(
+        "max_vote", "Default total votes a user can submit", default=1
     )
 
-    @poll_group.command(name="register", description="Register a poll.")
-    @app_commands.describe(
-        max_vote="Default total votes a user can submit"
-    )
-    async def poll_register(
-        self,
-        interaction: discord.Interaction,
-        title: str,
-        desc: str | None = None,
-        max_vote: int = 1,
-    ) -> None:
-        """Register a poll and get its ID."""
-        pid = await db.add_poll(self.bot.db, title, desc or "", max_vote)
-        await interaction.response.send_message(
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        pid = await db.add_poll(
+            bot.db, self.title, self.desc or "", self.max_vote
+        )
+        await ctx.respond(
             f"Your poll has been registered!\nReference it with ID#{pid}",
-            ephemeral=True,
+            flags=hikari.MessageFlag.EPHEMERAL,
         )
 
-    poll_item_group = app_commands.Group(
-        parent=poll_group, name="item", description="Poll item management"
+
+@poll_item.register
+class AutoPopulate(
+    lightbulb.SlashCommand,
+    name="auto_populate",
+    description="Generate N empty items to vote on.",
+    hooks=[_OWNER],
+):
+    pid = lightbulb.integer("pid", "Poll to generate items on")
+    n = lightbulb.integer(
+        "n", "Generate N items", min_value=1, max_value=50
     )
 
-    @poll_item_group.command(
-        name="auto_populate",
-        description="Generate N empty items to vote on.",
-    )
-    @app_commands.describe(
-        pid="Poll to generate items on.", n="Generate N items."
-    )
-    async def poll_item_auto_populate(
-        self, interaction: discord.Interaction, pid: int, n: int
-    ) -> None:
-        if not 1 <= n <= 50:
-            await interaction.response.send_message(
-                "n must be between 1 and 50.", ephemeral=True
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        if not 1 <= self.n <= 50:
+            await ctx.respond(
+                "n must be between 1 and 50.",
+                flags=hikari.MessageFlag.EPHEMERAL,
             )
             return
-        await db.add_items_dummy(self.bot.db, pid, n)
-        await interaction.response.send_message(
-            "👍 Items have been added.", ephemeral=True
-        )
+        await db.add_items_dummy(bot.db, self.pid, self.n)
+        await ctx.respond("👍 Items have been added.")
 
-    @poll_group.command(
-        name="send",
-        description="Send the message containing the poll and its vote button.",
-    )
-    @app_commands.describe(poll_id="ID associated with the poll")
-    async def poll_send(
-        self, interaction: discord.Interaction, poll_id: int
-    ) -> None:
+
+@poll.register
+class Send(
+    lightbulb.SlashCommand,
+    name="send",
+    description="Send the message containing the poll and its vote button.",
+    hooks=[_OWNER],
+):
+    poll_id = lightbulb.integer("poll_id", "ID associated with the poll")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
         """Send the poll message with its vote button."""
-        poll = await db.get_poll(self.bot.db, poll_id)
-        if not poll:
-            await interaction.response.send_message(
-                f"❌ Poll ID#{poll_id} does not exist!", ephemeral=True
+        bot = _bot(ctx)
+        poll_row = await db.get_poll(bot.db, self.poll_id)
+        if not poll_row:
+            await ctx.respond(
+                f"❌ Poll ID#{self.poll_id} does not exist!",
+                flags=hikari.MessageFlag.EPHEMERAL,
             )
             return
 
-        items = await db.get_items(self.bot.db, poll_id)
+        items = await db.get_items(bot.db, self.poll_id)
         if not items:
-            await interaction.response.send_message(
-                "❌ Poll has 0 items to vote on!", ephemeral=True
+            await ctx.respond(
+                "❌ Poll has 0 items to vote on!",
+                flags=hikari.MessageFlag.EPHEMERAL,
             )
             return
 
-        embed = utils.prepare_embed(poll.title, poll.description)
+        embed = utils.prepare_embed(poll_row.title, poll_row.description)
         embed.set_footer(
-            text=f"Poll ID#{poll_id}",
-            icon_url=EMOJI_OPEN if poll.open else EMOJI_CLOSED,
+            text=f"Poll ID#{self.poll_id}",
+            icon=EMOJI_OPEN if poll_row.open else EMOJI_CLOSED,
         )
 
-        view = PollView(self.bot, poll_id)
-        await interaction.response.send_message(embed=embed, view=view)
-        msg = await interaction.original_response()
-        view.message = msg
-        await db.set_mid(self.bot.db, poll_id, msg.id)
+        row = hikari.impl.MessageActionRowBuilder().add_interactive_button(
+            hikari.ButtonStyle.PRIMARY,
+            f"poll:vote:{self.poll_id}",
+            label="Vote",
+            emoji="📥",
+        )
+        response_id = await ctx.respond(embed=embed, component=row)
+        await db.set_mid(bot.db, self.poll_id, int(response_id))
 
-    @poll_group.command(
-        name="open",
-        description="Open or close voting on a poll.",
+
+@poll.register
+class Open(
+    lightbulb.SlashCommand,
+    name="open",
+    description="Open or close voting on a poll.",
+    hooks=[_OWNER],
+):
+    poll_id = lightbulb.integer("poll_id", "Poll ID to toggle")
+    open = lightbulb.boolean(
+        "open", "Open (default) or close", default=True
     )
-    @app_commands.describe(
-        poll_id="Poll ID to toggle.", open="Open (default) or close."
-    )
-    async def poll_open(
-        self,
-        interaction: discord.Interaction,
-        poll_id: int,
-        open: bool = True,
-    ) -> None:
-        await db.set_open(self.bot.db, poll_id, open)
-        await interaction.response.send_message(
-            f"Voting on poll ID#{poll_id} is now "
-            + f"{'**open**' if open else '**closed**'}.",
-            ephemeral=True,
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        await db.set_open(bot.db, self.poll_id, self.open)
+        await ctx.respond(
+            f"Voting on poll ID#{self.poll_id} is now "
+            + f"{'**open**' if self.open else '**closed**'}.",
+            flags=hikari.MessageFlag.EPHEMERAL,
         )
 
-    @poll_group.command(
-        name="stats",
-        description="Show the current results from a poll.",
-    )
-    @app_commands.describe(poll_id="ID associated with the poll")
-    async def poll_stats(
-        self, interaction: discord.Interaction, poll_id: int
-    ) -> None:
-        votes = await db.get_results(self.bot.db, poll_id)
+
+@poll.register
+class Stats(
+    lightbulb.SlashCommand,
+    name="stats",
+    description="Show the current results from a poll.",
+    hooks=[_OWNER],
+):
+    poll_id = lightbulb.integer("poll_id", "ID associated with the poll")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        votes = await db.get_results(bot.db, self.poll_id)
         if not votes:
-            await interaction.response.send_message(
-                "No votes have been cast yet.", ephemeral=True
+            await ctx.respond(
+                "No votes have been cast yet.",
+                flags=hikari.MessageFlag.EPHEMERAL,
             )
             return
 
@@ -156,72 +180,77 @@ class PollCog(commands.Cog):
             f"{v.iid:<8}{v.count:>8}{v.count / total:>10.2%}"
             for v in votes[:10]
         )
-        await interaction.response.send_message(
+        await ctx.respond(
             f"```{'Item':<8}{'Count':>8}{'Percent':>10}\n{lines}```"
         )
 
 
-class PollView(discord.ui.View):
-    """Persistent poll message view with the vote button."""
+loader.command(poll)
 
-    def __init__(self, bot: CazzuBot, poll_id: int) -> None:
-        super().__init__(timeout=None)
-        self.bot = bot
-        self.poll_id = poll_id
-        self.message: discord.InteractionMessage | None = None
 
-    @discord.ui.button(
-        label="Vote",
-        style=discord.ButtonStyle.primary,
-        emoji="📥",
-        custom_id="poll:vote",
-    )
-    async def vote(
-        self,
-        interaction: discord.Interaction,
-        _button: discord.ui.Button[Any],
-    ) -> None:
-        poll = await db.get_poll(self.bot.db, self.poll_id)
-        items = await db.get_items(self.bot.db, self.poll_id)
-        if not poll or not items:
-            await interaction.response.send_message(
-                "❌ This poll no longer exists.", ephemeral=True
-            )
-            return
-        await interaction.response.send_modal(
-            PollModal(self.bot, poll, items)
+# -- persistent vote button + modal ----------------------------------------
+
+
+@loader.listener(hikari.InteractionCreateEvent)
+async def on_interaction(event: hikari.InteractionCreateEvent) -> None:
+    """Persistent vote button — open the vote modal for the poll."""
+    interaction = event.interaction
+    if not isinstance(interaction, hikari.ComponentInteraction):
+        return
+    prefix = "poll:vote:"
+    if not interaction.custom_id.startswith(prefix):
+        return
+    poll_id = int(interaction.custom_id[len(prefix) :])
+    await _handle_vote(cast(CazzuBot, event.app), interaction, poll_id)
+
+
+async def _handle_vote(
+    bot: CazzuBot, interaction: Any, poll_id: int
+) -> None:
+    """Open the vote modal; the attach wait runs in its own task so the
+    event dispatch never blocks on a user's (up to 300s) modal session."""
+    poll_row = await db.get_poll(bot.db, poll_id)
+    items = await db.get_items(bot.db, poll_id)
+    if not poll_row or not items:
+        await interaction.create_initial_response(
+            hikari.ResponseType.MESSAGE_CREATE,
+            "❌ This poll no longer exists.",
+            flags=hikari.MessageFlag.EPHEMERAL,
         )
+        return
+
+    modal = PollModal(bot, poll_row, items)
+    custom_id = f"poll:submit:{poll_id}"
+    await interaction.create_modal_response(
+        "Vote on the poll", custom_id, component=modal
+    )
+
+    async def _wait() -> None:
+        try:
+            await modal.attach(bot.lightbulb, custom_id, timeout=300)
+        except asyncio.TimeoutError:
+            pass
+
+    asyncio.create_task(_wait())
 
 
-class PollModal(discord.ui.Modal, title="Vote on the poll"):
+class PollModal(modals.Modal):
     """Comma-separated item votes, validated against the poll's rules."""
 
     def __init__(
         self,
         bot: CazzuBot,
-        poll: db.Poll,
+        poll_row: db.Poll,
         items: list[int],
     ) -> None:
-        super().__init__(timeout=300)
+        super().__init__()
         self.bot = bot
-        self.poll = poll
+        self.poll = poll_row
         self.items = items
-        self.max_vote = poll.max_vote
+        self.max_vote = poll_row.max_vote
         self.upper = len(items)
-
-        self.rules: discord.ui.TextDisplay[Any] = discord.ui.TextDisplay(
-            f"""
-### Rules
-- Max votes: {self.max_vote}
-- Range: 1 to {self.upper}
-- Can vote on same image multiple times
-- Use comma-separated items to vote
-			"""
-        )
-        self.add_item(self.rules)
-
-        self.vote_input: discord.ui.TextInput[Any] = discord.ui.TextInput(
-            label="Vote",
+        self.vote_input = self.add_paragraph_text_input(
+            "Vote",
             placeholder=(
                 "Example: "
                 + ", ".join(
@@ -229,33 +258,29 @@ class PollModal(discord.ui.Modal, title="Vote on the poll"):
                     for _ in range(min(self.max_vote, self.upper))
                 )
             ),
-            style=discord.TextStyle.long,
         )
-        self.add_item(self.vote_input)
 
-    @override
-    async def on_submit(self, interaction: discord.Interaction) -> None:
+    async def on_submit(self, ctx: modals.ModalContext) -> None:
+        raw = ctx.value_for(self.vote_input) or ""
         try:
-            votes = parse_votes(self.vote_input.value)
+            votes = parse_votes(raw)
             errors = validate_votes(
                 votes, upper=self.upper, max_vote=self.max_vote
             )
             if errors:
-                await interaction.response.send_message(
+                await ctx.respond(
                     "❌ Invalid vote\n" + "\n".join(errors),
                     ephemeral=True,
                 )
                 return
 
             pid = self.poll.id
-            uid = interaction.user.id
+            uid = ctx.user.id
             await db.drop_user_on_poll(self.bot.db, pid, uid)
             await db.add_votes(self.bot.db, pid, votes, uid)
-            await interaction.response.send_message(
+            await ctx.respond(
                 f"Your vote(s) of {votes} have been recorded.",
                 ephemeral=True,
             )
         except (TypeError, ValueError) as err:
-            await interaction.response.send_message(
-                f"❌ Format error: {err}", ephemeral=True
-            )
+            await ctx.respond(f"❌ Format error: {err}", ephemeral=True)

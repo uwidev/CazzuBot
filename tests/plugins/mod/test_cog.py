@@ -7,6 +7,8 @@ at the rest fakes.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pendulum
 import pytest
 
@@ -21,12 +23,12 @@ from plugins.mod.cog import (
     Unban,
     Unmute,
     Warn,
-    _mod_gate,
     on_modlog_due,
 )
 from plugins.mod.db import MUTE_ROLE_KEY
 from plugins.mod.logic import split_duration_reason
 from tests.fakes import (
+    rest_of,
     FakeCache,
     FakeChannel,
     FakeContext,
@@ -113,7 +115,7 @@ async def test_mute_applies_role_logs_and_schedules(
 
     await invoke_command(Mute(), ctx, member=author, raw="1h rule break")
 
-    assert seeded_bot.rest.added_roles == [
+    assert rest_of(seeded_bot).added_roles == [
         (author.id, role.id, "rule break")
     ]
     tasks = await seeded_bot.scheduler.get("modlog")
@@ -166,7 +168,7 @@ async def test_unmute_removes_role_and_drops_tasks(
 
     await invoke_command(Unmute(), ctx, member=muted)
 
-    assert seeded_bot.rest.removed_roles == [
+    assert rest_of(seeded_bot).removed_roles == [
         (muted.id, role.id, "Unmuted.")
     ]
     assert await seeded_bot.scheduler.get("modlog") == []
@@ -180,7 +182,7 @@ async def test_ban_schedules_tempban(
     seeded_bot: CazzuBot, ctx: FakeContext, author: FakeMember
 ) -> None:
     await invoke_command(Ban(), ctx, member=author, raw="2h being bad")
-    assert seeded_bot.rest.banned == [(author.id, "being bad")]
+    assert rest_of(seeded_bot).banned == [(author.id, "being bad")]
     tasks = await seeded_bot.scheduler.get("modlog")
     assert len(tasks) == 1
     assert tasks[0].payload["log_type"] == "tempban"
@@ -194,7 +196,7 @@ async def test_kick_writes_modlog(
     seeded_bot: CazzuBot, ctx: FakeContext, author: FakeMember
 ) -> None:
     await invoke_command(Kick(), ctx, member=author, reason="bye")
-    assert seeded_bot.rest.kicked == [(author.id, "bye")]
+    assert rest_of(seeded_bot).kicked == [(author.id, "bye")]
     row = await seeded_bot.db.fetchone(
         "SELECT * FROM modlog ORDER BY id DESC"
     )
@@ -213,7 +215,7 @@ async def test_unban_drops_tempban_task(
 
     await invoke_command(Unban(), ctx, user=user)
 
-    assert seeded_bot.rest.unbanned == [(user.id, "Unbanned.")]
+    assert rest_of(seeded_bot).unbanned == [(user.id, "Unbanned.")]
     assert await seeded_bot.scheduler.get("modlog") == []
 
 
@@ -236,7 +238,7 @@ async def test_on_modlog_due_lifts_mute(
 
     await on_modlog_due(seeded_bot, {"uid": muted.id, "log_type": "mute"})
 
-    assert seeded_bot.rest.removed_roles == [
+    assert rest_of(seeded_bot).removed_roles == [
         (muted.id, role.id, "Mute expired.")
     ]
 
@@ -251,7 +253,7 @@ async def test_on_modlog_due_ends_tempban(
         seeded_bot, {"uid": user.id, "log_type": "tempban"}
     )
 
-    assert seeded_bot.rest.unbanned == [(user.id, "Tempban expired.")]
+    assert rest_of(seeded_bot).unbanned == [(user.id, "Tempban expired.")]
 
 
 # -- permission gate + slowmode + settings --------------------------------
@@ -263,10 +265,10 @@ async def test_mod_gate_requires_mod_perms(
     channel: FakeChannel,
     fake_guild: FakeGuild,
 ) -> None:
-    from plugins.mod.cog import _ModGateDenied
+    from plugins.mod.cog import _ModGateDenied, _mod_gate
 
     with pytest.raises(_ModGateDenied):
-        await _mod_gate(None, ctx)  # plain member
+        await cast(Any, _mod_gate)(None, ctx)  # plain member
 
     admin = FakeMember(id=888, name="admin", administrator=True)
     admin_ctx = FakeContext(
@@ -275,14 +277,14 @@ async def test_mod_gate_requires_mod_perms(
         guild=fake_guild,
         channel=channel,
     )
-    await _mod_gate(None, admin_ctx)  # no raise
+    await cast(Any, _mod_gate)(None, admin_ctx)  # no raise
 
 
 async def test_slowmode_edits_channel(
     seeded_bot: CazzuBot, ctx: FakeContext, channel: FakeChannel
 ) -> None:
     await invoke_command(Slowmode(), ctx, cooldown=30, channel=channel)
-    assert seeded_bot.rest.channel_edits == [
+    assert rest_of(seeded_bot).channel_edits == [
         (channel.id, {"rate_limit_per_user": 30})
     ]
     assert ctx.sent[-1].content is not None

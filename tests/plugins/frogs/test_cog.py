@@ -16,6 +16,7 @@ from plugins.frogs import db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.cog import Consume, Profile, Register
 from tests.fakes import (
+    rest_of,
     invoke_command,
     FakeChannel,
     FakeContext,
@@ -27,7 +28,7 @@ from tests.fakes import (
 _UID = 424242
 
 
-def _menu_button(menu: object, index: int = 0) -> Any:
+def _menu_button(menu: Any, index: int = 0) -> Any:
     """The menu's button at ``index`` (callback drives the menu)."""
     return cast(list[Any], menu._rows[0])[index]  # pyright: ignore[reportPrivateUsage]
 
@@ -186,4 +187,4 @@ async def test_on_frog_due_reschedules_and_despawns(
     # frog message sent, then removed when bored
     assert len(channel.sent) == 1
     assert channel.sent[0]["content"] == factory.FROG_EMOJI
-    assert seeded_bot.rest.deleted == [(channel.id, 1)]
+    assert rest_of(seeded_bot).deleted == [(channel.id, 1)]

@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 """on_message exp pipeline — characterization tests.
 
 These pin CURRENT behavior of the exp award pipeline (award, cooldown, guild/

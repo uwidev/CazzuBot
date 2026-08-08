@@ -1,58 +1,75 @@
+# pyright: reportArgumentType=false
 """Dev plugin — owner gating, calc helpers, hotswap error paths."""
 
 from __future__ import annotations
 
+import pytest
+from lightbulb.prefab.checks import NotOwner, owner_only
+
 from cazzubot import levels
 from cazzubot.bot import CazzuBot
-from plugins.dev import DevCog, HotswapCog
-from tests.fakes import FakeContext, FakeMember
+from plugins.dev.cog import (
+    CalcCum,
+    CalcTo,
+    Owner,
+    PluginReload,
+)
+from tests.fakes import (
+    FakeChannel,
+    FakeContext,
+    FakeGuild,
+    FakeMember,
+    invoke_command,
+)
 
 
-def _cog(bot: CazzuBot) -> DevCog:
-    cog = bot.get_cog(DevCog.__cog_name__)
-    assert isinstance(cog, DevCog)
-    return cog
+async def test_owner_gate(
+    bot: CazzuBot,
+    ctx: FakeContext,
+    fake_guild: FakeGuild,
+    channel: FakeChannel,
+) -> None:
+    ctx.client._owner_ids = {1}  # no _ensure_application network call
+    with pytest.raises(NotOwner):
+        await owner_only(None, ctx)  # author 424242 != owner
 
-
-def _hotswap(bot: CazzuBot) -> HotswapCog:
-    cog = bot.get_cog(HotswapCog.__cog_name__)
-    assert isinstance(cog, HotswapCog)
-    return cog
-
-
-async def test_owner_gate(bot: CazzuBot, ctx: FakeContext) -> None:
-    assert await _cog(bot).cog_check(ctx) is False  # author != owner
-    owner = FakeMember(id=1, name="owner", guild=ctx.guild)
+    owner = FakeMember(id=1, name="owner")
     owner_ctx = FakeContext(
-        bot=bot, author=owner, guild=ctx.guild, channel=ctx.channel
+        bot=bot,
+        member=owner,
+        guild=fake_guild,
+        channel=channel,
     )
-    assert await _cog(bot).cog_check(owner_ctx) is True
-    assert await _hotswap(bot).cog_check(owner_ctx) is True
+    owner_ctx.client._owner_ids = {1}
+    await owner_only(None, owner_ctx)  # no raise
 
 
 async def test_owner_command(bot: CazzuBot, ctx: FakeContext) -> None:
-    await _cog(bot).owner(ctx)
-    assert ctx.sent[-1].content == f"You are {ctx.author.mention}!"
+    await invoke_command(Owner(), ctx)
+    assert ctx.sent[-1].content == f"You are {ctx.member.mention}!"
 
 
 async def test_calc_helpers(bot: CazzuBot, ctx: FakeContext) -> None:
-    cog = _cog(bot)
-    await cog.calc_to(ctx, 5)
+    await invoke_command(CalcTo(), ctx, n=5)
     assert ctx.sent[-1].content == f"{levels.exp_to_level(5):.2f}"
-    await cog.calc_cum(ctx, 5)
+    await invoke_command(CalcCum(), ctx, n=5)
     assert ctx.sent[-1].content == f"{levels.exp_to_level_cum(5):.2f}"
 
 
 async def test_plugin_reload_rejects_unknown(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
-    await _hotswap(bot).plugin_reload(ctx, plugin_name="nope")
+    await invoke_command(PluginReload(), ctx, plugin_name="nope")
     assert ctx.sent[-1].content == "❌ plugin nope is not loaded"
 
 
 async def test_plugin_reload_roundtrip(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
-    await _hotswap(bot).plugin_reload(ctx, plugin_name="counter")
+    bot.plugins_dir = "plugins"  # the fixture boots an empty temp dir
+    await bot.load_plugin_by_name("counter")
+    assert "counter" in [p.name for p in bot.plugins]
+
+    await invoke_command(PluginReload(), ctx, plugin_name="counter")
     assert ctx.sent[-1].content == "✅ plugin counter has been reloaded"
     assert "counter" in [p.name for p in bot.plugins]

@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 """Ranks/levels presentation — present_ranks + present_level_up.
 
 The presenters are the controller-edge halves of the levels/ranks pipeline
@@ -9,6 +10,7 @@ below, the hikari side effects through the rest/cache fakes.
 from __future__ import annotations
 
 import pytest
+from typing import Any, cast
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
@@ -20,6 +22,7 @@ from plugins.ranks.db import RankThreshold
 from plugins.ranks.logic import plan_rank_changes
 from plugins.ranks.presenter import present_ranks
 from tests.fakes import (
+    rest_of,
     FakeCache,
     FakeChannel,
     FakeMember,
@@ -181,7 +184,7 @@ async def test_level_up_noop_without_level_gain(
     seeded_bot: CazzuBot, channel: FakeChannel, author: FakeMember
 ) -> None:
     await present_level_up(
-        seeded_bot, _msg(author, channel), utils.OldNew(5, 5)
+        seeded_bot, cast(Any, _msg(author, channel)), utils.OldNew(5, 5)
     )
     assert channel.sent == []
 
@@ -196,7 +199,9 @@ async def test_level_up_quiet_channel_reaction(
     message = _msg(author, channel)
     await present_level_up(seeded_bot, message, utils.OldNew(0, 1))
     assert channel.sent == []
-    assert seeded_bot.rest.reactions == [(channel.id, message.id, "🎉")]
+    assert rest_of(seeded_bot).reactions == [
+        (channel.id, message.id, "🎉")
+    ]
 
 
 async def test_level_up_sends_formatted_message(
@@ -216,7 +221,7 @@ async def test_level_up_sends_formatted_message(
     )
     await present_level_up(
         seeded_bot,
-        _msg(author, channel),
+        cast(Any, _msg(author, channel)),
         utils.OldNew(0, 1),
         delete_after=7,
     )
@@ -251,7 +256,7 @@ async def test_rank_up_adds_role_and_notifies(
         utils.OldNew(0, 0),
     )
 
-    assert seeded_bot.rest.added_roles == [
+    assert rest_of(seeded_bot).added_roles == [
         (author.id, role.id, _RANK_REASON)
     ]
     assert channel.sent[0]["content"] == "rank up to <@&111>"
@@ -279,7 +284,9 @@ async def test_rank_demotion_removes_roles(
         utils.OldNew(0, 0),
     )
 
-    assert seeded_bot.rest.removed_roles == [(author.id, role.id, None)]
+    assert rest_of(seeded_bot).removed_roles == [
+        (author.id, role.id, None)
+    ]
 
 
 async def test_ranks_disabled_are_noop(
@@ -293,4 +300,4 @@ async def test_ranks_disabled_are_noop(
         utils.OldNew(4, 5),
         utils.OldNew(0, 0),
     )
-    assert seeded_bot.rest.added_roles == []
+    assert rest_of(seeded_bot).added_roles == []

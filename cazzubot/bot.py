@@ -249,6 +249,6 @@ class CazzuBot(hikari.GatewayBot):
         return importlib.import_module(f"{self.plugins_dir}.{name}")
 
     @property
-    def guild(self) -> hikari.Guild | None:
+    def guild(self) -> hikari.GatewayGuild | None:
         """The one guild this bot serves."""
         return self.cache.get_guild(self.config.guild_id)
