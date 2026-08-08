@@ -25,7 +25,9 @@ class LevelsCog(commands.Cog):
         self, ctx: commands.Context[CazzuBot], *, message: str
     ) -> None:
         """Set the level-up message JSON."""
-        decoded = templates.verify(message, formatter, member=ctx.author)
+        decoded = templates.verify(
+            message, formatter, member=utils.member_snapshot(ctx.author)
+        )
         await self.bot.settings.set(MESSAGE_KEY, decoded)
         await window_success(ctx, "Level-up message set")
 
@@ -39,7 +41,7 @@ class LevelsCog(commands.Cog):
         utils.deep_map(
             msg_json,
             formatter,
-            member=ctx.author,
+            member=utils.member_snapshot(ctx.author),
             level_old=1,
             level_new=2,
         )

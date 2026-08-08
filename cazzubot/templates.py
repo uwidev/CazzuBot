@@ -14,9 +14,10 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import discord
-from discord.ext import commands
 from discord.utils import MISSING
 from jsonschema import ValidationError, validate
+
+from cazzubot.errors import UserInputError
 
 _log = logging.getLogger(__name__)
 
@@ -91,15 +92,15 @@ def verify(
     Pure CPU work (``json.loads`` + jsonschema validation) — deliberately
     sync; callers must not ``await`` it. Applies the formatter to a copy
     first so placeholder substitution is dry-run against the actual member.
-    Raises ``commands.BadArgument`` on any parse/validation failure.
+    Raises ``UserInputError`` on any parse/validation failure.
     """
     try:
         decoded = json.loads(raw)
     except json.JSONDecodeError as err:
-        raise commands.BadArgument(f"Invalid JSON: {err}") from err
+        raise UserInputError(f"Invalid JSON: {err}") from err
 
     if not isinstance(decoded, dict):
-        raise commands.BadArgument("Message must be a JSON object")
+        raise UserInputError("Message must be a JSON object")
     message = cast(dict[str, Any], decoded)
 
     if formatter is not None:
@@ -110,7 +111,7 @@ def verify(
         try:
             validate(demo, MESSAGE_SCHEMA)
         except ValidationError as err:
-            raise commands.BadArgument(
+            raise UserInputError(
                 f"Invalid message template: {err.message}"
             ) from err
     return message
@@ -118,12 +119,35 @@ def verify(
 
 def prepare(
     message: dict[str, Any],
-) -> tuple[str | None, discord.Embed | None, list[discord.Embed]]:
-    """Turn a stored message dict into ``(content, embed, embeds)``."""
+) -> tuple[str | None, dict[str, Any] | None, list[dict[str, Any]]]:
+    """Turn a stored message dict into ``(content, embed, embeds)``.
+
+    Returns **plain JSON** — no framework objects — so service code can
+    decide *whether* to send without touching discord. The conversion to
+    a framework embed happens at the send edge (``embed_from_raw``).
+
+    Falsy embed dicts (``{}``) are dropped like the old
+    ``discord.Embed.from_dict`` filtering did — a valid embed that only
+    sets color/timestamp is a non-empty dict and survives. A single embed
+    wins over ``embeds``; a fully-empty message degrades to ``"_ _"``.
+    """
     content = message.get("content")
-    embed = embed_from_decoding(message)
-    embeds = embeds_from_decoding(message)
+    embed = message.get("embed") or None
+    embeds = [e for e in message.get("embeds") or [] if e]
+    if embed is not None:
+        embeds = []  # a single embed wins over embeds (old if/elif order)
+    if embed is None and not embeds:
+        content = content or "_ _"  # API rejects fully-empty messages
     return content, embed, embeds
+
+
+def embed_from_raw(raw: dict[str, Any]) -> discord.Embed:
+    """Framework adapter: template JSON -> ``discord.Embed``.
+
+    The only discord.py-touching step in this module; reimplemented for
+    hikari's ``Embed`` on the swap.
+    """
+    return discord.Embed.from_dict(raw)
 
 
 async def send(
@@ -136,32 +160,11 @@ async def send(
     ``destination`` is any send target (a ``Messageable``, ``Context``, or
     webhook ``followup``); extra kwargs (``delete_after``, ``wait``, ...) are
     forwarded unchanged.
-
-    ``embed`` must use an explicit ``is not None`` check, not ``or``:
-    ``discord.Embed`` defines ``__len__`` (title/description/fields/footer/
-    author character counts), so a valid embed that only sets color/timestamp/
-    url/image is falsy and ``embed or MISSING`` would silently drop it.
-    ``embeds or MISSING`` is fine — list truthiness is exactly "non-empty".
     """
     content, embed, embeds = prepare(message)
-    if embed is not None:
-        # a single embed wins over embeds (old if/elif order)
-        embeds = None
-    if embed is None and not embeds:
-        content = content or "_ _"  # API rejects fully-empty messages
     return await destination.send(
         content=content,
-        embed=embed if embed is not None else MISSING,
-        embeds=embeds or MISSING,
+        embed=embed_from_raw(embed) if embed is not None else MISSING,
+        embeds=[embed_from_raw(e) for e in embeds] or MISSING,
         **kwargs,
     )
-
-
-def embeds_from_decoding(message: dict[str, Any]) -> list[discord.Embed]:
-    raws: list[dict[str, Any]] = message.get("embeds") or []
-    return [discord.Embed.from_dict(raw) for raw in raws if raw]
-
-
-def embed_from_decoding(message: dict[str, Any]) -> discord.Embed | None:
-    raw = message.get("embed")
-    return discord.Embed.from_dict(raw) if raw else None

@@ -27,11 +27,20 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - `cazzubot/settings.py` — JSON key-value store (single guild), namespaced keys (e.g. `frog.enabled`, `rank.seasonal.message`, `level.quiet`).
 - `cazzubot/window.py` — buffered, level-tagged command reporting to Discord (`command_window(ctx)` CM, `@windowed` decorator, `window_*` one-off helpers); auto-flushes at end of command and on error; ephemeral on slash. Distinct from CLI logging.
 - Plugins: experience (message exp pipeline + membership card + `exp top` paging), levels, ranks (thresholds → roles, seasonal/lifetime), frogs (spawn cadence `interval ± fuzzy%`, capture, consume-for-exp, quarterly freeze), daily, quarterly, mod (modlog + scheduled mute/tempban), poll (app commands + modal view), welcome, counter (baka button), board, fun (member/echo/inktober/story), channels (boot drift-check for `channels.manifest`), dev (owner tools + `cog reload` hotswap).
-- Cross-plugin flow: `experience.on_message` awards exp then calls `plugins.levels.logic.handle_level_up` and `plugins.ranks.logic.handle_ranks`.
+- Cross-plugin flow: `experience.on_message` awards exp then calls
+  `plugins.levels.presenter.present_level_up` and
+  `plugins.ranks.presenter.present_ranks` (the pure decisions live in
+  `levels.logic.decide_level_up` / `ranks.logic.plan_rank_changes`).
 
 ## Conventions
 
 - **Spaces**, double quotes, line-length 75 (`ruff format`). Run `ruff check` after edits.
+- Service modules (`logic.py`/`factory.py`/`db.py`) never import discord —
+  enforced by `tests/core/test_csr_boundary.py` (only carve-out:
+  `plugins/frogs/factory.py`, controller-shaped by design). Service/core
+  validation errors raise `cazzubot.errors.UserInputError` (never
+  `commands.BadArgument`); the command edge translates them back.
+  Framework-agnostic member values travel as `cazzubot.models.MemberSnapshot`.
 - Plugins reach services via `bot.db`, `bot.settings`, `bot.scheduler`, `bot.config`, `bot.guild`. Plugin db modules take `db: Database` (or `settings: Settings`) as first arg; cogs take the bot.
 - No `gid` columns anywhere; no FK decorators; `INSERT OR IGNORE`/`INSERT OR REPLACE` for idempotent writes.
 - `tasks.loop(time=…)` only for daily/quarterly cadence (with missed-run force check on boot); everything delayed goes through the scheduler.

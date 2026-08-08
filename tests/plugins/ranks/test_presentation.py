@@ -1,8 +1,9 @@
-"""Ranks/levels presentation — handle_ranks + handle_level_up.
+"""Ranks/levels presentation — present_ranks + present_level_up.
 
-These are the cross-plugin services the experience controller calls. They
-still take ``bot``/``message`` (discord objects) — the remaining CSR step —
-but are fully testable offline with the fakes.
+The presenters are the controller-edge halves of the levels/ranks pipeline
+(cross-plugin services the experience controller calls); their *decisions*
+(``decide_level_up``, ``plan_rank_changes``) are pure and tested directly
+below, the discord side effects through the fakes.
 """
 
 from __future__ import annotations
@@ -10,9 +11,12 @@ from __future__ import annotations
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
 from cazzubot.models import WindowEnum
-from plugins.levels.logic import handle_level_up
+from plugins.levels.logic import LevelUpAction, decide_level_up
+from plugins.levels.presenter import present_level_up
 from plugins.ranks import db as ranks_db
-from plugins.ranks.logic import handle_ranks
+from plugins.ranks.db import RankThreshold
+from plugins.ranks.logic import plan_rank_changes
+from plugins.ranks.presenter import present_ranks
 from tests.fakes import (
     FakeChannel,
     FakeGuild,
@@ -37,13 +41,140 @@ async def _enable_ranks(bot: CazzuBot, mode: WindowEnum) -> None:
     await ranks_db.set_enabled(bot.settings, True, mode)
 
 
-# -- handle_level_up --------------------------------------------------------
+def _thresholds(*pairs: tuple[int, int]) -> list[RankThreshold]:
+    return [
+        RankThreshold(
+            rid=rid, threshold=lvl, mode=WindowEnum.SEASONAL.value
+        )
+        for rid, lvl in pairs
+    ]
+
+
+# -- decide_level_up (pure) -------------------------------------------------
+
+
+def test_decide_level_up() -> None:
+    assert (
+        decide_level_up(
+            utils.OldNew(5, 5), ranked_up=False, channel_id=1, quiet_ids=[]
+        )
+        is LevelUpAction.SKIP  # no level gain
+    )
+    assert (
+        decide_level_up(
+            utils.OldNew(0, 1), ranked_up=True, channel_id=1, quiet_ids=[]
+        )
+        is LevelUpAction.SKIP  # rank up trumps level up
+    )
+    assert (
+        decide_level_up(
+            utils.OldNew(0, 1),
+            ranked_up=False,
+            channel_id=1,
+            quiet_ids=[1],
+        )
+        is LevelUpAction.REACTION  # quiet channel
+    )
+    assert (
+        decide_level_up(
+            utils.OldNew(0, 1), ranked_up=False, channel_id=1, quiet_ids=[]
+        )
+        is LevelUpAction.MESSAGE
+    )
+
+
+# -- plan_rank_changes (pure) -----------------------------------------------
+
+
+def test_plan_rank_up_keep_old() -> None:
+    thresholds = _thresholds((111, 5), (222, 10))
+    plan = plan_rank_changes(
+        utils.OldNew(4, 12),
+        thresholds,
+        keep_old=True,
+        notify=True,
+        member_role_ids=[],
+    )
+    assert plan.add_ids == [111, 222]
+    assert plan.remove_ids == []
+    assert plan.notify is True
+    assert plan.rid_new == 222
+
+
+def test_plan_rank_up_no_keep_old() -> None:
+    thresholds = _thresholds((111, 5), (222, 10))
+    plan = plan_rank_changes(
+        utils.OldNew(4, 12),
+        thresholds,
+        keep_old=False,
+        notify=True,
+        member_role_ids=[111],  # member holds the old rank
+    )
+    assert plan.add_ids == [222]
+    assert plan.remove_ids == [111]
+
+
+def test_plan_skip_roles_already_held() -> None:
+    thresholds = _thresholds((111, 5), (222, 10))
+    plan = plan_rank_changes(
+        utils.OldNew(4, 12),
+        thresholds,
+        keep_old=True,
+        notify=True,
+        member_role_ids=[111],
+    )
+    assert plan.add_ids == [222]  # 111 already held
+
+
+def test_plan_demotion_removes_all() -> None:
+    thresholds = _thresholds((111, 5), (222, 10))
+    plan = plan_rank_changes(
+        utils.OldNew(12, 4),
+        thresholds,
+        keep_old=True,
+        notify=True,
+        member_role_ids=[111, 222],
+    )
+    assert plan.add_ids == []
+    assert plan.remove_ids == [111, 222]
+    assert plan.notify is False  # fell off the ladder
+
+
+def test_plan_no_crossing_does_not_notify() -> None:
+    thresholds = _thresholds((111, 5))
+    plan = plan_rank_changes(
+        utils.OldNew(4, 4),
+        thresholds,
+        keep_old=False,
+        notify=True,
+        member_role_ids=[],
+    )
+    assert plan.add_ids == []
+    assert plan.notify is False
+
+
+def test_plan_same_band_crossing_does_not_notify() -> None:
+    """Crossing within one threshold band is a level-up, not a rank-up."""
+    thresholds = _thresholds((111, 5), (222, 10))
+    plan = plan_rank_changes(
+        utils.OldNew(6, 8),
+        thresholds,
+        keep_old=False,
+        notify=True,
+        member_role_ids=[],
+    )
+    assert plan.rid_old == 111
+    assert plan.rid_new == 111
+    assert plan.notify is False
+
+
+# -- present_level_up -------------------------------------------------------
 
 
 async def test_level_up_noop_without_level_gain(
     bot: CazzuBot, channel: FakeChannel, author: FakeMember
 ) -> None:
-    await handle_level_up(bot, _msg(author, channel), utils.OldNew(5, 5))
+    await present_level_up(bot, _msg(author, channel), utils.OldNew(5, 5))
     assert channel.sent == []
 
 
@@ -53,7 +184,7 @@ async def test_level_up_quiet_channel_reaction(
     await bot.settings.set("level.quiet", [channel.id])
     await bot.settings.set("level.message", {"content": "level up!"})
     message = _msg(author, channel)
-    await handle_level_up(bot, message, utils.OldNew(0, 1))
+    await present_level_up(bot, message, utils.OldNew(0, 1))
     assert channel.sent == []
     assert message.reactions == ["🎉"]
 
@@ -65,7 +196,7 @@ async def test_level_up_sends_formatted_message(
         "level.message",
         {"content": "{name} leveled {level_old}->{level_new}"},
     )
-    await handle_level_up(
+    await present_level_up(
         bot,
         _msg(author, channel),
         utils.OldNew(0, 1),
@@ -75,7 +206,7 @@ async def test_level_up_sends_formatted_message(
     assert channel.sent[0]["delete_after"] == 7
 
 
-# -- handle_ranks -----------------------------------------------------------
+# -- present_ranks ----------------------------------------------------------
 
 
 async def test_rank_up_adds_role_and_notifies(
@@ -94,9 +225,10 @@ async def test_rank_up_adds_role_and_notifies(
         WindowEnum.SEASONAL,
     )
 
-    await handle_ranks(
+    await present_ranks(
         bot,
-        _msg(author, channel),
+        author,
+        channel,
         utils.OldNew(4, 5),  # crossed threshold 5
         utils.OldNew(0, 0),
     )
@@ -120,9 +252,10 @@ async def test_rank_demotion_removes_roles(
     await _enable_ranks(bot, WindowEnum.SEASONAL)
     await ranks_db.add(bot.db, 111, 5)
 
-    await handle_ranks(
+    await present_ranks(
         bot,
-        _msg(author, channel),
+        author,
+        channel,
         utils.OldNew(5, 4),  # fell below threshold 5
         utils.OldNew(0, 0),
     )
@@ -134,9 +267,10 @@ async def test_ranks_disabled_are_noop(
     bot: CazzuBot, channel: FakeChannel, author: FakeMember
 ) -> None:
     await ranks_db.add(bot.db, 111, 5)
-    await handle_ranks(
+    await present_ranks(
         bot,
-        _msg(author, channel),
+        author,
+        channel,
         utils.OldNew(4, 5),
         utils.OldNew(0, 0),
     )

@@ -14,6 +14,7 @@ from typing_extensions import override
 
 from cazzubot.config import Config
 from cazzubot.db import Database, SchemaMismatchError
+from cazzubot.errors import UserInputError
 from cazzubot.plugin import Plugin, discover_plugins
 from cazzubot.scheduler import Scheduler
 from cazzubot.settings import Settings
@@ -127,6 +128,13 @@ class CazzuBot(commands.Bot):
     ) -> None:
         if isinstance(err, commands.BadArgument):
             await ctx.reply(str(err))
+            return
+        if isinstance(err, commands.CommandInvokeError) and isinstance(
+            err.__cause__, UserInputError
+        ):
+            # service/core validation errors (see cazzubot/errors.py) are
+            # not CommandError subclasses, so the framework wraps them
+            await ctx.reply(str(err.__cause__))
             return
         if isinstance(err, discord.Forbidden):
             return

@@ -139,7 +139,9 @@ class RanksCog(commands.Cog):
                 )
             mode = parsed
 
-        decoded = templates.verify(message, formatter, member=ctx.author)
+        decoded = templates.verify(
+            message, formatter, member=utils.member_snapshot(ctx.author)
+        )
         await ranks_db.set_message(self.bot.settings, decoded, mode)
         await window_success(ctx, "Rank message set")
 
@@ -153,7 +155,11 @@ class RanksCog(commands.Cog):
         if not msg_json:
             await ctx.send("No rank-up message has been set.")
             return
-        utils.deep_map(msg_json, formatter, member=ctx.author)
+        utils.deep_map(
+            msg_json,
+            formatter,
+            member=utils.member_snapshot(ctx.author),
+        )
         await templates.send(ctx, msg_json)
 
     @rank.command(name="raw")

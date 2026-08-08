@@ -9,6 +9,7 @@ import pendulum
 from discord.ext import commands
 
 from cazzubot.bot import CazzuBot
+from cazzubot.models import MemberSnapshot
 
 _log = logging.getLogger(__name__)
 
@@ -72,6 +73,18 @@ def prepare_embed(
         icon_url="https://files.catbox.moe/3cy0by.webp",
     )
     return embed
+
+
+def member_snapshot(
+    member: discord.Member | discord.User,
+) -> MemberSnapshot:
+    """Plain values for template formatting (no discord objects)."""
+    return MemberSnapshot(
+        id=member.id,
+        display_name=member.display_name,
+        mention=member.mention,
+        avatar_url=member.display_avatar.url,
+    )
 
 
 async def find_user(

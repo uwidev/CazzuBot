@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from discord.ext import commands
 
+from cazzubot.errors import UserInputError
 from cazzubot.models import FrogTypeEnum
 from plugins.frogs.logic import (
     consume_total_exp,
@@ -21,7 +21,7 @@ def test_exp_per_frog() -> None:
 
 def test_ensure_consume_amount() -> None:
     ensure_consume_amount(1, 5)  # fine
-    with pytest.raises(commands.BadArgument):
+    with pytest.raises(UserInputError):
         ensure_consume_amount(0, 5)
-    with pytest.raises(commands.BadArgument):
+    with pytest.raises(UserInputError):
         ensure_consume_amount(6, 5)

@@ -64,15 +64,16 @@ class ExperienceCog(commands.Cog):
             return  # cooldown active or row missing
 
         # presentation — level-up/rank-up notifications (cross-plugin)
-        from plugins.levels.logic import handle_level_up
-        from plugins.ranks.logic import handle_ranks
+        from plugins.levels.presenter import present_level_up
+        from plugins.ranks.presenter import present_ranks
 
-        await handle_level_up(
+        await present_level_up(
             self.bot, message, result.seasonal_level, delete_after=7
         )
-        await handle_ranks(
+        await present_ranks(
             self.bot,
-            message,
+            message.author,
+            message.channel,
             result.seasonal_level,
             result.lifetime_level,
             delete_after=7,

@@ -10,6 +10,7 @@ from discord.ext import commands
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
+from cazzubot.errors import UserInputError
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
@@ -119,14 +120,14 @@ async def test_frog_consume_rejects_insufficient(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
     await frog_db.modify_frog(bot.db, _UID, modify=1)
-    with pytest.raises(commands.BadArgument):
+    with pytest.raises(UserInputError):
         await _cog(bot).frog_consume(ctx, amount=5)
 
 
 async def test_frog_consume_rejects_zero(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
-    with pytest.raises(commands.BadArgument):
+    with pytest.raises(UserInputError):
         await _cog(bot).frog_consume(ctx, amount=0)
 
 

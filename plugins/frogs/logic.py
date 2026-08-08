@@ -8,8 +8,7 @@ side effects).
 
 from __future__ import annotations
 
-from discord.ext import commands
-
+from cazzubot.errors import UserInputError
 from cazzubot.models import FrogTypeEnum
 
 _EXP_PER_FROG: dict[FrogTypeEnum, int] = {
@@ -29,12 +28,12 @@ def consume_total_exp(frog_type: FrogTypeEnum, amount: int) -> int:
 
 
 def ensure_consume_amount(amount: int, balance: int) -> None:
-    """Raise ``BadArgument`` when a consume request is impossible."""
+    """Raise ``UserInputError`` when a consume request is impossible."""
     if amount < 1:
-        raise commands.BadArgument(
+        raise UserInputError(
             "Amount of frogs to consume must be greater than 0."
         )
     if balance < amount:
-        raise commands.BadArgument(
+        raise UserInputError(
             f"Member does not have enough frogs ({balance}) to consume."
         )

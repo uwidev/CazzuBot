@@ -1,64 +1,59 @@
-"""Levels plugin — shared level-up pipeline (message send + formatting)."""
+"""Levels plugin — level-up decision + formatting (pure, no discord).
 
-import logging
+The *decision* (skip / reaction / message) and the *formatting* live here
+over plain values; the side effects (reaction, send) live in
+``plugins/levels/presenter.py`` at the controller edge.
+"""
 
-import discord
+from __future__ import annotations
 
-from cazzubot import templates, utils
-from cazzubot.bot import CazzuBot
+from enum import Enum
 
-_log = logging.getLogger(__name__)
+from cazzubot.models import MemberSnapshot
+from cazzubot.utils import OldNew
 
 MESSAGE_KEY = "level.message"
 
 
-async def handle_level_up(
-    bot: CazzuBot,
-    message: discord.Message,
-    level: utils.OldNew,
+class LevelUpAction(Enum):
+    """What the level-up pipeline should do for one message."""
+
+    SKIP = "skip"  # no level gain, or a rank-up trumps the level-up
+    REACTION = "reaction"  # quiet channel — react instead of sending
+    MESSAGE = "message"  # send the configured level-up template
+
+
+def decide_level_up(
+    level: OldNew,
     *,
-    delete_after: int = 0,
-) -> None:
-    """Send the level-up message when a member levels up (unless ranked up)."""
+    ranked_up: bool,
+    channel_id: int,
+    quiet_ids: list[int],
+) -> LevelUpAction:
+    """What to do when a member's level changed from ``level.old``.
+
+    ``ranked_up`` is the caller's answer to "did this exp gain cross a rank
+    threshold" (a db-backed check — ``plugins.ranks.logic.is_ranked_up``).
+    """
     if level.new <= level.old:
-        return
-
-    from plugins.ranks.logic import is_ranked_up
-
-    if await is_ranked_up(bot, level):
-        return  # rank up trumps level up
-
-    quiets: list[int] = await bot.settings.get("level.quiet", []) or []
-    if message.channel.id in quiets:
-        await message.add_reaction("🎉")
-        return
-
-    msg_json = await bot.settings.get(MESSAGE_KEY)
-    if not msg_json:
-        return
-
-    utils.deep_map(
-        msg_json,
-        formatter,
-        member=message.author,
-        level_old=level.old,
-        level_new=level.new,
-    )
-    await templates.send(
-        message.channel, msg_json, delete_after=delete_after
-    )
+        return LevelUpAction.SKIP
+    if ranked_up:
+        return LevelUpAction.SKIP  # rank up trumps level up
+    if channel_id in quiet_ids:
+        return LevelUpAction.REACTION
+    return LevelUpAction.MESSAGE
 
 
 def formatter(
     s: str,
     *,
-    member: discord.Member,
+    member: MemberSnapshot,
     level_old: int | None = None,
     level_new: int | None = None,
 ) -> str:
     """Placeholders: {avatar} {name} {mention} {id} {level_old} {level_new}"""
     return s.format(
-        avatar=member.display_avatar.url,
+        avatar=member.avatar_url,
         name=member.display_name,
         mention=member.mention,
         id=member.id,

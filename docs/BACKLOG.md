@@ -122,11 +122,11 @@ is the boundary discipline at the service layer.
   `docs/PLUGINS.md`. Enforcement lands after the `experience` pilot proves the
   pattern.
   > **Done** — `tests/core/test_csr_boundary.py` (AST walk over
-  > `logic.py`/`factory.py`/`db.py`; one carve-out: `from discord.ext import
-  > commands` for the plain `BadArgument` exception). **Remainder** — see the
-  > dedicated entries below: "Levels/ranks presentation split" and "Template
-  > formatters take `Member`"; `plugins/frogs/factory.py` stays
-  > controller-shaped by design (spawn/capture are discord side effects).
+  > `logic.py`/`factory.py`/`db.py`; no carve-outs left — the
+  > `commands.BadArgument` exception import is gone too, replaced by
+  > `cazzubot.errors.UserInputError`). `plugins/frogs/factory.py` stays
+  > controller-shaped by design (spawn/capture are discord side effects)
+  > and is the one permanent allowlist entry.
   > PLUGINS.md documents the rule.
 - **Why:** pure-S is the unit-testable core (mirrors the unit-testing item
   below), cuts the fake-discord surface down to the controller slice, and
@@ -178,6 +178,13 @@ try progressively longer prefixes until `normalize_time_str` succeeds
 text to single-token durations.
 
 ## Levels/ranks presentation split
+> **Done** — `handle_level_up`/`handle_ranks` split into pure decisions
+> (`levels.logic.decide_level_up`, `ranks.logic.plan_rank_changes` over
+> plain role ids) + thin presenters (`plugins/levels/presenter.py`,
+> `plugins/ranks/presenter.py`) holding the side effects. The experience
+> controller calls the presenters; `test_csr_boundary.py` allowlist only
+> keeps `plugins/frogs/factory.py`.
+
 `handle_level_up` (`plugins/levels/logic.py`) and
 `handle_ranks`/`_determine_rank_changes` (`plugins/ranks/logic.py`) still take
 `bot` + `discord.Message` and perform the presentation side effects — sending
@@ -191,6 +198,12 @@ exists. Safety net already in place: `tests/plugins/ranks/test_presentation.py`.
 Allowlisted in `tests/core/test_csr_boundary.py`.
 
 ## Template formatters take `Member`
+> **Done** — formatters now take `cazzubot.models.MemberSnapshot` (plain
+> values: id/display_name/mention/avatar_url), built at the controller edge
+> with `utils.member_snapshot`. `templates.verify(..., member=)` call sites
+> snapshot `ctx.author`/`interaction.user`; ranks formatter takes role
+> *mention strings*, so role resolution happens in the presenter.
+
 `levels.logic.formatter`, `ranks.logic.formatter` and `frogs.factory.formatter`
 read `member.display_avatar.url` / `display_name` / `mention` / `id` —
 stateful discord objects in the service layer. Change them to take plain

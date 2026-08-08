@@ -11,8 +11,8 @@ from __future__ import annotations
 import re
 
 import pendulum
-from discord.ext import commands
 
+from cazzubot.errors import UserInputError
 from cazzubot.models import ModlogTypeEnum
 from cazzubot.timeparse import (
     DURATION_UNITS,
@@ -84,11 +84,9 @@ def split_duration_reason(
 def ensure_future(
     now: pendulum.DateTime, duration: pendulum.DateTime | None
 ) -> None:
-    """Raise ``BadArgument`` when a parsed duration isn't in the future."""
+    """Raise ``UserInputError`` when a duration isn't in the future."""
     if duration and not is_future(now, duration):
-        raise commands.BadArgument(
-            f"{duration} is not a time in the future!"
-        )
+        raise UserInputError(f"{duration} is not a time in the future!")
 
 
 def resolve_ban_type(

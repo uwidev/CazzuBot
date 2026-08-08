@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pendulum
 import pytest
-from discord.ext import commands
 
 from cazzubot.bot import CazzuBot
+from cazzubot.errors import UserInputError
 from plugins.mod.cog import ModCog, on_modlog_due
 from plugins.mod.db import MUTE_ROLE_KEY
 from plugins.mod.logic import split_duration_reason
@@ -136,7 +136,7 @@ async def test_mute_rejects_past_time(
 ) -> None:
     _mute_role(fake_guild)
     await bot.settings.set(MUTE_ROLE_KEY, _MUTE_RID)
-    with pytest.raises(commands.BadArgument):
+    with pytest.raises(UserInputError):
         await _cog(bot).mute(ctx, author, raw="yesterday bad")
 
 

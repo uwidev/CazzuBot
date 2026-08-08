@@ -20,7 +20,7 @@ from discord.ext import commands
 from cazzubot import Plugin, templates, utils
 from cazzubot.bot import CazzuBot
 from cazzubot.window import window_success
-from cazzubot.models import WelcomeModeEnum
+from cazzubot.models import MemberSnapshot, WelcomeModeEnum
 
 from .logic import should_welcome
 
@@ -90,7 +90,9 @@ class WelcomeCog(commands.Cog):
         await asyncio.sleep(1)  # let user UI update so the ping works
         if not msg_json:
             return
-        utils.deep_map(msg_json, formatter, member=member)
+        utils.deep_map(
+            msg_json, formatter, member=utils.member_snapshot(member)
+        )
         await templates.send(sendable, msg_json)
 
     # -- configuration ------------------------------------------------------
@@ -151,7 +153,9 @@ class WelcomeCog(commands.Cog):
         Use https://message.style/ or discohook.org to build one; placeholders
         {avatar} {name} {mention} {id} are supported.
         """
-        decoded = templates.verify(message, formatter, member=ctx.author)
+        decoded = templates.verify(
+            message, formatter, member=utils.member_snapshot(ctx.author)
+        )
         await self.bot.settings.set("welcome.message", decoded)
         await window_success(ctx, "Welcome message set")
 
@@ -182,7 +186,9 @@ class WelcomeCog(commands.Cog):
         if not msg_json:
             await ctx.send("No welcome message has been set.")
             return
-        utils.deep_map(msg_json, formatter, member=ctx.author)
+        utils.deep_map(
+            msg_json, formatter, member=utils.member_snapshot(ctx.author)
+        )
         await templates.send(ctx, msg_json)
 
     @welcome.command(name="raw")
@@ -192,10 +198,10 @@ class WelcomeCog(commands.Cog):
         await ctx.send(f"```{json.dumps(msg_json, indent=2)}```")
 
 
-def formatter(s: str, *, member: discord.Member) -> str:
+def formatter(s: str, *, member: MemberSnapshot) -> str:
     """Placeholders: {avatar} {name} {mention} {id}"""
     return s.format(
-        avatar=member.display_avatar.url,
+        avatar=member.avatar_url,
         name=member.display_name,
         mention=member.mention,
         id=member.id,

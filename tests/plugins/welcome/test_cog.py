@@ -11,6 +11,7 @@ import pytest
 from discord.ext import commands
 
 from cazzubot.bot import CazzuBot
+from cazzubot.errors import UserInputError
 from cazzubot.models import WelcomeModeEnum
 from plugins.welcome import WelcomeCog
 from tests.fakes import (
@@ -161,7 +162,7 @@ async def test_welcome_set_message_verifies_and_stores(
     )
     stored = await bot.settings.get("welcome.message")
     assert stored is not None and stored["content"] == "hi {mention}"
-    with pytest.raises(commands.BadArgument):
+    with pytest.raises(UserInputError):
         await _cog(bot).welcome_set_message(ctx, message='{"content": 42}')
 
 

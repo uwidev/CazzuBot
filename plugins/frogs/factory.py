@@ -17,7 +17,7 @@ import pendulum
 
 from cazzubot import templates, utils
 from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogTypeEnum
+from cazzubot.models import FrogTypeEnum, MemberSnapshot
 
 from . import db as frog_db
 
@@ -156,7 +156,7 @@ class FrogCatchView(discord.ui.View):
         utils.deep_map(
             msg_json,
             formatter,
-            member=interaction.user,
+            member=utils.member_snapshot(interaction.user),
             frog_cnt_old=frog_cnt_total - 1,
             frog_cnt_new=frog_cnt_total,
             seasonal_cap_old=seasonal - 1,
@@ -203,7 +203,7 @@ def roll_fuzzy(fuzzy: float) -> float:
 def formatter(
     s: str,
     *,
-    member: discord.Member,
+    member: MemberSnapshot,
     frog_cnt_old: int | None = None,
     frog_cnt_new: int | None = None,
     seasonal_cap_old: int | None = None,
@@ -212,7 +212,7 @@ def formatter(
     """Placeholders: {avatar} {name} {mention} {id} {frog_cnt_old}
     {frog_cnt_new} {seasonal_cap_old} {seasonal_cap_new}"""
     return s.format(
-        avatar=member.display_avatar.url,
+        avatar=member.avatar_url,
         name=member.display_name,
         mention=member.mention,
         id=member.id,

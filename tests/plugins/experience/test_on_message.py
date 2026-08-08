@@ -140,23 +140,24 @@ async def test_level_up_and_rank_handlers_invoked_once_each(
 
     async def spy_ranks(
         _bot: object,
-        message: FakeMessage,
+        member: FakeMember,
+        _channel: object,
         _seasonal: object,
         _lifetime: object,
         **_kw: object,
     ) -> None:
-        calls.append(("ranks", message.id))
+        calls.append(("ranks", member.id))
 
     monkeypatch.setattr(
-        importlib.import_module("plugins.levels.logic"),
-        "handle_level_up",
+        importlib.import_module("plugins.levels.presenter"),
+        "present_level_up",
         spy_level_up,
     )
     monkeypatch.setattr(
-        importlib.import_module("plugins.ranks.logic"),
-        "handle_ranks",
+        importlib.import_module("plugins.ranks.presenter"),
+        "present_ranks",
         spy_ranks,
     )
 
     await _send(bot, author, channel, "hello")
-    assert calls == [("level", 1), ("ranks", 1)]
+    assert calls == [("level", 1), ("ranks", _AUTHOR_ID)]

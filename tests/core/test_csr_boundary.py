@@ -4,14 +4,13 @@ Service modules (``logic.py``/``factory.py``) and repository modules
 (``db.py``) take ``db``/``settings`` + plain values (+ injected ``now``);
 importing the stateful ``discord`` package couples them to the
 ConnectionState-requiring layer and forces fakes into their unit tests.
+Validation failures raise ``cazzubot.errors.UserInputError`` (never
+``commands.BadArgument``); the command edge translates them back.
 
-One carve-out: ``from discord.ext import commands`` is allowed in service
-modules for the plain ``commands.BadArgument`` exception (validation errors)
-— it holds no ConnectionState. Anything else under ``discord`` is flagged.
-
-Still-pure-pending (tracked in the docs/BACKLOG.md CSR item): the presentation modules
-below remain coupled to the core package until their extraction step. New
-service modules must NOT join this allowlist.
+One permanent carve-out: ``plugins/frogs/factory.py`` stays
+controller-shaped by design (the spawn handler and capture view are
+scheduling + discord side effects — see docs/BACKLOG.md). Everything else
+under ``plugins`` must NOT import discord.
 """
 
 from __future__ import annotations
@@ -21,11 +20,8 @@ from pathlib import Path
 
 SERVICE_FILENAMES = ("logic.py", "factory.py", "db.py")
 
-# Tracked remainder — see the docs/BACKLOG.md entries "Levels/ranks
-# presentation split" and "Template formatters take Member".
+# Permanent controller-shaped carve-out (documented in docs/BACKLOG.md).
 _ALLOWLIST = {
-    "plugins.levels.logic",  # handle_level_up presentation
-    "plugins.ranks.logic",  # handle_ranks presentation
     "plugins.frogs.factory",  # spawn handler + capture view (controller)
 }
 
@@ -49,12 +45,7 @@ def _imports_discord(path: Path) -> bool:
             ):
                 return True
         elif isinstance(node, ast.ImportFrom):
-            if node.module == "discord":
-                return True
-            # discord.ext.commands only: the plain BadArgument exception
-            if (node.module or "").startswith("discord.") and (
-                node.module != "discord.ext"
-            ):
+            if (node.module or "").startswith("discord"):
                 return True
     return False
 
