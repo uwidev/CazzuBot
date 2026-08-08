@@ -59,7 +59,8 @@ class Create(
             hikari.ButtonStyle.PRIMARY,
             CUSTOM_ID,
             label="Baka",
-            emoji=CIRNO_HELP,
+            # buttons need the emoji id, not the <:name:id> tag
+            emoji=utils.button_emoji(CIRNO_HELP),
         )
         response_id = await ctx.respond(embed=embed, component=row)
         await db.create(bot.db, int(response_id))
