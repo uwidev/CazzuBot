@@ -81,7 +81,7 @@ async def spawn_and_wait(
     menu = FrogCatchMenu(bot)
     if ctx is not None:
         response_id = await ctx.respond(
-            FROG_EMOJI, component=cast(Any, menu)
+            FROG_EMOJI, components=cast(Any, menu)
         )
         message = await ctx.fetch_response(response_id)
         channel_id = ctx.channel_id
@@ -91,7 +91,7 @@ async def spawn_and_wait(
             _log.warning("frog channel %s not found; skipping", cid)
             return False
         message = await cast(Any, channel).send(  # hasattr guard above
-            FROG_EMOJI, component=cast(Any, menu)
+            FROG_EMOJI, components=cast(Any, menu)
         )
         channel_id = cid
 

@@ -222,7 +222,10 @@ async def _handle_vote(
     modal = PollModal(bot, poll_row, items)
     custom_id = f"poll:submit:{poll_id}"
     await interaction.create_modal_response(
-        "Vote on the poll", custom_id, component=modal
+        "Vote on the poll",
+        custom_id,
+        # the modal is a sequence of row builders (no public build())
+        components=cast(Any, modal),
     )
 
     async def _wait() -> None:

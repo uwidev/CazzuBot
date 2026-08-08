@@ -132,7 +132,7 @@ class Consume(
         embed.set_thumbnail("https://i.imgur.com/ybxI7pu.png")
 
         menu = utils.ConfirmMenu(uid, delete_after=False)
-        await ctx.respond(embed=embed, component=cast(Any, menu))
+        await ctx.respond(embed=embed, components=cast(Any, menu))
         try:
             await menu.attach(ctx.client, timeout=120)
         except asyncio.TimeoutError:

@@ -191,7 +191,8 @@ async def author_confirm(
     menu = ConfirmMenu(member.id, delete_after=delete_after)
     await ctx.respond(
         confirmation_msg,
-        component=cast(Any, menu),  # Menu is a builder at runtime
+        # the menu is a sequence of row builders (no public build())
+        components=cast(Any, menu),
     )
     try:
         await menu.attach(ctx.client, timeout=7.0)

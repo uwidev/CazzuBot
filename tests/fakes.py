@@ -639,6 +639,7 @@ class FakeComponentInteraction:
         custom_id: str,
         *,
         component: Any = None,
+        components: Any = None,
         **kwargs: Any,
     ) -> None:
         self.modals.append(
@@ -646,6 +647,7 @@ class FakeComponentInteraction:
                 "title": title,
                 "custom_id": custom_id,
                 "component": component,
+                "components": components,
             }
         )
 

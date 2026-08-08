@@ -185,7 +185,8 @@ class Top(
         menu = TopMenu(bot, ctx, date, rows, page=page)
         await ctx.respond(
             embed=await _top_embed(ctx, date, rows, page),
-            component=cast(Any, menu),  # Menu is a builder at runtime
+            # the menu is a sequence of row builders (no public build())
+            components=cast(Any, menu),
         )
         try:
             await menu.attach(ctx.client, timeout=30)

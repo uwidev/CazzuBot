@@ -129,7 +129,7 @@ async def test_poll_vote_opens_modal(
 
     assert len(interaction.modals) == 1
     assert interaction.modals[0]["custom_id"] == f"poll:submit:{pid}"
-    assert isinstance(interaction.modals[0]["component"], PollModal)
+    assert isinstance(interaction.modals[0]["components"], PollModal)
 
 
 async def test_poll_vote_missing_poll(

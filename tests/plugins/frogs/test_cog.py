@@ -113,7 +113,7 @@ async def test_frog_consume_full_flow(
 
     task = asyncio.create_task(invoke_command(Consume(), ctx, amount=2))
     await asyncio.sleep(0.05)  # let it reach menu.attach
-    menu = ctx.sent[0].component
+    menu = ctx.sent[0].components
     assert isinstance(menu, utils.ConfirmMenu)
     mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
     await _menu_button(menu).callback(mctx)
