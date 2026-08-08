@@ -14,13 +14,14 @@ import argparse
 import asyncio
 from typing import cast
 
-from cazzubot.cli import manifest, roles, snapshot
+from cazzubot.cli import channels, manifest, roles, snapshot
 from cazzubot.cli.core import Domain, LiveHandler, with_client
 
 DOMAINS: dict[str, Domain] = {
     roles.domain.name: roles.domain,
     snapshot.domain.name: snapshot.domain,
     manifest.domain.name: manifest.domain,
+    channels.domain.name: channels.domain,
 }
 
 

@@ -288,3 +288,40 @@ Prerequisite (also designed there): the frogs catalog rework — species rows +
 inventory + recipes replace the current column-per-type model
 (`member_frog.normal/frozen`, `FrogTypeEnum`), with effects via a
 string-key → handler registry and dishes as crafted species.
+
+## Declarative channel management (channels.manifest)
+
+> **Done** — implemented and validated against both guilds (sandbox full
+> create/delete/rename/reorder/restore cycles; production scoped
+> renames+moves in "Activities and below", then reverted). Engine in
+> `cazzubot/channels/`, CLI domain `channels`, boot drift-check plugin in
+> `plugins/channels/`; see docs/PLUGINS.md → channels.
+
+A roles-style declarative system for the guild's channels: a
+`channels.manifest` line format — `[Category]` headers map to Discord's
+*native* grouping (categories — the earlier claim that Discord has no
+native way to group channels was wrong), one channel per line, verbatim
+names like the role manifest — with a `channels` domain in the CLI
+(`export` / `diff` / `apply` / `check` / `restore`, plus a
+`--scope-below <Category>` flag to manage only the bottom part of a busy
+guild), mirroring the roles feature. The manifest declares what the
+Overview tab covers **except the channel topic**: name, type
+(text/announcement/voice/forum/stage), category, position, slowmode,
+nsfw, and the voice fields (bitrate, user limit, region, video quality —
+Discord removed 720p, so auto/1080 only).
+Permission overwrites are deliberately out of scope for now (mirroring
+the roles feature's role-level-perms decision). Still open: the channel
+topic, permission overwrites, and how the bot's channel-dependent
+plugins (welcome channel, etc.) declare their channel requirements.
+(Noted during validation: category size cap of 50 channels, and
+announcement/stage channel creation needs the NEWS/COMMUNITY guild
+features.)
+
+## Run the bot via a [project.scripts] entry
+
+`main.py` is run as `uv run python main.py [-d|-p|-s]`. Add a
+console-script entry (e.g. `cazzubot = "…:main"`) so the bot runs as
+`uv run cazzubot -d`, consistent with the `cazzubot-cli` entry added for
+the role CLI. Requires moving main()'s logic into the package (e.g.
+`cazzubot/__main__.py` or a small run module) so it is importable as a
+script target; keep the existing `python main.py` path working.

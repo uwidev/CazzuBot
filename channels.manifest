@@ -1,0 +1,227 @@
+# channels.manifest — declarative channel manifest (generated; edit freely)
+# Generated from live guild Club Cirno
+# Exported 2026-08-08 08:35:36 UTC
+#
+# ── line format ──
+#   [Category]         category header — maps to a Discord
+#                       category; everything below it until the
+#                       next header belongs to it. Channels before
+#                       the first header are uncategorized.
+#   Channel Name        one channel per line, verbatim name
+#   Channel Name : token …  tokens: type:text|announcement|voice|
+#                       forum|stage (default text) | nsfw |
+#                       slowmode:<sec> | bitrate:<kbps> |
+#                       limit:<n> | region:<code|auto> |
+#                       quality:auto|1080
+#   Old Name->New Name  rename a channel (rewritten to just the
+#                       new name after a successful apply)
+#   # comment           blank lines and # comments are ignored
+#
+#   The Overview fields covered: name, type, category, position,
+#   slowmode, nsfw, bitrate, user limit, region, video quality.
+#   The channel topic and permission overwrites are NOT managed.
+
+verification
+welcome
+no-cirnos
+Members: 7497 : type:voice
+
+[■■■■ 📌Pinned]
+rules
+community-guidelines
+emojis-old
+current-emojis
+freebies
+updates : type:announcement
+roles
+events
+giveaways
+hall-of-fame : slowmode:60
+
+[■■■■ 📑 Logs]
+flagged
+mod-logs
+general-logs
+traffic-logs
+vc-logs
+
+[■■■■ 👀 Staff]
+mod-chit-chat
+staff-talk : type:forum
+notes
+mod-bots
+watchlist
+bulletin-board
+📦 chatty bakas : type:voice
+
+[■■■■ 🧊 Chill]
+chillax
+hugs-and-stuff
+media-dump
+just-cirno
+just-cirno-highlights
+memes
+discussions : type:forum
+serious
+
+[■■■■ 📞 Voice]
+mic-less
+🍨 chillax : type:voice
+🧊 chillax-chillax : type:voice
+🎵 music : type:voice bitrate:128
+🎮 gaming : type:voice
+🛌 room of existence : type:voice
+💤 room of nonexistence : type:voice
+
+[■■■■ 🍻 Communities]
+nerds
+weebs
+artwork
+music
+food
+cat
+gaming
+specific-gaming : type:forum
+
+[■■■■ 🏓 Activities]
+minecraft
+baka-button
+counting
+great-story
+great-story-jul-2026
+
+[■■■■ 🎲 Bots]
+bot-usage
+gacha-1
+gacha-2
+dank-room
+
+[■■■■ 📄 Info]
+how-to-crayon-cirno
+how-to-affiliate
+affiliates
+
+[■■■■ 📁 Resources]
+cmd-cheatsheet
+cmd-advance
+chat-pillars
+Modcast : type:stage bitrate:40 limit:10000
+
+[■■■■ 🧊 Deep Archives]
+cirno-ai-1
+cirno-ai-2
+inktober-2024
+limbus-company
+nikke
+touhou-lostword
+blue-archive
+minecraft-server
+media : type:forum slowmode:5
+touhou-and-fumo
+fumo-cult
+personal-works
+storytelling
+inktober-2023
+
+[■■■■ 📂Work]
+dev
+dev2
+
+[■■■■ 🌲 Terraria]
+terraria-server
+terraria-chat
+terraria-logs
+
+[■■■■ 🧊 Minecraft]
+minecraft-docs
+minecraft-forum : type:forum
+
+[💀 Deprecated Below =====]
+verify-logs
+minecraft-chat
+minecraft-mod
+tmodloader-chat
+tmodloader-server
+trial-mods
+dst-server
+timeout
+the-oblong-table
+screening
+christmas-event
+submissions
+questions : slowmode:30
+important-links
+offense-reasoning
+media-content
+offense-classification
+to-do-list
+tatsu-score-log
+change-logs
+art-submissions : slowmode:300
+commands
+old-mod-tutorial
+old-mod-news
+badges-no-one-can-see
+secret-badges
+progress
+
+[📖 Great Stories]
+great-story-jun-2026
+great-story-apr-2026
+great-story-feb-2026
+great-story-jan-2026
+great-story-nov-2025
+great-story-oct-2025
+great-story-sep-2025
+great-story-aug-2025
+great-story-jul-2025
+great-story-jun-2025
+great-story-may-2025
+great-story-apr-2025
+great-story-mar-2025
+great-story-feb-2025
+great-story-jan-2025
+great-story-nov_dec-2024
+great-story-oct-2024
+great-story-sep-2024
+great-story-aug-2024
+great-story-jul-2024
+great-story-jun-2024
+great-story-may-2024
+great-story-apr-2024
+great-story-mar-2024
+great-story-feb-2024
+great-story-jan-2024
+great-story-dec-2023
+great-story-nov-2023
+great-story-jan-2022 : slowmode:10
+great-story-oct-2023
+great-story-sep-2023
+great-story-jul-2023
+great-story-aug-2023
+great-story-jun-2023
+great-story-may-2023
+great-story-apr-2023
+great-story-mar-2023
+great-story-feb-2023
+great-story-jan-2023 : slowmode:5
+great-story-dec-2022
+great-story-nov-2022
+great-story-oct-2022
+great-story-sep-2022
+great-story-aug-2022
+great-story-jul-2022
+great-story-jun-2022
+great-story-may-2022
+great-story-apr-2022 : slowmode:10
+great-story-mar-2022 : slowmode:10
+great-story-feb-2022 : slowmode:5
+
+[🖌 Inktober]
+inktober-info-2021
+inktober-2021
+inktober-info-2020
+inktober-2020
+
+# 187 channels listed; 17 categories
+# vim: ft=txt :

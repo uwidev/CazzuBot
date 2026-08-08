@@ -81,6 +81,72 @@ Every cog gets the bot injected; use these instead of reaching into internals:
   `cazzubot.templates.verify` / `prepare` so they stay jsonschema-validated.
 - Format with `ruff format` (tabs, line-length 75) and run `ruff check`.
 
+## Channels plugin — declarative channel manifest
+
+`plugins/channels/` hosts the **boot-time drift check only**. All
+enforcement is manual via the CLI; the plugin never applies anything.
+
+The manifest (`channels.manifest` at the repo root, committed) is the
+source of truth for channel structure. Discord's **native grouping —
+categories — is exactly what the manifest models**: a `[Category]` header
+declares a Discord category, and everything below it until the next header
+belongs to it. Channels before the first header are uncategorized (they
+render at the top). **Order is positional**: an export writes every
+channel in its exact rendering order and `diff`/`apply` enforce it. Line
+format:
+
+```
+[Category]              category header — maps to a Discord category;
+                        everything below it until the next header
+                        belongs to it
+Channel Name            verbatim Discord name (text unless a token says
+                        otherwise)
+Channel Name : token …  tokens: type:text|announcement|voice|forum|
+                        stage (default text) | nsfw | slowmode:<sec> |
+                        bitrate:<kbps> | limit:<n> |
+                        region:<code|auto> | quality:auto|1080
+Old Name->New Name      rename a channel (rewritten to just the new name
+                        after a successful apply)
+# comment               blank lines and # comments are ignored
+```
+
+- Covered Overview fields: name, type, category, position, slowmode,
+  nsfw, bitrate, user limit, region, video quality. **Not managed**: the
+  channel topic and permission overwrites. Voice attrs omitted from a
+  line mean the Discord defaults (64 kbps, unlimited, auto).
+- Renames: write `Old Name->New Name : tokens` — the live channel is
+  renamed (the manifest line is rewritten to just `New Name : tokens`
+  after a successful apply). A rename whose new name already exists is a
+  conflict and blocks apply. `diff` also suggests read-only "did you mean
+  rename?" hints.
+- Type conversions: only `text <-> announcement` can be applied in place;
+  any other kind change is reported as an unsupported type change and
+  blocks apply (delete+recreate manually).
+- Layout model: Discord keeps two independent position spaces per parent
+  (text-section: text/announcement/forum; voice-section: voice/stage);
+  the manifest order within a category only matters within each section.
+- Engine (pure, offline-tested): `cazzubot.channels.parser`,
+  `cazzubot.channels.export`, `cazzubot.channels.plan`. Executor (live):
+  `cazzubot.channels.executor`.
+- Admin CLI — `uv run cazzubot-cli channels <verb>` (or `uv run python -m
+  cazzubot.cli channels <verb>`): `export` / `diff` / `check` /
+  `apply [--yes] [--delete]` / `restore <snapshot>`, all with a
+  `--scope-below <Category>` flag that limits management to one category
+  and everything after it in the manifest — groups above are reported as
+  out of scope and never touched. Live verbs boot their own discord
+  connection and work while the bot is offline; every `channels apply`
+  snapshots the guild to `data/channels_backups/` first; `restore`
+  re-applies a snapshot (never deletes). `python -m cazzubot.channels`
+  remains as a backwards-compatible alias.
+- Safety: categories with children are never deleted (even with
+  `--delete` — their children would go with them); an *empty* stray
+  category is a `--delete` candidate. Deletions require `--delete`;
+  stray channels are kept as-is; `check` exits non-zero on drift for
+  hooks. The reorder only sends payloads for the scoped region, so
+  out-of-scope channels keep their exact positions.
+- Export always writes the format cheatsheet and a `# vim: ft=txt :`
+  modeline at the bottom.
+
 ## Roles plugin — declarative role manifest
 
 `plugins/roles/` hosts the **boot-time drift check only**. All enforcement is
