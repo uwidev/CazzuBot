@@ -82,6 +82,9 @@ class CazzuBot(hikari.GatewayBot):
         # StartingEvent handler is subscribed before the client's.
         self.subscribe(hikari.StartingEvent, self._on_starting)
         self.subscribe(hikari.StartedEvent, self._on_started)
+        self.subscribe(
+            hikari.GuildAvailableEvent, self._on_guild_available
+        )
         self.subscribe(hikari.StoppingEvent, self._on_stopping)
         self.subscribe(hikari.StartedEvent, self.lightbulb.start)
         self.subscribe(hikari.StoppingEvent, self.lightbulb.stop)
@@ -134,11 +137,25 @@ class CazzuBot(hikari.GatewayBot):
         me = self.get_me()
         if me is not None:
             _log.info("logged in as %s (%s)", me, me.id)
-        if self.guild is None:
-            _log.warning(
-                "configured guild %s not found — commands will not work",
-                self.config.guild_id,
-            )
+
+    async def _on_guild_available(
+        self, event: hikari.GuildAvailableEvent
+    ) -> None:
+        """Run guild-dependent checks once the guild dump has landed.
+
+        hikari dispatches ``StartedEvent`` before the buffered
+        ``GuildAvailable`` events, so the cache is still empty inside
+        ``_on_started``; anything that needs ``self.guild`` runs from
+        here instead.
+        """
+        if event.guild_id != self.config.guild_id:
+            if self.guild is None:
+                _log.warning(
+                    "configured guild %s not found — commands will not work",
+                    self.config.guild_id,
+                )
+            return
+        _log.info("configured guild %s available", event.guild_id)
 
     async def _on_stopping(self, _event: hikari.StoppingEvent) -> None:
         await self.scheduler.stop()

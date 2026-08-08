@@ -60,16 +60,19 @@ class ChannelsPlugin(Plugin):
     @override
     async def on_load(self, bot: "CazzuBot") -> None:
         self._bot = bot
-        # the guild is not available until the gateway is up; hook it there
-        bot.subscribe(hikari.StartedEvent, self._check_once)
+        # the guild dump lands after StartedEvent; run the drift check when
+        # the configured guild actually becomes available
+        bot.subscribe(hikari.GuildAvailableEvent, self._check_once)
 
     @override
     async def on_unload(self, bot: "CazzuBot") -> None:
-        bot.unsubscribe(hikari.StartedEvent, self._check_once)
+        bot.unsubscribe(hikari.GuildAvailableEvent, self._check_once)
 
-    async def _check_once(self, _event: hikari.StartedEvent) -> None:
+    async def _check_once(self, event: hikari.GuildAvailableEvent) -> None:
         bot = self._bot
         if bot is None:
+            return
+        if event.guild_id != bot.config.guild_id:
             return
         raw = await bot.settings.get(
             "channels.manifest.path", "channels.manifest"

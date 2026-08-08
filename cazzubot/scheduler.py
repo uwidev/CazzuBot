@@ -48,6 +48,7 @@ class Scheduler:
         self.handlers: dict[str, TaskHandler] = {}
         self._ready = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
+        self._stopping = False
         self.bot.subscribe(hikari.StartedEvent, self._on_started)
 
     @property
@@ -57,17 +58,43 @@ class Scheduler:
     async def start(self) -> None:
         if self._task is not None:
             return
+        self._stopping = False
         self._task = asyncio.create_task(self._run(), name="scheduler")
 
     async def stop(self) -> None:
+        """Stop after the current tick, never mid-aiosqlite-op.
+
+        Cancelling the task while it awaits an aiosqlite call kills the
+        connection's worker thread (its future is already cancelled, so
+        ``set_result`` raises inside the thread and it dies), which wedges
+        every later db call — including ``close()`` during shutdown. A flag
+        lets the loop exit between ticks instead.
+        """
         if self._task is None:
             return
-        self._task.cancel()
+        self._stopping = True
+        if not self._ready.is_set():
+            # never ticked — the task is parked on _ready.wait(), which is
+            # safe to cancel (no db op in flight)
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+            self._stopping = False
+            return
         try:
-            await self._task
-        except asyncio.CancelledError:
-            pass
+            await asyncio.wait_for(self._task, timeout=5)
+        except asyncio.TimeoutError:
+            # pathological: a tick handler hung; cancel as a last resort
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
         self._task = None
+        self._stopping = False
 
     async def _on_started(self, _event: hikari.StartedEvent) -> None:
         """Tick only after the gateway is up (tasks may hit Discord APIs)."""
@@ -75,7 +102,7 @@ class Scheduler:
 
     async def _run(self) -> None:
         await self._ready.wait()
-        while True:
+        while not self._stopping:
             try:
                 await self._tick()
             except asyncio.CancelledError:
