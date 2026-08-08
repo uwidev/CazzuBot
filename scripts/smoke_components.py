@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import os
 from types import SimpleNamespace
+from typing import Any, cast
 
 import hikari
 import pendulum
@@ -31,24 +32,23 @@ TOKEN = os.getenv("TOKEN_DEV", "")
 def _payloads(client: hikari.api.RESTClient) -> list[tuple[str, object]]:
     """(label, components) for every menu the bot ships.
 
-    The poll modal is intentionally absent: modal action rows (type 4) are
-    only valid in *modal responses*, not messages — create_modal_response
-    consumes them via the same build()[0] path, which needs a real
-    interaction to exercise live.
+    The poll modal and its rules text display are intentionally absent:
+    modal action rows (type 4) and text displays (type 10) are only valid
+    in *modal responses*, not messages (verified: Discord rejects type 10
+    in create_message) — create_modal_response consumes them via the same
+    build()[0] path, which needs a real interaction to exercise live.
     """
     from plugins.experience.cog import TopMenu
     from plugins.frogs import factory
 
     confirm = utils.ConfirmMenu(author_id=1)
     top = TopMenu(
-        client,
-        SimpleNamespace(
-            member=SimpleNamespace(id=1, display_name="x", username="x")
-        ),
+        cast(Any, client),
+        cast(Any, SimpleNamespace(member=SimpleNamespace(id=1))),
         pendulum.datetime(2026, 1, 1),
         [(1, 1, 100)],
     )
-    frog = factory.FrogCatchMenu(bot=client)
+    frog = factory.FrogCatchMenu(bot=cast(Any, client))
     return [
         ("confirm", confirm),
         ("top", top),
@@ -80,7 +80,7 @@ async def main() -> None:
                     message = await client.create_message(
                         text.id,
                         content=f"_smoke_ {label}",
-                        components=components,
+                        components=cast(Any, components),
                     )
                     await client.delete_message(text.id, message.id)
                     print(f"  OK  {label}")
