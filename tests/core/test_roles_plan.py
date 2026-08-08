@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from cazzubot.roles.parser import parse
 from cazzubot.roles.plan import build_plan
+from cazzubot.roles.snapshot import RoleSnapshot
 
-SNAPSHOT = [
+SNAPSHOT: list[RoleSnapshot] = [
     # top-down sidebar order; position 0 = highest. [X] entries are the
     # group-marker roles the manifest [X] headers map to.
     {
@@ -142,7 +145,7 @@ Muted : #af40ff
 # like IDENTICAL but without the Muted role — Muted is an unlisted stray
 WITHOUT_MUTED = IDENTICAL.replace("Muted : #af40ff\n", "")
 
-BOT_TOP = "2"  # the bot's highest role is 👀 | Mod Baka (position 2)
+BOT_TOP = 2  # the bot's highest role is 👀 | Mod Baka (position 2)
 
 
 def test_clean_manifest() -> None:
@@ -289,7 +292,9 @@ def test_bot_tagged_managed_role_is_movable() -> None:
     # a bot/integration role (tags=["bot"]) CAN be reordered — it is not
     # unmovable, unlike a boost role
     snapshot = [
-        {**dict(r), "tags": ["bot"]} if r["name"] == "Tatsumaki" else r
+        cast(Any, {**dict(r), "tags": ["bot"]})
+        if r["name"] == "Tatsumaki"
+        else r
         for r in SNAPSHOT
     ]
     plan = build_plan(parse(IDENTICAL), snapshot, bot_top_role_id=BOT_TOP)
@@ -300,7 +305,7 @@ def test_boost_tagged_role_is_movable() -> None:
     # boost roles ARE movable via the API (verified on production) — only
     # positions at/above the bot's top role are unmovable
     snapshot = [
-        {**dict(r), "tags": ["premium_subscriber"]}
+        cast(Any, {**dict(r), "tags": ["premium_subscriber"]})
         if r["name"] == "🎨 | Blue"
         else r
         for r in SNAPSHOT
@@ -387,7 +392,10 @@ def test_rename_keeps_role_out_of_strays() -> None:
 
 def test_asset_icon_urls_never_drift() -> None:
     snapshot = [
-        {**dict(r), "icon": "https://cdn.discordapp.com/x.png"}
+        cast(
+            Any,
+            {**dict(r), "icon": "https://cdn.discordapp.com/x.png"},
+        )
         for r in SNAPSHOT
     ]
     plan = build_plan(parse(IDENTICAL), snapshot, bot_top_role_id=BOT_TOP)
@@ -396,7 +404,9 @@ def test_asset_icon_urls_never_drift() -> None:
 
 def test_emoji_icon_drift() -> None:
     snapshot = [
-        {**dict(r), "icon": "🎨"} if r["name"] == "✨ | Caz" else r
+        cast(Any, {**dict(r), "icon": "🎨"})
+        if r["name"] == "✨ | Caz"
+        else r
         for r in SNAPSHOT
     ]
     manifest = parse("[✨]\n✨ | Caz : #00a3ff icon:🎨\n")

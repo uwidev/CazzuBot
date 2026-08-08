@@ -86,12 +86,13 @@ async def main() -> None:
         )
     )
 
-    async def _ready() -> None:
-        pass
+    # the boot lifecycle is event-driven since the hikari port; drive it
+    # directly (no gateway connection)
+    import hikari
 
-    bot.wait_until_ready = _ready  # type: ignore[method-assign]
-
-    await bot.setup_hook()
+    await bot._on_starting(  # pyright: ignore[reportPrivateUsage]
+        hikari.StartingEvent(app=bot)
+    )
 
     try:
         after = snapshot()

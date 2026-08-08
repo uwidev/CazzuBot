@@ -1,4 +1,4 @@
-"""Shared plumbing for the admin CLI: client boot, dispatch types, helpers."""
+"""Shared plumbing for the admin CLI: REST client boot, dispatch, helpers."""
 
 from __future__ import annotations
 
@@ -9,16 +9,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias
 
-import discord
+import hikari
 import pendulum
 
 from cazzubot.config import Config
 
 DEFAULT_BACKUP_DIR = Path("data/roles_backups")
 
-# live command handler: (client, config, parsed args) -> exit code
+# live command handler: (rest client, config, parsed args) -> exit code
 LiveHandler: TypeAlias = Callable[
-    [discord.Client, Config, argparse.Namespace], Awaitable[int]
+    [hikari.api.RESTClient, Config, argparse.Namespace], Awaitable[int]
 ]
 
 # Presets derived when exporting the manifest from this guild's live state
@@ -60,31 +60,24 @@ async def with_client(
     handler: LiveHandler,
     args: argparse.Namespace,
 ) -> int:
-    """Boot a throwaway discord connection, run ``handler`` on ready, close.
+    """Boot a throwaway REST client, run ``handler``, close.
 
     Live commands go through here so the CLI works even while the bot is
-    offline. The connection is closed before this function returns.
+    offline. hikari's REST client needs an explicit ``"Bot"`` token type
+    (its acquire default is BEARER).
     """
     config = Config.load(production=args.production)
-    intents = discord.Intents.default()
-    intents.members = True
-    client = discord.Client(intents=intents)
-    outcome = {"code": 2}
-
-    @client.event
-    async def on_ready() -> None:  # pyright: ignore[reportUnusedFunction]  # registered via @client.event
-        try:
-            outcome["code"] = await handler(client, config, args)
-        except Exception as err:
-            print(f"error: {err}", file=sys.stderr)
-            outcome["code"] = 1
-        await client.close()
-
+    app = hikari.RESTApp()
+    await app.start()
     try:
-        await client.start(config.token)
-    except KeyboardInterrupt:
-        await client.close()
-    return outcome["code"]
+        async with app.acquire(config.token, "Bot") as client:
+            try:
+                return await handler(client, config, args)
+            except Exception as err:
+                print(f"error: {err}", file=sys.stderr)
+                return 1
+    finally:
+        await app.close()
 
 
 def confirm(
@@ -99,17 +92,18 @@ def confirm(
     return answer in ("y", "yes")
 
 
-def require_guild(
-    client: discord.Client, config: Config
-) -> discord.Guild | None:
+async def require_guild(
+    client: hikari.api.RESTClient, config: Config
+) -> hikari.Guild | None:
     """The configured guild, or None after printing an error."""
-    guild = client.get_guild(config.guild_id)
-    if guild is None:
+    try:
+        return await client.fetch_guild(config.guild_id)
+    except hikari.NotFoundError:
         print(
             f"error: guild {config.guild_id} not found",
             file=sys.stderr,
         )
-    return guild
+        return None
 
 
 def export_stamp() -> str:

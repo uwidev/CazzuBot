@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 
-import discord
+import hikari
 
 from cazzubot.config import Config
 
@@ -20,65 +20,74 @@ async def main() -> None:
     args = parser.parse_args()
 
     config = Config.load(production=args.production)
-    intents = discord.Intents.default()
-    intents.members = True
-    client = discord.Client(intents=intents)
-
-    @client.event
-    async def on_ready() -> None:  # pyright: ignore[reportUnusedFunction]
-        guild_id = args.guild or config.guild_id
-        guild = client.get_guild(guild_id)
-        if guild is None:
-            print(
-                f"error: guild {guild_id} not found (token {'PROD' if args.production else 'DEV'})"
-            )
-            await client.close()
-            return
-        print(
-            f"guild: {guild.name} ({guild.id})  bot={guild.me.name} ({guild.me.id})"
-        )
-        print(f"bot roles: {[r.name for r in guild.me.roles]}")
-        gp = guild.me.guild_permissions
-        print(
-            f"guild perms: manage_channels={gp.manage_channels} "
-            f"manage_roles={gp.manage_roles} manage_guild={gp.manage_guild}"
-        )
-        channels = await guild.fetch_channels()
-        cats = [
-            c for c in channels if isinstance(c, discord.CategoryChannel)
-        ]
-        top = [
-            c
-            for c in channels
-            if c.category_id is None
-            and not isinstance(c, discord.CategoryChannel)
-        ]
-        top.sort(key=lambda c: c.position)
-        cats.sort(key=lambda c: c.position)
-        print("\n-- uncategorized --")
-        for c in top:
-            print(f"  {c.position:>3} {c.name} ({c.__class__.__name__})")
-        for cat in cats:
-            print(f"[{cat.position:>3}] {cat.name}  (cat id {cat.id})")
-            kids = [c for c in channels if c.category_id == cat.id]
-            for c in sorted(
-                kids, key=lambda c: (c.__class__.__name__, c.position)
-            ):
+    app = hikari.RESTApp()
+    await app.start()
+    try:
+        async with app.acquire(config.token, "Bot") as client:
+            guild_id = args.guild or config.guild_id
+            try:
+                guild = await client.fetch_guild(guild_id)
+            except hikari.NotFoundError:
                 print(
-                    f"    {c.position:>3} {c.name} ({c.__class__.__name__})"
+                    f"error: guild {guild_id} not found (token {'PROD' if args.production else 'DEV'})"
                 )
-        # bot perms on the boundary region
-        activities = next(
-            (c for c in cats if c.name == "Activities"), None
-        )
-        if activities is not None:
-            perms = activities.permissions_for(guild.me)
+                return
+            me = await client.fetch_my_user()
+            member = await client.fetch_member(guild_id, me.id)
             print(
-                f"\nbot perms on 'Activities': manage_channels={perms.manage_channels} view={perms.view_channel}"
+                f"guild: {guild.name} ({guild.id})  bot={member.display_name} ({member.id})"
             )
-        await client.close()
-
-    await client.start(config.token)
+            roles = {r.id: r for r in await client.fetch_roles(guild_id)}
+            print(
+                f"bot roles: {[roles[r].name for r in member.role_ids if r in roles]}"
+            )
+            perms = hikari.Permissions.NONE
+            for rid in member.role_ids:
+                if rid in roles:
+                    perms |= roles[rid].permissions
+            print(
+                f"guild perms: manage_channels={bool(perms & hikari.Permissions.MANAGE_CHANNELS)} "
+                f"manage_roles={bool(perms & hikari.Permissions.MANAGE_ROLES)} "
+                f"manage_guild={bool(perms & hikari.Permissions.MANAGE_GUILD)}"
+            )
+            channels = await client.fetch_guild_channels(guild_id)
+            cats = [
+                c
+                for c in channels
+                if c.type == hikari.ChannelType.GUILD_CATEGORY
+            ]
+            top = [
+                c
+                for c in channels
+                if c.parent_id is None
+                and c.type != hikari.ChannelType.GUILD_CATEGORY
+            ]
+            top.sort(key=lambda c: getattr(c, "position", 0))
+            cats.sort(key=lambda c: getattr(c, "position", 0))
+            print("\n-- uncategorized --")
+            for c in top:
+                print(
+                    f"  {getattr(c, 'position', 0):>3} {c.name} ({type(c).__name__})"
+                )
+            for cat in cats:
+                print(
+                    f"[{getattr(cat, 'position', 0):>3}] {cat.name}  (cat id {cat.id})"
+                )
+                kids = [c for c in channels if c.parent_id == cat.id]
+                for c in sorted(
+                    kids,
+                    key=lambda c: (
+                        type(c).__name__,
+                        getattr(c, "position", 0),
+                    ),
+                ):
+                    print(
+                        print(
+                            f"    {getattr(c, 'position', 0):>3} {c.name} ({type(c).__name__})"
+                        )
+                    )
+    finally:
+        await app.close()
 
 
 if __name__ == "__main__":

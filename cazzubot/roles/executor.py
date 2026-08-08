@@ -1,8 +1,10 @@
 """Live executor: apply a :class:`Plan` against a real guild.
 
-Bridges the pure parser/plan engine to discord: snapshots a guild into the
-same dict shape the engine consumes, applies a plan (create → update →
-delete → reorder), and supports snapshot-based backups and restores.
+Bridges the pure parser/plan engine to the Discord API: snapshots a guild
+into the same dict shape the engine consumes, applies a plan (create →
+update → delete → reorder), and supports snapshot-based backups and
+restores. Everything runs over the REST client — no gateway, no cache
+(which lags mutations and produced phantom drift in the apply loop).
 """
 
 from __future__ import annotations
@@ -14,15 +16,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-import discord
+import hikari
 import pendulum
 
 from cazzubot.roles.parser import VALID_FLAGS, RoleSpec, parse
 from cazzubot.roles.plan import Plan, RenameOp
 from cazzubot.roles.snapshot import RoleSnapshot
-from discord.abc import Snowflake
 
 EVERYONE = "@everyone"
+
+REORDER_ATTEMPTS = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +39,9 @@ class ApplyResult:
 # -- snapshots ---------------------------------------------------------------
 
 
-async def snapshot_guild(guild: discord.Guild) -> list[RoleSnapshot]:
+async def snapshot_guild(
+    client: hikari.api.RESTClient, guild_id: int
+) -> list[RoleSnapshot]:
     """The guild's roles as plain dicts, top-down (index 0 = highest).
 
     Roles come from a fresh API fetch, not the local cache — the cache
@@ -44,59 +49,67 @@ async def snapshot_guild(guild: discord.Guild) -> list[RoleSnapshot]:
     apply convergence loop.
     """
     roles = sorted(
-        await guild.fetch_roles(),
+        await client.fetch_roles(guild_id),
         key=lambda r: r.position,
         reverse=True,
     )
     return [snapshot_role(role, i) for i, role in enumerate(roles)]
 
 
-def snapshot_role(role: discord.Role, pos: int) -> RoleSnapshot:
+def snapshot_role(role: hikari.Role, pos: int) -> RoleSnapshot:
     icon: str | None = None
     if role.unicode_emoji:
         icon = role.unicode_emoji
-    elif role.icon is not None:
-        icon = str(role.icon.url)
+    elif role.icon_hash is not None:
+        icon = str(role.make_icon_url())
     perms = [
         name
         for name in VALID_FLAGS
-        if getattr(role.permissions, name, False)
+        if bool(
+            role.permissions & getattr(hikari.Permissions, name.upper())
+        )
     ]
-    tags: list[str] = []
-    if role.tags is not None:
-        if role.tags.is_premium_subscriber():
-            tags.append("premium_subscriber")
-        if role.tags.is_available_for_purchase():
-            tags.append("available_for_purchase")
-        if role.tags.subscription_listing_id is not None:
-            tags.append("subscription_listing")
-        if role.tags.is_guild_connection():
-            tags.append("guild_connection")
-        if role.tags.is_bot_managed():
-            tags.append("bot")
-        if role.tags.is_integration():
-            tags.append("integration")
+    # hikari has no RoleTags; managed roles are never user-manageable,
+    # which is the only property the plan reads the tags for.
+    tags = ["bot"] if role.is_managed else []
+    color = int(role.color) if role.color is not None else 0
     return {
         "position": pos,
         "id": str(role.id),
         "name": role.name,
-        "color": f"#{role.color.value:06x}" if role.color.value else None,
-        "hoisted": role.hoist,
-        "mentionable": role.mentionable,
-        "managed": role.managed,
+        "color": f"#{color:06x}" if color else None,
+        "hoisted": role.is_hoisted,
+        "mentionable": role.is_mentionable,
+        "managed": role.is_managed,
         "permissions": perms,
         "icon": icon,
         "tags": tags,
     }
 
 
-def member_counts(guild: discord.Guild) -> dict[int, int]:
+async def member_counts(
+    client: hikari.api.RESTClient, guild_id: int
+) -> dict[int, int]:
     """role id → member count (needs the members intent; {} if unavailable)."""
     counts: dict[int, int] = {}
-    for member in guild.members:
-        for role in member.roles:
-            counts[role.id] = counts.get(role.id, 0) + 1
+    members = client.fetch_members(guild_id)
+    async for member in members:
+        for rid in member.role_ids:
+            counts[int(rid)] = counts.get(int(rid), 0) + 1
     return counts
+
+
+async def bot_top_role_id(
+    client: hikari.api.RESTClient, guild_id: int
+) -> int | None:
+    """The bot's highest role id (``None`` if the bot has no roles)."""
+    me = await client.fetch_my_user()
+    member = await client.fetch_member(guild_id, me.id)
+    roles = await client.fetch_roles(guild_id)
+    candidates = [r for r in roles if r.id in member.role_ids]
+    if not candidates:
+        return None
+    return int(max(candidates, key=lambda r: r.position).id)
 
 
 def save_snapshot(path: Path, roles: list[RoleSnapshot]) -> None:
@@ -113,37 +126,39 @@ def load_snapshot(path: Path) -> list[RoleSnapshot]:
 
 def backup_path(base: Path) -> Path:
     """``<base>/roles-YYYYMMDD-HHMMSS.json`` in UTC."""
-    stamp = pendulum.now("UTC").format("YYYYMMDD-HHMMSS")
+    stamp = pendulum.now("UTC").format("YYYYMMDD-HHmmss")
     return base / f"roles-{stamp}.json"
 
 
 # -- applying ----------------------------------------------------------------
 
 
-def _color(hex_color: str | None) -> discord.Colour:
+def _color(hex_color: str | None) -> hikari.Color:
     if not hex_color:
-        return discord.Colour(0)
-    return discord.Colour(int(hex_color.lstrip("#"), 16))
+        return hikari.Color(0)
+    return hikari.Color(int(hex_color.lstrip("#"), 16))
 
 
-def _permissions(names: list[str] | frozenset[str]) -> discord.Permissions:
-    return discord.Permissions(**{name: True for name in names})
+def _permissions(names: list[str] | frozenset[str]) -> hikari.Permissions:
+    perms = hikari.Permissions.NONE
+    for name in names:
+        perms |= getattr(hikari.Permissions, name.upper())
+    return perms
 
 
 def _attr_mismatches(
-    role: discord.Role, new: Mapping[str, Any]
+    role: hikari.Role, new: Mapping[str, Any]
 ) -> list[str]:
     """Attribute names in ``new`` that the live role doesn't match yet."""
     out: list[str] = []
-    if "color" in new and role.color.value != new["color"].value:
+    if "color" in new and int(role.color or 0) != int(new["color"]):
         out.append("color")
-    if "hoist" in new and role.hoist != new["hoist"]:
+    if "hoist" in new and role.is_hoisted != new["hoist"]:
         out.append("hoist")
-    if "mentionable" in new and role.mentionable != new["mentionable"]:
+    if "mentionable" in new and role.is_mentionable != new["mentionable"]:
         out.append("mentionable")
-    if (
-        "permissions" in new
-        and role.permissions.value != new["permissions"].value
+    if "permissions" in new and role.permissions != cast(
+        hikari.Permissions, new["permissions"]
     ):
         out.append("permissions")
     return out
@@ -161,12 +176,16 @@ def _create_kwargs(
         "permissions": _permissions(perms),
     }
     if spec.icon:
-        kwargs["display_icon"] = spec.icon
+        kwargs["icon"] = spec.icon
     return kwargs
 
 
 async def apply_plan(
-    guild: discord.Guild, plan: Plan, *, delete: bool
+    client: hikari.api.RESTClient,
+    guild_id: int,
+    plan: Plan,
+    *,
+    delete: bool,
 ) -> ApplyResult:
     """Execute a plan, returning errors plus the renames that ran.
 
@@ -178,10 +197,12 @@ async def apply_plan(
     applied_renames: list[RenameOp] = []
     reason = "roles manifest apply"
 
-    async def refresh() -> dict[int, discord.Role]:
+    async def refresh() -> dict[int, hikari.Role]:
         """Fresh API view of roles by id — the working set AND the
         verification data."""
-        return {role.id: role for role in await guild.fetch_roles()}
+        return {
+            role.id: role for role in await client.fetch_roles(guild_id)
+        }
 
     current = await refresh()
 
@@ -194,8 +215,10 @@ async def apply_plan(
             errors.append(f"rename {op.old}: role not found")
             continue
         try:
-            await role.edit(name=op.new, reason=reason)
-        except discord.HTTPException as err:
+            await client.edit_role(
+                guild_id, role.id, name=op.new, reason=reason
+            )
+        except hikari.HikariError as err:
             errors.append(f"rename {op.old}: {err}")
             continue
         current = await refresh()
@@ -211,8 +234,8 @@ async def apply_plan(
     for op in plan.creates:
         try:
             kwargs = _create_kwargs(op.spec, op.permissions)
-            await guild.create_role(**kwargs, reason=reason)
-        except discord.HTTPException as err:
+            await client.create_role(guild_id, **kwargs, reason=reason)
+        except hikari.HikariError as err:
             errors.append(f"create {op.spec.name}: {err}")
             continue
         current = await refresh()
@@ -241,10 +264,12 @@ async def apply_plan(
         if "icon" in op.changes:
             icon = op.changes["icon"][1]
             if icon:
-                kwargs["display_icon"] = icon
+                kwargs["icon"] = icon
         try:
-            await role.edit(**kwargs, reason=reason)
-        except discord.HTTPException as err:
+            await client.edit_role(
+                guild_id, op.id, **kwargs, reason=reason
+            )
+        except hikari.HikariError as err:
             errors.append(f"update {op.name}: {err}")
             continue
         current = await refresh()
@@ -265,8 +290,8 @@ async def apply_plan(
             if role is None:
                 continue
             try:
-                await role.delete(reason=reason)
-            except discord.HTTPException as err:
+                await client.delete_role(guild_id, op.id, reason=reason)
+            except hikari.HikariError as err:
                 errors.append(f"delete {op.name}: {err}")
                 continue
             current = await refresh()
@@ -283,15 +308,17 @@ async def apply_plan(
             )
         else:
             try:
-                await reorder_guild(guild, plan.target_order)
-            except discord.HTTPException as err:
+                await reorder_guild(client, guild_id, plan.target_order)
+            except hikari.HikariError as err:
                 errors.append(f"reorder: {err}")
 
     return ApplyResult(errors=errors, applied_renames=applied_renames)
 
 
 async def reorder_guild(
-    guild: discord.Guild, target_order: list[str]
+    client: hikari.api.RESTClient,
+    guild_id: int,
+    target_order: list[str],
 ) -> None:
     """Bulk-move roles so the sidebar matches ``target_order`` (top-down).
 
@@ -311,36 +338,41 @@ async def reorder_guild(
     if it never converges.
     """
     for _ in range(REORDER_ATTEMPTS):
-        moves = await _reorder_moves(guild, target_order)
+        moves = await _reorder_moves(client, guild_id, target_order)
         if not moves:
             return
-        # discord.py's own type for ``positions`` keys is Union[str, int],
-        # but the runtime accepts Role objects (payloads use ``role.id``)
-        await guild.edit_role_positions(
-            cast(Mapping[Snowflake, int], moves),
+        # hikari's reposition_roles takes {position: role_id}
+        await client.reposition_roles(
+            guild_id,
+            {position: role_id for role_id, position in moves.items()},
             reason="roles manifest apply",
         )
         await asyncio.sleep(
             0.6
         )  # let the gateway settle before re-reading
-    moves = await _reorder_moves(guild, target_order)
+    moves = await _reorder_moves(client, guild_id, target_order)
     if moves:
         raise RuntimeError(
             f"reorder did not converge after {REORDER_ATTEMPTS} attempts — {len(moves)} move(s) remain; re-run roles apply"
         )
 
 
-REORDER_ATTEMPTS = 5
-
-
 async def _reorder_moves(
-    guild: discord.Guild, target_order: list[str]
-) -> dict[discord.Role, int]:
+    client: hikari.api.RESTClient,
+    guild_id: int,
+    target_order: list[str],
+) -> dict[int, int]:
     """Compute the position payload that moves the guild toward ``target_order``."""
-    fresh = await guild.fetch_roles()
+    fresh = await client.fetch_roles(guild_id)
     by_name = {role.name: role for role in fresh}
-    everyone = guild.default_role
-    bot_role_ids = {role.id for role in guild.me.roles}
+    everyone = next(
+        (r for r in fresh if r.id == guild_id), None
+    )  # @everyone's id == guild id
+    if everyone is None:
+        raise RuntimeError("guild has no @everyone role?!")
+    me = await client.fetch_my_user()
+    member = await client.fetch_member(guild_id, me.id)
+    bot_role_ids = set(member.role_ids)
     top_position = max(
         (role.position for role in fresh if role.id in bot_role_ids),
         default=0,
@@ -352,14 +384,14 @@ async def _reorder_moves(
             "target order doesn't cover every role — refusing to reorder"
         )
 
-    def unmovable(role: discord.Role) -> bool:
+    def unmovable(role: hikari.Role) -> bool:
         # Discord positions: 0 = @everyone at the BOTTOM, higher = higher in
         # the sidebar. Only @everyone and roles at or above the bot's own
         # highest role can't be moved. Managed roles (bot, boost, shop,
         # linked) ARE movable via the API — verified empirically.
-        return role == everyone or role.position >= top_position
+        return role.id == everyone.id or role.position >= top_position
 
-    moves: dict[discord.Role, int] = {}
+    moves: dict[int, int] = {}  # role_id -> position
     next_position: int | None = None
     for role in ordered:
         if unmovable(role):
@@ -372,7 +404,7 @@ async def _reorder_moves(
             )
         position = next_position
         if role.position != position:
-            moves[role] = position
+            moves[int(role.id)] = position
         next_position -= 1
     if not moves:
         return {}
@@ -380,10 +412,10 @@ async def _reorder_moves(
     # safety net: never send a position at/above the bot's top role, and
     # never send colliding positions (Discord would 403 or corrupt)
     assigned: set[int] = set()
-    for role, position in moves.items():
+    for role_id, position in moves.items():
         if position >= top_position:
             raise RuntimeError(
-                f"reorder would place {role.name!r} at position {position}, at or above the bot's highest role — move it below that in the manifest"
+                f"reorder would place a role at position {position}, at or above the bot's highest role — move it below that in the manifest"
             )
         if position in assigned:
             raise RuntimeError(
@@ -394,7 +426,9 @@ async def _reorder_moves(
 
 
 async def restore_guild(
-    guild: discord.Guild, snapshot: list[RoleSnapshot]
+    client: hikari.api.RESTClient,
+    guild_id: int,
+    snapshot: list[RoleSnapshot],
 ) -> list[str]:
     """Bring the guild back toward a snapshot (never deletes anything)."""
     from cazzubot.roles.export import render_manifest
@@ -405,8 +439,8 @@ async def restore_guild(
     plan = build_plan(
         manifest,
         snapshot,
-        bot_top_role_id=guild.me.top_role.id,
+        bot_top_role_id=await bot_top_role_id(client, guild_id),
         delete=False,
     )
-    result = await apply_plan(guild, plan, delete=False)
+    result = await apply_plan(client, guild_id, plan, delete=False)
     return result.errors

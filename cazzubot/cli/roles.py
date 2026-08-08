@@ -10,7 +10,7 @@ import argparse
 import sys
 from pathlib import Path
 
-import discord
+import hikari
 
 from cazzubot.cli.core import (
     Command,
@@ -33,13 +33,13 @@ from cazzubot.roles.plan import Plan, RenameOp, build_plan
 
 
 async def cmd_export(
-    client: discord.Client, config: Config, args: argparse.Namespace
+    client: hikari.api.RESTClient, config: Config, args: argparse.Namespace
 ) -> int:
     """Write a fresh manifest from the live guild."""
-    guild = require_guild(client, config)
+    guild = await require_guild(client, config)
     if guild is None:
         return 1
-    roles = await executor.snapshot_guild(guild)
+    roles = await executor.snapshot_guild(client, config.guild_id)
     text = render_manifest(
         roles,
         source=f"live guild {guild.name}",
@@ -51,7 +51,7 @@ async def cmd_export(
 
 
 async def cmd_diff(
-    client: discord.Client, config: Config, args: argparse.Namespace
+    client: hikari.api.RESTClient, config: Config, args: argparse.Namespace
 ) -> int:
     """Show the plan; exit 1 when the guild drifts."""
     plan = await _plan(client, config, args, delete=args.delete)
@@ -62,7 +62,7 @@ async def cmd_diff(
 
 
 async def cmd_check(
-    client: discord.Client, config: Config, args: argparse.Namespace
+    client: hikari.api.RESTClient, config: Config, args: argparse.Namespace
 ) -> int:
     """Hook-friendly drift check: exit 1 on drift, prints a summary."""
     plan = await _plan(client, config, args, delete=False)
@@ -77,7 +77,7 @@ async def cmd_check(
 
 
 async def cmd_apply(
-    client: discord.Client, config: Config, args: argparse.Namespace
+    client: hikari.api.RESTClient, config: Config, args: argparse.Namespace
 ) -> int:
     """Reconcile the guild to the file, with backup + confirmation."""
     manifest_text = _read_manifest(args.file)
@@ -119,10 +119,12 @@ async def cmd_apply(
     if not confirm(args):
         print("aborted")
         return 1
-    guild = require_guild(client, config)
+    guild = await require_guild(client, config)
     assert guild is not None
     backup = executor.backup_path(DEFAULT_BACKUP_DIR)
-    executor.save_snapshot(backup, await executor.snapshot_guild(guild))
+    executor.save_snapshot(
+        backup, await executor.snapshot_guild(client, config.guild_id)
+    )
     print(f"backup: {backup}")
 
     # apply, then verify the end state against the manifest and converge:
@@ -133,7 +135,7 @@ async def cmd_apply(
     current_plan = plan
     for _ in range(3):
         result = await executor.apply_plan(
-            guild, current_plan, delete=args.delete
+            client, config.guild_id, current_plan, delete=args.delete
         )
         all_errors.extend(result.errors)
         all_applied.extend(result.applied_renames)
@@ -173,7 +175,7 @@ async def cmd_apply(
 
 
 async def cmd_restore(
-    client: discord.Client, config: Config, args: argparse.Namespace
+    client: hikari.api.RESTClient, config: Config, args: argparse.Namespace
 ) -> int:
     """Bring the guild back toward a backup snapshot (never deletes)."""
     try:
@@ -181,15 +183,17 @@ async def cmd_restore(
     except (OSError, ValueError) as err:
         print(f"error: cannot read snapshot: {err}", file=sys.stderr)
         return 1
-    guild = require_guild(client, config)
+    guild = await require_guild(client, config)
     if guild is None:
         return 1
-    roles = await executor.snapshot_guild(guild)
+    roles = await executor.snapshot_guild(client, config.guild_id)
     manifest = parse(render_manifest(snapshot))
     plan = build_plan(
         manifest,
         roles,
-        bot_top_role_id=guild.me.top_role.id,
+        bot_top_role_id=await executor.bot_top_role_id(
+            client, config.guild_id
+        ),
         delete=False,
     )
     print(plan.render())
@@ -202,7 +206,9 @@ async def cmd_restore(
     backup = executor.backup_path(DEFAULT_BACKUP_DIR)
     executor.save_snapshot(backup, roles)
     print(f"backup: {backup}")
-    result = await executor.apply_plan(guild, plan, delete=False)
+    result = await executor.apply_plan(
+        client, config.guild_id, plan, delete=False
+    )
     for err in result.errors:
         print(f"✖ {err}", file=sys.stderr)
     if result.errors:
@@ -250,7 +256,7 @@ def _add_restore_args(parser: argparse.ArgumentParser) -> None:
 
 
 async def _plan(
-    client: discord.Client,
+    client: hikari.api.RESTClient,
     config: Config,
     args: argparse.Namespace,
     *,
@@ -263,22 +269,26 @@ async def _plan(
 
 
 async def _plan_from(
-    client: discord.Client,
+    client: hikari.api.RESTClient,
     config: Config,
     manifest: Manifest,
     *,
     delete: bool,
 ) -> Plan | None:
-    guild = require_guild(client, config)
+    guild = await require_guild(client, config)
     if guild is None:
         return None
-    roles = await executor.snapshot_guild(guild)
+    roles = await executor.snapshot_guild(client, config.guild_id)
     return build_plan(
         manifest,
         roles,
-        bot_top_role_id=guild.me.top_role.id,
+        bot_top_role_id=await executor.bot_top_role_id(
+            client, config.guild_id
+        ),
         delete=delete,
-        member_counts=executor.member_counts(guild),
+        member_counts=await executor.member_counts(
+            client, config.guild_id
+        ),
     )
 
 

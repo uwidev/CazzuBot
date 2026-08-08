@@ -17,56 +17,14 @@ import hikari
 from typing_extensions import override
 
 from cazzubot import Plugin
-from cazzubot.roles.parser import ManifestError, VALID_FLAGS, parse
+from cazzubot.roles import executor
+from cazzubot.roles.parser import ManifestError, parse
 from cazzubot.roles.plan import build_plan
-from cazzubot.roles.snapshot import RoleSnapshot
 
 if TYPE_CHECKING:
     from cazzubot.bot import CazzuBot
 
 _log = logging.getLogger(__name__)
-
-
-def _role_snapshot(role: hikari.Role, pos: int) -> RoleSnapshot:
-    """Adapt a hikari role to the snapshot dict the plan engine consumes."""
-    icon: str | None = None
-    if role.unicode_emoji:
-        icon = role.unicode_emoji
-    elif role.icon_hash is not None:
-        icon = str(role.make_icon_url())
-    perms = [
-        name
-        for name in VALID_FLAGS
-        if getattr(role.permissions, name.upper(), False)
-    ]
-    # hikari 2.5 has no RoleTags; managed roles are never user-manageable,
-    # which is the only property the plan reads the tags for.
-    tags = ["bot"] if role.is_managed else []
-    color = int(role.color) if role.color is not None else 0
-    return {
-        "position": pos,
-        "id": str(role.id),
-        "name": role.name,
-        "color": f"#{color:06x}" if color else None,
-        "hoisted": role.is_hoisted,
-        "mentionable": role.is_mentionable,
-        "managed": role.is_managed,
-        "permissions": perms,
-        "icon": icon,
-        "tags": tags,
-    }
-
-
-async def _snapshot_guild(
-    bot: "CazzuBot", guild_id: int
-) -> list[RoleSnapshot]:
-    """The guild's roles top-down from a fresh REST fetch (cache lags)."""
-    roles = sorted(
-        await bot.rest.fetch_roles(guild_id),
-        key=lambda r: r.position,
-        reverse=True,
-    )
-    return [_role_snapshot(role, i) for i, role in enumerate(roles)]
 
 
 class RolesPlugin(Plugin):
@@ -115,13 +73,10 @@ class RolesPlugin(Plugin):
         if guild is None:
             _log.warning("roles manifest: guild not available yet")
             return
-        roles = await _snapshot_guild(bot, guild.id)
-        bot_top_role_id: int | None = None
-        me = guild.get_my_member()
-        if me is not None:
-            top = me.get_top_role()
-            if top is not None:
-                bot_top_role_id = top.id
+        roles = await executor.snapshot_guild(bot.rest, guild.id)
+        bot_top_role_id = await executor.bot_top_role_id(
+            bot.rest, guild.id
+        )
         plan = build_plan(
             manifest,
             roles,

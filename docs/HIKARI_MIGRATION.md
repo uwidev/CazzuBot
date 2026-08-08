@@ -3,9 +3,8 @@
 Goal: swap `discord.py` → `hikari` with behavior intact. **Status: done as
 of 022ba52** — the bot runs on hikari 2.5 + hikari-lightbulb 3.2 (slash-only,
 guild-scoped), all 14 plugins are ported, and the suite is green (260
-passed). The remaining discord.py consumers are the CLI tooling
-(roles/channels/snapshot) and the legacy scripts, tracked in docs/BACKLOG.md
-(the "port CLI to hikari REST" follow-up). This doc is the map that guided
+passed). The CLI tooling is also ported (hikari RESTApp — see docs/BACKLOG.md); the
+only remaining discord.py-era pieces are the asyncpg migration scripts. This doc is the map that guided
 the port; everything marked **pure** survived untouched, everything marked
 **framework-bound** was rewritten as described.
 

@@ -22,7 +22,9 @@ from typing_extensions import override
 # The Discord permission flag names, lowercased (both frameworks expose the
 # same words; hikari's are UPPER_SNAKE, discord.py's are lower_snake).
 VALID_FLAGS: set[str] = {
-    flag.name.lower() for flag in hikari.Permissions if flag.value > 0
+    flag.name.lower()
+    for flag in hikari.Permissions
+    if flag.value > 0 and flag.name is not None
 }
 
 # discord.py's named palette (values from the corresponding Colour

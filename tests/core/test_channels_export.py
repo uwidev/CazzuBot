@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from cazzubot.channels.export import render_manifest
+from cazzubot.channels.snapshot import ChannelSnapshot
 from cazzubot.channels.parser import parse
 from cazzubot.channels.plan import build_plan
 
@@ -16,8 +19,8 @@ def ch(
     nsfw: bool = False,
     slow: int = 0,
     **voice: object,
-) -> dict[str, object]:
-    d: dict[str, object] = {
+) -> ChannelSnapshot:
+    d: ChannelSnapshot = {
         "id": id,
         "name": name,
         "kind": kind,
@@ -33,11 +36,11 @@ def ch(
             region=None,
             quality="auto",
         )
-    d.update(voice)
+    d.update(cast(Any, voice))
     return d
 
 
-SNAPSHOT = [
+SNAPSHOT: list[ChannelSnapshot] = [
     ch("0", "welcome"),
     ch("1", "general", slow=5),
     ch("2", "lobby", "voice"),

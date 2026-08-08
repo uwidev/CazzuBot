@@ -341,19 +341,17 @@ script target; keep the existing `python main.py` path working.
 
 ## Port the CLI tooling to hikari REST (then drop discord.py)
 
-The roles/channels/snapshot CLI (`cazzubot/cli/*`, `cazzubot/roles/*`,
-`cazzubot/channels/*`) still boots a throwaway discord.py client. When the
-owner requests it:
-
-- rewrite the live verbs (`export`, `diff`, `check`, `apply`, `restore`,
-  `snapshot fetch`) against `hikari.RESTApp`/`RESTClient` (no gateway
-  needed) — the engine layers (`parser`, `plan`, `snapshot_channels`)
-  are already framework-agnostic (`channels.executor._kind_of` resolves
-  both frameworks; `roles/parser.VALID_FLAGS` derives from hikari)
-- remove `discord.py` from the `cli` dependency group and from
-  `tool.uv.default-groups` (pyproject.toml comment marks the spot)
-- delete the last discord imports in `cazzubot/cli/core.py` etc. and drop
-  the CLI allowlist in `tests/core/test_csr_boundary.py`
-- port `scripts/boot_check_migrated.py` / `verify_migration.py` /
-  `migrate_pg_to_sqlite.py` when touched (they still reference
-  `setup_hook`/`wait_until_ready`)
+> **Done** — the CLI runs on `hikari.RESTApp` (no gateway) and discord.py
+> is fully removed from the environment. Live verbs (`export`/`diff`/
+> `check`/`apply`/`restore`/`snapshot fetch`) go through
+> `with_client`'s REST client (`acquire(token, "Bot")` — the default
+> token type is BEARER); role reorders use hikari's `reposition_roles`,
+> channel creates/edits/reorders go through hikari's own rate-limited
+> request path with raw payload keys; `roles/parser.VALID_FLAGS` derives
+> from hikari; the CSR allowlist is gone. Validated live against the
+> sandbox guild: export/check/diff clean, apply cycles for create, rename,
+> delete and reorder, and a channels rename — all reverted afterwards.
+> `scripts/boot_check_migrated.py` was ported to the event-driven boot;
+> the PG-migration scripts (`migrate_pg_to_sqlite.py`,
+> `verify_migration.py`) remain asyncpg-based (install with
+> `uv sync --group migration`).

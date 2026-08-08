@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from cazzubot.channels.parser import parse
 from cazzubot.channels.plan import build_plan
+from cazzubot.channels.snapshot import ChannelSnapshot
 
 
 def ch(
@@ -17,8 +20,8 @@ def ch(
     nsfw: bool = False,
     slow: int = 0,
     **voice: object,
-) -> dict[str, object]:
-    d: dict[str, object] = {
+) -> ChannelSnapshot:
+    d: ChannelSnapshot = {
         "id": id,
         "name": name,
         "kind": kind,
@@ -29,11 +32,11 @@ def ch(
     }
     if kind in ("voice", "stage"):
         d.update(bitrate=64, limit=0, region=None, quality="auto")
-    d.update(voice)
+    d.update(cast(Any, voice))
     return d
 
 
-SNAPSHOT = [
+SNAPSHOT: list[ChannelSnapshot] = [
     ch("0", "welcome"),
     ch("1", "general", slow=5),
     ch("2", "lobby", "voice"),
@@ -150,14 +153,14 @@ def test_strays_do_not_force_reorder() -> None:
 
 
 def test_reorder_swap_within_category() -> None:
-    snap = [dict(c) for c in SNAPSHOT]
+    snap = [cast(Any, dict(c)) for c in SNAPSHOT]
     snap[7]["position"], snap[8]["position"] = 1, 0  # rules/announcements
     p = build_plan(parse(IDENTICAL), snap)
     assert p.needs_reorder
 
 
 def test_category_reorder() -> None:
-    snap = [dict(c) for c in SNAPSHOT]
+    snap = [cast(Any, dict(c)) for c in SNAPSHOT]
     snap[3]["position"], snap[6]["position"] = 1, 0
     p = build_plan(parse(IDENTICAL), snap)
     assert p.needs_reorder
@@ -230,7 +233,12 @@ def test_out_of_scope_manifest_channel_inside_scope_not_deleted() -> None:
     # sitting inside an in-scope category must never become a delete
     # candidate — the manifest still governs it
     snap = [
-        {**dict(c), "category": "Games"} if c["name"] == "welcome" else c
+        cast(
+            Any,
+            {**dict(c), "category": "Games"}
+            if c["name"] == "welcome"
+            else c,
+        )
         for c in SNAPSHOT
     ]
     p = build_plan(
@@ -249,7 +257,12 @@ def test_scope_name_collision_never_touches_out_of_scope() -> None:
     # name must never be updated/renamed/moved — the plan treats the
     # name as missing and excludes the id from in_scope_ids
     snap = [
-        {**dict(c), "category": None} if c["name"] == "minecraft" else c
+        cast(
+            Any,
+            {**dict(c), "category": None}
+            if c["name"] == "minecraft"
+            else c,
+        )
         for c in SNAPSHOT
     ]  # minecraft physically sits ABOVE the boundary (uncategorized)
     p = build_plan(
@@ -262,7 +275,9 @@ def test_scope_name_collision_never_touches_out_of_scope() -> None:
     assert "minecraft" in [op.spec.name for op in p.creates]
     assert p.updates == []
     assert "minecraft" not in p.strays
-    live_id = int(next(c["id"] for c in snap if c["name"] == "minecraft"))
+    live_id = int(
+        cast(str, next(c["id"] for c in snap if c["name"] == "minecraft"))
+    )
     assert live_id not in p.in_scope_ids
 
 
@@ -330,7 +345,10 @@ def test_category_title_held_by_non_category_blocks_apply() -> None:
     # channel (Discord allows channel/category name collisions) must
     # block apply instead of misplacing children
     snap = [
-        {**dict(c), "kind": "text"} if c["name"] == "Games" else c
+        cast(
+            Any,
+            {**dict(c), "kind": "text"} if c["name"] == "Games" else c,
+        )
         for c in SNAPSHOT
     ]
     p = build_plan(parse(IDENTICAL), snap)

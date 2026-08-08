@@ -1,9 +1,12 @@
 """Live executor: apply a :class:`Plan` against a real guild.
 
-Bridges the pure parser/plan engine to discord: snapshots a guild into the
-same dict shape the engine consumes, applies a plan (rename → create →
+Bridges the pure parser/plan engine to the Discord API: snapshots a guild
+into the same dict shape the engine consumes, applies a plan (create →
 update → delete → reorder), and supports snapshot-based backups and
-restores.
+restores. Everything runs over hikari's REST client (no gateway, no local
+cache — which lags mutations and produced phantom drift in the apply
+loop); channel creates/edits/reorders go through hikari's own rate-limited
+request path with the raw API payload keys.
 """
 
 from __future__ import annotations
@@ -13,10 +16,11 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-import discord
+import hikari
 import pendulum
+from hikari.internal import routes
 
 from cazzubot.channels.export import QUALITY_VALUES
 from cazzubot.channels.parser import (
@@ -33,17 +37,17 @@ from cazzubot.channels.snapshot import (
     SLOWMODE_KINDS,
     VOICE_KINDS,
 )
-from discord.abc import GuildChannel
 
 REORDER_ATTEMPTS = 5
 
-CHANNEL_TYPE = {
-    "text": discord.ChannelType.text,
-    "announcement": discord.ChannelType.news,
-    "voice": discord.ChannelType.voice,
-    "forum": discord.ChannelType.forum,
-    "stage": discord.ChannelType.stage_voice,
-    "category": discord.ChannelType.category,
+# manifest kind -> Discord channel type id (the raw API value)
+CHANNEL_TYPE_ID = {
+    "text": 0,
+    "announcement": 5,
+    "voice": 2,
+    "forum": 15,
+    "stage": 13,
+    "category": 4,
 }
 
 # Kind lookup by the channel type's *name* so both discord.py and hikari
@@ -75,9 +79,16 @@ class ApplyResult:
 # -- snapshots ---------------------------------------------------------------
 
 
-async def snapshot_guild(guild: discord.Guild) -> list[ChannelSnapshot]:
-    """The guild's channels as plain dicts, from a fresh API fetch."""
-    return snapshot_channels(await guild.fetch_channels())
+async def snapshot_guild(
+    client: hikari.api.RESTClient, guild_id: int
+) -> list[ChannelSnapshot]:
+    """The guild's channels as plain dicts, from a fresh API fetch.
+
+    Channels come from the REST API, not the local cache — the cache lags
+    the gateway after mutations, which produced phantom drift in the
+    apply convergence loop.
+    """
+    return snapshot_channels(await client.fetch_guild_channels(guild_id))
 
 
 def snapshot_channels(channels: Sequence[Any]) -> list[ChannelSnapshot]:
@@ -105,19 +116,14 @@ def snapshot_channels(channels: Sequence[Any]) -> list[ChannelSnapshot]:
     for ch in channels:
         kind, unsupported = _kind_of(ch)
         category = (
-            cats[ch.category_id]
-            if ch.category_id is not None and ch.category_id in cats
-            else None
+            cats.get(ch.parent_id) if ch.parent_id is not None else None
         )
         snap = _snapshot_channel(ch, kind, category)
         if (
             unsupported
             or ch.name in seen
             or not _representable_name(ch.name)
-            or (
-                ch.category_id is not None
-                and ch.category_id in dup_cat_ids
-            )
+            or (ch.parent_id is not None and ch.parent_id in dup_cat_ids)
         ):
             snap["unsupported"] = True
         seen.add(ch.name)
@@ -125,41 +131,8 @@ def snapshot_channels(channels: Sequence[Any]) -> list[ChannelSnapshot]:
     return out
 
 
-def _representable_name(name: str) -> bool:
-    """True when a channel name round-trips through the manifest format.
-
-    Mirrors the parser's line grammar: names containing ``->`` (rename
-    syntax) or `` : `` (token separator), names ending with `` :`` (the
-    parser's trailing-separator branch), names with leading/trailing
-    whitespace, names starting with ``[`` (header syntax) or ``#``
-    (comment syntax), and whitespace-only names can't be written
-    verbatim and re-parsed — such channels are kept as-is.
-    """
-    return bool(
-        name.strip()
-        and name == name.strip()
-        and "->" not in name
-        and " : " not in name
-        and not name.endswith(" :")
-        and not name.startswith("[")
-        and not name.startswith("#")
-    )
-
-
-def _kind_of(ch: GuildChannel) -> tuple[str, bool]:
+def _kind_of(ch: Any) -> tuple[str, bool]:
     """(kind, unsupported) for a live channel object (discord.py or hikari)."""
-    if isinstance(ch, discord.CategoryChannel):
-        return "category", False
-    if isinstance(ch, discord.StageChannel):
-        return "stage", False
-    if isinstance(ch, discord.VoiceChannel):
-        return "voice", False
-    if isinstance(ch, discord.ForumChannel):
-        return "forum", False
-    if isinstance(ch, discord.TextChannel):
-        if ch.type == discord.ChannelType.news:
-            return "announcement", False
-        return "text", False
     # hikari channels and anything unknown: resolve by the type name
     type_name = getattr(getattr(ch, "type", None), "name", None)
     kind = (
@@ -173,21 +146,24 @@ def _kind_of(ch: GuildChannel) -> tuple[str, bool]:
 
 
 def _snapshot_channel(
-    ch: GuildChannel, kind: str, category: str | None
+    ch: Any, kind: str, category: str | None
 ) -> ChannelSnapshot:
     snap: ChannelSnapshot = {
         "id": str(ch.id),
         "name": ch.name,
         "kind": kind,
         "category": category,
-        "position": ch.position,
-        "nsfw": bool(getattr(ch, "nsfw", False)),
+        "position": getattr(ch, "position", 0),
+        "nsfw": bool(
+            getattr(ch, "nsfw", False) or getattr(ch, "is_nsfw", False)
+        ),
         "slowmode": 0,
     }
     if kind in SLOWMODE_KINDS:
         snap["slowmode"] = int(
             getattr(ch, "slowmode_delay", 0)
-            or getattr(ch, "default_thread_slowmode_delay", 0)
+            or getattr(ch, "rate_limit_per_user", 0)
+            or getattr(ch, "default_thread_rate_limit_per_user", 0)
             or 0
         )
     if kind in VOICE_KINDS:
@@ -197,8 +173,27 @@ def _snapshot_channel(
         vqm = getattr(ch, "video_quality_mode", None)
         # server values: 1=auto, 2=1080
         raw = str(vqm.value) if vqm is not None else None
-        snap["quality"] = {"1": "auto", "2": "1080"}.get(raw, raw)
+        snap["quality"] = {"1": "auto", "2": "1080"}.get(raw or "", raw)
     return snap
+
+
+def _representable_name(name: str) -> bool:
+    """True when a channel name round-trips through the manifest format.
+
+    Mirrors the parser's line grammar: names containing ``->`` (rename
+    syntax) or `` : `` (token separator), names ending with `` :`` (the
+    parser's trailing-separator branch), names with leading/trailing
+    whitespace, names starting with ``[`` (header syntax) or ``#``
+    (comment syntax), and whitespace-only names can't be written
+    unambiguously — the engine marks them unsupported instead.
+    """
+    if not name or name != name.strip():
+        return False
+    if "->" in name or " : " in name or name.endswith(" :"):
+        return False
+    if name[0] in "[#" or name.isspace():
+        return False
+    return True
 
 
 def save_snapshot(path: Path, channels: list[ChannelSnapshot]) -> None:
@@ -215,7 +210,7 @@ def load_snapshot(path: Path) -> list[ChannelSnapshot]:
 
 def backup_path(base: Path) -> Path:
     """``<base>/channels-YYYYMMDD-HHMMSS.json`` in UTC."""
-    stamp = pendulum.now("UTC").format("YYYYMMDD-HHMMSS")
+    stamp = pendulum.now("UTC").format("YYYYMMDD-HHmmss")
     return base / f"channels-{stamp}.json"
 
 
@@ -223,7 +218,11 @@ def backup_path(base: Path) -> Path:
 
 
 async def apply_plan(
-    guild: discord.Guild, plan: Plan, *, delete: bool
+    client: hikari.api.RESTClient,
+    guild_id: int,
+    plan: Plan,
+    *,
+    delete: bool,
 ) -> ApplyResult:
     """Execute a plan, returning errors plus the renames that ran.
 
@@ -235,8 +234,8 @@ async def apply_plan(
     applied_renames: list[RenameOp] = []
     reason = "channels manifest apply"
 
-    async def refresh() -> list[GuildChannel]:
-        return await guild.fetch_channels()
+    async def refresh() -> Sequence[Any]:
+        return await client.fetch_guild_channels(guild_id)
 
     current = await refresh()
 
@@ -256,8 +255,10 @@ async def apply_plan(
             errors.append(f"rename {op.old}: channel not found")
             continue
         try:
-            await channel.edit(name=op.new, reason=reason)
-        except discord.HTTPException as err:
+            await client.edit_channel(
+                channel.id, name=op.new, reason=reason
+            )
+        except hikari.HikariError as err:
             errors.append(f"rename {op.old}: {err}")
             continue
         current = await refresh()
@@ -274,8 +275,10 @@ async def apply_plan(
     for op in plan.creates:
         if op.spec.kind == "category":
             try:
-                await guild.create_category(op.spec.name, reason=reason)
-            except discord.HTTPException as err:
+                await _create_channel(
+                    client, guild_id, op.spec, None, reason=reason
+                )
+            except hikari.HikariError as err:
                 errors.append(f"create {op.spec.name}: {err}")
                 continue
             current = await refresh()
@@ -289,8 +292,10 @@ async def apply_plan(
             cat_ids.get(op.category) if op.category is not None else None
         )
         try:
-            await _create_channel(guild, op.spec, parent, reason=reason)
-        except discord.HTTPException as err:
+            await _create_channel(
+                client, guild_id, op.spec, parent, reason=reason
+            )
+        except hikari.HikariError as err:
             errors.append(f"create {op.spec.name}: {err}")
             continue
         current = await refresh()
@@ -307,8 +312,8 @@ async def apply_plan(
             errors.append(f"update {op.name}: channel not found")
             continue
         try:
-            await _edit_channel(channel, op.changes, reason)
-        except discord.HTTPException as err:
+            await _edit_channel(client, channel, op.changes, reason)
+        except hikari.HikariError as err:
             errors.append(f"update {op.name}: {err}")
             continue
         current = await refresh()
@@ -328,14 +333,12 @@ async def apply_plan(
             channel = next((c for c in current if c.id == op.id), None)
             if channel is None:
                 continue
-            if isinstance(channel, discord.CategoryChannel):
+            if _kind_of(channel)[0] == "category":
                 # re-verify the category is still childless right before
                 # deleting — a channel created in it since the plan was
                 # built would otherwise be cascade-deleted
                 if any(
-                    c.category_id == op.id
-                    for c in current
-                    if c.id != op.id
+                    c.parent_id == op.id for c in current if c.id != op.id
                 ):
                     errors.append(
                         f"delete {op.name}: category gained children since "
@@ -343,8 +346,8 @@ async def apply_plan(
                     )
                     continue
             try:
-                await channel.delete(reason=reason)
-            except discord.HTTPException as err:
+                await client.delete_channel(channel.id, reason=reason)
+            except hikari.HikariError as err:
                 errors.append(f"delete {op.name}: {err}")
                 continue
             current = await refresh()
@@ -356,26 +359,30 @@ async def apply_plan(
     # 4. reorder (never partially applied — one bulk PATCH, converges)
     if plan.needs_reorder:
         try:
-            await reorder_guild(guild, plan.target, plan.in_scope_ids)
-        except (discord.HTTPException, RuntimeError) as err:
+            await reorder_guild(
+                client, guild_id, plan.target, plan.in_scope_ids
+            )
+        except (hikari.HikariError, RuntimeError) as err:
             errors.append(f"reorder: {err}")
 
     return ApplyResult(errors=errors, applied_renames=applied_renames)
 
 
 async def _create_channel(
-    guild: discord.Guild,
+    client: hikari.api.RESTClient,
+    guild_id: int,
     spec: ChannelSpec,
     parent_id: int | None,
     *,
     reason: str,
 ) -> None:
-    """Create a channel via the low-level HTTP client.
+    """Create a channel via the raw channel-create endpoint.
 
-    Deliberately bypasses the high-level ``guild.create_*`` helpers: they
-    resolve the parent category through the local cache, which lags the
-    gateway after a category was just created in the same apply. The REST
-    endpoint takes the same payload keys and returns the created channel.
+    Goes through hikari's own rate-limited request path with the raw API
+    payload keys (categories included — hikari has no per-type category
+    creator). The REST endpoint takes the payload directly, so the parent
+    category never has to come from the local cache (which lags the
+    gateway after a category was just created in the same apply).
     """
     payload: dict[str, Any] = {"name": spec.name}
     if parent_id is not None:
@@ -399,51 +406,57 @@ async def _create_channel(
             )
         if spec.quality is not None:
             payload["video_quality_mode"] = QUALITY_VALUES[spec.quality]
-    await guild._state.http.create_channel(
-        guild.id,
-        CHANNEL_TYPE[spec.kind].value,
+    route = routes.POST_GUILD_CHANNELS.compile(guild=guild_id)
+    await cast(Any, client)._request(  # noqa: SLF001  # raw payload path
+        route,
+        json={"type": CHANNEL_TYPE_ID[spec.kind], **payload},
         reason=reason,
-        **payload,
     )
 
 
-def _vqm(label: str) -> discord.VideoQualityMode:
-    return discord.VideoQualityMode(QUALITY_VALUES[label])
+def _vqm(label: str) -> int:
+    return QUALITY_VALUES[label]
 
 
 async def _edit_channel(
-    channel: GuildChannel,
+    client: hikari.api.RESTClient,
+    channel: Any,
     changes: dict[str, tuple[Any, Any]],
     reason: str,
 ) -> None:
-    kwargs: dict[str, Any] = {}
+    """Apply field changes via the raw PATCH /channels/{id} endpoint.
+
+    hikari's ``edit_channel`` lacks the ``type`` field (text ↔
+    announcement), so the raw path carries every field uniformly — same
+    payload keys the old discord.py ``channel.edit`` sent.
+    """
+    payload: dict[str, Any] = {}
     for field_name, (_, new) in changes.items():
         if field_name == "kind":
-            kwargs["type"] = (
-                discord.ChannelType.news
-                if new == "announcement"
-                else discord.ChannelType.text
-            )
+            payload["type"] = 5 if new == "announcement" else 0
         elif field_name == "nsfw":
-            kwargs["nsfw"] = new
+            payload["nsfw"] = new
         elif field_name == "slowmode":
-            if isinstance(channel, discord.ForumChannel):
-                kwargs["default_thread_slowmode_delay"] = new
+            if _kind_of(channel)[0] == "forum":
+                payload["default_thread_rate_limit_per_user"] = new
             else:
-                kwargs["slowmode_delay"] = new
+                payload["rate_limit_per_user"] = new
         elif field_name == "bitrate":
-            kwargs["bitrate"] = new * 1000
+            payload["bitrate"] = new * 1000
         elif field_name == "limit":
-            kwargs["user_limit"] = new
+            payload["user_limit"] = new
         elif field_name == "region":
-            kwargs["rtc_region"] = None if new == "auto" else new
+            payload["rtc_region"] = None if new == "auto" else new
         elif field_name == "quality":
-            kwargs["video_quality_mode"] = _vqm(new)
-    await channel.edit(**kwargs, reason=reason)
+            payload["video_quality_mode"] = _vqm(new)
+    route = routes.PATCH_CHANNEL.compile(channel=channel.id)
+    await cast(Any, client)._request(  # noqa: SLF001  # raw payload path
+        route, json=payload, reason=reason
+    )
 
 
 def _attr_mismatches(
-    channel: GuildChannel, changes: dict[str, tuple[Any, Any]]
+    channel: Any, changes: dict[str, tuple[Any, Any]]
 ) -> list[str]:
     """Field names in ``changes`` that the live channel doesn't match yet."""
     out: list[str] = []
@@ -451,23 +464,24 @@ def _attr_mismatches(
         if field_name == "kind":
             have = (
                 "announcement"
-                if getattr(channel, "type", None)
-                == discord.ChannelType.news
+                if _kind_of(channel)[0] == "announcement"
                 else "text"
             )
             if have != want:
                 out.append("kind")
         elif field_name == "nsfw":
-            if getattr(channel, "nsfw", False) != want:
+            if bool(getattr(channel, "is_nsfw", False)) != want:
                 out.append("nsfw")
         elif field_name == "slowmode":
-            if isinstance(channel, discord.ForumChannel):
+            if _kind_of(channel)[0] == "forum":
                 have = int(
-                    getattr(channel, "default_thread_slowmode_delay", 0)
+                    getattr(
+                        channel, "default_thread_rate_limit_per_user", 0
+                    )
                     or 0
                 )
             else:
-                have = int(getattr(channel, "slowmode_delay", 0) or 0)
+                have = int(getattr(channel, "rate_limit_per_user", 0) or 0)
             if have != want:
                 out.append("slowmode")
         elif field_name == "bitrate":
@@ -477,15 +491,17 @@ def _attr_mismatches(
             if int(getattr(channel, "user_limit", 0) or 0) != want:
                 out.append("limit")
         elif field_name == "region":
-            have = getattr(channel, "rtc_region", None)
-            if have != (None if want == "auto" else want):
-                out.append("region")
+            # hikari can't read rtc_region (Discord deprecated regions);
+            # the edit still goes through the raw endpoint, but the live
+            # value is unreadable here, so skip verification.
+            pass
         elif field_name == "quality":
             vqm = getattr(channel, "video_quality_mode", None)
-            have = {1: "auto", 2: "1080"}.get(
-                vqm.value if vqm is not None else None
-            )
-            if have != want:
+            raw: int | None = vqm.value if vqm is not None else None
+            have_quality: str | None = None
+            if raw is not None:
+                have_quality = {1: "auto", 2: "1080"}.get(raw)
+            if have_quality != want:
                 out.append("quality")
     return out
 
@@ -494,7 +510,7 @@ def _attr_mismatches(
 
 
 def _category_ids(
-    channels: list[GuildChannel], managed_ids: set[int]
+    channels: Sequence[Any], managed_ids: set[int]
 ) -> dict[str, int]:
     """Category name → id, preferring managed (in-scope) categories.
 
@@ -504,16 +520,18 @@ def _category_ids(
     """
     cat_ids: dict[str, int] = {}
     for c in channels:
-        if isinstance(c, discord.CategoryChannel) and c.id in managed_ids:
-            cat_ids.setdefault(c.name, c.id)
+        if _kind_of(c)[0] == "category" and c.id in managed_ids:
+            if c.name is not None:
+                cat_ids.setdefault(c.name, c.id)
     for c in channels:
-        if isinstance(c, discord.CategoryChannel):
+        if _kind_of(c)[0] == "category" and c.name is not None:
             cat_ids.setdefault(c.name, c.id)
     return cat_ids
 
 
 async def reorder_guild(
-    guild: discord.Guild,
+    client: hikari.api.RESTClient,
+    guild_id: int,
     target: dict[tuple[str | None, str], list[str]],
     managed_ids: tuple[int, ...],
 ) -> None:
@@ -527,7 +545,7 @@ async def reorder_guild(
 
     - **parent moves** — the bulk endpoint accepts at most one
       ``parent_id`` per request, so each channel changing category is
-      moved with its own ``edit(category=...)`` call;
+      moved with its own ``edit_channel(parent_category=...)`` call;
     - **positions** — the remaining reorder is one bulk PATCH per
       attempt.
 
@@ -537,27 +555,33 @@ async def reorder_guild(
     an error if it never converges.
     """
     for _ in range(REORDER_ATTEMPTS):
-        parent_moves = await _parent_moves(guild, target, managed_ids)
-        for channel, parent_id in parent_moves:
-            await channel.edit(
-                category=(
-                    discord.Object(id=parent_id)
+        parent_moves = await _parent_moves(
+            client, guild_id, target, managed_ids
+        )
+        for channel_id, parent_id in parent_moves:
+            await client.edit_channel(
+                channel_id,
+                parent_category=(
+                    parent_id
                     if parent_id is not None
-                    else None
+                    else hikari.UNDEFINED
                 ),
                 reason="channels manifest apply",
             )
-        payload = await _reorder_payload(guild, target, managed_ids)
+        payload = await _reorder_payload(
+            client, guild_id, target, managed_ids
+        )
         if not parent_moves and not payload:
             return
         if payload:
-            await guild._state.http.bulk_channel_update(
-                guild.id, payload, reason="channels manifest apply"
+            route = routes.PATCH_GUILD_CHANNELS.compile(guild=guild_id)
+            await cast(Any, client)._request(  # noqa: SLF001  # bulk positions
+                route, json=payload, reason="channels manifest apply"
             )
         await asyncio.sleep(
             0.6
         )  # let the gateway settle before re-reading
-    payload = await _reorder_payload(guild, target, managed_ids)
+    payload = await _reorder_payload(client, guild_id, target, managed_ids)
     if payload:
         raise RuntimeError(
             f"reorder did not converge after {REORDER_ATTEMPTS} attempts — "
@@ -566,23 +590,24 @@ async def reorder_guild(
 
 
 async def _parent_moves(
-    guild: discord.Guild,
+    client: hikari.api.RESTClient,
+    guild_id: int,
     target: dict[tuple[str | None, str], list[str]],
     managed_ids: tuple[int, ...],
-) -> list[tuple[GuildChannel, int | None]]:
-    """(channel, target parent id) for every channel changing category.
+) -> list[tuple[int, int | None]]:
+    """(channel id, target parent id) for every channel changing category.
 
     Names resolve only among ``managed_ids`` (the plan's in-scope set),
     so a colliding out-of-scope name can never hijack the move.
     """
-    channels = await guild.fetch_channels()
+    channels = await client.fetch_guild_channels(guild_id)
     cat_ids = _category_ids(channels, set(managed_ids))
-    by_name: dict[str, GuildChannel] = {}
+    by_name: dict[str, Any] = {}
     for c in channels:
-        if c.id in managed_ids:
+        if c.id in managed_ids and c.name is not None:
             by_name.setdefault(c.name, c)
 
-    moves: list[tuple[GuildChannel, int | None]] = []
+    moves: list[tuple[int, int | None]] = []
     seen: set[int] = set()
     for (category, _section), names in target.items():
         parent_id = None if category is None else cat_ids.get(category)
@@ -594,14 +619,15 @@ async def _parent_moves(
             ch = by_name.get(name)
             if ch is None or ch.id in seen:
                 continue
-            if ch.category_id != parent_id:
-                moves.append((ch, parent_id))
+            if ch.parent_id != parent_id:
+                moves.append((ch.id, parent_id))
                 seen.add(ch.id)
     return moves
 
 
 async def _reorder_payload(
-    guild: discord.Guild,
+    client: hikari.api.RESTClient,
+    guild_id: int,
     target: dict[tuple[str | None, str], list[str]],
     managed_ids: tuple[int, ...],
 ) -> list[dict[str, Any]]:
@@ -613,11 +639,11 @@ async def _reorder_payload(
     :func:`_parent_moves` — the bulk endpoint accepts at most one
     ``parent_id`` per request.
     """
-    channels = await guild.fetch_channels()
+    channels = await client.fetch_guild_channels(guild_id)
     cat_ids = _category_ids(channels, set(managed_ids))
-    by_name: dict[str, GuildChannel] = {}
+    by_name: dict[str, Any] = {}
     for c in channels:
-        if c.id in managed_ids:
+        if c.id in managed_ids and c.name is not None:
             by_name.setdefault(c.name, c)
 
     payload: list[dict[str, Any]] = []
@@ -636,13 +662,13 @@ async def _reorder_payload(
             c
             for c in channels
             if (
-                (c.category_id == parent_id)
+                (c.parent_id == parent_id)
                 if category is not None
-                else c.category_id is None
+                else c.parent_id is None
             )
             and bucket_of(_kind_of(c)[0]) == section
         ]
-        members.sort(key=lambda c: c.position)
+        members.sort(key=lambda c: getattr(c, "position", 0))
         ordered_target = [by_name[n] for n in names if n in by_name]
 
         # anchor walk: channels not in the target keep their current slots
@@ -653,7 +679,7 @@ async def _reorder_payload(
         # occurrence must pin its own slot (members.index would pin the
         # first occurrence twice).
         kept = {c.name for c in members} - set(names)
-        final: list[GuildChannel | None] = [None] * len(members)
+        final: list[Any | None] = [None] * len(members)
         for idx, ch in enumerate(members):
             if ch.name in kept:
                 final[idx] = ch
@@ -675,7 +701,9 @@ async def _reorder_payload(
 
 
 async def restore_guild(
-    guild: discord.Guild, snapshot: list[ChannelSnapshot]
+    client: hikari.api.RESTClient,
+    guild_id: int,
+    snapshot: list[ChannelSnapshot],
 ) -> list[str]:
     """Bring the guild back toward a snapshot (never deletes anything)."""
     from cazzubot.channels.export import render_manifest
@@ -684,5 +712,5 @@ async def restore_guild(
     from cazzubot.channels.plan import build_plan
 
     plan = build_plan(manifest, snapshot, delete=False)
-    result = await apply_plan(guild, plan, delete=False)
+    result = await apply_plan(client, guild_id, plan, delete=False)
     return result.errors

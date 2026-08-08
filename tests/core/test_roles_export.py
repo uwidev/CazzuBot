@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from cazzubot.roles.export import render_manifest
 from cazzubot.roles.parser import VALID_FLAGS
+from cazzubot.roles.snapshot import RoleSnapshot
 
-SNAPSHOT = [
+SNAPSHOT: list[RoleSnapshot] = [
     {
         "position": 0,
         "id": "100",
@@ -95,7 +98,12 @@ def test_render_groups_by_emoji_prefix_in_order() -> None:
 
 def test_render_markers_as_headers() -> None:
     snapshot = [
-        {**dict(r), "name": "[Vanity]"} if r["name"] == "Tatsumaki" else r
+        cast(
+            Any,
+            {**dict(r), "name": "[Vanity]"}
+            if r["name"] == "Tatsumaki"
+            else r,
+        )
         for r in SNAPSHOT
     ]
     text = render_manifest(snapshot)

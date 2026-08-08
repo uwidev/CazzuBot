@@ -10,7 +10,7 @@ import argparse
 import json
 from pathlib import Path
 
-import discord
+import hikari
 
 from cazzubot.cli.core import Command, Domain, require_guild
 from cazzubot.config import Config
@@ -20,13 +20,15 @@ SNAPSHOT_PATH = Path("data/roles_export.json")
 
 
 async def cmd_fetch(
-    client: discord.Client, config: Config, _args: argparse.Namespace
+    client: hikari.api.RESTClient,
+    config: Config,
+    _args: argparse.Namespace,
 ) -> int:
     """Snapshot the guild's roles to ``data/roles_export.json``."""
-    guild = require_guild(client, config)
+    guild = await require_guild(client, config)
     if guild is None:
         return 1
-    data = await executor.snapshot_guild(guild)
+    data = await executor.snapshot_guild(client, config.guild_id)
     SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
     SNAPSHOT_PATH.write_text(
         json.dumps(data, indent=2, ensure_ascii=False),
