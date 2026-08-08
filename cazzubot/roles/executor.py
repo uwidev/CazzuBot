@@ -19,7 +19,12 @@ from typing import Any, cast
 import hikari
 import pendulum
 
-from cazzubot.roles.parser import VALID_FLAGS, RoleSpec, parse
+from cazzubot.roles.parser import (
+    CANONICAL_FLAGS,
+    RoleSpec,
+    flag_bit,
+    parse,
+)
 from cazzubot.roles.plan import Plan, RenameOp
 from cazzubot.roles.snapshot import RoleSnapshot
 
@@ -64,9 +69,9 @@ def snapshot_role(role: hikari.Role, pos: int) -> RoleSnapshot:
         icon = str(role.make_icon_url())
     perms = [
         name
-        for name in VALID_FLAGS
+        for name in sorted(CANONICAL_FLAGS)
         if bool(
-            role.permissions & getattr(hikari.Permissions, name.upper())
+            role.permissions & hikari.Permissions(CANONICAL_FLAGS[name])
         )
     ]
     # hikari has no RoleTags; managed roles are never user-manageable,
@@ -142,7 +147,7 @@ def _color(hex_color: str | None) -> hikari.Color:
 def _permissions(names: list[str] | frozenset[str]) -> hikari.Permissions:
     perms = hikari.Permissions.NONE
     for name in names:
-        perms |= getattr(hikari.Permissions, name.upper())
+        perms |= hikari.Permissions(flag_bit(name))
     return perms
 
 

@@ -290,3 +290,53 @@ def test_rewrite_renames_preserves_rest_of_file() -> None:
     assert "Old Two -> New Two : preset:member\n" in rewritten
     assert rewritten.startswith("# header\n")
     assert rewritten.endswith("# tail\n# vim: ft=txt :\n")
+
+
+def test_legacy_flag_aliases_canonicalize() -> None:
+    """discord.py-era flag names parse and normalize to canonical names."""
+    text = """\
+[preset legacy]
+read_messages external_emojis manage_emojis_and_stickers mention_everyone
+
+[Role]
+X : preset:legacy +manage_permissions -create_polls
+"""
+    manifest = parse(text)
+    spec = manifest.groups[0].roles[0]
+    assert manifest.effective_permissions(spec) == frozenset(
+        {
+            "view_channel",
+            "use_external_emojis",
+            "manage_guild_expressions",
+            "mention_roles",
+            "manage_roles",
+        }
+    )
+    assert spec.revokes == {"send_polls"}
+    assert spec.preset == "legacy"
+
+
+def test_legacy_flag_bits() -> None:
+    from cazzubot.roles.parser import flag_bit
+
+    assert flag_bit("read_messages") == 1 << 10  # view_channel
+    assert flag_bit("external_emojis") == 1 << 18
+    assert flag_bit("manage_emojis") == 1 << 30  # manage_guild_expressions
+    assert flag_bit("mention_everyone") == 1 << 17
+    assert flag_bit("create_polls") == 1 << 49  # send_polls
+    assert flag_bit("bypass_slowmode") == 1 << 52
+    assert flag_bit("set_voice_channel_status") == 1 << 48
+    assert flag_bit("manage_permissions") == 1 << 28  # manage_roles
+
+
+def test_legacy_alias_and_canonical_are_one_flag() -> None:
+    """A role listing both spellings must not produce duplicate perms."""
+    text = """\
+[Role]
+X : +external_emojis +use_external_emojis
+"""
+    manifest = parse(text)
+    spec = manifest.groups[0].roles[0]
+    assert manifest.effective_permissions(spec) == frozenset(
+        {"use_external_emojis"}
+    )

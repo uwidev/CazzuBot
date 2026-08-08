@@ -4,6 +4,7 @@
 runs the plugin lifecycle. Plugins reach everything through ``self.bot``.
 """
 
+import asyncio
 import importlib
 import logging
 import sys
@@ -137,6 +138,19 @@ class CazzuBot(hikari.GatewayBot):
         me = self.get_me()
         if me is not None:
             _log.info("logged in as %s (%s)", me, me.id)
+        if self.is_alive:
+            # the guild dump lands right after StartedEvent; warn only once
+            # it has had a moment to arrive (tests boot without a gateway,
+            # so is_alive is False there and nothing is scheduled)
+            asyncio.create_task(self._warn_if_guild_missing())
+
+    async def _warn_if_guild_missing(self) -> None:
+        await asyncio.sleep(2)
+        if self.guild is None:
+            _log.warning(
+                "configured guild %s not found — commands will not work",
+                self.config.guild_id,
+            )
 
     async def _on_guild_available(
         self, event: hikari.GuildAvailableEvent
@@ -148,14 +162,8 @@ class CazzuBot(hikari.GatewayBot):
         ``_on_started``; anything that needs ``self.guild`` runs from
         here instead.
         """
-        if event.guild_id != self.config.guild_id:
-            if self.guild is None:
-                _log.warning(
-                    "configured guild %s not found — commands will not work",
-                    self.config.guild_id,
-                )
-            return
-        _log.info("configured guild %s available", event.guild_id)
+        if event.guild_id == self.config.guild_id:
+            _log.info("configured guild %s available", event.guild_id)
 
     async def _on_stopping(self, _event: hikari.StoppingEvent) -> None:
         await self.scheduler.stop()

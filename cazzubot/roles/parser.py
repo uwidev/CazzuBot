@@ -19,13 +19,52 @@ from dataclasses import dataclass, field
 import hikari
 from typing_extensions import override
 
-# The Discord permission flag names, lowercased (both frameworks expose the
-# same words; hikari's are UPPER_SNAKE, discord.py's are lower_snake).
-VALID_FLAGS: set[str] = {
-    flag.name.lower()
+# Current Discord permission bits hikari hasn't wrapped yet (values from the
+# official API docs — hikari's layout matches Discord for everything it has).
+_EXTRA_FLAG_BITS: dict[str, int] = {
+    "set_voice_channel_status": 1 << 48,
+    "bypass_slowmode": 1 << 52,
+}
+
+# discord.py-era flag names the manifest has historically accepted, mapped to
+# the canonical Discord permission they denote. Discord's own UI calls
+# MANAGE_ROLES "Manage Permissions", USE_VAD "Use Voice Activity", etc.
+LEGACY_FLAG_ALIASES: dict[str, str] = {
+    "read_messages": "view_channel",
+    "external_emojis": "use_external_emojis",
+    "external_stickers": "use_external_stickers",
+    "mention_everyone": "mention_roles",
+    "use_embedded_activities": "start_embedded_activities",
+    "use_voice_activation": "use_voice_activity",
+    "manage_emojis": "manage_guild_expressions",
+    "manage_emojis_and_stickers": "manage_guild_expressions",
+    "manage_expressions": "manage_guild_expressions",
+    "create_expressions": "create_guild_expressions",
+    "create_polls": "send_polls",
+    "manage_permissions": "manage_roles",
+}
+
+# Every current Discord permission name -> bit (hikari's flags, lowercased,
+# plus the bits hikari hasn't wrapped).
+CANONICAL_FLAGS: dict[str, int] = {
+    flag.name.lower(): int(flag)
     for flag in hikari.Permissions
     if flag.value > 0 and flag.name is not None
 }
+CANONICAL_FLAGS.update(_EXTRA_FLAG_BITS)
+
+# Every flag name the manifest accepts: canonical names + legacy aliases.
+VALID_FLAGS: set[str] = set(CANONICAL_FLAGS) | set(LEGACY_FLAG_ALIASES)
+
+
+def flag_bit(name: str) -> int:
+    """The permission bit for a canonical or legacy flag name."""
+    bit = CANONICAL_FLAGS.get(name)
+    if bit is not None:
+        return bit
+    canonical = LEGACY_FLAG_ALIASES[name]
+    return CANONICAL_FLAGS[canonical]
+
 
 # discord.py's named palette (values from the corresponding Colour
 # classmethods), so a manifest can say ``red`` instead of ``#e74c3c``.
@@ -302,7 +341,7 @@ def parse(text: str) -> Manifest:
                         )
                     )
                     continue
-                preset_flags.append(token)
+                preset_flags.append(LEGACY_FLAG_ALIASES.get(token, token))
             continue
 
         if group is None:
@@ -488,7 +527,9 @@ def _parse_role(
                     )
                 )
                 continue
-            (grants if token[0] == "+" else revokes).add(flag)
+            (grants if token[0] == "+" else revokes).add(
+                LEGACY_FLAG_ALIASES.get(flag, flag)
+            )
             continue
         candidates = (
             ["hoist", "mentionable", "icon", "preset"]
