@@ -190,6 +190,7 @@ class FakeMessage:
         self.created_at = created_at or datetime.now(timezone.utc)
         self.embeds = embeds or []
         self.attachments: list[object] = []
+        self.components: list[Any] = []
         self.reactions: list[str] = []
         self.deleted = False
         self.edits: list[dict[str, Any]] = []

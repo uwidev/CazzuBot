@@ -48,7 +48,7 @@ def _payloads(client: hikari.api.RESTClient) -> list[tuple[str, object]]:
         pendulum.datetime(2026, 1, 1),
         [(1, 1, 100)],
     )
-    frog = factory.FrogCatchMenu(bot=cast(Any, client))
+    frog = factory.FrogCatchMenu(cast(Any, client), 99)
     return [
         ("confirm", confirm),
         ("top", top),

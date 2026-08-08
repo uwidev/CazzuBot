@@ -16,13 +16,15 @@ from plugins.frogs import db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.cog import Consume, Profile, Register
 from tests.fakes import (
-    rest_of,
-    invoke_command,
     FakeChannel,
     FakeContext,
     FakeInteraction,
     FakeMember,
     FakeMenuContext,
+    FakeMessage,
+    FakeRest,
+    invoke_command,
+    rest_of,
 )
 
 _UID = 424242
@@ -152,7 +154,7 @@ async def test_frog_catch_captures_once(
     bot: CazzuBot, author: FakeMember
 ) -> None:
     await frog_db.set_message(bot.settings, {"content": "caught {name}"})
-    menu = factory.FrogCatchMenu(bot)
+    menu = factory.FrogCatchMenu(bot, 99)
     mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
 
     await _menu_button(menu).callback(mctx)
@@ -188,3 +190,66 @@ async def test_on_frog_due_reschedules_and_despawns(
     assert len(channel.sent) == 1
     assert channel.sent[0]["content"] == factory.FROG_EMOJI
     assert rest_of(seeded_bot).deleted == [(channel.id, 1)]
+
+
+def _frog_message(
+    cid: int, mid: int, *, with_button: bool = True
+) -> FakeMessage:
+    """A message whose components carry (or lack) the catch button."""
+    from types import SimpleNamespace
+
+    msg = FakeMessage(id=mid, channel_id=cid, guild_id=2)
+    if with_button:
+        button = SimpleNamespace(custom_id=f"frog:catch:{cid}")
+        msg.components = [SimpleNamespace(components=[button])]
+    return msg
+
+
+async def test_frog_message_db_roundtrip(bot: CazzuBot) -> None:
+    await frog_db.add_frog_message(bot.db, 99, 1)
+    await frog_db.add_frog_message(bot.db, 99, 2)
+    assert await frog_db.get_frog_messages(bot.db) == [(99, 1), (99, 2)]
+    await frog_db.drop_frog_message(bot.db, 99, 1)
+    assert await frog_db.get_frog_messages(bot.db) == [(99, 2)]
+
+
+async def test_cleanup_deletes_dangling_frog(
+    seeded_bot: CazzuBot, channel: FakeChannel, fake_rest: FakeRest
+) -> None:
+    """A tracked frog message from a previous process is deleted on boot."""
+    mid = 7
+    await frog_db.add_frog_message(seeded_bot.db, channel.id, mid)
+    fake_rest.messages[(channel.id, mid)] = _frog_message(channel.id, mid)
+
+    await factory.cleanup_dangling_frogs(seeded_bot)
+
+    assert (channel.id, mid) in rest_of(seeded_bot).deleted
+    assert await frog_db.get_frog_messages(seeded_bot.db) == []
+
+
+async def test_cleanup_already_removed_is_silent(
+    seeded_bot: CazzuBot, channel: FakeChannel
+) -> None:
+    """User/admin already deleted the frog — no error, row just dropped."""
+    await frog_db.add_frog_message(seeded_bot.db, channel.id, 7)
+
+    await factory.cleanup_dangling_frogs(seeded_bot)
+
+    assert rest_of(seeded_bot).deleted == []
+    assert await frog_db.get_frog_messages(seeded_bot.db) == []
+
+
+async def test_cleanup_keeps_repurposed_message(
+    seeded_bot: CazzuBot, channel: FakeChannel, fake_rest: FakeRest
+) -> None:
+    """A tracked message that lost its catch button is NOT deleted."""
+    mid = 7
+    await frog_db.add_frog_message(seeded_bot.db, channel.id, mid)
+    fake_rest.messages[(channel.id, mid)] = _frog_message(
+        channel.id, mid, with_button=False
+    )
+
+    await factory.cleanup_dangling_frogs(seeded_bot)
+
+    assert rest_of(seeded_bot).deleted == []
+    assert await frog_db.get_frog_messages(seeded_bot.db) == []

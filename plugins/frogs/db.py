@@ -44,6 +44,13 @@ SCHEMA = [
 		fuzzy    REAL NOT NULL
 	)
 	""",
+    """
+	CREATE TABLE IF NOT EXISTS frog_messages (
+		cid INTEGER NOT NULL,
+		mid INTEGER NOT NULL,
+		PRIMARY KEY (cid, mid)
+	)
+	""",
 ]
 
 MESSAGE_KEY = "frog.message"
@@ -288,3 +295,27 @@ def _ranked(rows: list[dict[str, Any]]) -> list[tuple[int, int, int]]:
         out.append((rank, row["uid"], row["cnt"]))
         prev = row["cnt"]
     return out
+
+
+async def add_frog_message(db: Database, cid: int, mid: int) -> None:
+    """Track a spawned frog's message id (for the boot dangling-message sweep)."""
+    await db.execute(
+        "INSERT OR IGNORE INTO frog_messages (cid, mid) VALUES (?, ?)",
+        cid,
+        mid,
+    )
+
+
+async def get_frog_messages(db: Database) -> list[tuple[int, int]]:
+    """All tracked (channel id, frog message id) pairs."""
+    rows = await db.fetchall("SELECT cid, mid FROM frog_messages")
+    return [(row["cid"], row["mid"]) for row in rows]
+
+
+async def drop_frog_message(db: Database, cid: int, mid: int) -> None:
+    """Forget a frog message (deleted, cleaned up, or no longer a frog)."""
+    await db.execute(
+        "DELETE FROM frog_messages WHERE cid = ? AND mid = ?",
+        cid,
+        mid,
+    )

@@ -78,7 +78,7 @@ async def spawn_and_wait(
     commands (the frog becomes the slash response); without it the frog is
     sent to the channel directly.
     """
-    menu = FrogCatchMenu(bot)
+    menu = FrogCatchMenu(bot, cid)
     if ctx is not None:
         response_id = await ctx.respond(
             FROG_EMOJI, components=cast(Any, menu)
@@ -95,6 +95,10 @@ async def spawn_and_wait(
         )
         channel_id = cid
 
+    # remember the frog message so a crashed process can clean it up on
+    # the next boot (the catch button dies with the menu attachment)
+    await frog_db.add_frog_message(bot.db, channel_id, message.id)
+
     try:
         await menu.attach(bot.lightbulb, timeout=persist)
     except asyncio.TimeoutError:
@@ -105,6 +109,7 @@ async def spawn_and_wait(
         await bot.rest.delete_message(channel_id, message.id)
     except hikari.NotFoundError:
         pass
+    await frog_db.drop_frog_message(bot.db, channel_id, message.id)
     return menu.captured
 
 
@@ -116,7 +121,7 @@ class FrogCatchMenu(lightbulb.components.Menu):
     frog is caught or once it gets bored.
     """
 
-    def __init__(self, bot: CazzuBot) -> None:
+    def __init__(self, bot: CazzuBot, cid: int) -> None:
         super().__init__()
         self.bot = bot
         self.captured = False
@@ -124,6 +129,9 @@ class FrogCatchMenu(lightbulb.components.Menu):
         self.add_interactive_button(
             hikari.ButtonStyle.SUCCESS,
             self.catch,
+            # a channel-scoped fixed id: one frog per channel at a time, and
+            # it lets the boot sweep recognise (and clean up) stale frogs
+            custom_id=f"frog:catch:{cid}",
             # buttons need the emoji id, not the <:name:id> tag
             emoji=utils.button_emoji(FROG_NET_EMOJI),
         )
@@ -201,6 +209,39 @@ async def reset_frog_tasks(bot: CazzuBot) -> None:
     if not await frog_db.get_enabled(bot.settings):
         return
     await queue_frog_spawns(bot)
+
+
+async def cleanup_dangling_frogs(bot: CazzuBot) -> None:
+    """Delete frog messages left by a previous process (dead buttons).
+
+    Each tracked (channel, message) pair is re-checked at boot: if the
+    message is gone (user/admin already cleaned up) or no longer carries
+    the catch button (repurposed), the row is dropped silently; otherwise
+    the dangling frog message is deleted.
+    """
+    rows = await frog_db.get_frog_messages(bot.db)
+    for cid, mid in rows:
+        try:
+            message = await bot.rest.fetch_message(cid, mid)
+        except hikari.NotFoundError:
+            await frog_db.drop_frog_message(bot.db, cid, mid)
+            continue
+        if _is_frog_message(message, cid):
+            try:
+                await bot.rest.delete_message(cid, mid)
+            except hikari.NotFoundError:
+                pass
+        await frog_db.drop_frog_message(bot.db, cid, mid)
+
+
+def _is_frog_message(message: Any, cid: int) -> bool:
+    """True when a message still carries the catch button for its channel."""
+    wanted = f"frog:catch:{cid}"
+    for row in message.components:
+        for component in row.components:
+            if getattr(component, "custom_id", None) == wanted:
+                return True
+    return False
 
 
 def roll_future_frog(

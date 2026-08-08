@@ -18,6 +18,8 @@ class FrogsPlugin(Plugin):
     async def on_load(self, bot: CazzuBot) -> None:
         # queue spawn tasks for any channels configured in a previous run
         await factory.reset_frog_tasks(bot)
+        # clean up frog messages left dangling by a previous process
+        await factory.cleanup_dangling_frogs(bot)
 
 
 plugin = FrogsPlugin()
