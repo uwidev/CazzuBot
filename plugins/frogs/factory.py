@@ -10,9 +10,10 @@ import logging
 import random
 import time
 from dataclasses import asdict
-from typing import Any
+from typing import Any, cast
 
-import discord
+import hikari
+import lightbulb
 import pendulum
 
 from cazzubot import templates, utils
@@ -47,7 +48,7 @@ async def on_frog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
 
     try:
         captured = await spawn_and_wait(bot, persist, cid=cid)
-    except discord.DiscordServerError:
+    except hikari.InternalServerError:
         _log.warning(
             "discord server error while spawning frog; rescheduled"
         )
@@ -62,7 +63,7 @@ async def on_frog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
 async def spawn_and_wait(
     bot: CazzuBot,
     persist: int,
-    interaction: discord.Interaction | None = None,
+    ctx: lightbulb.Context | None = None,
     *,
     cid: int,
 ) -> bool:
@@ -72,68 +73,70 @@ async def spawn_and_wait(
     in a single payload. It lives ``persist`` seconds: pressing the button
     catches it and the message is deleted on the spot, otherwise the frog
     gets bored and the message is removed. Returns True if it was caught.
-    """
-    channel = bot.get_channel(cid)
-    if not isinstance(channel, discord.abc.Messageable):
-        _log.warning("frog channel %s not found; skipping", cid)
-        return False
 
-    view = FrogCatchView(bot)
-    if interaction:
-        await interaction.response.send_message(FROG_EMOJI, view=view)
-        # send_message returns an InteractionCallbackResponse (no .delete);
-        # fetch the actual message so catch/boredom can remove it.
-        message = await interaction.original_response()
+    ``ctx`` is the lightbulb context for the owner ``spawn``/``fake``
+    commands (the frog becomes the slash response); without it the frog is
+    sent to the channel directly.
+    """
+    menu = FrogCatchMenu(bot)
+    if ctx is not None:
+        response_id = await ctx.respond(
+            FROG_EMOJI, component=cast(Any, menu)
+        )
+        message = await ctx.fetch_response(response_id)
+        channel_id = ctx.channel_id
     else:
-        message = await channel.send(FROG_EMOJI, view=view)
+        channel = bot.cache.get_guild_channel(cid)
+        if channel is None or not hasattr(channel, "send"):
+            _log.warning("frog channel %s not found; skipping", cid)
+            return False
+        message = await cast(Any, channel).send(  # hasattr guard above
+            FROG_EMOJI, component=cast(Any, menu)
+        )
+        channel_id = cid
 
     try:
-        await asyncio.wait_for(view.wait(), timeout=persist)
+        await menu.attach(bot.lightbulb, timeout=persist)
     except asyncio.TimeoutError:
         pass  # bored
 
     # caught or bored — either way the frog message goes away
     try:
-        await message.delete()
-    except discord.NotFound:
+        await bot.rest.delete_message(channel_id, message.id)
+    except hikari.NotFoundError:
         pass
-    return view.captured
+    return menu.captured
 
 
-class FrogCatchView(discord.ui.View):
+class FrogCatchMenu(lightbulb.components.Menu):
     """Capture button on a spawned frog; the first click wins.
 
-    The view itself never times out — the frog message's lifetime is owned
+    The menu itself never times out — the frog message's lifetime is owned
     by :func:`spawn_and_wait`, which deletes the message the moment the
     frog is caught or once it gets bored.
     """
 
     def __init__(self, bot: CazzuBot) -> None:
-        super().__init__(timeout=None)
+        super().__init__()
         self.bot = bot
         self.captured = False
         self._spawned_at = time.time()
+        self.add_interactive_button(
+            hikari.ButtonStyle.SUCCESS, self.catch, emoji=FROG_NET_EMOJI
+        )
 
-    @discord.ui.button(
-        # label="Catch",
-        style=discord.ButtonStyle.success,
-        emoji=FROG_NET_EMOJI,
-    )
-    async def catch(
-        self,
-        interaction: discord.Interaction,
-        _button: discord.ui.Button[Any],
-    ) -> None:
+    async def catch(self, mctx: lightbulb.components.MenuContext) -> None:
         if self.captured:
-            await interaction.response.send_message(
-                "This frog was already caught.", ephemeral=True
+            await mctx.respond(
+                "This frog was already caught.",
+                flags=hikari.MessageFlag.EPHEMERAL,
             )
             return
         self.captured = True
-        await interaction.response.defer()
-        self.stop()  # unblocks spawn_and_wait, which removes the message
+        await mctx.defer()
+        mctx.stop_interacting()  # unblocks spawn_and_wait, removes the frog
 
-        uid = interaction.user.id
+        uid = mctx.interaction.user.id
         now = pendulum.now("UTC")
         await frog_db.add_capture_log(
             self.bot.db,
@@ -147,7 +150,7 @@ class FrogCatchView(discord.ui.View):
         )
         await frog_db.modify_capture(self.bot.db, uid, modify=1)
 
-        # send the capture message (user-configured template)
+        # send the capture message (user-configured template) as a followup
         msg_json = await frog_db.get_message(self.bot.settings) or {}
         frog_cnt_total = await frog_db.get_frogs(self.bot.db, uid)
         seasonal = await frog_db.seasonal_captures(
@@ -156,17 +159,26 @@ class FrogCatchView(discord.ui.View):
         utils.deep_map(
             msg_json,
             formatter,
-            member=utils.member_snapshot(interaction.user),
+            member=utils.member_snapshot(mctx.interaction.user),
             frog_cnt_old=frog_cnt_total - 1,
             frog_cnt_new=frog_cnt_total,
             seasonal_cap_old=seasonal - 1,
             seasonal_cap_new=seasonal,
         )
-        # followup.send is a webhook (no delete_after kwarg) — delete manually
-        msg = await templates.send(
-            interaction.followup, msg_json, wait=True
+        content, embed, embeds = templates.prepare(msg_json)
+        sent_id = await mctx.respond(
+            content=content if content is not None else hikari.UNDEFINED,
+            embed=(
+                templates.embed_from_raw(embed)
+                if embed is not None
+                else hikari.UNDEFINED
+            ),
+            embeds=(
+                [templates.embed_from_raw(e) for e in embeds]
+                or hikari.UNDEFINED
+            ),
         )
-        await msg.delete(delay=7)
+        utils.schedule_delete(self.bot, mctx.channel_id, int(sent_id), 7)
 
 
 async def queue_frog_spawns(bot: CazzuBot) -> None:

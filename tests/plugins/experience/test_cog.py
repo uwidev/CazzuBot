@@ -18,6 +18,7 @@ from cazzubot.errors import UserInputError
 from plugins.experience import db as exp_db
 from plugins.experience.cog import Card, QuietAdd, Top, TopMenu
 from tests.fakes import (
+    invoke_command,
     FakeChannel,
     FakeContext,
     FakeInteraction,
@@ -27,21 +28,6 @@ from tests.fakes import (
 )
 
 _AUTHOR_ID = 424242
-
-
-async def _invoke(
-    command: object, ctx: FakeContext, **options: Any
-) -> None:
-    """Seed a command's option values and run its invoke."""
-    cmd = cast(Any, command)
-    # lightbulb fills _localized_name during client registration; without
-    # a client, seed it from the declared names so descriptors resolve.
-    for name in cmd._command_data.options:  # pyright: ignore[reportPrivateUsage]
-        descriptor = type(cmd).__dict__[name]
-        descriptor._data._localized_name = name  # pyright: ignore[reportPrivateUsage]
-        cmd._resolved_option_cache[name] = options.get(name)  # pyright: ignore[reportPrivateUsage]
-    cmd._current_context = ctx  # pyright: ignore[reportPrivateUsage]
-    await cmd.invoke(ctx)
 
 
 async def _seed_exp(bot: CazzuBot, uid: int, amount: int) -> None:
@@ -67,7 +53,7 @@ def _stub_user_lookup(
 async def test_exp_no_experience_embed(
     bot: CazzuBot, ctx: FakeContext, author: FakeMember
 ) -> None:
-    await _invoke(Card(), ctx, user=author)
+    await invoke_command(Card(), ctx, user=author)
     embed = ctx.sent[0].embed
     assert embed is not None
     assert embed.author.name == "cirno's Club Membership Card"
@@ -86,7 +72,7 @@ async def test_exp_membership_card(
     await _seed_exp(bot, author.id, 100)
     await _seed_exp(bot, other.id, 50)
 
-    await _invoke(Card(), ctx, user=author)
+    await invoke_command(Card(), ctx, user=author)
 
     embed = ctx.sent[0].embed
     assert embed is not None
@@ -101,7 +87,7 @@ async def test_exp_top_rejects_invalid_season(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
     with pytest.raises(UserInputError):
-        await _invoke(Top(), ctx, season=99)
+        await invoke_command(Top(), ctx, season=99)
 
 
 def _make_menu(bot: CazzuBot, ctx: FakeContext) -> TopMenu:
@@ -145,9 +131,9 @@ async def test_topview_pages_for_author(
 async def test_quiet_add_then_warn(
     bot: CazzuBot, ctx: FakeContext, channel: FakeChannel
 ) -> None:
-    await _invoke(QuietAdd(), ctx, channel=channel)
+    await invoke_command(QuietAdd(), ctx, channel=channel)
     assert ctx.sent[-1].content == "✓ Added <#99> to the quiet list"
     assert await bot.settings.get("level.quiet") == [99]
 
-    await _invoke(QuietAdd(), ctx, channel=channel)
+    await invoke_command(QuietAdd(), ctx, channel=channel)
     assert ctx.sent[-1].content == "⚠︎ Channel already in the quiet list"

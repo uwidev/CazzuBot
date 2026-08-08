@@ -1,4 +1,4 @@
-"""Mod plugin — controller: moderation commands and scheduled expiries.
+"""Mod plugin extension — moderation commands and scheduled expiries.
 
 Single-guild port of v1's ``ext/mod.py``. Mute and temp-ban expirations are
 handled by the central scheduler (tag ``modlog``); the due handler lives here
@@ -6,239 +6,360 @@ because it is pure discord side effects.
 """
 
 import logging
-from typing import Any
+from typing import Any, cast
 
-import discord
+import hikari
+import lightbulb
 import pendulum
-from discord.ext import commands
 
 from cazzubot.bot import CazzuBot
 from cazzubot.models import ModlogTypeEnum
 from cazzubot.window import window_error, window_info, window_success
-from typing_extensions import override
 
 from . import db
 from .logic import ensure_future, resolve_ban_type, split_duration_reason
 
 _log = logging.getLogger(__name__)
 
+loader = lightbulb.Loader()
 
-class ModCog(commands.Cog):
-    """Moderation actions with a persistent modlog."""
+_MOD_PERMS = (
+    hikari.Permissions.MODERATE_MEMBERS
+    | hikari.Permissions.KICK_MEMBERS
+    | hikari.Permissions.BAN_MEMBERS
+)
 
-    def __init__(self, bot: CazzuBot) -> None:
-        self.bot = bot
 
-    @override
-    async def cog_check(self, ctx: commands.Context[Any]) -> bool:
-        author = ctx.author
-        if not isinstance(author, discord.Member):
-            return False
-        perms = ctx.channel.permissions_for(author)
-        return any(
-            [
-                perms.moderate_members,
-                perms.kick_members,
-                perms.ban_members,
-            ]
-        )
+class _ModGateDenied(Exception):
+    """Marker: the command needs any mod permission the user lacks."""
 
-    @commands.hybrid_command()
-    async def mod_check(self, ctx: commands.Context[CazzuBot]) -> None:
-        """Check if you have moderator permissions."""
-        await ctx.send("You have moderator permissions!")
 
-    @commands.hybrid_command()
-    async def warn(
-        self,
-        ctx: commands.Context[CazzuBot],
-        member: discord.Member,
-        *,
-        reason: str,
-    ) -> None:
-        """Warn the member, writing a modlog entry."""
+@lightbulb.hook(
+    lightbulb.ExecutionSteps.CHECKS, skip_when_failed=True, name="mod_gate"
+)
+def _mod_gate(
+    _pl: lightbulb.ExecutionPipeline, ctx: lightbulb.Context
+) -> None:
+    """Any of moderate/kick/ban (or administrator) may use mod commands."""
+    member = ctx.member
+    if member is None:
+        raise _ModGateDenied()
+    if not (
+        member.permissions
+        & (_MOD_PERMS | hikari.Permissions.ADMINISTRATOR)
+    ):
+        raise _ModGateDenied()
+
+
+@loader.error_handler
+async def _on_mod_error(
+    err: lightbulb.exceptions.ExecutionPipelineFailedException,
+) -> bool:
+    """Silently swallow denials from the mod gate (mirrors old CheckFailure)."""
+    if isinstance(err.__cause__, _ModGateDenied):
+        return True
+    return False
+
+
+def _bot(ctx: lightbulb.Context) -> CazzuBot:
+    return cast(CazzuBot, ctx.client.app)
+
+
+def _member_option(name: str, description: str):
+    return lightbulb.user(name, description)
+
+
+@loader.command()
+class ModCheck(
+    lightbulb.SlashCommand,
+    name="mod_check",
+    description="Check if you have moderator permissions.",
+    hooks=[_mod_gate],
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        await ctx.respond("You have moderator permissions!")
+
+
+@loader.command()
+class Warn(
+    lightbulb.SlashCommand,
+    name="warn",
+    description="Warn the member, writing a modlog entry.",
+    hooks=[_mod_gate],
+):
+    member = _member_option("member", "The member to warn")
+    reason = lightbulb.string("reason", "The reason")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
         await db.add_log(
-            self.bot.db,
-            member.id,
+            bot.db,
+            self.member.id,
             ModlogTypeEnum.WARN,
             pendulum.now("UTC"),
-            reason=reason,
+            reason=self.reason,
         )
-        await window_info(ctx, f"Warned {member}")
+        await window_info(ctx, f"Warned {self.member}")
 
-    @commands.hybrid_command()
-    async def mute(
-        self,
-        ctx: commands.Context[CazzuBot],
-        member: discord.Member,
-        *,
-        raw: str | None = None,
-    ) -> None:
-        """Mute the user until the given time (relative or absolute, UTC)."""
-        mute_id = await db.get_mute_role(self.bot.settings)
+
+@loader.command()
+class Mute(
+    lightbulb.SlashCommand,
+    name="mute",
+    description="Mute the user until the given time (relative or absolute, UTC).",
+    hooks=[_mod_gate],
+):
+    member = _member_option("member", "The member to mute")
+    raw = lightbulb.string(
+        "raw",
+        "Duration (e.g. 2h) or absolute time; blank = forever",
+        default=None,
+    )
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        mute_id = await db.get_mute_role(bot.settings)
         if not mute_id:
-            await ctx.send(
+            await ctx.respond(
                 "No mute role has been set (`set mute <role>`)."
             )
             return
 
         now = pendulum.now("UTC")
-        duration, reason = split_duration_reason(raw)
+        duration, reason = split_duration_reason(self.raw)
         ensure_future(now, duration)
 
         await db.add_log(
-            self.bot.db,
-            member.id,
+            bot.db,
+            self.member.id,
             ModlogTypeEnum.MUTE,
             now,
             expires_on=duration,
             reason=reason,
         )
         if duration:
-            await self.bot.scheduler.add(
+            await bot.scheduler.add(
                 "modlog",
                 duration,
-                {"uid": member.id, "log_type": ModlogTypeEnum.MUTE.value},
+                {
+                    "uid": self.member.id,
+                    "log_type": ModlogTypeEnum.MUTE.value,
+                },
             )
 
-        guild = ctx.guild
+        guild = bot.guild
         if guild is None:
-            await ctx.send("Not in a guild.")
+            await ctx.respond("Not in a guild.")
             return
-        role = guild.get_role(mute_id)
+        role = bot.cache.get_role(mute_id)
         if role is None:
-            await ctx.send("Mute role no longer exists in this server.")
+            await ctx.respond("Mute role no longer exists in this server.")
             return
-        await member.add_roles(role, reason=reason)
-        await window_info(ctx, f"Muted {member}")
+        await bot.rest.add_role_to_member(
+            guild.id, self.member.id, role.id, reason=reason
+        )
+        await window_info(ctx, f"Muted {self.member}")
 
-    @commands.hybrid_command()
-    async def kick(
-        self,
-        ctx: commands.Context[CazzuBot],
-        member: discord.Member,
-        *,
-        reason: str | None = None,
-    ) -> None:
-        """Kick a member, writing a modlog entry."""
+
+@loader.command()
+class Kick(
+    lightbulb.SlashCommand,
+    name="kick",
+    description="Kick a member, writing a modlog entry.",
+    hooks=[_mod_gate],
+):
+    member = _member_option("member", "The member to kick")
+    reason = lightbulb.string("reason", "The reason", default=None)
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
         await db.add_log(
-            self.bot.db,
-            member.id,
+            bot.db,
+            self.member.id,
             ModlogTypeEnum.KICK,
             pendulum.now("UTC"),
-            reason=reason,
+            reason=self.reason,
         )
-        await member.kick(reason=reason)
-        await window_info(ctx, f"Kicked {member}")
+        guild = bot.guild
+        if guild is not None:
+            await bot.rest.kick_member(
+                guild.id,
+                self.member.id,
+                reason=(
+                    self.reason
+                    if self.reason is not None
+                    else hikari.UNDEFINED
+                ),
+            )
+        await window_info(ctx, f"Kicked {self.member}")
 
-    @commands.hybrid_command()
-    async def ban(
-        self,
-        ctx: commands.Context[CazzuBot],
-        member: discord.Member,
-        *,
-        raw: str | None = None,
-    ) -> None:
-        """Ban the user until the given time; without one, forever."""
+
+@loader.command()
+class Ban(
+    lightbulb.SlashCommand,
+    name="ban",
+    description="Ban the user until the given time; without one, forever.",
+    hooks=[_mod_gate],
+):
+    member = _member_option("member", "The member to ban")
+    raw = lightbulb.string(
+        "raw",
+        "Duration (e.g. 2h) or absolute time; blank = forever",
+        default=None,
+    )
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
         now = pendulum.now("UTC")
-        duration, reason = split_duration_reason(raw)
+        duration, reason = split_duration_reason(self.raw)
         ensure_future(now, duration)
 
         ban_type = resolve_ban_type(duration)
         await db.add_log(
-            self.bot.db,
-            member.id,
+            bot.db,
+            self.member.id,
             ban_type,
             now,
             expires_on=duration,
             reason=reason,
         )
         if duration:
-            await self.bot.scheduler.add(
+            await bot.scheduler.add(
                 "modlog",
                 duration,
-                {"uid": member.id, "log_type": ban_type.value},
+                {"uid": self.member.id, "log_type": ban_type.value},
             )
-        await member.ban(reason=reason)
-        await window_info(ctx, f"Banned {member}")
+        guild = bot.guild
+        if guild is not None:
+            await bot.rest.ban_member(
+                guild.id,
+                self.member.id,
+                reason=reason if reason is not None else hikari.UNDEFINED,
+            )
+        await window_info(ctx, f"Banned {self.member}")
 
-    @commands.hybrid_command()
-    async def unmute(
-        self, ctx: commands.Context[CazzuBot], member: discord.Member
-    ) -> None:
-        """Remove the mute role and any pending mute expiry."""
-        mute_id = await db.get_mute_role(self.bot.settings)
-        guild = ctx.guild
+
+@loader.command()
+class Unmute(
+    lightbulb.SlashCommand,
+    name="unmute",
+    description="Remove the mute role and any pending mute expiry.",
+    hooks=[_mod_gate],
+):
+    member = _member_option("member", "The member to unmute")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        guild = bot.guild
+        mute_id = await db.get_mute_role(bot.settings)
         if guild is None:
             await window_error(ctx, "Run unmute in the server, not DMs.")
             return
-        role = guild.get_role(mute_id) if mute_id else None
-        if role and role in member.roles:
-            await member.remove_roles(role, reason="Unmuted.")
-        for task in await self.bot.scheduler.get("modlog"):
+        role = bot.cache.get_role(mute_id) if mute_id else None
+        member = bot.cache.get_member(guild.id, self.member.id)
+        if (
+            role is not None
+            and member is not None
+            and role.id in member.role_ids
+        ):
+            await bot.rest.remove_role_from_member(
+                guild.id, self.member.id, role.id, reason="Unmuted."
+            )
+        for task in await bot.scheduler.get("modlog"):
             payload = task.payload
             if (
-                payload.get("uid") == member.id
+                payload.get("uid") == self.member.id
                 and payload.get("log_type") == "mute"
             ):
-                await self.bot.scheduler.drop(task.id)
-        await window_info(ctx, f"Unmuted {member}")
+                await bot.scheduler.drop(task.id)
+        await window_info(ctx, f"Unmuted {self.member}")
 
-    @commands.hybrid_command()
-    async def unban(
-        self, ctx: commands.Context[CazzuBot], user: discord.User
-    ) -> None:
-        """Unban a user and drop any pending tempban expiry."""
-        guild = ctx.guild
+
+@loader.command()
+class Unban(
+    lightbulb.SlashCommand,
+    name="unban",
+    description="Unban a user and drop any pending tempban expiry.",
+    hooks=[_mod_gate],
+):
+    user = _member_option("user", "The user to unban")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        guild = bot.guild
         if guild is None:
             await window_error(ctx, "Run unban in the server, not DMs.")
             return
-        await guild.unban(user, reason="Unbanned.")
-        for task in await self.bot.scheduler.get("modlog"):
+        await bot.rest.unban_member(
+            guild.id, self.user.id, reason="Unbanned."
+        )
+        for task in await bot.scheduler.get("modlog"):
             payload = task.payload
             if (
-                payload.get("uid") == user.id
+                payload.get("uid") == self.user.id
                 and payload.get("log_type") == "tempban"
             ):
-                await self.bot.scheduler.drop(task.id)
-        await window_info(ctx, f"Unbanned {user}")
+                await bot.scheduler.drop(task.id)
+        await window_info(ctx, f"Unbanned {self.user}")
 
-    @commands.hybrid_group()
-    async def set(self, _ctx: commands.Context[CazzuBot]) -> None:
-        """Mod settings."""
 
-    @set.command(name="mute")
-    async def set_mute(
-        self, ctx: commands.Context[CazzuBot], *, role: discord.Role
-    ) -> None:
-        await db.set_mute_role(self.bot.settings, role.id)
-        await window_success(ctx, f"Mute role set to {role}")
+mod_set = lightbulb.Group("set", "Mod settings.")
 
-    @commands.hybrid_command()
-    async def slowmode(
-        self,
-        ctx: commands.Context[CazzuBot],
-        cooldown: int = 0,
-        channel: discord.TextChannel | None = None,
-    ) -> None:
-        target = channel or ctx.channel
-        if not isinstance(
-            target,
-            (
-                discord.TextChannel,
-                discord.VoiceChannel,
-                discord.StageChannel,
-                discord.Thread,
-            ),
-        ):
-            await ctx.send("Slowmode needs a text or voice channel.")
-            return
-        await target.edit(slowmode_delay=cooldown)
-        if cooldown == 0:
-            await ctx.send("Slowmode has been turned **off**.")
+
+@mod_set.register
+class SetMute(
+    lightbulb.SlashCommand,
+    name="mute",
+    description="Set the mute role.",
+    hooks=[_mod_gate],
+):
+    role = lightbulb.role("role", "The mute role")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        await db.set_mute_role(bot.settings, self.role.id)
+        await window_success(ctx, f"Mute role set to {self.role}")
+
+
+@loader.command()
+class Slowmode(
+    lightbulb.SlashCommand,
+    name="slowmode",
+    description="Set a channel's slowmode delay.",
+    hooks=[_mod_gate],
+):
+    cooldown = lightbulb.integer(
+        "cooldown", "Seconds between messages (0 = off)", default=0
+    )
+    channel = lightbulb.channel(
+        "channel",
+        "The channel (default: this channel)",
+        default=None,
+        channel_types=[hikari.ChannelType.GUILD_TEXT],
+    )
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        target_id = (
+            self.channel.id if self.channel is not None else ctx.channel_id
+        )
+        await bot.rest.edit_channel(
+            target_id, rate_limit_per_user=self.cooldown
+        )
+        if self.cooldown == 0:
+            await ctx.respond("Slowmode has been turned **off**.")
         else:
-            await ctx.send(
-                f"Slowmode has been turned **on** with a {cooldown} "
+            await ctx.respond(
+                f"Slowmode has been turned **on** with a {self.cooldown} "
                 + "delay per message."
             )
 
@@ -254,7 +375,7 @@ async def on_modlog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
     try:
         if log_type is ModlogTypeEnum.MUTE:
             mute_id = await db.get_mute_role(bot.settings)
-            role = guild.get_role(mute_id) if mute_id else None
+            role = bot.cache.get_role(mute_id) if mute_id else None
             if role is None:
                 _log.warning(
                     "mute role %s missing; cannot lift mute for %s",
@@ -262,13 +383,17 @@ async def on_modlog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
                     uid,
                 )
                 return
-            member = await guild.fetch_member(uid)
-            await member.remove_roles(role, reason="Mute expired.")
+            member = await bot.rest.fetch_member(guild.id, uid)
+            await bot.rest.remove_role_from_member(
+                guild.id, member.id, role.id, reason="Mute expired."
+            )
 
         elif log_type is ModlogTypeEnum.TEMPBAN:
-            user = await bot.fetch_user(uid)
-            await guild.unban(user, reason="Tempban expired.")
-    except discord.NotFound:
+            user = await bot.rest.fetch_user(uid)
+            await bot.rest.unban_member(
+                guild.id, user.id, reason="Tempban expired."
+            )
+    except hikari.NotFoundError:
         _log.info("user %s no longer around; nothing to revert", uid)
 
     _log.info(

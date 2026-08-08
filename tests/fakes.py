@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 import hikari
 
@@ -257,26 +257,24 @@ class FakeRest:
 
     def __init__(self) -> None:
         self.members: dict[tuple[int, int], FakeMember] = {}
+        self.users: dict[int, FakeUser] = {}
         self.messages: dict[tuple[int, int], FakeMessage] = {}
-        self.added_roles: list[
-            tuple[FakeMember, FakeRole, str | None]
-        ] = []
-        self.removed_roles: list[
-            tuple[FakeMember, FakeRole, str | None]
-        ] = []
-        self.kicked: list[tuple[FakeMember, str | None]] = []
-        self.banned: list[tuple[FakeMember, str | None]] = []
-        self.unbanned: list[tuple[FakeUser, str | None]] = []
+        self.added_roles: list[tuple[int, int, str | None]] = []
+        self.removed_roles: list[tuple[int, int, str | None]] = []
+        self.kicked: list[tuple[int, str | None]] = []
+        self.banned: list[tuple[int, str | None]] = []
+        self.unbanned: list[tuple[int, str | None]] = []
         self.deleted: list[tuple[int, int]] = []
         self.edited: list[tuple[FakeMessage, dict[str, Any]]] = []
         self.reactions: list[tuple[int, int, str]] = []
         self.typing_channels: list[int] = []
+        self.channel_edits: list[tuple[int, dict[str, Any]]] = []
 
     async def add_role_to_member(
         self,
         _guild: int,
-        user: FakeMember,
-        role: FakeRole,
+        user: int,
+        role: int,
         *,
         reason: str | None = None,
     ) -> None:
@@ -285,8 +283,8 @@ class FakeRest:
     async def remove_role_from_member(
         self,
         _guild: int,
-        user: FakeMember,
-        role: FakeRole,
+        user: int,
+        role: int,
         *,
         reason: str | None = None,
     ) -> None:
@@ -295,7 +293,7 @@ class FakeRest:
     async def kick_member(
         self,
         _guild: int,
-        user: FakeMember,
+        user: int,
         *,
         reason: str | None = None,
     ) -> None:
@@ -304,17 +302,17 @@ class FakeRest:
     async def ban_member(
         self,
         _guild: int,
-        user: FakeMember,
+        user: int,
         *,
         reason: str | None = None,
-        delete_message_days: int = 0,
+        delete_message_seconds: int = 0,
     ) -> None:
         self.banned.append((user, reason))
 
     async def unban_member(
         self,
         _guild: int,
-        user: FakeUser,
+        user: int,
         *,
         reason: str | None = None,
     ) -> None:
@@ -329,7 +327,10 @@ class FakeRest:
         return member
 
     async def fetch_user(self, user_id: int) -> FakeUser:
-        for (gid, uid), member in self.members.items():
+        user = self.users.get(user_id)
+        if user is not None:
+            return user
+        for (_gid, uid), member in self.members.items():
             if uid == user_id:
                 return member
         raise _not_found("user not found")
@@ -373,6 +374,9 @@ class FakeRest:
 
     async def trigger_typing(self, channel_id: int) -> None:
         self.typing_channels.append(channel_id)
+
+    async def edit_channel(self, channel_id: int, **kwargs: Any) -> None:
+        self.channel_edits.append((channel_id, kwargs))
 
 
 # -- Context / Interaction -------------------------------------------------
@@ -418,6 +422,7 @@ class FakeClient:
     def __init__(self, app: Any) -> None:
         self.app = app
         self._attached_menus: set[object] = set()
+        self._features: set[object] = set()
 
 
 class FakeContext:
@@ -508,9 +513,11 @@ class FakeMenuContext:
 
     def __init__(self, interaction: FakeInteraction) -> None:
         self.interaction = interaction
+        self.channel_id: int = interaction.channel_id or 99
         self.sent: list[SentMessage] = []
         self.edits: list[dict[str, Any]] = []
         self.deleted: list[int] = []
+        self.deferred: bool = False
         self.stopped: bool = False
 
     async def respond(
@@ -522,7 +529,7 @@ class FakeMenuContext:
         component: Any = None,
         flags: int = 0,
         **kwargs: Any,
-    ) -> None:
+    ) -> int:
         self.sent.append(
             SentMessage(
                 content=content,
@@ -533,6 +540,10 @@ class FakeMenuContext:
                 ephemeral=bool(flags & hikari.MessageFlag.EPHEMERAL),
             )
         )
+        return 42  # the response message id
+
+    async def defer(self, *, flags: int = 0) -> None:
+        self.deferred = True
 
     async def edit_response(self, response_id: int, **kwargs: Any) -> None:
         self.edits.append({"response_id": response_id, **kwargs})
@@ -566,6 +577,29 @@ def first_button_custom_id(
         if isinstance(child, InteractiveButtonBuilder):
             return child.custom_id or ""
     return ""
+
+
+async def invoke_command(
+    command: object, ctx: FakeContext, **options: Any
+) -> None:
+    """Run a lightbulb command class's invoke with seeded option values.
+
+    lightbulb fills ``_localized_name`` during client registration; without
+    a client, seed it from the declared names so the option descriptors
+    resolve. Unset options fall back to their declared default.
+    """
+    cmd = cast(Any, command)
+    for name, data in cmd._command_data.options.items():  # pyright: ignore[reportPrivateUsage]
+        descriptor = type(cmd).__dict__[name]
+        descriptor._data._localized_name = name  # pyright: ignore[reportPrivateUsage]
+        default = data.default  # pyright: ignore[reportPrivateUsage]
+        if default is hikari.UNDEFINED:
+            default = None
+        cmd._resolved_option_cache[name] = options.get(  # pyright: ignore[reportPrivateUsage]
+            name, default
+        )
+    cmd._current_context = ctx  # pyright: ignore[reportPrivateUsage]
+    await cmd.invoke(ctx)
 
 
 def seed_bot(

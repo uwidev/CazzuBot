@@ -1,17 +1,17 @@
 """Frogs plugin package."""
 
-from cazzubot import Plugin
-from cazzubot.bot import CazzuBot
 from typing_extensions import override
 
+from cazzubot import Plugin
+from cazzubot.bot import CazzuBot
+
 from . import db, factory
-from .cog import FrogsCog
 
 
 class FrogsPlugin(Plugin):
     name = "frogs"
     schema = db.SCHEMA
-    cogs = [FrogsCog]
+    extensions = ["plugins.frogs.cog"]
     scheduled = {"frog": factory.on_frog_due}
 
     @override

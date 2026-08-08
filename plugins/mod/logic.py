@@ -64,6 +64,7 @@ def split_duration_reason(
         return None, ""
     tokens = raw.split(" ")
     duration: pendulum.DateTime | None = None
+    end = 0
     for end in range(1, len(tokens) + 1):
         try:
             duration = normalize_time_str(" ".join(tokens[:end]))

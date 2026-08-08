@@ -1,8 +1,8 @@
-"""Mod cog + scheduler due-handler tests (characterization).
+"""Mod extension + scheduler due-handler tests (characterization).
 
-Direct invocation bypasses the ``cog_check`` permission gate; the gate itself
+Direct invocation bypasses the ``_mod_gate`` permission hook; the gate itself
 gets its own test below. Network edges (fetch_member/fetch_user/unban) stop
-at fakes or monkeypatched stubs.
+at the rest fakes.
 """
 
 from __future__ import annotations
@@ -12,43 +12,39 @@ import pytest
 
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
-from plugins.mod.cog import ModCog, on_modlog_due
+from plugins.mod.cog import (
+    Ban,
+    Kick,
+    Mute,
+    SetMute,
+    Slowmode,
+    Unban,
+    Unmute,
+    Warn,
+    _mod_gate,
+    on_modlog_due,
+)
 from plugins.mod.db import MUTE_ROLE_KEY
 from plugins.mod.logic import split_duration_reason
 from tests.fakes import (
+    FakeCache,
     FakeChannel,
     FakeContext,
     FakeGuild,
     FakeMember,
+    FakeRest,
     FakeRole,
     FakeUser,
-    seed_guild,
+    invoke_command,
 )
 
 _MUTE_RID = 500
 
 
-def _cog(bot: CazzuBot) -> ModCog:
-    cog = bot.get_cog(ModCog.__cog_name__)
-    assert isinstance(cog, ModCog)
-    return cog
-
-
-def _mute_role(guild: FakeGuild) -> FakeRole:
+def _mute_role(fake_cache: FakeCache) -> FakeRole:
     role = FakeRole(id=_MUTE_RID, name="Muted")
-    guild.add_role(role)
+    fake_cache.add_role(role)
     return role
-
-
-def _ctx_for(
-    bot: CazzuBot, guild: FakeGuild, member: FakeMember
-) -> FakeContext:
-    return FakeContext(
-        bot=bot,
-        author=member,
-        guild=guild,
-        channel=guild.get_channel(99) or FakeChannel(id=99, guild=guild),
-    )
 
 
 # -- pure helpers ---------------------------------------------------------
@@ -85,10 +81,12 @@ def test_split_duration_reason() -> None:
 
 
 async def test_warn_writes_modlog(
-    bot: CazzuBot, ctx: FakeContext, author: FakeMember
+    seeded_bot: CazzuBot, ctx: FakeContext, author: FakeMember
 ) -> None:
-    await _cog(bot).warn(ctx, author, reason="spam")
-    row = await bot.db.fetchone("SELECT * FROM modlog ORDER BY id DESC")
+    await invoke_command(Warn(), ctx, member=author, reason="spam")
+    row = await seeded_bot.db.fetchone(
+        "SELECT * FROM modlog ORDER BY id DESC"
+    )
     assert row is not None
     assert row["log_type"] == "warn" and row["uid"] == author.id
     assert row["reason"] == "spam"
@@ -96,71 +94,82 @@ async def test_warn_writes_modlog(
 
 
 async def test_mute_without_role_hints(
-    bot: CazzuBot, ctx: FakeContext, author: FakeMember
+    seeded_bot: CazzuBot, ctx: FakeContext, author: FakeMember
 ) -> None:
-    await _cog(bot).mute(ctx, author, raw="1 hour test")
+    await invoke_command(Mute(), ctx, member=author, raw="1 hour test")
     assert ctx.sent[-1].content == (
         "No mute role has been set (`set mute <role>`)."
     )
 
 
 async def test_mute_applies_role_logs_and_schedules(
-    bot: CazzuBot,
+    seeded_bot: CazzuBot,
     ctx: FakeContext,
     author: FakeMember,
-    fake_guild: FakeGuild,
+    fake_cache: FakeCache,
 ) -> None:
-    role = _mute_role(fake_guild)
-    await bot.settings.set(MUTE_ROLE_KEY, role.id)
+    role = _mute_role(fake_cache)
+    await seeded_bot.settings.set(MUTE_ROLE_KEY, role.id)
 
-    await _cog(bot).mute(ctx, author, raw="1h rule break")
+    await invoke_command(Mute(), ctx, member=author, raw="1h rule break")
 
-    assert role in author.added_roles
-    tasks = await bot.scheduler.get("modlog")
+    assert seeded_bot.rest.added_roles == [
+        (author.id, role.id, "rule break")
+    ]
+    tasks = await seeded_bot.scheduler.get("modlog")
     assert len(tasks) == 1
     assert tasks[0].payload == {
         "uid": author.id,
         "log_type": "mute",
     }
-    row = await bot.db.fetchone("SELECT * FROM modlog ORDER BY id DESC")
+    row = await seeded_bot.db.fetchone(
+        "SELECT * FROM modlog ORDER BY id DESC"
+    )
     assert row is not None
     assert row["log_type"] == "mute" and row["reason"] == "rule break"
     assert ctx.sent[-1].content == f"Muted {author}"
 
 
 async def test_mute_rejects_past_time(
-    bot: CazzuBot,
+    seeded_bot: CazzuBot,
     ctx: FakeContext,
     author: FakeMember,
-    fake_guild: FakeGuild,
+    fake_cache: FakeCache,
 ) -> None:
-    _mute_role(fake_guild)
-    await bot.settings.set(MUTE_ROLE_KEY, _MUTE_RID)
+    _mute_role(fake_cache)
+    await seeded_bot.settings.set(MUTE_ROLE_KEY, _MUTE_RID)
     with pytest.raises(UserInputError):
-        await _cog(bot).mute(ctx, author, raw="yesterday bad")
+        await invoke_command(
+            Mute(), ctx, member=author, raw="yesterday bad"
+        )
 
 
 async def test_unmute_removes_role_and_drops_tasks(
-    bot: CazzuBot,
+    seeded_bot: CazzuBot,
     ctx: FakeContext,
+    fake_cache: FakeCache,
+    fake_rest: FakeRest,
     fake_guild: FakeGuild,
 ) -> None:
-    role = _mute_role(fake_guild)
-    await bot.settings.set(MUTE_ROLE_KEY, role.id)
+    role = _mute_role(fake_cache)
+    await seeded_bot.settings.set(MUTE_ROLE_KEY, role.id)
     muted = FakeMember(
         id=777, name="muted", guild=fake_guild, roles=[role]
     )
-    fake_guild.add_member(muted)
-    await bot.scheduler.add(
+    fake_cache.add_member(muted)
+    fake_rest.members[(2, muted.id)] = muted
+    await seeded_bot.scheduler.add(
         "modlog",
         pendulum.now("UTC").add(hours=1),
         {"uid": muted.id, "log_type": "mute"},
     )
 
-    await _cog(bot).unmute(ctx, muted)
+    await invoke_command(Unmute(), ctx, member=muted)
 
-    assert role in muted.removed_roles
-    assert await bot.scheduler.get("modlog") == []
+    assert seeded_bot.rest.removed_roles == [
+        (muted.id, role.id, "Unmuted.")
+    ]
+    assert await seeded_bot.scheduler.get("modlog") == []
     assert ctx.sent[-1].content == f"Unmuted {muted}"
 
 
@@ -168,100 +177,121 @@ async def test_unmute_removes_role_and_drops_tasks(
 
 
 async def test_ban_schedules_tempban(
-    bot: CazzuBot, ctx: FakeContext, author: FakeMember
+    seeded_bot: CazzuBot, ctx: FakeContext, author: FakeMember
 ) -> None:
-    await _cog(bot).ban(ctx, author, raw="2h being bad")
-    assert author.banned == ["being bad"]
-    tasks = await bot.scheduler.get("modlog")
+    await invoke_command(Ban(), ctx, member=author, raw="2h being bad")
+    assert seeded_bot.rest.banned == [(author.id, "being bad")]
+    tasks = await seeded_bot.scheduler.get("modlog")
     assert len(tasks) == 1
     assert tasks[0].payload["log_type"] == "tempban"
-    row = await bot.db.fetchone("SELECT * FROM modlog ORDER BY id DESC")
+    row = await seeded_bot.db.fetchone(
+        "SELECT * FROM modlog ORDER BY id DESC"
+    )
     assert row is not None and row["log_type"] == "tempban"
 
 
+async def test_kick_writes_modlog(
+    seeded_bot: CazzuBot, ctx: FakeContext, author: FakeMember
+) -> None:
+    await invoke_command(Kick(), ctx, member=author, reason="bye")
+    assert seeded_bot.rest.kicked == [(author.id, "bye")]
+    row = await seeded_bot.db.fetchone(
+        "SELECT * FROM modlog ORDER BY id DESC"
+    )
+    assert row is not None and row["log_type"] == "kick"
+
+
 async def test_unban_drops_tempban_task(
-    bot: CazzuBot, ctx: FakeContext, fake_guild: FakeGuild
+    seeded_bot: CazzuBot, ctx: FakeContext, fake_guild: object
 ) -> None:
     user = FakeUser(id=999, name="banned")
-    await bot.scheduler.add(
+    await seeded_bot.scheduler.add(
         "modlog",
         pendulum.now("UTC").add(hours=1),
         {"uid": user.id, "log_type": "tempban"},
     )
 
-    await _cog(bot).unban(ctx, user)
+    await invoke_command(Unban(), ctx, user=user)
 
-    assert len(fake_guild.unbanned) == 1
-    assert fake_guild.unbanned[0][0] is user
-    assert await bot.scheduler.get("modlog") == []
+    assert seeded_bot.rest.unbanned == [(user.id, "Unbanned.")]
+    assert await seeded_bot.scheduler.get("modlog") == []
 
 
 # -- scheduler due handler -------------------------------------------------
 
 
 async def test_on_modlog_due_lifts_mute(
-    bot: CazzuBot, fake_guild: FakeGuild
+    seeded_bot: CazzuBot,
+    fake_cache: FakeCache,
+    fake_rest: FakeRest,
+    fake_guild: FakeGuild,
 ) -> None:
-    role = _mute_role(fake_guild)
-    await bot.settings.set(MUTE_ROLE_KEY, role.id)
+    role = _mute_role(fake_cache)
+    await seeded_bot.settings.set(MUTE_ROLE_KEY, role.id)
     muted = FakeMember(
         id=777, name="muted", guild=fake_guild, roles=[role]
     )
-    fake_guild.add_member(muted)
-    seed_guild(bot, fake_guild)
+    fake_cache.add_member(muted)
+    fake_rest.members[(2, muted.id)] = muted
 
-    await on_modlog_due(bot, {"uid": muted.id, "log_type": "mute"})
+    await on_modlog_due(seeded_bot, {"uid": muted.id, "log_type": "mute"})
 
-    assert role in muted.removed_roles
+    assert seeded_bot.rest.removed_roles == [
+        (muted.id, role.id, "Mute expired.")
+    ]
 
 
 async def test_on_modlog_due_ends_tempban(
-    bot: CazzuBot,
-    fake_guild: FakeGuild,
-    monkeypatch: pytest.MonkeyPatch,
+    seeded_bot: CazzuBot, fake_rest: FakeRest
 ) -> None:
-    seed_guild(bot, fake_guild)
     user = FakeUser(id=999, name="banned")
+    fake_rest.users[user.id] = user
 
-    async def _fetch_user(uid: int) -> FakeUser:
-        assert uid == user.id
-        return user
+    await on_modlog_due(
+        seeded_bot, {"uid": user.id, "log_type": "tempban"}
+    )
 
-    monkeypatch.setattr(bot, "fetch_user", _fetch_user)
-
-    await on_modlog_due(bot, {"uid": user.id, "log_type": "tempban"})
-
-    assert len(fake_guild.unbanned) == 1
-    assert fake_guild.unbanned[0][0] is user
+    assert seeded_bot.rest.unbanned == [(user.id, "Tempban expired.")]
 
 
 # -- permission gate + slowmode + settings --------------------------------
 
 
-async def test_cog_check_requires_mod_perms(
-    bot: CazzuBot, ctx: FakeContext
+async def test_mod_gate_requires_mod_perms(
+    seeded_bot: CazzuBot,
+    ctx: FakeContext,
+    channel: FakeChannel,
+    fake_guild: FakeGuild,
 ) -> None:
-    cog = _cog(bot)
-    assert await cog.cog_check(ctx) is False  # plain member
+    from plugins.mod.cog import _ModGateDenied
 
-    admin = FakeMember(
-        id=888, name="admin", guild=ctx.guild, administrator=True
+    with pytest.raises(_ModGateDenied):
+        await _mod_gate(None, ctx)  # plain member
+
+    admin = FakeMember(id=888, name="admin", administrator=True)
+    admin_ctx = FakeContext(
+        bot=seeded_bot,
+        member=admin,
+        guild=fake_guild,
+        channel=channel,
     )
-    assert ctx.guild is not None
-    admin_ctx = _ctx_for(bot, ctx.guild, admin)
-    assert await cog.cog_check(admin_ctx) is True
+    await _mod_gate(None, admin_ctx)  # no raise
 
 
 async def test_slowmode_edits_channel(
-    bot: CazzuBot, ctx: FakeContext, channel: FakeChannel
+    seeded_bot: CazzuBot, ctx: FakeContext, channel: FakeChannel
 ) -> None:
-    await _cog(bot).slowmode(ctx, cooldown=30, channel=channel)
-    assert channel.edits == [{"slowmode_delay": 30}]
+    await invoke_command(Slowmode(), ctx, cooldown=30, channel=channel)
+    assert seeded_bot.rest.channel_edits == [
+        (channel.id, {"rate_limit_per_user": 30})
+    ]
     assert ctx.sent[-1].content is not None
     assert "30" in ctx.sent[-1].content
 
 
-async def test_set_mute_role(bot: CazzuBot, ctx: FakeContext) -> None:
+async def test_set_mute_role(
+    seeded_bot: CazzuBot, ctx: FakeContext
+) -> None:
     role = FakeRole(id=_MUTE_RID, name="Muted")
-    await _cog(bot).set_mute(ctx, role=role)
-    assert await bot.settings.get(MUTE_ROLE_KEY) == _MUTE_RID
+    await invoke_command(SetMute(), ctx, role=role)
+    assert await seeded_bot.settings.get(MUTE_ROLE_KEY) == _MUTE_RID

@@ -3,13 +3,13 @@
 from cazzubot import Plugin
 
 from . import db
-from .cog import ModCog, on_modlog_due
+from .cog import on_modlog_due
 
 
 class ModPlugin(Plugin):
     name = "mod"
     schema = db.SCHEMA
-    cogs = [ModCog]
+    extensions = ["plugins.mod.cog"]
     scheduled = {"modlog": on_modlog_due}
 
 

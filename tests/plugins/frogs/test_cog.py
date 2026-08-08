@@ -1,12 +1,12 @@
-"""Frogs cog + factory tests — spawn math, register, consume, capture view."""
+"""Frogs extension + factory tests — spawn math, register, consume, capture."""
 
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
 
 import pendulum
 import pytest
-from discord.ext import commands
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
@@ -14,23 +14,22 @@ from cazzubot.errors import UserInputError
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
-from plugins.frogs.cog import FrogsCog
+from plugins.frogs.cog import Consume, Profile, Register
 from tests.fakes import (
+    invoke_command,
     FakeChannel,
     FakeContext,
-    FakeGuild,
     FakeInteraction,
     FakeMember,
-    seed_guild,
+    FakeMenuContext,
 )
 
 _UID = 424242
 
 
-def _cog(bot: CazzuBot) -> FrogsCog:
-    cog = bot.get_cog(FrogsCog.__cog_name__)
-    assert isinstance(cog, FrogsCog)
-    return cog
+def _menu_button(menu: object, index: int = 0) -> Any:
+    """The menu's button at ``index`` (callback drives the menu)."""
+    return cast(list[Any], menu._rows[0])[index]  # pyright: ignore[reportPrivateUsage]
 
 
 # -- spawn math (pure) ------------------------------------------------------
@@ -50,7 +49,7 @@ def test_roll_future_frog_within_bounds() -> None:
 async def test_frog_profile_no_captures_yet(
     bot: CazzuBot, ctx: FakeContext, author: FakeMember
 ) -> None:
-    await _cog(bot).frog(ctx, member=author)
+    await invoke_command(Profile(), ctx, member=author)
     assert (
         ctx.sent[-1].content
         == "No one has yet captured frogs in this server!"
@@ -62,8 +61,13 @@ async def test_frog_register_upserts_spawn(
     ctx: FakeContext,
     channel: FakeChannel,
 ) -> None:
-    await _cog(bot).frog_register(
-        ctx, "2m", persist="30s", fuzzy=0.5, channel=channel
+    await invoke_command(
+        Register(),
+        ctx,
+        interval="2m",
+        persist="30s",
+        fuzzy=0.5,
+        channel=channel,
     )
     spawns = await frog_db.get_spawns(bot.db)
     assert len(spawns) == 1
@@ -74,33 +78,44 @@ async def test_frog_register_upserts_spawn(
 async def test_frog_register_rejects_short_interval(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
-    with pytest.raises(commands.BadArgument):
-        await _cog(bot).frog_register(ctx, "30s")
+    with pytest.raises(UserInputError):
+        await invoke_command(Register(), ctx, interval="30s")
 
 
 async def test_frog_register_rejects_bad_fuzzy(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
-    with pytest.raises(commands.BadArgument):
-        await _cog(bot).frog_register(ctx, "2m", fuzzy=2.0)
+    with pytest.raises(UserInputError):
+        await invoke_command(Register(), ctx, interval="2m", fuzzy=2.0)
 
 
 # -- consume -----------------------------------------------------------------
 
 
 async def test_frog_consume_full_flow(
-    bot: CazzuBot, ctx: FakeContext, author: FakeMember
+    bot: CazzuBot,
+    ctx: FakeContext,
+    author: FakeMember,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await frog_db.modify_frog(bot.db, _UID, modify=3)
 
-    task = asyncio.create_task(_cog(bot).frog_consume(ctx, amount=2))
-    await asyncio.sleep(0.05)  # let it reach view.wait()
-    view = ctx.sent[0].view
-    assert isinstance(view, utils.ConfirmView)
-    interaction = FakeInteraction(id=1, user=author)
-    yes = view.children[0]
-    assert yes.callback is not None
-    await yes.callback(interaction)
+    async def _fake_attach(
+        menu: utils.ConfirmMenu, _client: object, **_: object
+    ) -> None:
+        # real attach waits on the menu's stop event; simulate a click-driven
+        # termination by polling the value the callback sets.
+        while menu.value is None:
+            await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(utils.ConfirmMenu, "attach", _fake_attach)
+
+    task = asyncio.create_task(invoke_command(Consume(), ctx, amount=2))
+    await asyncio.sleep(0.05)  # let it reach menu.attach
+    menu = ctx.sent[0].component
+    assert isinstance(menu, utils.ConfirmMenu)
+    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
+    await _menu_button(menu).callback(mctx)
     await task
 
     assert await frog_db.get_frogs(bot.db, _UID) == 1
@@ -111,9 +126,7 @@ async def test_frog_consume_full_flow(
         )
         == 20
     )  # 10 exp/frog * 2
-    assert ctx.returned[0].edits[0]["embed"].title == (
-        "Frog(s) have been consumed!"
-    )
+    assert ctx.edits[-1]["embed"].title == "Frog(s) have been consumed!"
 
 
 async def test_frog_consume_rejects_insufficient(
@@ -121,52 +134,44 @@ async def test_frog_consume_rejects_insufficient(
 ) -> None:
     await frog_db.modify_frog(bot.db, _UID, modify=1)
     with pytest.raises(UserInputError):
-        await _cog(bot).frog_consume(ctx, amount=5)
+        await invoke_command(Consume(), ctx, amount=5)
 
 
 async def test_frog_consume_rejects_zero(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
     with pytest.raises(UserInputError):
-        await _cog(bot).frog_consume(ctx, amount=0)
+        await invoke_command(Consume(), ctx, amount=0)
 
 
-# -- capture view -----------------------------------------------------------
+# -- capture menu -----------------------------------------------------------
 
 
 async def test_frog_catch_captures_once(
     bot: CazzuBot, author: FakeMember
 ) -> None:
     await frog_db.set_message(bot.settings, {"content": "caught {name}"})
-    view = factory.FrogCatchView(bot)
-    interaction = FakeInteraction(id=1, user=author)
-    button = view.children[0]
-    assert button.callback is not None
+    menu = factory.FrogCatchMenu(bot)
+    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
 
-    await button.callback(interaction)
+    await _menu_button(menu).callback(mctx)
 
-    assert view.captured is True
-    assert interaction.response.calls[0][0] == "defer"
+    assert menu.captured is True
+    assert mctx.deferred is True
+    assert mctx.stopped is True
     assert await frog_db.get_frogs(bot.db, _UID) == 1
-    assert len(interaction.followup.sent) == 1
-    assert interaction.followup.sent[0]["content"] == "caught cirno"
+    assert mctx.sent[0].content == "caught cirno"
 
     # second click is denied
-    await button.callback(interaction)
-    assert interaction.response.calls[-1] == (
-        "send_message",
-        {
-            "content": "This frog was already caught.",
-            "ephemeral": True,
-        },
-    )
+    await _menu_button(menu).callback(mctx)
+    assert mctx.sent[-1].content == "This frog was already caught."
+    assert mctx.sent[-1].ephemeral is True
 
 
 async def test_on_frog_due_reschedules_and_despawns(
-    bot: CazzuBot, fake_guild: FakeGuild, channel: FakeChannel
+    seeded_bot: CazzuBot, channel: FakeChannel
 ) -> None:
-    seed_guild(bot, fake_guild)
-    await frog_db.set_enabled(bot.settings, True)
+    await frog_db.set_enabled(seeded_bot.settings, True)
     payload = {
         "cid": channel.id,
         "interval": 120,
@@ -174,11 +179,11 @@ async def test_on_frog_due_reschedules_and_despawns(
         "fuzzy": 0.5,
     }
 
-    await factory.on_frog_due(bot, payload)
+    await factory.on_frog_due(seeded_bot, payload)
 
     # next spawn was pre-rolled before this one spawned
-    assert len(await bot.scheduler.get("frog")) == 1
+    assert len(await seeded_bot.scheduler.get("frog")) == 1
     # frog message sent, then removed when bored
     assert len(channel.sent) == 1
-    assert channel.messages[0].content == factory.FROG_EMOJI
-    assert channel.messages[0].deleted is True
+    assert channel.sent[0]["content"] == factory.FROG_EMOJI
+    assert seeded_bot.rest.deleted == [(channel.id, 1)]
