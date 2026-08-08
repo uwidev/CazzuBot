@@ -122,7 +122,10 @@ class FrogCatchMenu(lightbulb.components.Menu):
         self.captured = False
         self._spawned_at = time.time()
         self.add_interactive_button(
-            hikari.ButtonStyle.SUCCESS, self.catch, emoji=FROG_NET_EMOJI
+            hikari.ButtonStyle.SUCCESS,
+            self.catch,
+            # buttons need the emoji id, not the <:name:id> tag
+            emoji=utils.button_emoji(FROG_NET_EMOJI),
         )
 
     async def catch(self, mctx: lightbulb.components.MenuContext) -> None:

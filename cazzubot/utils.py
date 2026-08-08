@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from collections.abc import Callable
 from typing import Any, NamedTuple, TypeVar, cast
 
@@ -127,6 +128,22 @@ def schedule_delete(
             pass
 
     asyncio.create_task(_delete())
+
+
+_EMOJI_TAG = re.compile(r"<a?:[a-zA-Z0-9_]+:(\d{15,25})>")
+
+
+def button_emoji(emoji: str) -> str | int:
+    """A custom-emoji tag ``<:name:id>`` -> its id for component payloads.
+
+    hikari's button builders only split *ints* into ``{"id": ...}``; any
+    string goes wholesale into ``emoji.name``, which Discord rejects for
+    custom emojis (``Invalid emoji``). Unicode emojis pass through.
+    """
+    match = _EMOJI_TAG.fullmatch(emoji)
+    if match:
+        return int(match.group(1))
+    return emoji
 
 
 class ConfirmMenu(lightbulb.components.Menu):

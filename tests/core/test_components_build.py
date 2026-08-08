@@ -66,3 +66,25 @@ def test_poll_modal_builds() -> None:
 
 def test_consume_confirm_menu_builds() -> None:
     _assert_builds(utils.ConfirmMenu(author_id=1, delete_after=False))
+
+
+def test_frog_catch_button_emoji_is_id() -> None:
+    """Custom-emoji tags must serialize to {'id': ...}, not a raw name."""
+    menu = factory.FrogCatchMenu(bot=cast(Any, object()))
+    row_payload, _attachments = menu._build()[0].build()
+    button = row_payload["components"][0]
+    assert button["emoji"] == {"id": "752290769712316506"}
+    assert "name" not in button["emoji"]
+
+
+def test_button_emoji_helper() -> None:
+    assert (
+        utils.button_emoji("<:cirnoNet:752290769712316506>")
+        == 752290769712316506
+    )
+    assert (
+        utils.button_emoji("<a:animated:123456789012345678>")
+        == 123456789012345678
+    )
+    assert utils.button_emoji("👍") == "👍"
+    assert utils.button_emoji("no tag") == "no tag"
