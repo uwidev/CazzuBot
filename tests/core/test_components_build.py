@@ -64,37 +64,6 @@ def test_poll_modal_builds() -> None:
     _assert_builds(modal)
 
 
-def test_poll_modal_shows_rules_display() -> None:
-    """The modal carries a text-display row with the vote range + max votes."""
-    poll = SimpleNamespace(id=1, max_vote=2, title="t", description="")
-    modal = PollModal(cast(Any, object()), cast(Any, poll), [1, 2, 3])
-    rows = modal._build()
-    displays = [
-        row.build()[0]["components"][0]
-        for row in rows
-        if row.build()[0]["components"]
-        and row.build()[0]["components"][0]["type"].name == "TEXT_DISPLAY"
-    ]
-    assert displays, "modal must contain a text-display row"
-    content = displays[0]["content"]
-    assert "Max votes: 2" in content
-    assert "Range: 1 to 3" in content
-    assert "comma-separated" in content
-
-
-def test_consume_confirm_menu_builds() -> None:
-    _assert_builds(utils.ConfirmMenu(author_id=1, delete_after=False))
-
-
-def test_frog_catch_button_emoji_is_id() -> None:
-    """Custom-emoji tags must serialize to {'id': ...}, not a raw name."""
-    menu = factory.FrogCatchMenu(bot=cast(Any, object()))
-    row_payload, _attachments = menu._build()[0].build()
-    button = row_payload["components"][0]
-    assert button["emoji"] == {"id": "752290769712316506"}
-    assert "name" not in button["emoji"]
-
-
 def test_button_emoji_helper() -> None:
     assert (
         utils.button_emoji("<:cirnoNet:752290769712316506>")

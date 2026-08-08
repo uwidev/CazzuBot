@@ -9,7 +9,6 @@ lightbulb's ``Modal.attach``.
 
 import asyncio
 import random
-from collections.abc import Sequence
 from typing import Any, cast
 
 import hikari
@@ -254,43 +253,20 @@ class PollModal(modals.Modal):
         self.items = items
         self.max_vote = poll_row.max_vote
         self.upper = len(items)
-        self.rules_text = (
-            f"### Rules\n"
-            f"- Max votes: {self.max_vote}\n"
-            f"- Range: 1 to {self.upper}\n"
-            f"- Can vote on the same item multiple times\n"
-            f"- Use comma-separated items to vote"
+        # Discord's modal rows accept ONLY text inputs (type 4) — the vote
+        # range and max-vote rules live in the input's label and placeholder
+        # (45/100 chars), with a short example.
+        example = ", ".join(
+            str(random.randint(1, self.upper))
+            for _ in range(min(self.max_vote, self.upper, 3))
         )
         self.vote_input = self.add_paragraph_text_input(
-            "Vote",
+            f"Vote (items 1-{self.upper}, max {self.max_vote})",
             placeholder=(
-                "Example: "
-                + ", ".join(
-                    str(random.randint(1, self.upper))
-                    for _ in range(min(self.max_vote, self.upper))
-                )
+                f"Comma-separated item numbers, e.g. {example} — "
+                f"same item may be voted multiple times"
             ),
         )
-
-    def _build(
-        self,
-    ) -> Sequence[hikari.api.ComponentBuilder]:
-        """The vote input row plus the rules text display (restored v1 UI).
-
-        Discord supports ``TextDisplay`` components in modals; lightbulb's
-        Modal only lays out interactive components, so the display row is
-        appended here, after the standard rows.
-        """
-        rows = super()._build()
-        display_row = hikari.impl.ModalActionRowBuilder().add_component(
-            cast(
-                Any,
-                hikari.impl.TextDisplayComponentBuilder(  # runtime-valid; the type alias predates TextDisplay
-                    content=self.rules_text
-                ),
-            )
-        )
-        return [*rows, display_row]
 
     @override
     async def on_submit(self, ctx: modals.ModalContext) -> None:
