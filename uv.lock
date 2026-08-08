@@ -178,7 +178,7 @@ wheels = [
 [[package]]
 name = "cazzubot"
 version = "2.0.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "discord-py" },

@@ -47,3 +47,15 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 
 - `frog register`/`exp`/`rank`/`level`/`welcome`/`frog set` require admin; `consume` confirms via a Yes/No button view (`cazzubot.utils.ConfirmView`).
 - Deploy: `push_to_prod.sh` (untracked, machine-specific).
+
+## Guild safety
+
+- **Production guild `293796316193095690` (Club Cirno) is NEVER mutated** —
+  no role/channel/emoji changes, no `roles apply`, unless the user
+  explicitly authorizes it. Read-only commands (`roles diff`/`check`,
+  `snapshot fetch`) are fine.
+- **Sandbox guild `408801760581386245` is free to mutate** for CLI/testing
+  validation. Use the dev token (`TOKEN_DEV`, the CLI default) and target
+  the sandbox with `GUILD_ID=408801760581386245 uv run cazzubot-cli …`.
+  Always point `--file` at a temp manifest during sandbox tests so the
+  production `roles.manifest` and `data/roles_export.json` aren't clobbered.

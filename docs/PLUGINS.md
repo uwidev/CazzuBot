@@ -80,3 +80,62 @@ Every cog gets the bot injected; use these instead of reaching into internals:
 - Message templates (level-up, rank-up, frog, welcome) go through
   `cazzubot.templates.verify` / `prepare` so they stay jsonschema-validated.
 - Format with `ruff format` (tabs, line-length 75) and run `ruff check`.
+
+## Roles plugin — declarative role manifest
+
+`plugins/roles/` hosts the **boot-time drift check only**. All enforcement is
+manual via the CLI; the plugin never applies anything.
+
+The manifest (`roles.manifest` at the repo root, committed) is the source of
+truth for role structure. **Order is positional**: an export writes every
+role in its exact Discord sidebar order, and `diff`/`apply` enforce that
+order. **Groups are marker roles**: a Discord role named `[Group]` marks
+the start of a group — everything below it until the next marker belongs to
+it. The manifest header `[Group]` maps to that marker role (created by the
+engine if missing). Roles can also appear header-less (implicit group).
+Line format:
+
+```
+[Group]                 group-marker role (named "[Group]" on discord);
+                        everything below it until the next marker belongs
+                        to this group
+Role Name               verbatim Discord name
+Role Name : token …     tokens: hoist | mentionable | #rrggbb |
+                        preset:<name> | +flag | -flag | icon:<emoji>
+[preset name]           permission preset section; flag lines below it
+# comment               blank lines and # comments are ignored
+```
+
+- Final perms = preset ∪ `+flags` − `-flags`; a role with no tokens gets
+  empty permissions. Names are verbatim (identity); `@everyone` is reserved.
+- Renames: write `Old Name->New Name : tokens` on the role line — the live
+  role is renamed (memberships survive) and the manifest line is rewritten
+  to just `New Name : tokens` after a successful apply. A rename whose new
+  name already exists is a conflict and blocks apply. `diff` also suggests
+  read-only "did you mean rename?" hints for close delete+create pairs.
+- Engine (pure, offline-tested): `cazzubot.roles.parser` (parse),
+  `cazzubot.roles.export` (snapshot → manifest), `cazzubot.roles.plan`
+  (diff → Plan). Executor (live): `cazzubot.roles.executor`.
+- Admin CLI — single entry, one domain per feature:
+  `uv run cazzubot-cli <domain> <verb>` (or `uv run python -m
+  cazzubot.cli <domain> <verb>`). Domains: `roles` (`export` / `diff` /
+  `check` / `apply [--yes] [--delete]` / `restore <snapshot>`),
+  `snapshot fetch` (live guild → `data/roles_export.json`), `manifest`
+  (`render` offline JSON → manifest, `lint` parse check — no discord
+  connection needed). New domains live under `cazzubot/cli/` as one module
+  exposing a `Domain`. Live verbs boot their own discord connection and
+  work while the bot is offline; every `roles apply` snapshots the guild to
+  `data/roles_backups/` first; `restore` re-applies a snapshot (never
+  deletes). `python -m cazzubot.roles` remains as a backwards-compatible
+  alias for the `roles` domain.
+- Safety: `@everyone` and managed roles are never edited/deleted; roles
+  at or above the bot's highest role are reported, and reordering is
+  blocked only when such a role would actually move or a role would cross
+  above the bot — managed roles (bots, boost, shop, linked) CAN be
+  repositioned with manage_roles (verified empirically); deletions require
+  `--delete`; `check` exits non-zero on drift for hooks.
+- Export always writes the format cheatsheet with all valid permission
+  flags at the top and a `# vim: ft=txt :` modeline at the bottom.
+- Preset sections (`[preset name]` + flag lines) are terminated by a blank
+  line or the next `[` header — this lets header-less role lines follow a
+  preset (guilds without marker roles). The export always emits that blank.

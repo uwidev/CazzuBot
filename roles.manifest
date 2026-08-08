@@ -1,0 +1,222 @@
+# roles.manifest — declarative role manifest (generated; edit freely)
+# Generated from live guild Club Cirno
+# Exported 2026-08-08 06:48:23 UTC
+#
+# ── line format ──
+#   [Group]              group-marker role (named "[Group]" on
+#                        discord); everything below it until the
+#                        next marker belongs to this group
+#   Role Name            one role per line, verbatim Discord name
+#   Role Name : token …  tokens: hoist | mentionable | #rrggbb |
+#                        preset:<name> | +flag | -flag | icon:<emoji>
+#   Old Name->New Name    rename a role (rewritten to just the
+#                        new name after a successful apply)
+#   [preset name]        permission preset section; flag lines below
+#   # comment            blank lines and # comments are ignored
+#
+# ── all discord permissions ──
+#   (bare in presets; +flag / -flag on role lines)
+#   add_reactions administrator attach_files ban_members bypass_slowmode
+#   change_nickname connect create_events create_expressions
+#   create_instant_invite create_polls create_private_threads
+#   create_public_threads deafen_members embed_links external_emojis
+#   external_stickers kick_members manage_channels manage_emojis
+#   manage_emojis_and_stickers manage_events manage_expressions
+#   manage_guild manage_messages manage_nicknames manage_permissions
+#   manage_roles manage_threads manage_webhooks mention_everyone
+#   moderate_members move_members mute_members pin_messages
+#   priority_speaker read_message_history read_messages request_to_speak
+#   send_messages send_messages_in_threads send_polls send_tts_messages
+#   send_voice_messages set_voice_channel_status speak stream
+#   use_application_commands use_embedded_activities use_external_apps
+#   use_external_emojis use_external_sounds use_external_stickers
+#   use_soundboard use_voice_activation view_audit_log view_channel
+#   view_creator_monetization_analytics view_guild_insights
+#   (final perms = preset ∪ +flags − −flags)
+
+[preset member]
+add_reactions connect create_instant_invite create_polls external_emojis
+external_stickers read_message_history read_messages request_to_speak
+send_messages send_messages_in_threads send_polls send_voice_messages speak
+use_application_commands use_embedded_activities use_external_apps
+use_external_emojis use_external_stickers use_voice_activation view_channel
+
+
+[Staff]
+Owner
+Usara's Alt
+👀 | Admin Baka : mentionable preset:member +administrator +ban_members +bypass_slowmode +create_expressions +deafen_members +kick_members +manage_channels +manage_emojis +manage_emojis_and_stickers +manage_expressions +manage_guild +manage_messages +manage_nicknames +manage_permissions +manage_roles +manage_threads +manage_webhooks +mention_everyone +moderate_members +move_members +mute_members +pin_messages +stream +view_audit_log +view_guild_insights -add_reactions -connect -create_instant_invite -create_polls -external_emojis -external_stickers -read_message_history -send_messages -send_messages_in_threads -send_polls -send_voice_messages -speak -use_application_commands -use_embedded_activities -use_external_apps -use_external_emojis -use_external_stickers -use_voice_activation
+👀 | Smol Admin : +manage_channels +manage_guild
+👀 | Mod Lead Baka : +create_events +manage_events
+👀 | Mod Baka : hoist mentionable preset:member +ban_members +bypass_slowmode +create_expressions +deafen_members +kick_members +manage_emojis +manage_emojis_and_stickers +manage_expressions +manage_messages +manage_nicknames +manage_permissions +manage_roles +manage_threads +mention_everyone +moderate_members +move_members +mute_members +pin_messages +view_audit_log -add_reactions -connect -create_instant_invite -create_polls -external_emojis -external_stickers -read_message_history -read_messages -send_messages -send_messages_in_threads -send_polls -send_voice_messages -speak -use_application_commands -use_embedded_activities -use_external_apps -use_external_emojis -use_external_stickers -use_voice_activation -view_channel
+👀 | Trial Mod Baka : hoist mentionable preset:member +bypass_slowmode +deafen_members +manage_messages +manage_nicknames +manage_permissions +manage_roles +manage_threads +moderate_members +mute_members +pin_messages +view_audit_log -add_reactions -connect -create_instant_invite -create_polls -external_emojis -external_stickers -read_message_history -read_messages -send_messages -send_messages_in_threads -send_polls -send_voice_messages -speak -use_application_commands -use_embedded_activities -use_external_apps -use_external_emojis -use_external_stickers -use_voice_activation -view_channel
+👀 | Staff Baka : mentionable preset:member -add_reactions -connect -create_instant_invite -create_polls -external_emojis -external_stickers -read_message_history -read_messages -request_to_speak -send_polls -send_voice_messages -speak -use_application_commands -use_embedded_activities -use_external_apps -use_external_emojis -use_external_stickers -use_voice_activation -view_channel
+👀 I Mod Baka : hoist
+👀 I Staff Baka
+
+[High Bot]
+Honeypot
+Former Mod ❤ : icon:🎀
+Server Mascot : #31d2f7 icon:👑 preset:member +attach_files +bypass_slowmode +change_nickname +create_events +create_expressions +create_private_threads +create_public_threads +deafen_members +embed_links +manage_channels +manage_emojis +manage_emojis_and_stickers +manage_events +manage_expressions +manage_messages +manage_nicknames +manage_permissions +manage_roles +manage_threads +manage_webhooks +mention_everyone +moderate_members +move_members +mute_members +pin_messages +priority_speaker +send_tts_messages +stream +view_audit_log +view_guild_insights -create_polls -send_polls -send_voice_messages -use_external_apps
+Tatsumaki
+CazzuBotDev : #31d2f7 icon:🤖 preset:member +manage_nicknames +manage_permissions +manage_roles -connect -create_instant_invite -create_polls -external_emojis -external_stickers -read_message_history -read_messages -request_to_speak -send_messages -send_messages_in_threads -send_polls -send_voice_messages -speak -use_application_commands -use_embedded_activities -use_external_apps -use_external_emojis -use_external_stickers -use_voice_activation -view_channel
+Carl-bot
+
+[Muted]
+Muted : #af40ff icon:🛑
+
+[Vanity]
+Birthday Baka! : #ee0aff hoist icon:🎀
+idiot #1 : #00ff7c
+Claimer of Cirno : #50bcff hoist icon:🎀
+certified ewi : #441e1e icon:🎀
+
+[Color Unique]
+✨ | Supe : #0a6fb3
+✨ | Cabbage : #bcda9c
+✨ | Dawn : #ff7810
+✨ | Mint : #68d6b7
+✨ | Whitee : #dfdfdf
+✨ | Crimson : #990000
+✨ | Caz : #00a3ff
+✨ | Emm : #de5693
+
+[Color Plus]
+✨ | Persona : #c70000
+✨ | Turquoise : #00d9ff
+✨ | Ocean : #3131ff
+✨ | Grass : #30df27
+✨ | Sunflower : #fff71b
+✨ | Cream : #ff8b6e
+✨ | Beauty : #8d21fc
+✨ | Darkness : #0a0a0a
+
+[Color More]
+🌈 | More Purple : #cf99ff
+🌈 | More Orange : #ffaf40
+🌈 | More Pink : #ffc7ce
+🌈 | More Blue : #40b3ff
+🌈 | More Yellow : #ffd940
+🌈 | More Red : #d94141
+🌈 | More Green : #33cc73
+
+[Color]
+🎨 | Green : #9bcfb0
+🎨 | Purple : #b885cc
+🎨 | Red : #cc8585
+🎨 | Orange : #cc9c7d
+🎨 | Pink : #d9a3c4
+🎨 | Yellow : #e4e176
+🎨 | Neutral : #99abb4
+🎨 | Blue : #8fb4cc
+
+[Delinquent]
+🛑 | Delinquent Baka : #f24716
+Dyno
+
+[Rank Seasonal]
+💳 | Hyper Baka : hoist
+💳 | Silly Booster : #a9c9ff
+💳 | Boosted Baka
+💳 | Energetic Baka : hoist
+💳 | Engaged Baka : hoist
+💳 | Active Baka : hoist
+💳 | Hustling Baka : hoist
+💳 | Responsive Baka : hoist
+💳 | Dormant Baka : hoist
+💳 | Docile Baka : hoist
+💳 | Passive Baka : hoist
+💳 | Quiet Baka : hoist
+💳 | Lurking Baka : hoist
+💳 | Trusted Baka : +attach_files +embed_links
+💳 | Club Membership Card : #979c9f
+💳 | Visiting Baka
+
+[Rank Lifetime]
+📜 | Cirno Life : hoist
+📜 | Cirno Loyalist : hoist
+📜 | Cirno Devotee : hoist
+📜 | Cirno Ally : hoist
+📜 | Cirno Advocate : hoist
+📜 | Cirno Follower : hoist
+📜 | Cirno Supporter : hoist +set_voice_channel_status
+📜 | Cirno Observer : hoist preset:member +attach_files +change_nickname +create_private_threads +create_public_threads +embed_links +stream +use_external_sounds +use_soundboard -add_reactions -connect -create_instant_invite -create_polls -read_message_history -read_messages -request_to_speak -send_messages -send_messages_in_threads -send_polls -send_voice_messages -speak -use_application_commands -use_embedded_activities -use_external_apps -use_voice_activation -view_channel
+
+[Region]
+🌎 | North America : #45aa4e
+🌎 | Central America : #45aa4e
+🌎 | South America : #45aa4e
+🌎 | Europe : #45aa4e
+🌎 | Asia : #45aa4e
+🌎 | Australia/Oceania : #45aa4e
+🌎 | Arctic : #45aa4e
+🌎 | Africa : #45aa4e
+
+[Notify]
+🔔 | Events : #ffd702
+🔔 | Subscribed : #ffd702
+🔔 | Questions : #ffd702
+🔔 | Warm Welcome : #ffd702
+🔔 | Freebies : #ffd702
+🔔 | Minecraft : #f1c40f
+🔔 | Terraria : #f1c40f
+🔔 | Gacha! : #f1c40f
+
+[Badge]
+🎀 | First to 1K Frogs : #f495bf
+🎀 | 1K Frogs : #f495bf
+🎀 | CazzuBot Bug Finder : #f495bf
+🎀 | Cirnomas 2021 : #f495bf
+🎀 | Once without a Cirno : #f495bf
+🎀 | Inktober 31 Days (2024) : #f495bf
+🎀 | Inktober 21 Days (2024) : #f495bf
+🎀 | Inktober 14 Days (2024) : #f495bf
+🎀 | Inktober 7 Days (2024) : #f495bf
+🎀 | Inktober Connoisseur (2021) : #f495bf icon:🖼️
+🎀 | Inktober Participant (2021) : #f495bf icon:🎨
+🎀 | Inktober (2021) : #f495bf icon:🖌️
+🎀 | Inktober Participant (2020) : #f495bf
+🎀 | Inktober Connoisseur (2020) : #f495bf
+🎀 | Inktober (2020) : #f495bf
+🎀 | Former Cirno Claimer : #f495bf
+🎀 | Crayon Cirno Contributor : #f495bf
+🎀 | The Real Owner Role : #f495bf mentionable
+
+[Misc]
+Sus Baka : #f24716 icon:🛑
+Denied : #f24716
+Comedian : #ffa3a4 icon:🤡
+gegi : #3498db
+kado's favorite : #d38bff
+
+[Low Bot]
+Ayana
+Mindless Robot : #31d2f7 hoist icon:🤖 preset:member +attach_files +embed_links -connect -create_instant_invite -create_polls -read_message_history -read_messages -request_to_speak -send_messages -send_messages_in_threads -send_polls -send_voice_messages -speak -use_application_commands -use_embedded_activities -use_external_apps -use_voice_activation -view_channel
+Friendly Robot : #31d2f7 icon:🤖
+Musical Potential : #31d2f7 icon:🤖
+Listing Bot : #31d2f7 hoist icon:🤖
+Minecraft Handler : #31d2f7
+DiscordServers.com
+DISBOARD.org
+GiveawayBot
+Discord Me
+Server Monitoring
+Mudae
+Discord Server List
+Statbot
+DiscordSL.com
+Invite Tracker
+DS.ME
+Not Quite Nitro
+Dank Memer
+ServerStats
+owo
+.fmbot
+DJ
+Charlemagne
+TerrariaChatRelay
+Free Stuff
+
+
+# 149 roles listed (excl. @everyone); 25 managed
+# vim: ft=txt :
