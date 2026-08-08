@@ -2,19 +2,20 @@
 
 Admins can configure messages (level-ups, rank-ups, frog spawns, welcomes) as
 JSON with ``{placeholder}`` tokens, validated against a jsonschema that mirrors
-``discord.Embed``. ``verify`` checks + dry-runs a template; ``prepare`` turns a
-stored dict into sendable content/embeds; ``send`` delivers one through any
-send target.
+Discord's embed payload. ``verify`` checks + dry-runs a template;
+``prepare`` turns a stored dict into sendable content/embeds; ``send``
+delivers one through any send target.
 """
 
 import copy
 import json
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any, cast
 
-import discord
-from discord.utils import MISSING
+import hikari
+from hikari.undefined import UNDEFINED
 from jsonschema import ValidationError, validate
 
 from cazzubot.errors import UserInputError
@@ -141,13 +142,45 @@ def prepare(
     return content, embed, embeds
 
 
-def embed_from_raw(raw: dict[str, Any]) -> discord.Embed:
-    """Framework adapter: template JSON -> ``discord.Embed``.
+def embed_from_raw(raw: dict[str, Any]) -> hikari.Embed:
+    """Framework adapter: template JSON -> ``hikari.Embed``.
 
-    The only discord.py-touching step in this module; reimplemented for
-    hikari's ``Embed`` on the swap.
+    The only hikari-touching step in this module; reimplemented from
+    ``discord.Embed.from_dict`` semantics (empty-name author/footer, plain
+    int color, ISO timestamp). ``video``/``provider`` are received-only
+    embed fields the create-message API cannot set — admitted by the
+    schema for forward compatibility, ignored here.
     """
-    return discord.Embed.from_dict(raw)
+    embed = hikari.Embed(
+        title=raw.get("title"),
+        description=raw.get("description"),
+        url=raw.get("url"),
+        color=raw.get("color"),
+    )
+    timestamp = raw.get("timestamp")
+    if timestamp:
+        embed.timestamp = datetime.fromisoformat(timestamp)
+    for field in raw.get("fields") or []:
+        embed.add_field(
+            name=field["name"],
+            value=field["value"],
+            inline=bool(field.get("inline")),
+        )
+    author = raw.get("author") or {}
+    if author:
+        embed.set_author(
+            name=author.get("name") or "", url=author.get("url")
+        )
+    footer = raw.get("footer") or {}
+    if footer:
+        embed.set_footer(text=footer.get("text") or "")
+    image = raw.get("image") or {}
+    if image:
+        embed.set_image(image.get("url"))
+    thumbnail = raw.get("thumbnail") or {}
+    if thumbnail:
+        embed.set_thumbnail(thumbnail.get("url"))
+    return embed
 
 
 async def send(
@@ -157,14 +190,15 @@ async def send(
 ) -> Any:
     """Send a stored template message via ``destination.send(**kwargs)``.
 
-    ``destination`` is any send target (a ``Messageable``, ``Context``, or
-    webhook ``followup``); extra kwargs (``delete_after``, ``wait``, ...) are
-    forwarded unchanged.
+    ``destination`` is any send target (a hikari ``TextableChannel``, a
+    lightbulb ``Context``, or a fake); extra kwargs (``delete_after``,
+    ``wait``, ...) are forwarded unchanged. Unset payload keys go out as
+    ``hikari.undefined.UNDEFINED`` (omitted), never ``None``.
     """
     content, embed, embeds = prepare(message)
     return await destination.send(
-        content=content,
-        embed=embed_from_raw(embed) if embed is not None else MISSING,
-        embeds=[embed_from_raw(e) for e in embeds] or MISSING,
+        content=content if content is not None else UNDEFINED,
+        embed=embed_from_raw(embed) if embed is not None else UNDEFINED,
+        embeds=[embed_from_raw(e) for e in embeds] or UNDEFINED,
         **kwargs,
     )

@@ -91,6 +91,15 @@ wheels = [
 ]
 
 [[package]]
+name = "async-timeout"
+version = "5.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/ae/136395dfbfe00dfc94da3f3e136d0b13f394cba8f4841120e34226265780/async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3", size = 9274, upload-time = "2024-11-06T16:41:39.6Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fe/ba/e2081de779ca30d473f21f5b30e0e737c438205440784c7dfc81efc2b029/async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c", size = 6233, upload-time = "2024-11-06T16:41:37.9Z" },
+]
+
+[[package]]
 name = "asyncpg"
 version = "0.31.0"
 source = { registry = "https://pypi.org/simple" }
@@ -181,7 +190,8 @@ version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
-    { name = "discord-py" },
+    { name = "hikari" },
+    { name = "hikari-lightbulb" },
     { name = "jsonschema" },
     { name = "parsedatetime" },
     { name = "pendulum" },
@@ -190,6 +200,9 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+cli = [
+    { name = "discord-py" },
+]
 dev = [
     { name = "basedpyright" },
     { name = "pre-commit" },
@@ -204,7 +217,8 @@ migration = [
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
-    { name = "discord-py", specifier = ">=2.7.1" },
+    { name = "hikari", specifier = ">=2.5.0" },
+    { name = "hikari-lightbulb", specifier = ">=3.2.5" },
     { name = "jsonschema", specifier = ">=4.21.1" },
     { name = "parsedatetime", specifier = ">=2.6" },
     { name = "pendulum", specifier = ">=2.1.2" },
@@ -213,6 +227,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+cli = [{ name = "discord-py", specifier = ">=2.7.1" }]
 dev = [
     { name = "basedpyright", specifier = ">=1.20.0" },
     { name = "pre-commit", specifier = ">=3.7.0" },
@@ -238,6 +253,27 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "colorlog"
+version = "6.12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8c/55/ba79756cb90c8d69d599d57785398ac87bba7b19c80e87f4e8a562197c93/colorlog-6.12.0.tar.gz", hash = "sha256:2a7924c1dadf18b22a0eb8b06d1c7b01d5341707ec1641eb6fcc4fde0c3e8e5f", size = 18151, upload-time = "2026-07-23T13:40:40.71Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/19/0b6647bf5e331521e55d2b63bfbdc210bd9cd605189273f03614a05f702d/colorlog-6.12.0-py3-none-any.whl", hash = "sha256:30d392604e9110045a2c2aeefc27d7a017abbab63f3a8aee594eac0801df784e", size = 12239, upload-time = "2026-07-23T13:40:39.562Z" },
+]
+
+[[package]]
+name = "confspec"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/91/a6/1dca5942ebee52bf5c9bb787bf5e578058bdd214561d423b71e9b8634f3f/confspec-0.1.0.tar.gz", hash = "sha256:e4a014170e33b3f9655dc559497672fbff93d7da7354ffed01d2827fe7cb4ac4", size = 63936, upload-time = "2026-07-13T09:26:21.457Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/45/7a/78d8612ca315c47b4cdd702cf50fd84aa1f22c492eec4fde74c9b41ff4b1/confspec-0.1.0-py3-none-any.whl", hash = "sha256:57d7ce15d424708962fb7bf0077c162fbdb209468fb2620ecf69d22989c6bd75", size = 18768, upload-time = "2026-07-13T09:26:20.002Z" },
 ]
 
 [[package]]
@@ -278,6 +314,37 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/cf/3d/2102257e7acad73efc4a0c306ad3953f68c504c16982bbdfee3ad75d8085/frozenlist-1.4.1.tar.gz", hash = "sha256:c037a86e8513059a2613aaba4d817bb90b9d9b6b69aace3ce9c877e8c8ed402b", size = 37820, upload-time = "2023-12-15T08:42:23.355Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/83/10/466fe96dae1bff622021ee687f68e5524d6392b0a2f80d05001cd3a451ba/frozenlist-1.4.1-py3-none-any.whl", hash = "sha256:04ced3e6a46b4cfffe20f9ae482818e34eba9b5fb0ce4056e4cc9b6e212d09b7", size = 11552, upload-time = "2023-12-15T08:42:22.294Z" },
+]
+
+[[package]]
+name = "hikari"
+version = "2.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "attrs" },
+    { name = "colorlog" },
+    { name = "multidict" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/06/bd/e4bd16c662fe7614bb6f38aba40a095aef998af0602674fe24740d3814cd/hikari-2.5.0.tar.gz", hash = "sha256:b8fe7e5cd5adfedcdcc488a86781bc946002fb79d984a473736624dd8201993b", size = 1924829, upload-time = "2025-10-31T12:34:27.838Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/66/c5/256c7d498cbe8e67edfd9bb2971740eadb662effcf9b9c1aff8e6d21e90d/hikari-2.5.0-py3-none-any.whl", hash = "sha256:fd108b51c73f46b562ac9e7cd48d4f74655224083ae37a319a417c30418a40ec", size = 580206, upload-time = "2025-10-31T12:34:25.633Z" },
+]
+
+[[package]]
+name = "hikari-lightbulb"
+version = "3.2.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "async-timeout" },
+    { name = "confspec" },
+    { name = "hikari" },
+    { name = "linkd" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e1/4e/ced3811e36d0ca925d5870fa8cc9b1e1ffc84f5ad26e966f0e2ffa1341f7/hikari_lightbulb-3.2.5.tar.gz", hash = "sha256:a94549b97afb987fb11644e3ae034838346950766647b516f0a23371efb769ec", size = 252611, upload-time = "2026-07-04T16:42:17.288Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/73/86bc37e530c1c4217102dc6961871e8bed6eb619aafbc46c6ae62372b884/hikari_lightbulb-3.2.5-py3-none-any.whl", hash = "sha256:64800877f2058465bb78e748b9746c904639a76a70379db08f3597676c5574b8", size = 104599, upload-time = "2026-07-04T16:42:16.023Z" },
 ]
 
 [[package]]
@@ -332,6 +399,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f8/b9/cc0cc592e7c195fb8a650c1d5990b10175cf13b4c97465c72ec841de9e4b/jsonschema_specifications-2023.12.1.tar.gz", hash = "sha256:48a76787b3e70f5ed53f1160d2b81f586e4ca6d1548c5de7085d1682674764cc", size = 13983, upload-time = "2023-12-25T15:16:53.63Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/07/44bd408781594c4d0a027666ef27fab1e441b109dc3b76b4f836f8fd04fe/jsonschema_specifications-2023.12.1-py3-none-any.whl", hash = "sha256:87e4fdf3a94858b8a2ba2778d9ba57d8a9cafca7c7489c46ba0d30a8bc6a9c3c", size = 18482, upload-time = "2023-12-25T15:16:51.997Z" },
+]
+
+[[package]]
+name = "linkd"
+version = "0.6.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9b/41/794e1ae2a05d7e32a808945b87bb735bea4c1678e86736743046087c0258/linkd-0.6.2.tar.gz", hash = "sha256:4595e0f3d5e6fc58d6c85093423751b6fe74e5345ab1534222e035c5f0533f01", size = 50526, upload-time = "2026-07-08T21:28:18.965Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/3a/96d06670a554d97735419170c06a4d8b0c22ca6a803067ec9455104e05b2/linkd-0.6.2-py3-none-any.whl", hash = "sha256:e25cd29534eea599caa270ac223b556374ea230c23086879f286bd6e5fcfa1be", size = 47970, upload-time = "2026-07-08T21:28:17.724Z" },
 ]
 
 [[package]]

@@ -2,12 +2,10 @@
 
 from cazzubot import Plugin
 
-from .cog import LevelsCog
-
 
 class LevelsPlugin(Plugin):
     name = "levels"
-    cogs = [LevelsCog]
+    extensions = ["plugins.levels.cog"]
 
 
 plugin = LevelsPlugin()

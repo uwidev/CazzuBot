@@ -1,175 +1,43 @@
-"""Ranks plugin cog — per-window rank threshold management."""
+"""Ranks plugin extension — per-window rank threshold management."""
 
 import json
-from typing import Any
+from typing import cast
 
-import discord
-from discord.ext import commands
+import hikari
+import lightbulb
 
 from cazzubot import templates, utils
 from cazzubot.bot import CazzuBot
-from cazzubot.window import window_error, window_success
+from cazzubot.errors import UserInputError
 from cazzubot.models import WindowEnum
-from typing_extensions import override
+from lightbulb.prefab import checks as prefab_checks
+
+from cazzubot.window import window_error, window_success
 
 from . import db as ranks_db
 from .logic import formatter
 
+loader = lightbulb.Loader()
 
-class RanksCog(commands.Cog):
-    """Ranked roles based on level thresholds."""
+_ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
 
-    def __init__(self, bot: CazzuBot) -> None:
-        self.bot = bot
+rank = lightbulb.Group("rank", "Manage ranked roles.")
 
-    @override
-    async def cog_check(self, ctx: commands.Context[Any]) -> bool:
-        author = ctx.author
-        if not isinstance(author, discord.Member):
-            return False
-        perms = ctx.channel.permissions_for(author)
-        return bool(perms.administrator)
 
-    @commands.hybrid_group(name="rank", aliases=["ranks"])
-    async def rank(self, _ctx: commands.Context[CazzuBot]) -> None:
-        """Manage ranked roles."""
+def _bot(ctx: lightbulb.Context) -> CazzuBot:
+    return cast(CazzuBot, ctx.client.app)
 
-    @rank.command(name="add")
-    async def rank_add(
-        self,
-        ctx: commands.Context[CazzuBot],
-        level: int,
-        role: discord.Role,
-        mode: WindowEnum = WindowEnum.SEASONAL,
-    ) -> None:
-        """Add a rank role at a level threshold."""
-        if not 1 <= level <= 999:
-            await ctx.send("Level must be between 1-999.")
-            return
-        await ranks_db.add(self.bot.db, role.id, level, mode=mode)
-        await window_success(ctx, f"Added {role} at level {level}")
 
-    @rank.command(name="remove", aliases=["del"])
-    async def rank_remove(
-        self,
-        ctx: commands.Context[CazzuBot],
-        arg: discord.Role,
-        mode: WindowEnum = WindowEnum.SEASONAL,
-    ) -> None:
-        """Remove a rank role."""
-        await ranks_db.delete(self.bot.db, arg.id, mode)
-        await window_success(ctx, f"Removed {arg}")
-
-    @rank.command(name="clean")
-    async def rank_clean(self, ctx: commands.Context[CazzuBot]) -> None:
-        """Remove ranks whose roles no longer exist in the guild."""
-        rows = await ranks_db.get(self.bot.db)
-        guild = ctx.guild
-        if guild is None:
-            await window_error(
-                ctx, "Run rank clean in the server, not DMs."
-            )
-            return
-        removed = [r.rid for r in rows if not guild.get_role(r.rid)]
-        await ranks_db.batch_delete(self.bot.db, removed)
-        await window_success(
-            ctx, f"Removed {len(removed)} stale rank roles"
-        )
-
-    @rank.command(name="clear", aliases=["purge", "drop"])
-    async def rank_clear(
-        self,
-        ctx: commands.Context[CazzuBot],
-        mode: WindowEnum = WindowEnum.SEASONAL,
-    ) -> None:
-        """Drop all rank thresholds for a window."""
-        await ranks_db.drop(self.bot.db, mode)
-        await window_success(ctx, "Cleared rank thresholds")
-
-    @rank.group(name="set")
-    async def rank_set(self, _ctx: commands.Context[CazzuBot]) -> None:
-        """Configure rank settings."""
-
-    @rank_set.command(name="enabled")
-    async def rank_set_enabled(
-        self,
-        ctx: commands.Context[CazzuBot],
-        val: bool,
-        mode: WindowEnum = WindowEnum.SEASONAL,
-    ) -> None:
-        """Enable or disable rank-up messages for a window."""
-        await ranks_db.set_enabled(self.bot.settings, val, mode)
-        await window_success(
-            ctx,
-            "Rank messages enabled" if val else "Rank messages disabled",
-        )
-
-    @rank_set.command(name="keep_old", aliases=["keepOld"])
-    async def rank_set_keep_old(
-        self,
-        ctx: commands.Context[CazzuBot],
-        val: bool,
-        mode: WindowEnum = WindowEnum.SEASONAL,
-    ) -> None:
-        """Keep old rank roles after a reset for a window."""
-        await ranks_db.set_keep_old(self.bot.settings, val, mode)
-        await window_success(ctx, f"Keep-old set to {val}")
-
-    @rank_set.command(name="message", aliases=["msg"])
-    async def rank_set_message(
-        self,
-        ctx: commands.Context[CazzuBot],
-        *,
-        message: str,
-        mode: WindowEnum = WindowEnum.SEASONAL,
-    ) -> None:
-        """Set the rank-up message JSON.
-
-        Append a window name ("lifetime"/"seasonal") after the closing brace to
-        configure a specific window; otherwise the default argument applies.
-        """
-        last_closing = len(message) - 1 - message[::-1].find("}")
-        tail = message[last_closing + 1 :].strip()
-        message = message[: last_closing + 1]
-        if tail:
-            parsed = _parse_mode(tail)
-            if parsed is None:
-                raise commands.BadArgument(
-                    f"Unable to convert mode {tail} to type WindowEnum"
-                )
-            mode = parsed
-
-        decoded = templates.verify(
-            message, formatter, member=utils.member_snapshot(ctx.author)
-        )
-        await ranks_db.set_message(self.bot.settings, decoded, mode)
-        await window_success(ctx, "Rank message set")
-
-    @rank.command(name="demo")
-    async def rank_demo(
-        self,
-        ctx: commands.Context[CazzuBot],
-        mode: WindowEnum = WindowEnum.SEASONAL,
-    ) -> None:
-        msg_json = await ranks_db.get_message(self.bot.settings, mode)
-        if not msg_json:
-            await ctx.send("No rank-up message has been set.")
-            return
-        utils.deep_map(
-            msg_json,
-            formatter,
-            member=utils.member_snapshot(ctx.author),
-        )
-        await templates.send(ctx, msg_json)
-
-    @rank.command(name="raw")
-    async def rank_raw(
-        self,
-        ctx: commands.Context[CazzuBot],
-        mode: WindowEnum = WindowEnum.SEASONAL,
-    ) -> None:
-        msg_json = await ranks_db.get_message(self.bot.settings, mode)
-        await ctx.send(f"```{json.dumps(msg_json, indent=2)}```")
+def _mode_option(name: str = "mode", description: str = "The rank window"):
+    return lightbulb.string(
+        name,
+        description,
+        default="seasonal",
+        choices=[
+            lightbulb.Choice("Seasonal", "seasonal"),
+            lightbulb.Choice("Lifetime", "lifetime"),
+        ],
+    )
 
 
 def _parse_mode(raw: str) -> WindowEnum | None:
@@ -177,3 +45,218 @@ def _parse_mode(raw: str) -> WindowEnum | None:
         return WindowEnum(raw.strip().lower())
     except ValueError:
         return None
+
+
+@rank.register
+class Add(
+    lightbulb.SlashCommand,
+    name="add",
+    description="Add a rank role at a level threshold.",
+    hooks=[_ADMIN],
+):
+    level = lightbulb.integer(
+        "level", "The level threshold", min_value=1, max_value=999
+    )
+    role = lightbulb.role("role", "The rank role")
+    mode = _mode_option()
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        await ranks_db.add(
+            bot.db, self.role.id, self.level, mode=WindowEnum(self.mode)
+        )
+        await window_success(
+            ctx, f"Added {self.role} at level {self.level}"
+        )
+
+
+@rank.register
+class Remove(
+    lightbulb.SlashCommand,
+    name="remove",
+    description="Remove a rank role.",
+    hooks=[_ADMIN],
+):
+    role = lightbulb.role("role", "The rank role")
+    mode = _mode_option()
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        await ranks_db.delete(bot.db, self.role.id, WindowEnum(self.mode))
+        await window_success(ctx, f"Removed {self.role}")
+
+
+@rank.register
+class Clean(
+    lightbulb.SlashCommand,
+    name="clean",
+    description="Remove ranks whose roles no longer exist in the guild.",
+    hooks=[_ADMIN],
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        guild = bot.guild
+        rows = await ranks_db.get(bot.db)
+        if guild is None:
+            await window_error(
+                ctx, "Run rank clean in the server, not DMs."
+            )
+            return
+        removed = [
+            r.rid for r in rows if not bot.cache.get_role(r.rid)
+        ]
+        await ranks_db.batch_delete(bot.db, removed)
+        await window_success(
+            ctx, f"Removed {len(removed)} stale rank roles"
+        )
+
+
+@rank.register
+class Clear(
+    lightbulb.SlashCommand,
+    name="clear",
+    description="Drop all rank thresholds for a window.",
+    hooks=[_ADMIN],
+):
+    mode = _mode_option()
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        await ranks_db.drop(bot.db, WindowEnum(self.mode))
+        await window_success(ctx, "Cleared rank thresholds")
+
+
+rank_set = rank.subgroup("set", "Configure rank settings.")
+
+
+@rank_set.register
+class SetEnabled(
+    lightbulb.SlashCommand,
+    name="enabled",
+    description="Enable or disable rank-up messages for a window.",
+    hooks=[_ADMIN],
+):
+    val = lightbulb.boolean("val", "Whether rank messages are enabled")
+    mode = _mode_option()
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        await ranks_db.set_enabled(
+            bot.settings, self.val, WindowEnum(self.mode)
+        )
+        await window_success(
+            ctx,
+            "Rank messages enabled"
+            if self.val
+            else "Rank messages disabled",
+        )
+
+
+@rank_set.register
+class SetKeepOld(
+    lightbulb.SlashCommand,
+    name="keep_old",
+    description="Keep old rank roles after a reset for a window.",
+    hooks=[_ADMIN],
+):
+    val = lightbulb.boolean("val", "Whether to keep old rank roles")
+    mode = _mode_option()
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        await ranks_db.set_keep_old(
+            bot.settings, self.val, WindowEnum(self.mode)
+        )
+        await window_success(ctx, f"Keep-old set to {self.val}")
+
+
+@rank_set.register
+class SetMessage(
+    lightbulb.SlashCommand,
+    name="message",
+    description="Set the rank-up message JSON.",
+    hooks=[_ADMIN],
+):
+    message = lightbulb.string("message", "The rank-up message JSON")
+    mode = _mode_option()
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Set the rank-up message JSON.
+
+        Append a window name ("lifetime"/"seasonal") after the closing brace to
+        configure a specific window; otherwise the default argument applies.
+        """
+        bot = _bot(ctx)
+        last_closing = len(self.message) - 1 - self.message[::-1].find("}")
+        tail = self.message[last_closing + 1 :].strip()
+        message = self.message[: last_closing + 1]
+        mode = WindowEnum(self.mode)
+        if tail:
+            parsed = _parse_mode(tail)
+            if parsed is None:
+                raise UserInputError(
+                    f"Unable to convert mode {tail} to type WindowEnum"
+                )
+            mode = parsed
+
+        decoded = templates.verify(
+            message,
+            formatter,
+            member=utils.member_snapshot(ctx.member or ctx.user),
+        )
+        await ranks_db.set_message(bot.settings, decoded, mode)
+        await window_success(ctx, "Rank message set")
+
+
+@rank.register
+class Demo(
+    lightbulb.SlashCommand,
+    name="demo",
+    description="Preview the rank-up message.",
+    hooks=[_ADMIN],
+):
+    mode = _mode_option()
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        msg_json = await ranks_db.get_message(
+            bot.settings, WindowEnum(self.mode)
+        )
+        if not msg_json:
+            await ctx.respond("No rank-up message has been set.")
+            return
+        utils.deep_map(
+            msg_json,
+            formatter,
+            member=utils.member_snapshot(ctx.member or ctx.user),
+        )
+        await templates.send(ctx, msg_json)
+
+
+@rank.register
+class Raw(
+    lightbulb.SlashCommand,
+    name="raw",
+    description="Dump the raw stored rank-up message JSON.",
+    hooks=[_ADMIN],
+):
+    mode = _mode_option()
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        msg_json = await ranks_db.get_message(
+            bot.settings, WindowEnum(self.mode)
+        )
+        await ctx.respond(f"```{json.dumps(msg_json, indent=2)}```")
+
+
+loader.command(rank)

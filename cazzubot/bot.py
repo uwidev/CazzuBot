@@ -8,9 +8,8 @@ import importlib
 import logging
 import sys
 
-import discord
-from discord.ext import commands
-from typing_extensions import override
+import hikari
+import lightbulb
 
 from cazzubot.config import Config
 from cazzubot.db import Database, SchemaMismatchError
@@ -22,8 +21,12 @@ from cazzubot.settings import Settings
 _log = logging.getLogger(__name__)
 
 
-class CazzuBot(commands.Bot):
-    """Single-guild discord bot with a plugin architecture."""
+class _DebugModeBlocked(Exception):
+    """Marker: a command was blocked by the debug-mode gate."""
+
+
+class CazzuBot(hikari.GatewayBot):
+    """Single-guild Discord bot with a plugin architecture."""
 
     def __init__(
         self,
@@ -31,15 +34,12 @@ class CazzuBot(commands.Bot):
         *,
         plugins_dir: str = "plugins",
     ) -> None:
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.members = True
-
-        super().__init__(
-            command_prefix=config.prefix,
-            intents=intents,
-            owner_id=config.owner_id,
+        intents = (
+            hikari.Intents.ALL_UNPRIVILEGED
+            | hikari.Intents.MESSAGE_CONTENT
+            | hikari.Intents.GUILD_MEMBERS
         )
+        super().__init__(config.token, intents=intents)
 
         self.config = config
         self.plugins_dir = plugins_dir
@@ -52,12 +52,43 @@ class CazzuBot(commands.Bot):
         self._plugin_by_name: dict[str, Plugin] = {}
 
         if config.debug:
-            self.add_check(CazzuBot.is_debug_mode)
+            # debug gate: only the owner and configured debug users may run
+            # commands; everyone else fails the CHECKS execution step.
+            @lightbulb.hook(lightbulb.ExecutionSteps.CHECKS)
+            def debug_gate(
+                _pl: lightbulb.ExecutionPipeline,
+                ctx: lightbulb.Context,
+            ) -> None:
+                member = ctx.member
+                if (
+                    member is not None
+                    and member.id not in config.debug_users
+                    and member.id != config.owner_id
+                ):
+                    raise _DebugModeBlocked()
+
+            hooks = [debug_gate]
+        else:
+            hooks = []
+
+        self.lightbulb = lightbulb.client_from_app(
+            self,
+            default_enabled_guilds=[config.guild_id],
+            hooks=hooks,
+        )
+        self.lightbulb.error_handler(self._on_command_error)
+
+        # startup must finish before lightbulb syncs guild commands, so the
+        # StartingEvent handler is subscribed before the client's.
+        self.subscribe(hikari.StartingEvent, self._on_starting)
+        self.subscribe(hikari.StartedEvent, self._on_started)
+        self.subscribe(hikari.StoppingEvent, self._on_stopping)
+        self.subscribe(hikari.StartedEvent, self.lightbulb.start)
+        self.subscribe(hikari.StoppingEvent, self.lightbulb.stop)
 
     # -- bot lifecycle -----------------------------------------------------
 
-    @override
-    async def setup_hook(self) -> None:
+    async def _on_starting(self, _event: hikari.StartingEvent) -> None:
         _log.info("connecting to database...")
         await self.db.connect()
 
@@ -66,7 +97,8 @@ class CazzuBot(commands.Bot):
         await self.db.run_schema(self.scheduler.schema)
 
         # discover and load plugins — two phases so any on_load hook can
-        # depend on every plugin's schema/cogs being ready (no load order).
+        # depend on every plugin's schema/extensions being ready (no load
+        # order).
         plugins = discover_plugins(self.plugins_dir)
         if self.config.sandbox:
             allowed = {"poll", "board", "dev"}
@@ -98,57 +130,67 @@ class CazzuBot(commands.Bot):
         # central task scheduler
         await self.scheduler.start()
 
-    @override
-    async def close(self) -> None:
-        await self.scheduler.stop()
-        for plugin in list(self.plugins):
-            await self.unload_plugin(plugin)
-        await self.db.close()
-        await super().close()
-
-    async def on_ready(self) -> None:
-        if self.user is not None:
-            _log.info("logged in as %s (%s)", self.user, self.user.id)
+    async def _on_started(self, _event: hikari.StartedEvent) -> None:
+        me = self.get_me()
+        if me is not None:
+            _log.info("logged in as %s (%s)", me, me.id)
         if self.guild is None:
             _log.warning(
                 "configured guild %s not found — commands will not work",
                 self.config.guild_id,
             )
-        try:
-            await self.tree.sync()
-        except discord.HTTPException:
-            _log.exception("failed to sync command tree")
 
-    @override
-    async def on_command_error(
+    async def _on_stopping(self, _event: hikari.StoppingEvent) -> None:
+        await self.scheduler.stop()
+        for plugin in list(self.plugins):
+            await self.unload_plugin(plugin)
+        await self.db.close()
+
+    # -- error translation -------------------------------------------------
+
+    async def _on_command_error(
         self,
-        ctx: "commands.Context[commands.Bot | commands.AutoShardedBot]",
-        err: commands.CommandError,
-        /,
-    ) -> None:
-        if isinstance(err, commands.BadArgument):
-            await ctx.reply(str(err))
-            return
-        if isinstance(err, commands.CommandInvokeError) and isinstance(
-            err.__cause__, UserInputError
-        ):
+        err: lightbulb.exceptions.ExecutionPipelineFailedException,
+    ) -> bool:
+        """Translate service/core errors into user-facing replies.
+
+        Returns True when the error was handled; False lets lightbulb's
+        default logging take over.
+        """
+        cause = err.__cause__
+        if isinstance(cause, _DebugModeBlocked):
+            return True
+        if isinstance(cause, UserInputError):
             # service/core validation errors (see cazzubot/errors.py) are
-            # not CommandError subclasses, so the framework wraps them
-            await ctx.reply(str(err.__cause__))
-            return
-        if isinstance(err, discord.Forbidden):
-            return
-        await super().on_command_error(ctx, err)
+            # not framework exceptions, so the pipeline wraps them
+            ctx = err.context
+            await ctx.respond(
+                str(cause), flags=hikari.MessageFlag.EPHEMERAL
+            )
+            return True
+        if isinstance(
+            cause, lightbulb.exceptions.ConversionFailedException
+        ):
+            ctx = err.context
+            await ctx.respond(
+                str(cause), flags=hikari.MessageFlag.EPHEMERAL
+            )
+            return True
+        if isinstance(cause, hikari.ForbiddenError):
+            return True
+        return False
+
+    # -- plugin lifecycle --------------------------------------------------
 
     async def load_plugin(
         self, plugin: Plugin, *, run_hooks: bool = True
     ) -> None:
-        """Apply a plugin's schema, cogs and scheduled handlers."""
+        """Apply a plugin's schema, extensions and scheduled handlers."""
         await self.db.run_schema(plugin.schema)
         for tag, handler in plugin.scheduled.items():
             self.scheduler.register(tag, handler)
-        for cog in plugin.cogs:
-            await self.add_cog(cog(self))
+        if plugin.extensions:
+            await self.lightbulb.load_extensions(*plugin.extensions)
         self.plugins.append(plugin)
         self._plugin_by_name[plugin.name] = plugin
         if run_hooks:
@@ -156,18 +198,19 @@ class CazzuBot(commands.Bot):
         _log.info("loaded plugin: %s", plugin.name)
 
     async def unload_plugin(self, plugin: Plugin) -> None:
-        """Remove a plugin's cogs, handlers and run its teardown hook."""
+        """Remove a plugin's extensions, handlers and run its teardown hook."""
         await plugin.on_unload(self)
         for tag in plugin.scheduled:
             self.scheduler.handlers.pop(tag, None)
-        for cog in plugin.cogs:
-            await self.remove_cog(cog.__cog_name__)
+        if plugin.extensions:
+            await self.lightbulb.unload_extensions(*plugin.extensions)
         self.plugins.remove(plugin)
         self._plugin_by_name.pop(plugin.name, None)
         _log.info("unloaded plugin: %s", plugin.name)
 
     async def reload_plugin(self, name: str) -> Plugin:
-        """Re-import a plugin (including its submodules) and swap in new cogs."""
+        """Re-import a plugin (including its submodules) and swap in new
+        extensions."""
         old = self._plugin_by_name.get(name)
         if old is not None:
             await self.unload_plugin(old)
@@ -182,7 +225,7 @@ class CazzuBot(commands.Bot):
         module = importlib.import_module(prefix)
         plugin = module.plugin
         if not isinstance(plugin, Plugin):
-            raise commands.BadArgument(f"{name} is not a plugin package")
+            raise UserInputError(f"{name} is not a plugin package")
         await self.load_plugin(plugin)
         return plugin
 
@@ -191,7 +234,7 @@ class CazzuBot(commands.Bot):
         module = importlib.import_module(f"{self.plugins_dir}.{name}")
         plugin = getattr(module, "plugin", None)
         if not isinstance(plugin, Plugin):
-            raise commands.BadArgument(f"{name} is not a plugin")
+            raise UserInputError(f"{name} is not a plugin")
         await self.load_plugin(plugin)
         return plugin
 
@@ -199,23 +242,13 @@ class CazzuBot(commands.Bot):
         """Unload a loaded plugin by name."""
         plugin = self._plugin_by_name.get(name)
         if plugin is None:
-            raise commands.BadArgument(f"plugin {name} is not loaded")
+            raise UserInputError(f"plugin {name} is not loaded")
         await self.unload_plugin(plugin)
-
-    # -- plugin lifecycle --------------------------------------------------
 
     def _plugin_module(self, name: str):
         return importlib.import_module(f"{self.plugins_dir}.{name}")
 
     @property
-    def guild(self) -> discord.Guild | None:
+    def guild(self) -> hikari.Guild | None:
         """The one guild this bot serves."""
-        return self.get_guild(self.config.guild_id)
-
-    @staticmethod
-    async def is_debug_mode(ctx: "commands.Context[CazzuBot]") -> bool:
-        """In debug mode only the owner (and configured debug users) may run."""
-        bot = ctx.bot
-        if ctx.author.id in bot.config.debug_users:
-            return True
-        return await bot.is_owner(ctx.author)
+        return self.cache.get_guild(self.config.guild_id)

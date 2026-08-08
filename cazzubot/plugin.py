@@ -3,18 +3,17 @@
 A plugin is a self-contained package under ``plugins/`` whose ``__init__.py``
 defines exactly one ``Plugin`` subclass instance as ``plugin``::
 
-        from discord.ext import commands
         from cazzubot import Plugin
 
         class MyFeature(Plugin):
                 name = "myfeature"
-                cogs = [MyCog]
+                extensions = ["plugins.myfeature.cog"]
                 schema = ["CREATE TABLE IF NOT EXISTS myfeature (...)"]
                 scheduled = {"mytag": my_handler}
 
         plugin = MyFeature()
 
-The loader discovers it, applies its schema, registers its cogs and its
+The loader discovers it, applies its schema, registers its extensions and its
 scheduled-task handlers. That's the whole contract — no central registration.
 """
 
@@ -24,8 +23,6 @@ import pkgutil
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-
-from discord.ext import commands
 
 if TYPE_CHECKING:
     from cazzubot.bot import CazzuBot
@@ -41,19 +38,20 @@ class Plugin:
 
     Subclasses override::
 
-            name       unique plugin id (defaults to the module name)
-            cogs       list of discord.py cog classes to register
-            schema     list of DDL statements (idempotent)
-            scheduled  tag -> handler(bot, payload) for the central scheduler
+            name        unique plugin id (defaults to the module name)
+            extensions  import paths of lightbulb extension modules (each
+                        defines a module-level ``lightbulb.Loader``)
+            schema      list of DDL statements (idempotent)
+            scheduled   tag -> handler(bot, payload) for the central scheduler
     """
 
     name: str = ""
-    cogs: list[type[commands.Cog]] = []
+    extensions: list[str] = []
     schema: list[str] = []
     scheduled: dict[str, TaskHandler] = {}
 
     async def on_load(self, _bot: "CazzuBot") -> None:
-        """Hook called after schema + cogs are registered (before ready)."""
+        """Hook called after schema + extensions are registered (before ready)."""
 
     async def on_unload(self, _bot: "CazzuBot") -> None:
         """Hook called when the plugin is unloaded (bot shutdown / hotswap)."""

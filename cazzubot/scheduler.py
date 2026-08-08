@@ -7,14 +7,15 @@ so tasks survive restarts (mute expiry, frog spawns, counter expiry, …).
 Replaces v1's per-cog ``@tasks.loop(seconds=1)`` polling of the same table.
 """
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
+import hikari
 import pendulum
-from discord.ext import tasks
 
 if TYPE_CHECKING:
     from cazzubot.bot import CazzuBot
@@ -45,22 +46,43 @@ class Scheduler:
     def __init__(self, bot: "CazzuBot") -> None:
         self.bot = bot
         self.handlers: dict[str, TaskHandler] = {}
-        self._loop = tasks.loop(seconds=1.0)(self._tick)
+        self._ready = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
+        self.bot.subscribe(hikari.StartedEvent, self._on_started)
 
     @property
     def schema(self) -> list[str]:
         return _SCHEMA
 
     async def start(self) -> None:
-        self._loop.before_loop(self._before_loop)
-        self._loop.start()
+        if self._task is not None:
+            return
+        self._task = asyncio.create_task(self._run(), name="scheduler")
 
     async def stop(self) -> None:
-        if self._loop.is_running():
-            self._loop.cancel()
+        if self._task is None:
+            return
+        self._task.cancel()
+        try:
+            await self._task
+        except asyncio.CancelledError:
+            pass
+        self._task = None
 
-    async def _before_loop(self) -> None:
-        await self.bot.wait_until_ready()
+    async def _on_started(self, _event: hikari.StartedEvent) -> None:
+        """Tick only after the gateway is up (tasks may hit Discord APIs)."""
+        self._ready.set()
+
+    async def _run(self) -> None:
+        await self._ready.wait()
+        while True:
+            try:
+                await self._tick()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                _log.exception("scheduler tick failed")
+            await asyncio.sleep(1.0)
 
     def register(self, tag: str, handler: "TaskHandler") -> None:
         self.handlers[tag] = handler

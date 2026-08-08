@@ -5,25 +5,39 @@ Usage: CazzuBot [-h] [-d] [-p] [-s]
 
 Options:
   -d, --debug       Run in debug mode; only owner/debug users may run commands
-  -p, --production  Run with the production token (prefix c!)
+  -p, --production  Run with the production token
   -s, --sandbox     Load only the sandbox plugins (poll, board, dev)
 """
 
 import argparse
-import asyncio
 import logging
 import os
 import subprocess
 from pathlib import Path
 
-from discord.utils import (
-    _ColourFormatter,  # pyright: ignore[reportPrivateUsage]  # discord's own pattern
-    stream_supports_colour,
-)
+from typing_extensions import override
 
 from cazzubot import CazzuBot, Config
 
 _log = logging.getLogger(__name__)
+
+
+class _ColourFormatter(logging.Formatter):
+    """ANSI-coloured console formatter (replaces discord.py's internal one)."""
+
+    _colours = {
+        logging.DEBUG: "\x1b[38;5;250m",
+        logging.INFO: "\x1b[38;5;39m",
+        logging.WARNING: "\x1b[38;5;220m",
+        logging.ERROR: "\x1b[38;5;196m",
+        logging.CRITICAL: "\x1b[31m",
+    }
+
+    @override
+    def format(self, record: logging.LogRecord) -> str:
+        colour = self._colours.get(record.levelno, "")
+        record.levelname = f"{colour}{record.levelname:<8}\x1b[0m"
+        return super().format(record)
 
 
 def main() -> None:
@@ -47,13 +61,10 @@ def main() -> None:
         if config.sandbox
         else ("PRODUCTION" if args.production else "DEVELOP"),
     )
-    _log.info("prefix is %r, guild_id=%s", config.prefix, config.guild_id)
+    _log.info("guild_id=%s", config.guild_id)
 
     bot = CazzuBot(config)
-    try:
-        asyncio.run(bot.start(config.token))
-    except KeyboardInterrupt:
-        asyncio.run(bot.close())
+    bot.run()
 
 
 def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
@@ -74,8 +85,8 @@ def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
     formatters = {
         "file": logging.Formatter(fmt, "%Y-%m-%d %H:%M:%S", style="{"),
         "console": (
-            _ColourFormatter()
-            if stream_supports_colour(console.stream)
+            _ColourFormatter(fmt, "%Y-%m-%d %H:%M:%S", style="{")
+            if console.stream.isatty()
             else logging.Formatter(fmt, "%Y-%m-%d %H:%M:%S", style="{")
         ),
     }

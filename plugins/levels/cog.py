@@ -1,56 +1,97 @@
-"""Levels plugin cog — level-up message configuration."""
+"""Levels plugin extension — level-up message configuration.
 
-from discord.ext import commands
+Lightbulb extension module: a module-level ``lightbulb.Loader`` holding the
+``level`` command group (admin-only).
+"""
+
+import json
+from typing import cast
+
+import hikari
+import lightbulb
 
 from cazzubot import templates, utils
 from cazzubot.bot import CazzuBot
+from lightbulb.prefab import checks as prefab_checks
+
 from cazzubot.window import window_success
 
 from .logic import MESSAGE_KEY, formatter
 
+loader = lightbulb.Loader()
 
-class LevelsCog(commands.Cog):
-    """Configure the level-up message."""
+level = lightbulb.Group("level", "Configure the level-up message.")
 
-    def __init__(self, bot: CazzuBot) -> None:
-        self.bot = bot
 
-    @commands.hybrid_group(name="level", aliases=["lvl"])
-    @commands.has_permissions(administrator=True)
-    async def level(self, _ctx: commands.Context[CazzuBot]) -> None:
-        pass
+def _bot(ctx: lightbulb.Context) -> CazzuBot:
+    return cast(CazzuBot, ctx.client.app)
 
-    @level.command(name="set", aliases=["msg"])
-    async def level_set(
-        self, ctx: commands.Context[CazzuBot], *, message: str
-    ) -> None:
-        """Set the level-up message JSON."""
+
+@level.register
+class Set(
+    lightbulb.SlashCommand,
+    name="set",
+    description="Set the level-up message JSON.",
+    hooks=[
+        prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
+    ],
+):
+    message = lightbulb.string("message", "The level-up message JSON")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        member = ctx.member or ctx.user
         decoded = templates.verify(
-            message, formatter, member=utils.member_snapshot(ctx.author)
+            self.message,
+            formatter,
+            member=utils.member_snapshot(member),
         )
-        await self.bot.settings.set(MESSAGE_KEY, decoded)
+        await bot.settings.set(MESSAGE_KEY, decoded)
         await window_success(ctx, "Level-up message set")
 
-    @level.command(name="demo")
-    async def level_demo(self, ctx: commands.Context[CazzuBot]) -> None:
-        """Preview the level-up message as yourself."""
-        msg_json = await self.bot.settings.get(MESSAGE_KEY)
+
+@level.register
+class Demo(
+    lightbulb.SlashCommand,
+    name="demo",
+    description="Preview the level-up message as yourself.",
+    hooks=[
+        prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
+    ],
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        member = ctx.member or ctx.user
+        msg_json = await bot.settings.get(MESSAGE_KEY)
         if not msg_json:
-            await ctx.send("No level-up message has been set.")
+            await ctx.respond("No level-up message has been set.")
             return
         utils.deep_map(
             msg_json,
             formatter,
-            member=utils.member_snapshot(ctx.author),
+            member=utils.member_snapshot(member),
             level_old=1,
             level_new=2,
         )
         await templates.send(ctx, msg_json)
 
-    @level.command(name="raw")
-    async def level_raw(self, ctx: commands.Context[CazzuBot]) -> None:
-        """Dump the raw stored level-up message JSON."""
-        import json
 
-        msg_json = await self.bot.settings.get(MESSAGE_KEY)
-        await ctx.send(f"```{json.dumps(msg_json, indent=2)}```")
+@level.register
+class Raw(
+    lightbulb.SlashCommand,
+    name="raw",
+    description="Dump the raw stored level-up message JSON.",
+    hooks=[
+        prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
+    ],
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        msg_json = await bot.settings.get(MESSAGE_KEY)
+        await ctx.respond(f"```{json.dumps(msg_json, indent=2)}```")
+
+
+loader.command(level)

@@ -58,20 +58,24 @@ async def test_verify_schema_rejects_drift(
 
 
 async def test_boot_aborts_on_schema_mismatch(tmp_path: Path) -> None:
+    import hikari
+
     drift_path = tmp_path / "drift.db"
     _make_drift_db(drift_path)
     drift_bot = CazzuBot(
         Config(
-            token="fake", owner_id=1, guild_id=2, db_path=str(drift_path)
+            token="MTIzNDU2Nzg5MDEyMzQ1Ng.OTg3NjU0MzIxMDEyMzQ1Ng.dummy",
+            owner_id=1,
+            guild_id=2,
+            db_path=str(drift_path),
         )
     )
-
-    async def _ready() -> None:
-        pass
-
-    drift_bot.wait_until_ready = _ready  # type: ignore[method-assign]
     try:
         with pytest.raises(SystemExit):
-            await drift_bot.setup_hook()
+            await drift_bot._on_starting(  # pyright: ignore[reportPrivateUsage]
+                hikari.StartingEvent(app=drift_bot)
+            )
     finally:
-        await drift_bot.close()
+        # the guard aborts before the scheduler/plugin hooks run — only the
+        # open db connection needs closing.
+        await drift_bot.db.close()

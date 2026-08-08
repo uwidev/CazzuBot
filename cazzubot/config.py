@@ -24,7 +24,6 @@ class Config:
     db_path: str = "data/cazzubot.db"
     debug: bool = False
     sandbox: bool = False
-    prefix: str = "c!"
     debug_users: list[int] = field(default_factory=list)
 
     @classmethod
@@ -60,7 +59,6 @@ class Config:
             db_path=os.getenv("DB_PATH", "data/cazzubot.db"),
             debug=debug,
             sandbox=sandbox,
-            prefix="c!" if production else "d!",
             debug_users=[
                 int(uid)
                 for uid in os.getenv("DEBUG_USERS", "").split(",")

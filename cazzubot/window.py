@@ -35,6 +35,8 @@ from collections.abc import Callable
 from types import TracebackType
 from typing import Any, Protocol, TypeVar, cast
 
+import hikari
+
 _log = logging.getLogger(__name__)
 
 _SUCCESS = "\u2713"  # ✓
@@ -43,13 +45,13 @@ _ERROR = "\u2716"  # ✖
 
 
 class Sendable(Protocol):
-    """Anything a window can flush to (a command ``ctx`` in practice)."""
+    """Anything a window can flush to (a lightbulb ``Context`` in practice)."""
 
-    async def send(
+    async def respond(
         self,
         content: str | None = None,
         *,
-        ephemeral: bool = False,
+        flags: int = 0,
     ) -> Any: ...
 
 
@@ -80,13 +82,13 @@ class CommandWindow:
     # -- delivery ----------------------------------------------------------
 
     async def flush(self, *, monospace: bool = False) -> None:
-        """Send buffered lines as one message; no-op when empty."""
+        """Send buffered lines as one ephemeral message; no-op when empty."""
         if not self._lines:
             return
         text = "\n".join(self._lines)
         if monospace:
             text = f"```\n{text}\n```"
-        await self._ctx.send(text, ephemeral=True)
+        await self._ctx.respond(text, flags=hikari.MessageFlag.EPHEMERAL)
         self._lines = []
 
     # -- context manager ---------------------------------------------------

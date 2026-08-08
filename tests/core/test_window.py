@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hikari
 import pytest
 
 from cazzubot.window import (
@@ -70,7 +71,13 @@ async def test_windowed_decorator_exposes_window_and_autoflushes(
         return val
 
     assert await _cmd(None, ctx, 3) == 3
-    assert ctx.sent == [SentMessage(content="✓ val=3", ephemeral=True)]
+    assert ctx.sent == [
+        SentMessage(
+            content="✓ val=3",
+            flags=hikari.MessageFlag.EPHEMERAL,
+            ephemeral=True,
+        )
+    ]
 
 
 async def test_window_one_offs(ctx: FakeContext) -> None:

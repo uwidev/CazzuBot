@@ -1,9 +1,11 @@
 """Shared fixtures: a real booted bot against a temp sqlite database.
 
-Same pattern as ``scripts/smoke.py`` / ``functest.py``: build a ``CazzuBot``
-with a fake config, patch ``wait_until_ready`` so no Discord connection is
-attempted, and run ``setup_hook`` so plugins, schemas, scheduler and command
-tree are all live.
+Same pattern as before the hikari swap, minus the Discord connection: build
+a ``CazzuBot`` with a fake (well-formed) token, then drive the lifecycle
+handlers directly — ``_on_starting`` for db/schema/plugin load/scheduler,
+``_on_started`` for the ready gate. The bot boots with an **empty** plugins
+dir so core tests don't need (unported) plugin cogs; plugin tests seed
+their own fakes via ``tests.fakes.seed_bot``.
 """
 
 from __future__ import annotations
@@ -15,13 +17,18 @@ import pytest
 
 from cazzubot import CazzuBot, Config
 from cazzubot.db import Database
-
 from tests.fakes import (
+    FakeCache,
     FakeChannel,
     FakeContext,
     FakeGuild,
     FakeMember,
+    FakeRest,
+    seed_bot,
 )
+
+# hikari validates the token's JWT-ish shape at construction time.
+_DUMMY_TOKEN = "MTIzNDU2Nzg5MDEyMzQ1Ng.OTg3NjU0MzIxMDEyMzQ1Ng.dummy"
 
 
 @pytest.fixture
@@ -35,22 +42,38 @@ async def db(tmp_path: Path) -> AsyncGenerator[Database, None]:
 
 @pytest.fixture
 async def bot(tmp_path: Path) -> AsyncGenerator[CazzuBot, None]:
+    """A booted CazzuBot with no plugins and no Discord connection."""
+    import hikari
+
     instance = CazzuBot(
         Config(
-            token="fake-token",
+            token=_DUMMY_TOKEN,
             owner_id=1,
             guild_id=2,
             db_path=str(tmp_path / "test.db"),
-        )
+        ),
+        plugins_dir=str(tmp_path / "no_plugins"),
+    )
+    await instance._on_starting(  # pyright: ignore[reportPrivateUsage]
+        hikari.StartingEvent(app=instance)
+    )
+    await instance._on_started(  # pyright: ignore[reportPrivateUsage]
+        hikari.StartedEvent(app=instance)
+    )
+    yield instance
+    await instance._on_stopping(  # pyright: ignore[reportPrivateUsage]
+        hikari.StoppingEvent(app=instance)
     )
 
-    async def _ready() -> None:
-        pass
 
-    instance.wait_until_ready = _ready  # type: ignore[method-assign]
-    await instance.setup_hook()
-    yield instance
-    await instance.close()
+@pytest.fixture
+def fake_cache() -> FakeCache:
+    return FakeCache()
+
+
+@pytest.fixture
+def fake_rest() -> FakeRest:
+    return FakeRest()
 
 
 @pytest.fixture
@@ -60,16 +83,12 @@ def fake_guild() -> FakeGuild:
 
 @pytest.fixture
 def author(fake_guild: FakeGuild) -> FakeMember:
-    member = FakeMember(id=424242, name="cirno", guild=fake_guild)
-    fake_guild.add_member(member)
-    return member
+    return FakeMember(id=424242, name="cirno", guild=fake_guild)
 
 
 @pytest.fixture
 def channel(fake_guild: FakeGuild) -> FakeChannel:
-    instance = FakeChannel(id=99, name="general", guild=fake_guild)
-    fake_guild.add_channel(instance)
-    return instance
+    return FakeChannel(id=99, name="general", guild_id=fake_guild.id)
 
 
 @pytest.fixture
@@ -81,7 +100,25 @@ def ctx(
 ) -> FakeContext:
     return FakeContext(
         bot=bot,
-        author=author,
+        member=author,
         guild=fake_guild,
         channel=channel,
     )
+
+
+@pytest.fixture
+def seeded_bot(
+    bot: CazzuBot,
+    fake_cache: FakeCache,
+    fake_rest: FakeRest,
+    fake_guild: FakeGuild,
+    author: FakeMember,
+    channel: FakeChannel,
+) -> CazzuBot:
+    """A booted bot with cache/rest fakes pre-seeded and wired to it."""
+    fake_cache.add_guild(fake_guild)
+    fake_cache.add_member(author)
+    fake_cache.add_channel(channel)
+    fake_rest.members[(fake_guild.id, author.id)] = author
+    seed_bot(bot, cache=fake_cache, rest=fake_rest)
+    return bot

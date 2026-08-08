@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "aiosqlite>=0.20.0",
-    "discord.py>=2.7.1",
+    "hikari>=2.5.0",
+    "hikari-lightbulb>=3.2.5",
     "jsonschema>=4.21.1",
     "parsedatetime>=2.6",
     "pendulum>=2.1.2",
@@ -15,6 +16,11 @@ dependencies = [
 ]
 
 [dependency-groups]
+# CLI tooling (roles/channels/snapshot) still runs on discord.py until the
+# follow-up CLI port to hikari REST; the bot itself no longer depends on it.
+cli = [
+    "discord.py>=2.7.1",
+]
 dev = [
     "basedpyright>=1.20.0",
     "pre-commit>=3.7.0",
@@ -35,6 +41,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["cazzubot", "plugins"]
+
+[tool.uv]
+# cli is a default group until the CLI port to hikari REST: the tooling
+# (cazzubot-cli) still imports discord.py and must keep working on plain
+# `uv sync`. Drop it from default-groups when the CLI is ported.
+default-groups = ["dev", "cli"]
 
 [tool.ruff]
 exclude = [

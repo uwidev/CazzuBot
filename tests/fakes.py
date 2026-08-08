@@ -1,93 +1,76 @@
-# pyright: reportMissingSuperCall=false, reportIncompatibleVariableOverride=false, reportAttributeAccessIssue=false, reportAssignmentType=false, reportIncompatibleMethodOverride=false
-"""Typed fakes for discord model objects, used across the test suite.
+# pyright: reportAttributeAccessIssue=false
+"""Typed fakes for hikari objects, used across the test suite.
 
-Strategy: subclass the real discord.py model and never call ``super().__init__``
-— the real constructors need a live ``ConnectionState``. Parent attributes that
-are *properties* (data descriptors) are re-declared on the subclass, because
-instance assignment cannot shadow a descriptor and the inherited getter reads
-discord.py internals (``_user``, ``_state``, ...). Plain/slot attributes are
-assigned directly. Anything a cog calls that we forgot to fake inherits the
-parent implementation and raises loudly at the test — a feature, not a bug:
-the traceback names the exact attribute to re-declare.
+Standalone classes — hikari models are immutable ``attrs`` objects with
+``__slots__``, so the old discord.py "subclass without ``super().__init__``"
+trick is impossible. The surface below is the HIKARI_MIGRATION.md freeze
+list: member identity (``id``/``display_name``/``mention``/``avatar_url``),
+role ids + permissions, rest-client spies for mutations, cache-backed
+lookups, and a lightbulb-style command context whose ``respond`` records
+sends.
 
-Pure-data discord classes (``discord.Embed``, ``discord.Permissions``,
-``discord.Colour``) are NOT faked here — they construct fine offline.
+Anything a ported cog calls that we forgot to fake raises ``AttributeError``
+loudly at the test — a feature, not a bug: the traceback names the exact
+attribute to add.
 
-The ``# pyright:`` file-level directives above are scoped to THIS file only:
-pyright's strict override rules assume subclasses follow normal inheritance
-(super().__init__ call, compatible property overrides), which is impossible
-for discord.py models without a live connection. Everything outside this
-file stays under the strict project rules.
+Pure-data hikari classes (``hikari.Embed``, ``hikari.Permissions``) are NOT
+faked here — they construct fine offline.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from types import SimpleNamespace
-from typing import Any, cast, override
+from typing import Any
 
-import discord
-from discord.ext import commands
-
-from cazzubot.window import CommandWindow
+import hikari
 
 
-# -- Asset ----------------------------------------------------------------
-
-
-class FakeAsset(discord.Asset):
-    """A URL-only asset (``display_avatar.url`` is all cogs read)."""
-
-    def __init__(self, url: str) -> None:
-        self._url = url
-
-    @property
-    @override
-    def url(self) -> str:
-        return self._url
+def _avatar_url(uid: int) -> str:
+    return f"https://example.com/avatar/{uid}.png"
 
 
 # -- User / Member --------------------------------------------------------
 
 
-class FakeUser(discord.User):
+class FakeUser:
+    """Minimal hikari-style user (Member subclasses it, like hikari)."""
+
     def __init__(
         self,
         *,
         id: int,
         name: str,
         bot: bool = False,
+        global_name: str | None = None,
     ) -> None:
         self.id = id
         self.name = name
         self.bot = bot
-        self._fake_avatar = FakeAsset(
-            f"https://example.com/avatar/{id}.png"
-        )
+        self.global_name = global_name
 
-    @override
     def __str__(self) -> str:
         return self.name
 
     @property
-    @override
     def display_name(self) -> str:
-        return self.name
+        return self.global_name or self.name
 
     @property
-    @override
     def mention(self) -> str:
         return f"<@{self.id}>"
 
     @property
-    @override
-    def display_avatar(self) -> discord.Asset:
-        return self._fake_avatar
+    def avatar_url(self) -> str:
+        return _avatar_url(self.id)
+
+    @property
+    def display_avatar_url(self) -> str:
+        return _avatar_url(self.id)
 
 
-class FakeMember(discord.Member):
-    guild: FakeGuild | None  # narrow parent's declared attr for readers
+class FakeMember(FakeUser):
+    """Guild member: role ids + permissions, mutation goes via FakeRest."""
 
     def __init__(
         self,
@@ -99,124 +82,46 @@ class FakeMember(discord.Member):
         administrator: bool = False,
         bot: bool = False,
     ) -> None:
-        self._id = id
-        self._name = name
-        self._bot = bot
-        self._created_at = datetime.now(timezone.utc)
-        self.guild = guild
-        self.nick: str | None = None
+        super().__init__(id=id, name=name, bot=bot)
+        self.guild_id: int | None = guild.id if guild is not None else None
+        self.nickname: str | None = None
+        self.role_ids: set[int] = {r.id for r in (roles or [])}
+        self.permissions: hikari.Permissions = (
+            hikari.Permissions(hikari.Permissions.ADMINISTRATOR)
+            if administrator
+            else hikari.Permissions.NONE
+        )
         self.joined_at: datetime | None = None
-        self._fake_roles = roles or []
-        self._administrator = administrator
-        self.added_roles: list[discord.Role] = []
-        self.removed_roles: list[discord.Role] = []
-        self.kicked: list[str | None] = []
-        self.banned: list[str | None] = []
-        self.pending: bool = False
-
-    @override
-    def __str__(self) -> str:
-        return self._name
-
-    # -- re-declared properties (parent defines these as properties) ------
+        self.is_pending: bool = False
 
     @property
-    @override
-    def id(self) -> int:
-        return self._id
-
-    @property
-    @override
-    def name(self) -> str:
-        return self._name
-
-    @property
-    @override
-    def bot(self) -> bool:
-        return self._bot
-
-    @property
-    @override
-    def created_at(self) -> datetime:
-        return self._created_at
-
-    @property
-    @override
     def display_name(self) -> str:
-        return self.nick or self._name
-
-    @property
-    @override
-    def mention(self) -> str:
-        return f"<@{self._id}>"
-
-    @property
-    @override
-    def display_avatar(self) -> discord.Asset:
-        return FakeAsset(f"https://example.com/avatar/{self._id}.png")
-
-    @property
-    @override
-    def roles(self) -> list[FakeRole]:
-        return self._fake_roles
-
-    @property
-    @override
-    def guild_permissions(self) -> discord.Permissions:
-        return discord.Permissions(administrator=self._administrator)
-
-    # -- recorders: never touch the real API, record the call -------------
-
-    @override
-    async def add_roles(
-        self, *roles: discord.Role, reason: str | None = None
-    ) -> None:
-        self.added_roles.extend(roles)
-
-    @override
-    async def remove_roles(
-        self, *roles: discord.Role, reason: str | None = None
-    ) -> None:
-        self.removed_roles.extend(roles)
-
-    @override
-    async def kick(
-        self, reason: str | None = None, **_kwargs: Any
-    ) -> None:
-        self.kicked.append(reason)
-
-    @override
-    async def ban(self, reason: str | None = None, **_kwargs: Any) -> None:
-        self.banned.append(reason)
+        return self.nickname or self.global_name or self.name
 
 
-# -- Role / Guild / Channel ------------------------------------------------
+# -- Role / Guild / Channel / Message --------------------------------------
 
 
-class FakeRole(discord.Role):
+class FakeRole:
     def __init__(
         self,
         *,
         id: int,
         name: str,
-        permissions: discord.Permissions | None = None,
+        permissions: hikari.Permissions | None = None,
+        position: int = 0,
     ) -> None:
         self.id = id
         self.name = name
-        self._fake_permissions = permissions or discord.Permissions()
+        self.permissions = permissions or hikari.Permissions.NONE
+        self.position = position
 
     @property
-    @override
     def mention(self) -> str:
         return f"<@&{self.id}>"
 
-    @property
-    @override
-    def permissions(self) -> discord.Permissions:
-        return self._fake_permissions
 
-
-class FakeGuild(discord.Guild):
+class FakeGuild:
     def __init__(
         self,
         *,
@@ -227,384 +132,380 @@ class FakeGuild(discord.Guild):
         self.id = id
         self.name = name
         self.owner_id = owner_id
-        self._me: FakeMember | None = None
-        self._fake_members: dict[int, FakeMember] = {}
-        self._fake_roles: dict[int, FakeRole] = {}
-        self._fake_channels: dict[int, FakeChannel] = {}
-        self.unbanned: list[tuple[discord.User, str | None]] = []
-
-    @property
-    @override
-    def me(self) -> FakeMember | None:
-        return self._me
-
-    @property
-    @override
-    def members(self) -> list[FakeMember]:
-        return list(self._fake_members.values())
-
-    @property
-    @override
-    def roles(self) -> list[FakeRole]:
-        return list(self._fake_roles.values())
-
-    @override
-    def get_member(self, user_id: int) -> FakeMember | None:
-        return self._fake_members.get(user_id)
-
-    @override
-    def get_role(self, role_id: int) -> FakeRole | None:
-        return self._fake_roles.get(role_id)
-
-    @override
-    def get_channel(self, channel_id: int) -> FakeChannel | None:
-        return self._fake_channels.get(channel_id)
-
-    @override
-    def _resolve_channel(
-        self, channel_id: int | None, /
-    ) -> FakeChannel | None:
-        """Bot.get_channel resolves through this (private, but stable)."""
-        if channel_id is None:
-            return None
-        return self._fake_channels.get(channel_id)
-
-    @override
-    async def fetch_member(self, user_id: int) -> FakeMember:
-        """Cache-backed stand-in for the network fetch."""
-        member = self._fake_members.get(user_id)
-        if member is None:
-            raise discord.NotFound(
-                cast(Any, SimpleNamespace(status=404, reason="not found")),
-                "member not found",
-            )
-        return member
-
-    @override
-    async def unban(
-        self, user: discord.User, *, reason: str | None = None
-    ) -> None:
-        self.unbanned.append((user, reason))
-
-    def add_member(self, member: FakeMember) -> None:
-        self._fake_members[member.id] = member
-        member.guild = self
-
-    def add_role(self, role: FakeRole) -> None:
-        self._fake_roles[role.id] = role
-
-    def add_channel(self, channel: FakeChannel) -> None:
-        self._fake_channels[channel.id] = channel
 
 
-class FakeChannel(discord.TextChannel):
-    guild: FakeGuild | None  # narrow parent's declared attr for readers
-
+class FakeChannel:
     def __init__(
         self,
         *,
         id: int,
         name: str = "general",
-        guild: FakeGuild | None = None,
+        guild_id: int | None = None,
     ) -> None:
         self.id = id
         self.name = name
-        self.guild = guild
+        self.guild_id = guild_id
+        self.type = hikari.ChannelType.GUILD_TEXT
         self.sent: list[dict[str, Any]] = []
         self.messages: list[FakeMessage] = []
-        self.edits: list[dict[str, Any]] = []
 
     @property
-    @override
-    def type(self) -> discord.ChannelType:
-        return discord.ChannelType.text
-
-    @property
-    @override
     def mention(self) -> str:
         return f"<#{self.id}>"
 
-    @override
-    def permissions_for(
-        self, member: discord.Member | discord.User
-    ) -> discord.Permissions:
-        """Simplification: channel perms == guild perms (admin ⇒ all)."""
-        if isinstance(member, FakeMember):
-            perms = member.guild_permissions
-            if perms.administrator:
-                return discord.Permissions.all()
-            return perms
-        return discord.Permissions()
-
-    @override
-    async def edit(self, **kwargs: Any) -> None:
-        self.edits.append(kwargs)
-
-    @override
     async def send(
         self, content: str | None = None, **kwargs: Any
     ) -> FakeMessage:
         self.sent.append({"content": content, **kwargs})
         message = FakeMessage(
-            id=1,
+            id=len(self.messages) + 1,
             content=content or "",
-            guild=self.guild,
-            channel=self,
+            guild_id=self.guild_id,
+            channel_id=self.id,
         )
         self.messages.append(message)
         return message
 
-    @override
-    async def fetch_message(self, message_id: int) -> FakeMessage:
-        """Cache-backed stand-in for the network fetch."""
-        for message in self.messages:
-            if message.id == message_id:
-                return message
-        raise discord.NotFound(
-            cast(Any, SimpleNamespace(status=404, reason="not found")),
-            "message not found",
-        )
 
-    @override
-    async def history(self, **kwargs: Any):
-        """Yield the recorded messages (oldest first, like the real API)."""
-        for message in self.messages:
-            yield message
-
-    @override
-    def typing(self):
-        """No-op async context manager standing in for channel.typing()."""
-
-        class _Typing:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args: object) -> bool:
-                return False
-
-        return _Typing()
-
-
-# -- Message / Interaction -------------------------------------------------
-
-
-class FakeMessage(discord.Message):
-    author: FakeMember | FakeUser | None
-    guild: FakeGuild | None
-    channel: FakeChannel | None
-
+class FakeMessage:
     def __init__(
         self,
         *,
         id: int = 1,
         content: str = "",
         author: FakeMember | FakeUser | None = None,
-        guild: FakeGuild | None = None,
-        channel: FakeChannel | None = None,
+        guild_id: int | None = None,
+        channel_id: int | None = None,
         created_at: datetime | None = None,
+        embeds: list[hikari.Embed] | None = None,
     ) -> None:
         self.id = id
         self.content = content
         self.author = author
-        self.guild = guild
-        self.channel = channel
-        self._created_at = created_at or datetime.now(timezone.utc)
-        self.deleted = False
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.created_at = created_at or datetime.now(timezone.utc)
+        self.embeds = embeds or []
         self.reactions: list[str] = []
+        self.deleted = False
         self.edits: list[dict[str, Any]] = []
-        self.embeds: list[discord.Embed] = []
-        self.attachments: list[object] = []
-
-    @property
-    @override
-    def created_at(self) -> datetime:
-        return self._created_at
-
-    @override
-    async def delete(self, **_kwargs: Any) -> None:
-        self.deleted = True
-
-    @override
-    async def edit(self, **kwargs: Any) -> None:
-        self.edits.append(kwargs)
-
-    @override
-    async def add_reaction(self, reaction: object, **_kwargs: Any) -> None:
-        self.reactions.append(str(reaction))
 
 
-class FakeInteractionResponse(discord.InteractionResponse):
-    """Recorder standing in for ``discord.InteractionResponse``."""
+# -- Cache / Rest ----------------------------------------------------------
+
+
+def _not_found(message: str) -> hikari.NotFoundError:
+    """A raise-ready NotFoundError with minimal payload."""
+    headers: dict[str, str] = {}
+    return hikari.NotFoundError(
+        url="https://example.com",
+        headers=headers,
+        raw_body=None,
+        message=message,
+    )
+
+
+class FakeCache:
+    """Stand-in for hikari's CacheImpl: plain dicts, seedable by hand."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self._guilds: dict[int, FakeGuild] = {}
+        self._members: dict[tuple[int, int], FakeMember] = {}
+        self._users: dict[int, FakeUser] = {}
+        self._roles: dict[int, FakeRole] = {}
+        self._channels: dict[int, FakeChannel] = {}
 
-    @override
-    async def send_message(
-        self, content: str | None = None, **kwargs: Any
+    def get_guild(self, guild_id: int) -> FakeGuild | None:
+        return self._guilds.get(guild_id)
+
+    def get_member(self, guild_id: int, user_id: int) -> FakeMember | None:
+        return self._members.get((guild_id, user_id))
+
+    def get_user(self, user_id: int) -> FakeUser | None:
+        return self._users.get(user_id)
+
+    def get_role(self, role_id: int) -> FakeRole | None:
+        return self._roles.get(role_id)
+
+    def get_guild_channel(self, channel_id: int) -> FakeChannel | None:
+        return self._channels.get(channel_id)
+
+    def add_guild(self, guild: FakeGuild) -> None:
+        self._guilds[guild.id] = guild
+
+    def add_member(self, member: FakeMember) -> None:
+        if member.guild_id is not None:
+            self._members[(member.guild_id, member.id)] = member
+        self._users[member.id] = member
+
+    def add_role(self, role: FakeRole) -> None:
+        self._roles[role.id] = role
+
+    def add_channel(self, channel: FakeChannel) -> None:
+        self._channels[channel.id] = channel
+
+
+class FakeRest:
+    """Rest-client spy: records mutations, serves cache-backed fetches.
+
+    Mirrors the hikari REST surface the presenters use — member mutations
+    live here (not on the member), per the HIKARI_MIGRATION.md freeze list.
+    """
+
+    def __init__(self) -> None:
+        self.members: dict[tuple[int, int], FakeMember] = {}
+        self.messages: dict[tuple[int, int], FakeMessage] = {}
+        self.added_roles: list[
+            tuple[FakeMember, FakeRole, str | None]
+        ] = []
+        self.removed_roles: list[
+            tuple[FakeMember, FakeRole, str | None]
+        ] = []
+        self.kicked: list[tuple[FakeMember, str | None]] = []
+        self.banned: list[tuple[FakeMember, str | None]] = []
+        self.unbanned: list[tuple[FakeUser, str | None]] = []
+        self.deleted: list[FakeMessage] = []
+        self.edited: list[tuple[FakeMessage, dict[str, Any]]] = []
+        self.reactions: list[tuple[FakeMessage, str]] = []
+        self.typing_channels: list[int] = []
+
+    async def add_role_to_member(
+        self,
+        _guild: int,
+        user: FakeMember,
+        role: FakeRole,
+        *,
+        reason: str | None = None,
     ) -> None:
-        self.calls.append(("send_message", {"content": content, **kwargs}))
+        self.added_roles.append((user, role, reason))
 
-    @override
-    async def edit_message(self, **kwargs: Any) -> None:
-        self.calls.append(("edit_message", kwargs))
+    async def remove_role_from_member(
+        self,
+        _guild: int,
+        user: FakeMember,
+        role: FakeRole,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        self.removed_roles.append((user, role, reason))
 
-    async def edit_original_response(self, **kwargs: Any) -> None:
-        self.calls.append(("edit_original_response", kwargs))
+    async def kick_member(
+        self,
+        _guild: int,
+        user: FakeMember,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        self.kicked.append((user, reason))
 
-    @override
-    async def defer(self, **kwargs: Any) -> None:
-        self.calls.append(("defer", kwargs))
+    async def ban_member(
+        self,
+        _guild: int,
+        user: FakeMember,
+        *,
+        reason: str | None = None,
+        delete_message_days: int = 0,
+    ) -> None:
+        self.banned.append((user, reason))
 
-    @override
-    async def send_modal(self, modal: discord.ui.Modal, /) -> None:
-        self.calls.append(("send_modal", {"modal": modal}))
+    async def unban_member(
+        self,
+        _guild: int,
+        user: FakeUser,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        self.unbanned.append((user, reason))
 
+    async def fetch_member(
+        self, guild_id: int, user_id: int
+    ) -> FakeMember:
+        member = self.members.get((guild_id, user_id))
+        if member is None:
+            raise _not_found("member not found")
+        return member
 
-class FakeFollowup:
-    """Recorder for ``interaction.followup`` (webhook-style sends)."""
+    async def fetch_user(self, user_id: int) -> FakeUser:
+        for (gid, uid), member in self.members.items():
+            if uid == user_id:
+                return member
+        raise _not_found("user not found")
 
-    def __init__(self) -> None:
-        self.sent: list[dict[str, Any]] = []
-        self.messages: list[FakeMessage] = []
-
-    async def send(
-        self, content: str | None = None, **kwargs: Any
+    async def fetch_message(
+        self, channel_id: int, message_id: int
     ) -> FakeMessage:
-        self.sent.append({"content": content, **kwargs})
-        message = FakeMessage(id=2, content=content or "")
-        self.messages.append(message)
+        message = self.messages.get((channel_id, message_id))
+        if message is None:
+            raise _not_found("message not found")
         return message
 
+    async def fetch_messages(
+        self, channel_id: int, **kwargs: Any
+    ) -> list[FakeMessage]:
+        return [
+            m
+            for (cid, _mid), m in sorted(self.messages.items())
+            if cid == channel_id
+        ]
 
-class FakeInteraction(discord.Interaction[Any]):
-    response: FakeInteractionResponse  # override parent's declared type
-    followup: FakeFollowup  # parent declares this as a Webhook
+    async def edit_message(
+        self,
+        channel_id: int,
+        message_id: int,
+        **kwargs: Any,
+    ) -> FakeMessage:
+        message = await self.fetch_message(channel_id, message_id)
+        message.edits.append(kwargs)
+        return message
+
+    async def delete_message(
+        self, _channel_id: int, message: FakeMessage
+    ) -> None:
+        message.deleted = True
+        self.deleted.append(message)
+
+    async def add_reaction(
+        self, channel_id: int, message_id: int, emoji: str
+    ) -> None:
+        message = await self.fetch_message(channel_id, message_id)
+        message.reactions.append(emoji)
+        self.reactions.append((message, emoji))
+
+    async def trigger_typing(self, channel_id: int) -> None:
+        self.typing_channels.append(channel_id)
+
+
+# -- Context / Interaction -------------------------------------------------
+
+
+@dataclass
+class SentMessage:
+    """One recorded ``ctx.respond(...)`` — what a command "sent" in a test."""
+
+    content: str | None = None
+    embed: hikari.Embed | None = None
+    embeds: list[hikari.Embed] | None = None
+    component: Any = None
+    components: list[Any] | None = None
+    flags: int = 0
+    ephemeral: bool = False
+
+
+class FakeInteraction:
+    """Minimal interaction stand-in (component/modal fields come later)."""
 
     def __init__(
         self,
         *,
         id: int = 1,
-        user: FakeMember | FakeUser,
-        message: FakeMessage | None = None,
-        data: dict[str, Any] | None = None,
-        guild: FakeGuild | None = None,
+        member: FakeMember | None = None,
+        user: FakeUser | None = None,
+        guild_id: int | None = None,
         channel_id: int | None = None,
+        custom_id: str | None = None,
     ) -> None:
         self.id = id
-        self.user = user
-        self.message = message
-        self.data = data or {}
-        self._guild = guild
-        self._channel_id = channel_id
-        self.response = FakeInteractionResponse()
-        self.followup = FakeFollowup()
-        self.original_message = FakeMessage(id=555)
-
-    @property
-    @override
-    def guild(self) -> FakeGuild | None:
-        return self._guild
-
-    @property
-    @override
-    def channel_id(self) -> int | None:
-        return self._channel_id
-
-    @override
-    async def original_response(self) -> FakeMessage:
-        """Stand-in for the followup fetch (the recorded message)."""
-        return self.original_message
+        self.member = member
+        self.user = user or member
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.custom_id = custom_id
 
 
-# -- Context ---------------------------------------------------------------
+class FakeContext:
+    """A lightbulb-style context that records ``respond`` calls.
 
-
-@dataclass
-class SentMessage:
-    """One recorded ``ctx.send(...)`` — what a command "sent" in a test."""
-
-    content: str | None = None
-    embed: discord.Embed | None = None
-    view: discord.ui.View | None = None
-    ephemeral: bool = False
-
-
-class FakeContext(commands.Context[Any]):
-    """A command context that records sends instead of touching Discord."""
-
-    # Narrow the parent's declared attribute types to our fakes so tests
-    # stay fully typed (basedpyright reports a fake attribute at dev time).
-    bot: commands.Bot
-    author: FakeMember | FakeUser
-    guild: FakeGuild | None
-    channel: FakeChannel
-    message: FakeMessage
-    window: CommandWindow
+    Satisfies the ``window.Sendable`` protocol (``respond(content, flags=)``)
+    and the lightbulb ``Context`` surface the ported cogs use (``member``,
+    ``options``, ``interaction``, ``respond``, ``defer``).
+    """
 
     def __init__(
         self,
         *,
-        bot: commands.Bot,
-        author: FakeMember | FakeUser,
-        guild: FakeGuild | None,
+        bot: Any,
+        member: FakeMember,
+        guild: FakeGuild,
         channel: FakeChannel,
-        message: FakeMessage | None = None,
-        invoked_with: str = "test",
+        options: dict[str, Any] | None = None,
+        interaction: FakeInteraction | None = None,
     ) -> None:
         self.bot = bot
-        self.author = author
-        self.guild = guild
-        self.channel = channel
-        self.message = message or FakeMessage()
-        self.invoked_with = invoked_with
-        self.interaction: discord.Interaction[Any] | None = None
-        self.window = CommandWindow(self)
+        self.member = member
+        self.guild_id = guild.id
+        self.channel_id = channel.id
+        self.options = options or {}
+        self.interaction = interaction or FakeInteraction(
+            member=member,
+            guild_id=guild.id,
+            channel_id=channel.id,
+        )
         self.sent: list[SentMessage] = []
-        self.returned: list[FakeMessage] = []
+        self.deferred: bool = False
+        self.modals: list[Any] = []
 
-    @override
-    async def send(
+    async def respond(
         self,
         content: str | None = None,
+        *,
+        embed: hikari.Embed | None = None,
+        embeds: list[hikari.Embed] | None = None,
+        component: Any = None,
+        components: list[Any] | None = None,
+        flags: int = 0,
         **kwargs: Any,
     ) -> FakeMessage:
         self.sent.append(
             SentMessage(
                 content=content,
-                embed=kwargs.get("embed"),
-                view=kwargs.get("view"),
-                ephemeral=bool(kwargs.get("ephemeral", False)),
+                embed=embed,
+                embeds=embeds,
+                component=component,
+                components=components,
+                flags=flags,
+                ephemeral=bool(flags & hikari.MessageFlag.EPHEMERAL),
             )
         )
-        message = FakeMessage(
+        return FakeMessage(
             id=1,
             content=content or "",
-            author=self.author,
-            guild=self.guild,
-            channel=self.channel,
+            author=self.member,
+            guild_id=self.guild_id,
+            channel_id=self.channel_id,
         )
-        self.returned.append(message)
-        return message
 
-    @override
-    async def reply(
-        self, content: str | None = None, **kwargs: Any
-    ) -> FakeMessage:
-        return await self.send(content, **kwargs)
+    async def defer(self, *, flags: int = 0) -> None:
+        self.deferred = True
+
+    async def create_modal_response(self, modal: Any, /) -> None:
+        self.modals.append(modal)
 
 
-def first_button_custom_id(view: discord.ui.View) -> str:
-    """custom_id of a view's first button (typed escape for ``Item[]``)."""
-    button = view.children[0]
-    assert isinstance(button, discord.ui.Button)
-    return button.custom_id or ""
+def first_button_custom_id(
+    component: hikari.api.ComponentBuilder,
+) -> str:
+    """custom_id of a builder's first button (typed escape for components)."""
+    from hikari.impl import InteractiveButtonBuilder
+
+    row = component
+    for child in row.components:
+        if isinstance(child, InteractiveButtonBuilder):
+            return child.custom_id or ""
+    return ""
 
 
-def seed_guild(bot: commands.Bot, guild: FakeGuild) -> None:
-    """Register a fake guild in the bot's connection cache.
+def seed_bot(
+    bot: Any,
+    *,
+    cache: FakeCache | None = None,
+    rest: FakeRest | None = None,
+) -> None:
+    """Inject fakes into a hikari bot's cache/rest properties.
 
-    Makes ``bot.guild`` / ``bot.guilds`` / ``get_guild`` resolve offline
-    (the connection cache is a plain dict in discord.py 2.7.1).
+    ``GatewayBot.cache`` / ``.rest`` are properties over ``_cache``/``_rest``
+    (plain instance attrs), so assignment works offline.
     """
-    bot._connection._guilds[guild.id] = guild  # pyright: ignore[reportPrivateUsage]
+    if cache is not None:
+        bot._cache = cache
+    if rest is not None:
+        bot._rest = rest

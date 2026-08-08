@@ -1,12 +1,13 @@
 """General-purpose helpers shared by plugins."""
 
+import asyncio
 import logging
 from collections.abc import Callable
 from typing import Any, NamedTuple, TypeVar, cast
 
-import discord
+import hikari
+import lightbulb
 import pendulum
-from discord.ext import commands
 
 from cazzubot.bot import CazzuBot
 from cazzubot.models import MemberSnapshot
@@ -63,128 +64,145 @@ def prepare_embed(
     description: str | None = None,
     *,
     color: int = 0x9EDBF7,
-) -> discord.Embed:
+) -> hikari.Embed:
     """Standard embed with the -sarono footer."""
-    embed = discord.Embed(
-        title=title, description=description, color=color
-    )
+    embed = hikari.Embed(title=title, description=description, color=color)
     embed.set_footer(
         text="-sarono",
-        icon_url="https://files.catbox.moe/3cy0by.webp",
+        icon="https://files.catbox.moe/3cy0by.webp",
     )
     return embed
 
 
 def member_snapshot(
-    member: discord.Member | discord.User,
+    member: hikari.Member | hikari.User,
 ) -> MemberSnapshot:
-    """Plain values for template formatting (no discord objects)."""
+    """Plain values for template formatting (no hikari objects)."""
+    display_name = member.display_name
+    if not isinstance(display_name, str):
+        # partial User without global_name/username — rare cache edge
+        display_name = ""
     return MemberSnapshot(
         id=member.id,
-        display_name=member.display_name,
+        display_name=display_name,
         mention=member.mention,
-        avatar_url=member.display_avatar.url,
+        avatar_url=str(member.display_avatar_url),
     )
 
 
 async def find_user(
-    bot: commands.Bot, _ctx: commands.Context[Any], uid: int
-) -> discord.User | discord.Member | None:
-    """Resolve a user id from member cache, user cache, or a fetch."""
-    for guild in bot.guilds:
-        member = guild.get_member(uid)
+    bot: CazzuBot, _ctx: Any, uid: int
+) -> hikari.User | hikari.Member | None:
+    """Resolve a user id from the cache or a REST fetch."""
+    guild = bot.guild
+    if guild is not None:
+        member = bot.cache.get_member(guild.id, uid)
         if member:
             return member
-    user = bot.get_user(uid)
+    user = bot.cache.get_user(uid)
     if user:
         return user
     try:
-        return await bot.fetch_user(uid)
-    except discord.NotFound:
+        return await bot.rest.fetch_user(uid)
+    except hikari.NotFoundError:
         return None
 
 
-class ConfirmView(discord.ui.View):
+def schedule_delete(
+    bot: CazzuBot,
+    channel_id: int,
+    message_id: int,
+    delay: float,
+) -> None:
+    """Delete a message after a delay (fire-and-forget).
+
+    Replaces discord.py's ``delete_after`` kwarg, which hikari doesn't have.
+    """
+
+    async def _delete() -> None:
+        await asyncio.sleep(delay)
+        try:
+            await bot.rest.delete_message(channel_id, message_id)
+        except hikari.NotFoundError:
+            pass
+
+    asyncio.create_task(_delete())
+
+
+class ConfirmMenu(lightbulb.components.Menu):
     """Yes/No button prompt; ``value`` is True / False / None (timed out).
 
-    Only the invoking author's clicks count. On an answer the message is
+    Only the invoking author's clicks count. On an answer the prompt is
     deleted when ``delete_after`` is set (mirroring the old reaction-based
-    flow), otherwise the buttons are stripped from it.
+    flow), otherwise its buttons are stripped from it.
     """
 
     def __init__(
         self,
         author_id: int,
         *,
-        timeout: float = 7.0,
         delete_after: bool = True,
     ) -> None:
-        super().__init__(timeout=timeout)
+        super().__init__()
         self.author_id = author_id
         self.delete_after = delete_after
         self.value: bool | None = None
+        self.add_interactive_button(
+            hikari.ButtonStyle.SUCCESS, self._yes, label="Yes", emoji="👍"
+        )
+        self.add_interactive_button(
+            hikari.ButtonStyle.DANGER, self._no, label="No", emoji="❌"
+        )
 
     async def _finish(
-        self, interaction: discord.Interaction, value: bool
+        self, mctx: lightbulb.components.MenuContext, value: bool
     ) -> None:
-        if interaction.user.id != self.author_id:
-            await interaction.response.send_message(
-                "This prompt is not for you.", ephemeral=True
+        if mctx.interaction.user.id != self.author_id:
+            await mctx.respond(
+                "This prompt is not for you.",
+                flags=hikari.MessageFlag.EPHEMERAL,
             )
             return
         self.value = value
-        self.stop()
-        if self.delete_after and interaction.message is not None:
-            await interaction.response.defer()
+        if self.delete_after:
             try:
-                await interaction.message.delete()
-            except discord.NotFound:
+                await mctx.delete_response(mctx.interaction.id)
+            except hikari.NotFoundError:
                 pass
         else:
-            await interaction.response.edit_message(view=None)
+            await mctx.edit_response(mctx.interaction.id, component=None)
+        mctx.stop_interacting()
 
-    @discord.ui.button(
-        label="Yes", style=discord.ButtonStyle.success, emoji="👍"
-    )
-    async def yes(
-        self,
-        interaction: discord.Interaction,
-        _button: discord.ui.Button[Any],
-    ) -> None:
-        await self._finish(interaction, True)
+    async def _yes(self, mctx: lightbulb.components.MenuContext) -> None:
+        await self._finish(mctx, True)
 
-    @discord.ui.button(
-        label="No", style=discord.ButtonStyle.danger, emoji="❌"
-    )
-    async def no(
-        self,
-        interaction: discord.Interaction,
-        _button: discord.ui.Button[Any],
-    ) -> None:
-        await self._finish(interaction, False)
+    async def _no(self, mctx: lightbulb.components.MenuContext) -> None:
+        await self._finish(mctx, False)
 
 
 async def author_confirm(
-    ctx: commands.Context[CazzuBot],
+    ctx: lightbulb.Context,
     confirmation_msg: str = "Please confirm.",
     *,
     delete_after: bool = True,
 ) -> bool:
     """Ask the author to confirm with Yes/No buttons; True if Yes."""
-    if ctx.invoked_with == "help":
-        return True
-    view = ConfirmView(ctx.author.id, delete_after=delete_after)
-    confirm = await ctx.send(confirmation_msg, view=view)
-    await view.wait()
-    if (
-        view.value is None
-    ):  # timed out — mirror old behaviour: remove prompt
+    member = ctx.member or ctx.user
+    menu = ConfirmMenu(member.id, delete_after=delete_after)
+    await ctx.respond(
+        confirmation_msg,
+        component=cast(Any, menu),  # Menu is a builder at runtime
+    )
+    try:
+        await menu.attach(ctx.client, timeout=7.0)
+    except asyncio.TimeoutError:
+        # timed out — mirror old behaviour: remove prompt
         try:
-            await confirm.delete()
-        except discord.NotFound:
+            await ctx.delete_response(ctx.interaction.id)
+        except hikari.NotFoundError:
             pass
         return False
-    return view.value
+    return bool(menu.value)
 
 
 def deep_map(

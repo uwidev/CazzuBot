@@ -1,15 +1,14 @@
 """Levels presentation — the level-up side effects (controller edge).
 
 Thin: decide via ``plugins.levels.logic``, then either react or send the
-configured template. Replaced wholesale on a framework swap — everything
-below the decisions in ``logic.py`` stays.
+configured template. Everything below the decisions in ``logic.py`` stays.
 """
 
 from __future__ import annotations
 
 import logging
 
-import discord
+import hikari
 
 from cazzubot import templates, utils
 from cazzubot.bot import CazzuBot
@@ -26,10 +25,10 @@ REACTION_EMOJI = "🎉"
 
 async def present_level_up(
     bot: CazzuBot,
-    message: discord.Message,
+    message: hikari.Message,
     level: OldNew,
     *,
-    delete_after: int = 0,
+    delete_after: float = 0,
 ) -> None:
     """Send the level-up message when a member levels up (unless ranked up)."""
     if level.new <= level.old:
@@ -39,13 +38,15 @@ async def present_level_up(
     action = decide_level_up(
         level,
         ranked_up=ranked_up,
-        channel_id=message.channel.id,
+        channel_id=message.channel_id,
         quiet_ids=quiets,
     )
     if action is LevelUpAction.SKIP:
         return
     if action is LevelUpAction.REACTION:
-        await message.add_reaction(REACTION_EMOJI)
+        await bot.rest.add_reaction(
+            message.channel_id, message.id, REACTION_EMOJI
+        )
         return
 
     msg_json = await bot.settings.get(MESSAGE_KEY)
@@ -58,6 +59,21 @@ async def present_level_up(
         level_old=level.old,
         level_new=level.new,
     )
-    await templates.send(
-        message.channel, msg_json, delete_after=delete_after
-    )
+    channel = _guild_channel(bot, message)
+    if channel is None:
+        return
+    sent = await templates.send(channel, msg_json)
+    if delete_after:
+        utils.schedule_delete(bot, channel.id, sent.id, delete_after)
+
+
+def _guild_channel(
+    bot: CazzuBot, message: hikari.Message
+) -> hikari.TextableGuildChannel | None:
+    """The cached guild channel a message was sent in."""
+    if message.guild_id is None:
+        return None
+    channel = bot.cache.get_guild_channel(message.channel_id)
+    if isinstance(channel, hikari.TextableGuildChannel):
+        return channel
+    return None
