@@ -38,10 +38,10 @@ async def present_ranks(
     Seasonal ranks notify on rank-up; lifetime ranks stay silent. Role
     integrity is enforced for both windows regardless.
     """
-    if not isinstance(member, hikari.Member):
+    member_role_ids = getattr(member, "role_ids", None)
+    if member_role_ids is None:
         return  # rank roles only exist for guild members
-
-    member_role_ids = list(map(int, member.role_ids))
+    member_role_ids = list(map(int, member_role_ids))
     add_ids: list[int] = []
     remove_ids: list[int] = []
     for mode, level, notify in (
@@ -116,7 +116,7 @@ async def _notify_rank_up(
         level_new=plan.level_new,
     )
     channel = bot.cache.get_guild_channel(channel_id)
-    if not isinstance(channel, hikari.TextableGuildChannel):
+    if channel is None or not hasattr(channel, "send"):
         return
     sent = await templates.send(channel, msg_json)
     if delete_after:

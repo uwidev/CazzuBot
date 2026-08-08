@@ -42,8 +42,10 @@ async def db(tmp_path: Path) -> AsyncGenerator[Database, None]:
 
 @pytest.fixture
 async def bot(tmp_path: Path) -> AsyncGenerator[CazzuBot, None]:
-    """A booted CazzuBot with no plugins and no Discord connection."""
+    """A booted CazzuBot with plugin schemas but no extensions or hooks."""
     import hikari
+
+    from cazzubot.plugin import discover_plugins
 
     instance = CazzuBot(
         Config(
@@ -57,6 +59,10 @@ async def bot(tmp_path: Path) -> AsyncGenerator[CazzuBot, None]:
     await instance._on_starting(  # pyright: ignore[reportPrivateUsage]
         hikari.StartingEvent(app=instance)
     )
+    # plugin tables only — the extensions/cogs/hooks are ported plugin by
+    # plugin and get their own fixtures; db tests just need the DDL.
+    for plugin in discover_plugins("plugins"):
+        await instance.db.run_schema(plugin.schema)
     await instance._on_started(  # pyright: ignore[reportPrivateUsage]
         hikari.StartedEvent(app=instance)
     )

@@ -3,10 +3,12 @@
 The presenters are the controller-edge halves of the levels/ranks pipeline
 (cross-plugin services the experience controller calls); their *decisions*
 (``decide_level_up``, ``plan_rank_changes``) are pure and tested directly
-below, the discord side effects through the fakes.
+below, the hikari side effects through the rest/cache fakes.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
@@ -18,22 +20,26 @@ from plugins.ranks.db import RankThreshold
 from plugins.ranks.logic import plan_rank_changes
 from plugins.ranks.presenter import present_ranks
 from tests.fakes import (
+    FakeCache,
     FakeChannel,
-    FakeGuild,
     FakeMember,
     FakeMessage,
+    FakeRest,
     FakeRole,
 )
 
+_GUILD_ID = 2
+_CHANNEL_ID = 99
+_RANK_REASON = "Rank up/Rank-role integrity"
+
 
 def _msg(author: FakeMember, channel: FakeChannel) -> FakeMessage:
-    assert author.guild is not None
     return FakeMessage(
         id=1,
         content="hi",
         author=author,
-        guild=author.guild,
-        channel=channel,
+        guild_id=_GUILD_ID,
+        channel_id=channel.id,
     )
 
 
@@ -172,106 +178,119 @@ def test_plan_same_band_crossing_does_not_notify() -> None:
 
 
 async def test_level_up_noop_without_level_gain(
-    bot: CazzuBot, channel: FakeChannel, author: FakeMember
+    seeded_bot: CazzuBot, channel: FakeChannel, author: FakeMember
 ) -> None:
-    await present_level_up(bot, _msg(author, channel), utils.OldNew(5, 5))
+    await present_level_up(
+        seeded_bot, _msg(author, channel), utils.OldNew(5, 5)
+    )
     assert channel.sent == []
 
 
 async def test_level_up_quiet_channel_reaction(
-    bot: CazzuBot, channel: FakeChannel, author: FakeMember
+    seeded_bot: CazzuBot, channel: FakeChannel, author: FakeMember
 ) -> None:
-    await bot.settings.set("level.quiet", [channel.id])
-    await bot.settings.set("level.message", {"content": "level up!"})
+    await seeded_bot.settings.set("level.quiet", [channel.id])
+    await seeded_bot.settings.set(
+        "level.message", {"content": "level up!"}
+    )
     message = _msg(author, channel)
-    await present_level_up(bot, message, utils.OldNew(0, 1))
+    await present_level_up(seeded_bot, message, utils.OldNew(0, 1))
     assert channel.sent == []
-    assert message.reactions == ["🎉"]
+    assert seeded_bot.rest.reactions == [(channel.id, message.id, "🎉")]
 
 
 async def test_level_up_sends_formatted_message(
-    bot: CazzuBot, channel: FakeChannel, author: FakeMember
+    seeded_bot: CazzuBot,
+    channel: FakeChannel,
+    author: FakeMember,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    await bot.settings.set(
+    await seeded_bot.settings.set(
         "level.message",
         {"content": "{name} leveled {level_old}->{level_new}"},
     )
+    scheduled: list[tuple[int, int, float]] = []
+    monkeypatch.setattr(
+        "cazzubot.utils.schedule_delete",
+        lambda _bot, cid, mid, delay: scheduled.append((cid, mid, delay)),
+    )
     await present_level_up(
-        bot,
+        seeded_bot,
         _msg(author, channel),
         utils.OldNew(0, 1),
         delete_after=7,
     )
     assert channel.sent[0]["content"] == "cirno leveled 0->1"
-    assert channel.sent[0]["delete_after"] == 7
+    assert scheduled == [(channel.id, 1, 7)]
 
 
 # -- present_ranks ----------------------------------------------------------
 
 
 async def test_rank_up_adds_role_and_notifies(
-    bot: CazzuBot,
+    seeded_bot: CazzuBot,
     channel: FakeChannel,
     author: FakeMember,
-    fake_guild: FakeGuild,
+    fake_cache: FakeCache,
 ) -> None:
     role = FakeRole(id=111, name="Frog King")
-    fake_guild.add_role(role)
-    await _enable_ranks(bot, WindowEnum.SEASONAL)
-    await ranks_db.add(bot.db, 111, 5)
+    fake_cache.add_role(role)
+    await _enable_ranks(seeded_bot, WindowEnum.SEASONAL)
+    await ranks_db.add(seeded_bot.db, 111, 5)
     await ranks_db.set_message(
-        bot.settings,
+        seeded_bot.settings,
         {"content": "rank up to {rank_new}"},
         WindowEnum.SEASONAL,
     )
 
     await present_ranks(
-        bot,
+        seeded_bot,
         author,
-        channel,
+        _CHANNEL_ID,
         utils.OldNew(4, 5),  # crossed threshold 5
         utils.OldNew(0, 0),
     )
 
-    assert role in author.added_roles
+    assert seeded_bot.rest.added_roles == [
+        (author.id, role.id, _RANK_REASON)
+    ]
     assert channel.sent[0]["content"] == "rank up to <@&111>"
 
 
 async def test_rank_demotion_removes_roles(
-    bot: CazzuBot,
+    seeded_bot: CazzuBot,
     channel: FakeChannel,
-    author: FakeMember,
-    fake_guild: FakeGuild,
+    fake_cache: FakeCache,
+    fake_rest: FakeRest,
 ) -> None:
     role = FakeRole(id=111, name="Frog King")
-    fake_guild.add_role(role)
-    author = FakeMember(
-        id=424242, name="cirno", guild=fake_guild, roles=[role]
-    )
-    fake_guild.add_member(author)
-    await _enable_ranks(bot, WindowEnum.SEASONAL)
-    await ranks_db.add(bot.db, 111, 5)
+    fake_cache.add_role(role)
+    author = FakeMember(id=424242, name="cirno", roles=[role])
+    fake_cache.add_member(author)
+    fake_rest.members[(_GUILD_ID, author.id)] = author
+    await _enable_ranks(seeded_bot, WindowEnum.SEASONAL)
+    await ranks_db.add(seeded_bot.db, 111, 5)
 
     await present_ranks(
-        bot,
+        seeded_bot,
         author,
-        channel,
+        _CHANNEL_ID,
         utils.OldNew(5, 4),  # fell below threshold 5
         utils.OldNew(0, 0),
     )
 
-    assert role in author.removed_roles
+    assert seeded_bot.rest.removed_roles == [(author.id, role.id, None)]
 
 
 async def test_ranks_disabled_are_noop(
-    bot: CazzuBot, channel: FakeChannel, author: FakeMember
+    seeded_bot: CazzuBot, channel: FakeChannel, author: FakeMember
 ) -> None:
-    await ranks_db.add(bot.db, 111, 5)
+    await ranks_db.add(seeded_bot.db, 111, 5)
     await present_ranks(
-        bot,
+        seeded_bot,
         author,
-        channel,
+        _CHANNEL_ID,
         utils.OldNew(4, 5),
         utils.OldNew(0, 0),
     )
-    assert author.added_roles == []
+    assert seeded_bot.rest.added_roles == []

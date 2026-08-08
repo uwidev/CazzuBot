@@ -182,6 +182,9 @@ class FakeMessage:
         self.id = id
         self.content = content
         self.author = author
+        self.member: FakeMember | None = (
+            author if isinstance(author, FakeMember) else None
+        )
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.created_at = created_at or datetime.now(timezone.utc)
@@ -264,9 +267,9 @@ class FakeRest:
         self.kicked: list[tuple[FakeMember, str | None]] = []
         self.banned: list[tuple[FakeMember, str | None]] = []
         self.unbanned: list[tuple[FakeUser, str | None]] = []
-        self.deleted: list[FakeMessage] = []
+        self.deleted: list[tuple[int, int]] = []
         self.edited: list[tuple[FakeMessage, dict[str, Any]]] = []
-        self.reactions: list[tuple[FakeMessage, str]] = []
+        self.reactions: list[tuple[int, int, str]] = []
         self.typing_channels: list[int] = []
 
     async def add_role_to_member(
@@ -359,17 +362,14 @@ class FakeRest:
         return message
 
     async def delete_message(
-        self, _channel_id: int, message: FakeMessage
+        self, channel_id: int, message_id: int
     ) -> None:
-        message.deleted = True
-        self.deleted.append(message)
+        self.deleted.append((channel_id, message_id))
 
     async def add_reaction(
         self, channel_id: int, message_id: int, emoji: str
     ) -> None:
-        message = await self.fetch_message(channel_id, message_id)
-        message.reactions.append(emoji)
-        self.reactions.append((message, emoji))
+        self.reactions.append((channel_id, message_id, emoji))
 
     async def trigger_typing(self, channel_id: int) -> None:
         self.typing_channels.append(channel_id)
@@ -412,12 +412,21 @@ class FakeInteraction:
         self.custom_id = custom_id
 
 
+class FakeClient:
+    """Minimal lightbulb-client stand-in: commands reach the bot via ``app``."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+        self._attached_menus: set[object] = set()
+
+
 class FakeContext:
     """A lightbulb-style context that records ``respond`` calls.
 
     Satisfies the ``window.Sendable`` protocol (``respond(content, flags=)``)
     and the lightbulb ``Context`` surface the ported cogs use (``member``,
-    ``options``, ``interaction``, ``respond``, ``defer``).
+    ``user``, ``options``, ``interaction``, ``client``, ``respond``,
+    ``defer``, ``edit_response``, ``delete_response``).
     """
 
     def __init__(
@@ -432,6 +441,7 @@ class FakeContext:
     ) -> None:
         self.bot = bot
         self.member = member
+        self.user: FakeUser = member
         self.guild_id = guild.id
         self.channel_id = channel.id
         self.options = options or {}
@@ -440,9 +450,12 @@ class FakeContext:
             guild_id=guild.id,
             channel_id=channel.id,
         )
+        self.client = FakeClient(bot)
         self.sent: list[SentMessage] = []
         self.deferred: bool = False
         self.modals: list[Any] = []
+        self.edits: list[dict[str, Any]] = []
+        self.deleted: list[int] = []
 
     async def respond(
         self,
@@ -479,6 +492,67 @@ class FakeContext:
 
     async def create_modal_response(self, modal: Any, /) -> None:
         self.modals.append(modal)
+
+    async def edit_response(
+        self, response_id: int, **kwargs: Any
+    ) -> FakeMessage:
+        self.edits.append({"response_id": response_id, **kwargs})
+        return FakeMessage(id=response_id)
+
+    async def delete_response(self, response_id: int) -> None:
+        self.deleted.append(response_id)
+
+
+class FakeMenuContext:
+    """Lightbulb MenuContext stand-in: records respond/edit/stop calls."""
+
+    def __init__(self, interaction: FakeInteraction) -> None:
+        self.interaction = interaction
+        self.sent: list[SentMessage] = []
+        self.edits: list[dict[str, Any]] = []
+        self.deleted: list[int] = []
+        self.stopped: bool = False
+
+    async def respond(
+        self,
+        content: str | None = None,
+        *,
+        embed: hikari.Embed | None = None,
+        embeds: list[hikari.Embed] | None = None,
+        component: Any = None,
+        flags: int = 0,
+        **kwargs: Any,
+    ) -> None:
+        self.sent.append(
+            SentMessage(
+                content=content,
+                embed=embed,
+                embeds=embeds,
+                component=component,
+                flags=flags,
+                ephemeral=bool(flags & hikari.MessageFlag.EPHEMERAL),
+            )
+        )
+
+    async def edit_response(self, response_id: int, **kwargs: Any) -> None:
+        self.edits.append({"response_id": response_id, **kwargs})
+
+    async def delete_response(self, response_id: int) -> None:
+        self.deleted.append(response_id)
+
+    def stop_interacting(self) -> None:
+        self.stopped = True
+
+
+class FakeMessageCreateEvent:
+    """hikari.MessageCreateEvent stand-in for the exp pipeline listener."""
+
+    def __init__(self, message: FakeMessage, app: Any = None) -> None:
+        self.message = message
+        self.app = app
+        self.is_human: bool = not bool(
+            message.author.bot if message.author is not None else False
+        )
 
 
 def first_button_custom_id(

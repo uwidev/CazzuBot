@@ -105,9 +105,7 @@ class Clean(
                 ctx, "Run rank clean in the server, not DMs."
             )
             return
-        removed = [
-            r.rid for r in rows if not bot.cache.get_role(r.rid)
-        ]
+        removed = [r.rid for r in rows if not bot.cache.get_role(r.rid)]
         await ranks_db.batch_delete(bot.db, removed)
         await window_success(
             ctx, f"Removed {len(removed)} stale rank roles"
