@@ -12,6 +12,7 @@ request path with the raw API payload keys.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -145,6 +146,18 @@ def _kind_of(ch: Any) -> tuple[str, bool]:
     return type_name or "unknown", True
 
 
+def _seconds(value: Any) -> int:
+    """A rate-limit value as whole seconds.
+
+    hikari returns ``datetime.timedelta`` for ``rate_limit_per_user`` /
+    ``default_thread_rate_limit_per_user`` (its ``Intervalish`` type),
+    discord.py returns int seconds — both come out as seconds here.
+    """
+    if isinstance(value, datetime.timedelta):
+        return int(value.total_seconds())
+    return int(value or 0)
+
+
 def _snapshot_channel(
     ch: Any, kind: str, category: str | None
 ) -> ChannelSnapshot:
@@ -160,7 +173,7 @@ def _snapshot_channel(
         "slowmode": 0,
     }
     if kind in SLOWMODE_KINDS:
-        snap["slowmode"] = int(
+        snap["slowmode"] = _seconds(
             getattr(ch, "slowmode_delay", 0)
             or getattr(ch, "rate_limit_per_user", 0)
             or getattr(ch, "default_thread_rate_limit_per_user", 0)
@@ -474,14 +487,16 @@ def _attr_mismatches(
                 out.append("nsfw")
         elif field_name == "slowmode":
             if _kind_of(channel)[0] == "forum":
-                have = int(
+                have = _seconds(
                     getattr(
                         channel, "default_thread_rate_limit_per_user", 0
                     )
                     or 0
                 )
             else:
-                have = int(getattr(channel, "rate_limit_per_user", 0) or 0)
+                have = _seconds(
+                    getattr(channel, "rate_limit_per_user", 0) or 0
+                )
             if have != want:
                 out.append("slowmode")
         elif field_name == "bitrate":
