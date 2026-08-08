@@ -4,6 +4,25 @@ Deferred work, parked by request ("we will work on it later when I request it").
 Pick these up when the owner asks; each item links to the discussion that
 motivated it.
 
+## Schema verification and row casting for monolithic pluigins
+I think currently the code only looks for a db module for plugins and uses that to verify the schema and to cast rows into the dataclass. If a module isn't structured as CSR, this feature might not function.
+
+If a plugin isn't CSR, it should hopefully still try to look at __init__.py for defined dataclass and like for schema verificaiton and row casting.
+
+> **Done** — neither feature depends on a `db.py` module, so monolithic
+> plugins already get both. Schema verification is driven by the
+> `Plugin.schema` attribute (`cazzubot/plugin.py`), collected from every
+> plugin and drift-checked at boot by `CazzuBot.setup_hook` +
+> `Database.verify_schema` (`cazzubot/bot.py`, `cazzubot/db.py`); CSR
+> plugins writing `schema = db.SCHEMA` in `__init__.py` is just an import,
+> and a monolithic `__init__.py` can inline the same DDL list. Row casting
+> is a call-site utility (`Database.fetch_model`/`fetch_models`, `row_to`/
+> `rows_to` in `cazzubot/db.py`) that takes the model type explicitly — a
+> monolithic `__init__.py` can define a `@dataclass` and call it directly.
+> No plugin today exercises it monolithically only because the monoliths
+> (`daily`, `dev`, `fun`, `levels`, `quarterly`, `welcome`) own no tables —
+> they use settings, files, or other plugins' `db` modules.
+
 ## Plugin dependency policy — `depends_on`
 
 Add `depends_on: list[str]` to the `Plugin` base (`cazzubot/plugin.py`). The
@@ -256,3 +275,16 @@ same behavior for the single-role case, deterministic (and arguably more
 correct) for multi-role.
 
 > **Done** — resolved by the extraction; recorded for context.
+
+## Core asset management (design in docs/ASSETS.md)
+
+Full design written up in `docs/ASSETS.md` from the gamification planning
+discussion — parked here for later review and potential implementation. The
+short version: a three-layer system — plugin-declared definitions (static in
+git / dynamic via admin upload), a content-addressed registry table (catalog
+of records, namespaced keys), and Discord-CDN delivery (sha256-diffed sync to
+a private asset channel, URL-only so templates/embeds stay untouched).
+Prerequisite (also designed there): the frogs catalog rework — species rows +
+inventory + recipes replace the current column-per-type model
+(`member_frog.normal/frozen`, `FrogTypeEnum`), with effects via a
+string-key → handler registry and dishes as crafted species.
