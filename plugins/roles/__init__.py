@@ -37,7 +37,7 @@ def _role_snapshot(role: hikari.Role, pos: int) -> RoleSnapshot:
     perms = [
         name
         for name in VALID_FLAGS
-        if getattr(role.permissions, name, False)
+        if getattr(role.permissions, name.upper(), False)
     ]
     # hikari 2.5 has no RoleTags; managed roles are never user-manageable,
     # which is the only property the plan reads the tags for.

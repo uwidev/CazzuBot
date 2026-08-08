@@ -10,7 +10,9 @@ Validation failures raise ``cazzubot.errors.UserInputError`` (never
 One permanent carve-out: ``plugins/frogs/factory.py`` stays
 controller-shaped by design (the spawn handler and capture view are
 scheduling + discord side effects — see docs/BACKLOG.md). Everything else
-under ``plugins`` must NOT import discord.
+under ``plugins`` must NOT import discord — and since the hikari port, the
+test infrastructure (``tests/fakes.py``/``conftest.py``) must not either:
+the suite's fakes are the contract for the hikari surface.
 """
 
 from __future__ import annotations
@@ -25,13 +27,22 @@ _ALLOWLIST = {
     "plugins.frogs.factory",  # spawn handler + capture view (controller)
 }
 
+# The CLI tooling (roles/channels/snapshot) keeps discord.py until the
+# follow-up CLI port to hikari REST; its engine modules are controller-adjacent
+# and excluded here (see docs/HIKARI_MIGRATION.md).
+_CLI_ALLOWLIST = {
+    "cazzubot.roles.executor",
+    "cazzubot.channels.executor",
+    "cazzubot.roles.export",
+    "cazzubot.channels.export",
+    "cazzubot.cli.core",
+    "cazzubot.cli.roles",
+    "cazzubot.cli.channels",
+    "cazzubot.cli.snapshot",
+    "cazzubot.cli.manifest",
+}
 
-def _service_modules() -> list[Path]:
-    return sorted(
-        p
-        for p in Path("plugins").rglob("*.py")
-        if p.name in SERVICE_FILENAMES
-    )
+_TEST_DIRS = ("tests",)
 
 
 def _imports_discord(path: Path) -> bool:
@@ -50,6 +61,22 @@ def _imports_discord(path: Path) -> bool:
     return False
 
 
+def _service_modules() -> list[Path]:
+    return sorted(
+        p
+        for p in Path("plugins").rglob("*.py")
+        if p.name in SERVICE_FILENAMES
+    )
+
+
+def _test_modules() -> list[Path]:
+    return sorted(
+        p
+        for p in Path(_TEST_DIRS[0]).rglob("*.py")
+        if p.name in ("fakes.py", "conftest.py")
+    )
+
+
 def test_service_modules_do_not_import_discord() -> None:
     offenders = [
         path
@@ -59,5 +86,29 @@ def test_service_modules_do_not_import_discord() -> None:
     ]
     assert offenders == [], (
         "service modules must not import discord: "
+        + ", ".join(str(p) for p in offenders)
+    )
+
+
+def test_fakes_do_not_import_discord() -> None:
+    offenders = [
+        path for path in _test_modules() if _imports_discord(path)
+    ]
+    assert offenders == [], (
+        "test infrastructure must not import discord: "
+        + ", ".join(str(p) for p in offenders)
+    )
+
+
+def test_core_modules_do_not_import_discord() -> None:
+    """cazzubot core is discord-free since the hikari port (CLI excluded)."""
+    offenders = [
+        path
+        for path in Path("cazzubot").rglob("*.py")
+        if ".".join(path.with_suffix("").parts) not in _CLI_ALLOWLIST
+        and _imports_discord(path)
+    ]
+    assert offenders == [], (
+        "core modules must not import discord: "
         + ", ".join(str(p) for p in offenders)
     )

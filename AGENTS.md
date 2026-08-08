@@ -1,10 +1,10 @@
 # CazzuBot
 
-Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. Python 3.14 + discord.py 2.7.1 + aiosqlite, managed with uv. Runs as `main.py`.
+Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. Python 3.14 + hikari 2.5 + hikari-lightbulb 3.2 + aiosqlite, managed with uv. Runs as `main.py`. Slash-only (guild-scoped).
 
 ## Project
 
-- Entry point: `main.py` (`-d` debug, `-p` production, `-s` sandbox = only poll/board/dev plugins; prefix `d!` / `c!`). Reads `TOKEN`/`TOKEN_DEV`, `OWNER_ID`, `GUILD_ID`, `DB_PATH` from `.env` (see `.env.example`).
+- Entry point: `main.py` (`-d` debug, `-p` production, `-s` sandbox = only poll/board/dev plugins). Reads `TOKEN`/`TOKEN_DEV`, `OWNER_ID`, `GUILD_ID`, `DB_PATH` from `.env` (see `.env.example`). Slash commands are guild-scoped (`default_enabled_guilds`).
 - `cazzubot/` = core package (bot, db, settings, scheduler, plugin loader, utils, levels, leaderboard, templates, timeparse); `plugins/` = one folder per feature, auto-discovered; `board/`/`download/`/`emojis/` = asset dirs (gitignored).
 - Single sqlite file `data/cazzubot.db`, created on first boot — no docker/Postgres. v1 data is not migrated.
 - Design docs: `docs/ARCHITECTURE.md`, `docs/PLUGINS.md`. **Read PLUGINS.md before adding a feature.**
@@ -20,9 +20,9 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 
 ## Architecture
 
-- `cazzubot/bot.py` — `CazzuBot(commands.Bot)`: owns `config`, `db`, `settings`, `scheduler`, `plugins`; two-phase plugin load (schemas+cogs first, then `on_load` hooks — no load-order deps); debug gating.
+- `cazzubot/bot.py` — `CazzuBot(hikari.GatewayBot)` + a lightbulb `GatewayEnabledClient`: owns `config`, `db`, `settings`, `scheduler`, `plugins`; two-phase plugin load (schemas+extensions first, then `on_load` hooks — no load-order deps); `verify_schema` boot guard; debug gating as a CHECKS hook; `UserInputError` unwrap in the client error handler.
 - `cazzubot/db.py` — `Database`: aiosqlite wrapper (WAL, FK on, explicit `transaction()`), `execute/fetchall/fetchone/fetchval/executemany`, `dump_json/load_json`, `verify_schema` (boot-time drift check: DB schema must match the Python DDL exactly, extra tables allowed; mismatch → boot aborts). Enums → TEXT, timestamps → ISO-8601 UTC.
-- `cazzubot/plugin.py` — `Plugin` base (`name`, `cogs`, `schema`, `scheduled`, `on_load`/`on_unload`) + `discover_plugins()` (packages or single modules; each defines `plugin = MyPlugin()`).
+- `cazzubot/plugin.py` — `Plugin` base (`name`, `extensions` — import paths of lightbulb extension modules with a `loader = lightbulb.Loader()`, `schema`, `scheduled`, `on_load`/`on_unload`) + `discover_plugins()` (packages or single modules; each defines `plugin = MyPlugin()`).
 - `cazzubot/scheduler.py` — one loop over `tasks(tag, run_at, payload)`; tags registered via `Plugin.scheduled`; handlers re-schedule by inserting rows. Replaces frog/counter/mod expiry loops.
 - `cazzubot/settings.py` — JSON key-value store (single guild), namespaced keys (e.g. `frog.enabled`, `rank.seasonal.message`, `level.quiet`).
 - `cazzubot/window.py` — buffered, level-tagged command reporting to Discord (`command_window(ctx)` CM, `@windowed` decorator, `window_*` one-off helpers); auto-flushes at end of command and on error; ephemeral on slash. Distinct from CLI logging.
@@ -38,12 +38,13 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - Service modules (`logic.py`/`factory.py`/`db.py`) never import discord —
   enforced by `tests/core/test_csr_boundary.py` (only carve-out:
   `plugins/frogs/factory.py`, controller-shaped by design). Service/core
-  validation errors raise `cazzubot.errors.UserInputError` (never
-  `commands.BadArgument`); the command edge translates them back.
+  validation errors raise `cazzubot.errors.UserInputError`; the lightbulb
+  error handler in bot.py translates them (and `ConversionFailedException`)
+  into ephemeral replies.
   Framework-agnostic member values travel as `cazzubot.models.MemberSnapshot`.
-- Plugins reach services via `bot.db`, `bot.settings`, `bot.scheduler`, `bot.config`, `bot.guild`. Plugin db modules take `db: Database` (or `settings: Settings`) as first arg; cogs take the bot.
+- Plugins reach services via `bot.db`, `bot.settings`, `bot.scheduler`, `bot.config`, `bot.guild`. Plugin db modules take `db: Database` (or `settings: Settings`) as first arg; extension modules use `ctx.client.app` (the `CazzuBot`) and listeners get it from `event.app`.
 - No `gid` columns anywhere; no FK decorators; `INSERT OR IGNORE`/`INSERT OR REPLACE` for idempotent writes.
-- `tasks.loop(time=…)` only for daily/quarterly cadence (with missed-run force check on boot); everything delayed goes through the scheduler.
+- Daily/quarterly cadence and all delayed work go through the central scheduler (tags `daily`/`quarterly`/`frog`/`modlog`/`counter`), re-armed on due and on `on_load` (missed-run force checks on boot).
 - User-configurable message JSON goes through `cazzubot.templates.verify`
   (jsonschema-validated), is readied by `prepare`, and delivered by `send`
   (single `embed`/`embeds`/empty-content handling, any send target);

@@ -1,9 +1,13 @@
 # Hikari migration — the seam map
 
-Goal: swap `discord.py` → `hikari` with behavior intact. The CSR refactor
-plus the prep below drew every seam; this doc is the map. Everything marked
-**pure** survives the swap untouched; everything marked **framework-bound**
-gets rewritten, and this doc says what it becomes.
+Goal: swap `discord.py` → `hikari` with behavior intact. **Status: done as
+of 022ba52** — the bot runs on hikari 2.5 + hikari-lightbulb 3.2 (slash-only,
+guild-scoped), all 14 plugins are ported, and the suite is green (260
+passed). The remaining discord.py consumers are the CLI tooling
+(roles/channels/snapshot) and the legacy scripts, tracked in docs/BACKLOG.md
+(the "port CLI to hikari REST" follow-up). This doc is the map that guided
+the port; everything marked **pure** survived untouched, everything marked
+**framework-bound** was rewritten as described.
 
 ## Current state of the seams
 

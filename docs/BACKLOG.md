@@ -338,3 +338,22 @@ console-script entry (e.g. `cazzubot = "…:main"`) so the bot runs as
 the role CLI. Requires moving main()'s logic into the package (e.g.
 `cazzubot/__main__.py` or a small run module) so it is importable as a
 script target; keep the existing `python main.py` path working.
+
+## Port the CLI tooling to hikari REST (then drop discord.py)
+
+The roles/channels/snapshot CLI (`cazzubot/cli/*`, `cazzubot/roles/*`,
+`cazzubot/channels/*`) still boots a throwaway discord.py client. When the
+owner requests it:
+
+- rewrite the live verbs (`export`, `diff`, `check`, `apply`, `restore`,
+  `snapshot fetch`) against `hikari.RESTApp`/`RESTClient` (no gateway
+  needed) — the engine layers (`parser`, `plan`, `snapshot_channels`)
+  are already framework-agnostic (`channels.executor._kind_of` resolves
+  both frameworks; `roles/parser.VALID_FLAGS` derives from hikari)
+- remove `discord.py` from the `cli` dependency group and from
+  `tool.uv.default-groups` (pyproject.toml comment marks the spot)
+- delete the last discord imports in `cazzubot/cli/core.py` etc. and drop
+  the CLI allowlist in `tests/core/test_csr_boundary.py`
+- port `scripts/boot_check_migrated.py` / `verify_migration.py` /
+  `migrate_pg_to_sqlite.py` when touched (they still reference
+  `setup_hook`/`wait_until_ready`)

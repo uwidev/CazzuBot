@@ -8,22 +8,12 @@ everything it needs lives inside it. No central registration anywhere.
 Create `plugins/myfeature/__init__.py`:
 
 ```python
-from discord.ext import commands
 from cazzubot import Plugin
-
-
-class MyCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-    @commands.command()
-    async def hello(self, ctx):
-        await ctx.send("world")
 
 
 class MyFeature(Plugin):
     name = "myfeature"  # unique id (defaults to folder name)
-    cogs = [MyCog]  # cog classes (any number)
+    extensions = ["plugins.myfeature.cog"]  # lightbulb extension module(s)
     schema = [  # DDL, idempotent, runs at boot
         "CREATE TABLE IF NOT EXISTS myfeature (key TEXT PRIMARY KEY, value TEXT)",
     ]
@@ -32,7 +22,7 @@ class MyFeature(Plugin):
     }  # tag -> async handler(bot, payload)
 
     async def on_load(self, bot):
-        """Optional startup hook (after every plugin's schema/cogs are ready)."""
+        """Optional startup hook (after every plugin's schema/extensions are ready)."""
 
     async def on_unload(self, bot):
         """Optional teardown hook."""
@@ -41,14 +31,39 @@ class MyFeature(Plugin):
 plugin = MyFeature()
 ```
 
-Restart (or `c!cog reload myfeature` if dev is loaded) — done.
+Commands live in a lightbulb extension module (`plugins/myfeature/cog.py`)
+with a module-level `loader = lightbulb.Loader()`; class-based commands are
+registered with `@loader.command`, listeners with `@loader.listener`, and
+the group with `loader.command(my_group)`:
+
+```python
+import lightbulb
+
+loader = lightbulb.Loader()
+
+hello = lightbulb.Group("hello", "Greetings.")
+
+
+@hello.register
+class Hello(lightbulb.SlashCommand, name="world", description="Say hi."):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        await ctx.respond("world")
+
+
+loader.command(hello)
+```
+
+The bot is reachable from commands as `ctx.client.app` (the `CazzuBot`) and
+from listeners as `event.app`. Restart (or `/cog reload myfeature` if dev
+is loaded) — done.
 
 For very small features, a single module `plugins/myfeature.py` with the same
 `plugin = MyFeature()` line works too.
 
 ## Services available on the bot
 
-Every cog gets the bot injected; use these instead of reaching into internals:
+Use these instead of reaching into internals:
 
 - `bot.db` — sqlite queries:
   `await bot.db.fetchall("SELECT * FROM t WHERE x = ?", x)`,
@@ -58,20 +73,20 @@ Every cog gets the bot injected; use these instead of reaching into internals:
 - `bot.scheduler` — delayed tasks that survive restarts:
   `await bot.scheduler.add("mytag", when, {"payload": 1})`; register the tag in
   `scheduled`. The handler re-schedules by adding a new row.
-- `bot.config` — `token`, `owner_id`, `guild_id`, `debug`, `sandbox`, `prefix`
+- `bot.config` — `token`, `owner_id`, `guild_id`, `debug`, `sandbox`
 - `bot.guild` — the one guild this bot serves
 
 ## Conventions
 
 - One plugin = one feature. Split big features into `db.py` (queries/schema),
-  `cog.py` (commands), `logic.py` (pure logic) inside the plugin folder.
+  `cog.py` (lightbulb extension), `logic.py` (pure logic) inside the plugin
+  folder.
 - **CSR boundary:** service (`logic.py`/`factory.py`) and repository (`db.py`)
   modules take `db`/`settings` + plain values (+ injected `now`) and must
-  **not** `import discord` — discord objects cross only the controller
-  boundary (pure-data `discord.Embed`/`Permissions`/`Colour` are fine). A new
-  plugin may start monolithic, but settles into this split via
-  test-then-extract. Enforced by `tests/core/test_csr_boundary.py`; the
-  allowlisted exceptions are the tracked remainder of the CSR backlog item.
+  **not** `import discord` or `hikari` — framework objects cross only the
+  controller boundary. Enforced by `tests/core/test_csr_boundary.py` (the
+  test fakes and the cazzubot core are checked too; the CLI engine is the
+  allowlisted remainder until the CLI port).
 - Enums are stored as TEXT; timestamps as ISO-8601 UTC strings; dicts/lists as
   JSON text (see `bot.db.dump_json` / `load_json`).
 - No `gid` columns — this bot serves one guild. Check `bot.config.guild_id`

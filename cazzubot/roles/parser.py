@@ -16,10 +16,14 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
-import discord
+import hikari
 from typing_extensions import override
 
-VALID_FLAGS: set[str] = set(discord.Permissions.VALID_FLAGS)
+# The Discord permission flag names, lowercased (both frameworks expose the
+# same words; hikari's are UPPER_SNAKE, discord.py's are lower_snake).
+VALID_FLAGS: set[str] = {
+    flag.name.lower() for flag in hikari.Permissions if flag.value > 0
+}
 
 # discord.py's named palette (values from the corresponding Colour
 # classmethods), so a manifest can say ``red`` instead of ``#e74c3c``.

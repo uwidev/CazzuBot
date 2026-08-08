@@ -4,7 +4,7 @@ A ground-up rewrite of the bot on the `rewrite` branch. Goals, in the user's wor
 
 1. **Trivially add new features** — zero friction, no touching shared files.
 2. **SQLite instead of PostgreSQL** — one file, no docker, no asyncpg, no codecs.
-3. **Latest discord.py (2.7.1)**.
+3. **hikari 2.5 + hikari-lightbulb 3.2** (was discord.py 2.7.1).
 4. **Single server** — one guild, no `gid` plumbing anywhere.
 
 ## What was wrong with v1 (the friction)
@@ -26,7 +26,7 @@ A ground-up rewrite of the bot on the `rewrite` branch. Goals, in the user's wor
 ```
 main.py                     thin entrypoint (flags -d/-p/-s)
 cazzubot/                   the core package (replaces src/)
-    bot.py                  CazzuBot(commands.Bot) — owns db, settings, scheduler, plugins
+    bot.py                  CazzuBot(hikari.GatewayBot) + lightbulb client — owns db, settings, scheduler, plugins
     config.py               Config dataclass from env; ONE guild_id
     db.py                   Database — aiosqlite wrapper, WAL, FK on, explicit transactions
     settings.py             settings(key, value) JSON key-value store (single guild)
@@ -49,13 +49,12 @@ A feature is **one folder**. To add a feature, drop this in `plugins/myfeature/_
 and restart — the loader finds it, runs its schema, registers its cogs, done:
 
 ```python
-from discord.ext import commands
 from cazzubot import Plugin
 
 
 class MyFeature(Plugin):
     name = "myfeature"
-    cogs = [MyCog]  # any number of cog classes
+    extensions = ["plugins.myfeature.cog"]  # lightbulb loader modules
     schema = ["CREATE TABLE IF NOT EXISTS myfeature (…)"]
     scheduled = {"mytag": my_handler}  # tag -> async handler(bot, payload)
 
@@ -101,14 +100,17 @@ plugin hooks) — command-local state goes to the user, not the CLI log.
 
 One `Scheduler` (a single `tasks.loop(seconds=1)`) polls `tasks(tag, run_at, payload)`.
 Plugins register handlers per tag (see `scheduled` above). Due tasks dispatch to their
-handler; the handler re-schedules by inserting a new row. Replaces the frog / counter /
-mod expiry loops. Daily & quarterly resets keep their own `tasks.loop(time=…)` plus a
-force-reset-on-boot check (as v1 did).
+handler; the handler re-schedules by inserting a new row. Daily & quarterly
+midnight cadence run through the same scheduler (tags `daily`/`quarterly`),
+re-armed on due and on `on_load` with a force-reset-on-boot check (as v1
+did).
 
 ## Single guild
 
-`Config.guild_id` is the one server. Cogs that need a guild resolve it from the bot and
-short-circuit elsewhere. Commands that are meaningless outside the server can be ignored.
+`Config.guild_id` is the one server. Extensions that need a guild resolve it
+from the bot (`bot.guild` from the cache) and short-circuit elsewhere.
+Commands are slash-only and guild-scoped via the lightbulb client's
+`default_enabled_guilds`.
 
 ## Kept from v1 (faithful ports)
 

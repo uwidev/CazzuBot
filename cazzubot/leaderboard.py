@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-import discord
+import hikari
 
 from cazzubot import levels
 
@@ -13,7 +13,7 @@ async def format_leaderboard_embed(
     names: Sequence[str],
     *,
     uid: int | None = None,
-) -> discord.Embed:
+) -> hikari.Embed:
     """Render ``(rank, uid, exp)`` rows into the standard leaderboard embed.
 
     Columns: Rank / Exp / Lv / User. ``names`` must be user-resolved display
@@ -37,9 +37,9 @@ async def format_leaderboard_embed(
         col_widths = calc_max_col_width(window, headers, max_padding)
         highlight_row(scoreboard, uids.index(uid), col_widths)
 
-    embed = discord.Embed(
+    embed = hikari.Embed(
         description=f"```py\n{chr(10).join(scoreboard)}```",
-        color=discord.Color.from_str("#a2dcf7"),
+        color=hikari.Color.from_hex_code("#a2dcf7"),
     )
     return embed
 
