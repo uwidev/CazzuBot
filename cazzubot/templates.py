@@ -86,7 +86,7 @@ MESSAGE_SCHEMA: dict[str, Any] = {
 
 def verify(
     raw: str,
-    formatter: Callable[..., str] | None = None,
+    formatter: Callable[..., str],
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Parse + validate user-supplied message JSON.
@@ -105,17 +105,16 @@ def verify(
         raise UserInputError("Message must be a JSON object")
     message = cast(dict[str, Any], decoded)
 
-    if formatter is not None:
-        demo: dict[str, Any] = copy.deepcopy(message)
-        from cazzubot.utils import deep_map
+    demo: dict[str, Any] = copy.deepcopy(message)
+    from cazzubot.utils import deep_map
 
-        deep_map(demo, formatter, **kwargs)
-        try:
-            validate(demo, MESSAGE_SCHEMA)
-        except ValidationError as err:
-            raise UserInputError(
-                f"Invalid message template: {err.message}"
-            ) from err
+    deep_map(demo, formatter, **kwargs)
+    try:
+        validate(demo, MESSAGE_SCHEMA)
+    except ValidationError as err:
+        raise UserInputError(
+            f"Invalid message template: {err.message}"
+        ) from err
     return message
 
 

@@ -51,7 +51,7 @@ async def test_owner_command(bot: CazzuBot, ctx: FakeContext) -> None:
 
 async def test_calc_helpers(bot: CazzuBot, ctx: FakeContext) -> None:
     await invoke_command(CalcTo(), ctx, n=5)
-    assert ctx.sent[-1].content == f"{levels.exp_to_level(5):.2f}"
+    assert ctx.sent[-1].content == f"{levels.exp_for_level(5):.2f}"
     await invoke_command(CalcCum(), ctx, n=5)
     assert ctx.sent[-1].content == f"{levels.exp_to_level_cum(5):.2f}"
 

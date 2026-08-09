@@ -86,13 +86,11 @@ async def spawn_and_wait(
         message = await ctx.fetch_response(response_id)
         channel_id = ctx.channel_id
     else:
-        channel = bot.cache.get_guild_channel(cid)
-        if channel is None or not hasattr(channel, "send"):
+        channel = utils.text_channel(bot, cid)
+        if channel is None:
             _log.warning("frog channel %s not found; skipping", cid)
             return False
-        message = await cast(Any, channel).send(  # hasattr guard above
-            FROG_EMOJI, components=cast(Any, menu)
-        )
+        message = await channel.send(FROG_EMOJI, components=cast(Any, menu))
         channel_id = cid
 
     # remember the frog message so a crashed process can clean it up on
@@ -274,11 +272,9 @@ def formatter(
 ) -> str:
     """Placeholders: {avatar} {name} {mention} {id} {frog_cnt_old}
     {frog_cnt_new} {seasonal_cap_old} {seasonal_cap_new}"""
-    return s.format(
-        avatar=member.avatar_url,
-        name=member.display_name,
-        mention=member.mention,
-        id=member.id,
+    return utils.format_member(
+        s,
+        member,
         frog_cnt_old=frog_cnt_old,
         frog_cnt_new=frog_cnt_new,
         seasonal_cap_old=seasonal_cap_old,

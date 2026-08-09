@@ -65,10 +65,6 @@ def _bot(ctx: lightbulb.Context) -> CazzuBot:
     return cast(CazzuBot, ctx.client.app)
 
 
-def _member_option(name: str, description: str):
-    return lightbulb.user(name, description)
-
-
 @loader.command()
 class ModCheck(
     lightbulb.SlashCommand,
@@ -88,7 +84,7 @@ class Warn(
     description="Warn the member, writing a modlog entry.",
     hooks=[_mod_gate],
 ):
-    member = _member_option("member", "The member to warn")
+    member = lightbulb.user("member", "The member to warn")
     reason = lightbulb.string("reason", "The reason")
 
     @lightbulb.invoke
@@ -111,7 +107,7 @@ class Mute(
     description="Mute the user until the given time (relative or absolute, UTC).",
     hooks=[_mod_gate],
 ):
-    member = _member_option("member", "The member to mute")
+    member = lightbulb.user("member", "The member to mute")
     raw = lightbulb.string(
         "raw",
         "Duration (e.g. 2h) or absolute time; blank = forever",
@@ -125,6 +121,17 @@ class Mute(
         if not mute_id:
             await ctx.respond(
                 "No mute role has been set (`set mute <role>`)."
+            )
+            return
+
+        guild = bot.guild
+        if guild is None:
+            await window_error(ctx, "Run mute in the server, not DMs.")
+            return
+        role = bot.cache.get_role(mute_id)
+        if role is None:
+            await window_error(
+                ctx, "Mute role no longer exists in this server."
             )
             return
 
@@ -149,15 +156,6 @@ class Mute(
                     "log_type": ModlogTypeEnum.MUTE.value,
                 },
             )
-
-        guild = bot.guild
-        if guild is None:
-            await ctx.respond("Not in a guild.")
-            return
-        role = bot.cache.get_role(mute_id)
-        if role is None:
-            await ctx.respond("Mute role no longer exists in this server.")
-            return
         await bot.rest.add_role_to_member(
             guild.id, self.member.id, role.id, reason=reason
         )
@@ -171,12 +169,16 @@ class Kick(
     description="Kick a member, writing a modlog entry.",
     hooks=[_mod_gate],
 ):
-    member = _member_option("member", "The member to kick")
+    member = lightbulb.user("member", "The member to kick")
     reason = lightbulb.string("reason", "The reason", default=None)
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = _bot(ctx)
+        guild = bot.guild
+        if guild is None:
+            await window_error(ctx, "Run kick in the server, not DMs.")
+            return
         await db.add_log(
             bot.db,
             self.member.id,
@@ -184,17 +186,13 @@ class Kick(
             pendulum.now("UTC"),
             reason=self.reason,
         )
-        guild = bot.guild
-        if guild is not None:
-            await bot.rest.kick_member(
-                guild.id,
-                self.member.id,
-                reason=(
-                    self.reason
-                    if self.reason is not None
-                    else hikari.UNDEFINED
-                ),
-            )
+        await bot.rest.kick_member(
+            guild.id,
+            self.member.id,
+            reason=(
+                self.reason if self.reason is not None else hikari.UNDEFINED
+            ),
+        )
         await window_info(ctx, f"Kicked {self.member}")
 
 
@@ -205,7 +203,7 @@ class Ban(
     description="Ban the user until the given time; without one, forever.",
     hooks=[_mod_gate],
 ):
-    member = _member_option("member", "The member to ban")
+    member = lightbulb.user("member", "The member to ban")
     raw = lightbulb.string(
         "raw",
         "Duration (e.g. 2h) or absolute time; blank = forever",
@@ -215,6 +213,11 @@ class Ban(
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = _bot(ctx)
+        guild = bot.guild
+        if guild is None:
+            await window_error(ctx, "Run ban in the server, not DMs.")
+            return
+
         now = pendulum.now("UTC")
         duration, reason = split_duration_reason(self.raw)
         ensure_future(now, duration)
@@ -234,14 +237,22 @@ class Ban(
                 duration,
                 {"uid": self.member.id, "log_type": ban_type.value},
             )
-        guild = bot.guild
-        if guild is not None:
-            await bot.rest.ban_member(
-                guild.id,
-                self.member.id,
-                reason=reason if reason is not None else hikari.UNDEFINED,
-            )
+        await bot.rest.ban_member(
+            guild.id,
+            self.member.id,
+            reason=reason if reason is not None else hikari.UNDEFINED,
+        )
         await window_info(ctx, f"Banned {self.member}")
+
+
+async def _drop_expiry_tasks(
+    bot: CazzuBot, uid: int, log_type: str
+) -> None:
+    """Drop pending ``modlog`` expiry tasks matching a user + log type."""
+    for task in await bot.scheduler.get("modlog"):
+        payload = task.payload
+        if payload.get("uid") == uid and payload.get("log_type") == log_type:
+            await bot.scheduler.drop(task.id)
 
 
 @loader.command()
@@ -251,7 +262,7 @@ class Unmute(
     description="Remove the mute role and any pending mute expiry.",
     hooks=[_mod_gate],
 ):
-    member = _member_option("member", "The member to unmute")
+    member = lightbulb.user("member", "The member to unmute")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
@@ -271,13 +282,7 @@ class Unmute(
             await bot.rest.remove_role_from_member(
                 guild.id, self.member.id, role.id, reason="Unmuted."
             )
-        for task in await bot.scheduler.get("modlog"):
-            payload = task.payload
-            if (
-                payload.get("uid") == self.member.id
-                and payload.get("log_type") == "mute"
-            ):
-                await bot.scheduler.drop(task.id)
+        await _drop_expiry_tasks(bot, self.member.id, "mute")
         await window_info(ctx, f"Unmuted {self.member}")
 
 
@@ -288,7 +293,7 @@ class Unban(
     description="Unban a user and drop any pending tempban expiry.",
     hooks=[_mod_gate],
 ):
-    user = _member_option("user", "The user to unban")
+    user = lightbulb.user("user", "The user to unban")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
@@ -300,13 +305,7 @@ class Unban(
         await bot.rest.unban_member(
             guild.id, self.user.id, reason="Unbanned."
         )
-        for task in await bot.scheduler.get("modlog"):
-            payload = task.payload
-            if (
-                payload.get("uid") == self.user.id
-                and payload.get("log_type") == "tempban"
-            ):
-                await bot.scheduler.drop(task.id)
+        await _drop_expiry_tasks(bot, self.user.id, "tempban")
         await window_info(ctx, f"Unbanned {self.user}")
 
 

@@ -7,7 +7,6 @@ configured template. Everything below the decisions in ``logic.py`` stays.
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
 
 import hikari
 
@@ -60,21 +59,11 @@ async def present_level_up(
         level_old=level.old,
         level_new=level.new,
     )
-    channel = _guild_channel(bot, message)
+    channel = utils.text_channel(
+        bot, message.channel_id if message.guild_id is not None else None
+    )
     if channel is None:
         return
     sent = await templates.send(channel, msg_json)
     if delete_after:
         utils.schedule_delete(bot, channel.id, sent.id, delete_after)
-
-
-def _guild_channel(
-    bot: CazzuBot, message: hikari.Message
-) -> hikari.TextableGuildChannel | None:
-    """The cached guild channel a message was sent in."""
-    if message.guild_id is None:
-        return None
-    channel = bot.cache.get_guild_channel(message.channel_id)
-    if channel is not None and hasattr(channel, "send"):
-        return cast(Any, channel)
-    return None

@@ -25,6 +25,7 @@ from tests.fakes import (
     FakeMember,
     FakeMenuContext,
     FakeUser,
+    menu_button,
 )
 
 _AUTHOR_ID = 424242
@@ -44,7 +45,7 @@ def _stub_user_lookup(
 ) -> None:
     """Make utils.find_user resolve from a dict (no cache/fetch)."""
 
-    async def _resolve(_bot: object, _ctx: object, uid: int) -> object:
+    async def _resolve(_bot: object, uid: int) -> object:
         return users.get(uid)
 
     monkeypatch.setattr("cazzubot.utils.find_user", _resolve)
@@ -97,17 +98,13 @@ def _make_menu(bot: CazzuBot, ctx: FakeContext) -> TopMenu:
     )
 
 
-def _buttons(menu: TopMenu) -> list[Any]:
-    return cast(list[Any], menu._rows[0])  # pyright: ignore[reportPrivateUsage]
-
-
 async def test_topview_denies_foreign_user(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
     menu = _make_menu(bot, ctx)
     foreign = FakeMember(id=999, name="other")
     mctx = FakeMenuContext(FakeInteraction(id=1, member=foreign))
-    button = _buttons(menu)[2]
+    button = menu_button(menu, 2)
     await button.callback(mctx)
     assert mctx.sent[0].content == "This leaderboard is not yours to page."
     assert mctx.sent[0].ephemeral is True
@@ -122,7 +119,7 @@ async def test_topview_pages_for_author(
     _stub_user_lookup(monkeypatch, {author.id: author})
     menu = _make_menu(bot, ctx)
     mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
-    button = _buttons(menu)[2]
+    button = menu_button(menu, 2)
     await button.callback(mctx)
     embed = mctx.sent[0].embed
     # one row -> max page is 1 -> next_page stays on page 1

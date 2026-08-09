@@ -24,15 +24,11 @@ from tests.fakes import (
     FakeMessage,
     FakeRest,
     invoke_command,
+    menu_button,
     rest_of,
 )
 
 _UID = 424242
-
-
-def _menu_button(menu: Any, index: int = 0) -> Any:
-    """The menu's button at ``index`` (callback drives the menu)."""
-    return cast(list[Any], menu._rows[0])[index]  # pyright: ignore[reportPrivateUsage]
 
 
 # -- spawn math (pure) ------------------------------------------------------
@@ -114,11 +110,15 @@ async def test_frog_consume_full_flow(
     monkeypatch.setattr(utils.ConfirmMenu, "attach", _fake_attach)
 
     task = asyncio.create_task(invoke_command(Consume(), ctx, amount=2))
-    await asyncio.sleep(0.05)  # let it reach menu.attach
+    client = cast(Any, ctx.client)
+    for _ in range(200):  # wait for attach — no fixed-sleep race
+        if client._attached_menus:  # pyright: ignore[reportPrivateUsage]
+            break
+        await asyncio.sleep(0.01)
     menu = ctx.sent[0].components
     assert isinstance(menu, utils.ConfirmMenu)
     mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
-    await _menu_button(menu).callback(mctx)
+    await menu_button(menu).callback(mctx)
     await task
 
     assert await frog_db.get_frogs(bot.db, _UID) == 1
@@ -157,7 +157,7 @@ async def test_frog_catch_captures_once(
     menu = factory.FrogCatchMenu(bot, 99)
     mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
 
-    await _menu_button(menu).callback(mctx)
+    await menu_button(menu).callback(mctx)
 
     assert menu.captured is True
     assert mctx.deferred is False  # no "app is thinking" defer
@@ -169,7 +169,7 @@ async def test_frog_catch_captures_once(
     assert mctx.fetched == [utils.INITIAL_RESPONSE_IDENTIFIER]
 
     # second click is denied
-    await _menu_button(menu).callback(mctx)
+    await menu_button(menu).callback(mctx)
     assert mctx.sent[-1].content == "This frog was already caught."
     assert mctx.sent[-1].ephemeral is True
 
@@ -216,43 +216,31 @@ async def test_frog_message_db_roundtrip(bot: CazzuBot) -> None:
     assert await frog_db.get_frog_messages(bot.db) == [(99, 2)]
 
 
-async def test_cleanup_deletes_dangling_frog(
-    seeded_bot: CazzuBot, channel: FakeChannel, fake_rest: FakeRest
+@pytest.mark.parametrize(
+    ("with_message", "with_button"),
+    [
+        pytest.param(True, True, id="dangling-frog-deleted"),
+        pytest.param(False, False, id="already-removed-silent"),
+        pytest.param(True, False, id="repurposed-kept"),
+    ],
+)
+async def test_cleanup_dangling_frogs(
+    seeded_bot: CazzuBot,
+    channel: FakeChannel,
+    fake_rest: FakeRest,
+    with_message: bool,
+    with_button: bool,
 ) -> None:
-    """A tracked frog message from a previous process is deleted on boot."""
+    """Boot sweep: tracked frog messages are deleted, kept, or dropped."""
     mid = 7
     await frog_db.add_frog_message(seeded_bot.db, channel.id, mid)
-    fake_rest.messages[(channel.id, mid)] = _frog_message(channel.id, mid)
+    if with_message:
+        fake_rest.messages[(channel.id, mid)] = _frog_message(
+            channel.id, mid, with_button=with_button
+        )
 
     await factory.cleanup_dangling_frogs(seeded_bot)
 
-    assert (channel.id, mid) in rest_of(seeded_bot).deleted
-    assert await frog_db.get_frog_messages(seeded_bot.db) == []
-
-
-async def test_cleanup_already_removed_is_silent(
-    seeded_bot: CazzuBot, channel: FakeChannel
-) -> None:
-    """User/admin already deleted the frog — no error, row just dropped."""
-    await frog_db.add_frog_message(seeded_bot.db, channel.id, 7)
-
-    await factory.cleanup_dangling_frogs(seeded_bot)
-
-    assert rest_of(seeded_bot).deleted == []
-    assert await frog_db.get_frog_messages(seeded_bot.db) == []
-
-
-async def test_cleanup_keeps_repurposed_message(
-    seeded_bot: CazzuBot, channel: FakeChannel, fake_rest: FakeRest
-) -> None:
-    """A tracked message that lost its catch button is NOT deleted."""
-    mid = 7
-    await frog_db.add_frog_message(seeded_bot.db, channel.id, mid)
-    fake_rest.messages[(channel.id, mid)] = _frog_message(
-        channel.id, mid, with_button=False
-    )
-
-    await factory.cleanup_dangling_frogs(seeded_bot)
-
-    assert rest_of(seeded_bot).deleted == []
+    expected = [(channel.id, mid)] if with_message and with_button else []
+    assert rest_of(seeded_bot).deleted == expected
     assert await frog_db.get_frog_messages(seeded_bot.db) == []

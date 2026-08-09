@@ -54,6 +54,23 @@ def season_end(year: int, season: int) -> pendulum.DateTime:
     return season_start(year, season).add(months=3)
 
 
+def season_bounds(year: int, season: int) -> tuple[str, str]:
+    """ISO-8601 (start, end) pair of a season (0-3), UTC."""
+    start = season_start(year, season)
+    return start.isoformat(), season_end(year, season).isoformat()
+
+
+def next_midnight() -> pendulum.DateTime:
+    """The next 00:00 UTC instant."""
+    return pendulum.now("UTC").start_of("day").add(days=1)
+
+
+async def arm_midnight_cadence(bot: CazzuBot, tag: str) -> None:
+    """Re-arm a once-a-midnight scheduler tag (drop stale rows first)."""
+    await bot.scheduler.drop_tag(tag)
+    await bot.scheduler.add(tag, next_midnight(), {})
+
+
 def ordinal(n: int) -> str:
     """1st, 2nd, 3rd, 4th, …"""
     if 10 <= n % 100 <= 20:
@@ -100,7 +117,7 @@ def member_snapshot(
 
 
 async def find_user(
-    bot: CazzuBot, _ctx: Any, uid: int
+    bot: CazzuBot, uid: int
 ) -> hikari.User | hikari.Member | None:
     """Resolve a user id from the cache or a REST fetch."""
     guild = bot.guild
@@ -115,6 +132,57 @@ async def find_user(
         return await bot.rest.fetch_user(uid)
     except hikari.NotFoundError:
         return None
+
+
+def found_name(user: hikari.User | hikari.Member | None, uid: int) -> str:
+    """A user's display name, or the raw id when unknown/partial."""
+    if user is None:
+        return str(uid)
+    name = user.display_name
+    return name if isinstance(name, str) else str(uid)
+
+
+def rank_rows(
+    rows: list[dict[str, Any]], key: str
+) -> list[tuple[int, int, int]]:
+    """Attach RANK()-style ranks (ties share, then skip) to (uid, key) rows."""
+    out: list[tuple[int, int, int]] = []
+    prev: Any = None
+    rank = 0
+    for i, row in enumerate(rows, start=1):
+        if row[key] != prev:
+            rank = i
+        out.append((rank, row["uid"], row[key]))
+        prev = row[key]
+    return out
+
+
+def text_channel(
+    bot: CazzuBot, channel_id: int | None
+) -> hikari.TextableGuildChannel | None:
+    """The cached guild channel, when it exists and can send messages."""
+    if channel_id is None:
+        return None
+    channel = bot.cache.get_guild_channel(channel_id)
+    if channel is not None and hasattr(channel, "send"):
+        return cast(Any, channel)
+    return None
+
+
+def format_member(s: str, member: MemberSnapshot, **extra: Any) -> str:
+    """Format a template with the shared member placeholders + extras.
+
+    Every feature's template formatter starts from the same member base
+    (``{avatar} {name} {mention} {id}``); feature-specific placeholders
+    ride along as extra keyword fields.
+    """
+    return s.format(
+        avatar=member.avatar_url,
+        name=member.display_name,
+        mention=member.mention,
+        id=member.id,
+        **extra,
+    )
 
 
 def schedule_delete(
@@ -259,19 +327,3 @@ def deep_map(
     if isinstance(value, str):
         return formatter(value, **kwargs)
     return value
-
-
-def split_duration_and_text(raw: str) -> tuple[str, str]:
-    """Split a leading time token from the rest of a string.
-
-    Used by ``mute``/``ban``: "2h because i said so" -> ("2h", "because…").
-    Returns ``(raw, "")`` when no leading duration parses.
-    """
-    from cazzubot.timeparse import InvalidTimeError, parse_duration
-
-    first = raw.split(maxsplit=1)
-    try:
-        parse_duration(first[0])
-    except InvalidTimeError, ValueError, IndexError:
-        return raw, ""
-    return first[0], first[1] if len(first) > 1 else ""

@@ -24,9 +24,8 @@ reported type change (never applied).
 
 from __future__ import annotations
 
-import difflib
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from cazzubot.channels.parser import ChannelSpec, Manifest
@@ -35,8 +34,14 @@ from cazzubot.channels.snapshot import (
     SLOWMODE_KINDS,
     VOICE_KINDS,
 )
-
-RENAME_HINT_RATIO = 0.8
+from cazzubot.manifest.plan import (
+    RenameOp,
+    UpdateOp,
+    rename_hints,
+    render_hints,
+    render_rename_blocks,
+    render_updates,
+)
 
 # the position sections Discord keeps per parent
 BUCKET_TEXT = "text"
@@ -63,25 +68,9 @@ class CreateOp:
 
 
 @dataclass(frozen=True, slots=True)
-class UpdateOp:
-    name: str
-    id: int
-    changes: dict[str, tuple[Any, Any]] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
 class DeleteOp:
     name: str
     id: int
-
-
-@dataclass(frozen=True, slots=True)
-class RenameOp:
-    """Rename the live channel ``old`` to ``new`` (from an ``OLD->NEW`` line)."""
-
-    old: str
-    new: str
-    line: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,20 +145,12 @@ class Plan:
     def render(self) -> str:
         """Human-readable diff for the terminal / boot log."""
         out: list[str] = []
-        if self.renames:
-            out.append(f"rename {len(self.renames)}:")
-            for op in self.renames:
-                out.append(f"  ⇄ {op.old} -> {op.new}")
-        if self.cleanup_renames:
-            out.append(
-                "cleanup (rename already applied — manifest line rewritten on apply):"
-            )
-            for op in self.cleanup_renames:
-                out.append(f"  ⇄ {op.old} -> {op.new}")
-        if self.rename_conflicts:
-            out.append("rename conflicts (new name already exists):")
-            for name in self.rename_conflicts:
-                out.append(f"  ✖ {name}")
+        render_rename_blocks(
+            out,
+            renames=self.renames,
+            cleanup_renames=self.cleanup_renames,
+            conflicts=self.rename_conflicts,
+        )
         if self.creates:
             out.append(f"create {len(self.creates)}:")
             for op in self.creates:
@@ -179,16 +160,8 @@ class Plan:
                     else " (uncategorized)"
                 )
                 out.append(f"  + {op.spec.name}{cat}{_describe(op.spec)}")
-        if self.updates:
-            out.append(f"update {len(self.updates)}:")
-            for op in self.updates:
-                out.append(f"  ~ {op.name}")
-                for field_name, (old, new) in sorted(op.changes.items()):
-                    out.append(f"      {field_name}: {old} → {new}")
-        if self.rename_hints:
-            out.append("did you mean rename (instead of delete+create)?")
-            for old, new in self.rename_hints:
-                out.append(f"  ? {old} -> {new}")
+        render_updates(out, self.updates)
+        render_hints(out, self.rename_hints)
         if self.needs_reorder:
             out.append("reorder:")
             for block in sorted(
@@ -473,7 +446,15 @@ def build_plan(
         deletes=deletes,
         renames=renames,
         rename_conflicts=conflicts,
-        rename_hints=_rename_hints(manifest, mapped, strays, boundary),
+        rename_hints=rename_hints(
+            (
+                spec
+                for group in manifest.groups[boundary:]
+                for spec in group.channels
+            ),
+            mapped,
+            strays,
+        ),
         cleanup_renames=cleanup_renames,
         layout=layout,
         target=target,
@@ -592,28 +573,6 @@ def _target_layout(
     return blocks
 
 
-def _rename_hints(
-    manifest: Manifest,
-    mapped: Mapping[str, ChannelSnapshot],
-    strays: list[str],
-    boundary: int,
-) -> list[tuple[str, str]]:
-    """Read-only \"did you mean rename?\" suggestions (in-scope only)."""
-    hints: list[tuple[str, str]] = []
-    for group in manifest.groups[boundary:]:
-        for spec in group.channels:
-            if spec.renamed_from is not None or spec.name in mapped:
-                continue
-            best: tuple[float, str] | None = None
-            for stray in strays:
-                ratio = difflib.SequenceMatcher(
-                    None, stray, spec.name
-                ).ratio()
-                if best is None or ratio > best[0]:
-                    best = (ratio, stray)
-            if best is not None and best[0] >= RENAME_HINT_RATIO:
-                hints.append((best[1], spec.name))
-    return hints
 
 
 def _describe(spec: ChannelSpec) -> str:

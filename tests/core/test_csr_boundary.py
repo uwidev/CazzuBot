@@ -27,7 +27,7 @@ _ALLOWLIST = {
     "plugins.frogs.factory",  # spawn handler + capture view (controller)
 }
 
-_TEST_DIRS = ("tests",)
+_TEST_DIR = "tests"
 
 
 def _imports_discord(path: Path) -> bool:
@@ -57,7 +57,7 @@ def _service_modules() -> list[Path]:
 def _test_modules() -> list[Path]:
     return sorted(
         p
-        for p in Path(_TEST_DIRS[0]).rglob("*.py")
+        for p in Path(_TEST_DIR).rglob("*.py")
         if p.name in ("fakes.py", "conftest.py")
     )
 

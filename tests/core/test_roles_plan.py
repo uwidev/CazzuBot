@@ -123,6 +123,14 @@ SNAPSHOT: list[RoleSnapshot] = [
     },
 ]
 
+def mutated(name: str, **fields: Any) -> list[RoleSnapshot]:
+    """SNAPSHOT with one role's fields replaced by ``fields``."""
+    return [
+        cast(Any, {**dict(r), **fields}) if r["name"] == name else r
+        for r in SNAPSHOT
+    ]
+
+
 IDENTICAL = """\
 [preset mod]
 manage_roles kick_members
@@ -291,12 +299,7 @@ Owner
 def test_bot_tagged_managed_role_is_movable() -> None:
     # a bot/integration role (tags=["bot"]) CAN be reordered — it is not
     # unmovable, unlike a boost role
-    snapshot = [
-        cast(Any, {**dict(r), "tags": ["bot"]})
-        if r["name"] == "Tatsumaki"
-        else r
-        for r in SNAPSHOT
-    ]
+    snapshot = mutated("Tatsumaki", tags=["bot"])
     plan = build_plan(parse(IDENTICAL), snapshot, bot_top_role_id=BOT_TOP)
     assert "Tatsumaki" not in plan.unmovable
 
@@ -304,12 +307,7 @@ def test_bot_tagged_managed_role_is_movable() -> None:
 def test_boost_tagged_role_is_movable() -> None:
     # boost roles ARE movable via the API (verified on production) — only
     # positions at/above the bot's top role are unmovable
-    snapshot = [
-        cast(Any, {**dict(r), "tags": ["premium_subscriber"]})
-        if r["name"] == "🎨 | Blue"
-        else r
-        for r in SNAPSHOT
-    ]
+    snapshot = mutated("🎨 | Blue", tags=["premium_subscriber"])
     plan = build_plan(parse(IDENTICAL), snapshot, bot_top_role_id=BOT_TOP)
     assert "🎨 | Blue" not in plan.unmovable
 
@@ -403,12 +401,7 @@ def test_asset_icon_urls_never_drift() -> None:
 
 
 def test_emoji_icon_drift() -> None:
-    snapshot = [
-        cast(Any, {**dict(r), "icon": "🎨"})
-        if r["name"] == "✨ | Caz"
-        else r
-        for r in SNAPSHOT
-    ]
+    snapshot = mutated("✨ | Caz", icon="🎨")
     manifest = parse("[✨]\n✨ | Caz : #00a3ff icon:🎨\n")
     plan = build_plan(manifest, snapshot, bot_top_role_id=BOT_TOP)
     assert plan.updates == []  # emoji icons round-trip exactly

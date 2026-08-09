@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from cazzubot.manifest.lines import rewrite_renames
 from cazzubot.roles.parser import (
     Issue,
     Manifest,
     ManifestError,
     parse,
-    rewrite_renames,
 )
 
 VALID = """\
@@ -197,6 +197,13 @@ def test_rename_chain_is_error() -> None:
     assert any("rename chain" in i.message for i in exc.value.issues)
 
 
+def test_duplicate_rename_source_is_error() -> None:
+    # A->B and A->C would fight for the same live role
+    with pytest.raises(ManifestError) as exc:
+        parse("[x]\nA->B\nA->C\n")
+    assert any("duplicate rename source" in i.message for i in exc.value.issues)
+
+
 def test_rename_from_marker_is_error() -> None:
     # a marker-shaped old name can't even be expressed as a rename line —
     # "[Staff]->Renamed" parses as a malformed header
@@ -290,6 +297,14 @@ def test_rewrite_renames_preserves_rest_of_file() -> None:
     assert "Old Two -> New Two : preset:member\n" in rewritten
     assert rewritten.startswith("# header\n")
     assert rewritten.endswith("# tail\n# vim: ft=txt :\n")
+
+
+def test_rewrite_renames_matches_spaced_arrow() -> None:
+    # the parsers accept `OLD -> NEW`; the rewrite must too, or an apply
+    # loop would re-see the rename as cleanup forever
+    text = "[x]\nOld -> New : hoist\n"
+    rewritten = rewrite_renames(text, [(2, "Old", "New")])
+    assert rewritten == "[x]\nNew : hoist\n"
 
 
 def test_legacy_flag_aliases_canonicalize() -> None:

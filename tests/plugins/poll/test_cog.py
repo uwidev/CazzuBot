@@ -202,7 +202,11 @@ async def test_poll_stats_formats_results(
     await invoke_command(Stats(), ctx, poll_id=pid)
 
     content = ctx.sent[-1].content
-    assert content is not None and "1" in content and "2" in content
+    assert content is not None
+    assert "```Item       Count   Percent\n" in content
+    # votes: item 1 twice, item 2 once (3 total)
+    assert "1              2    66.67%" in content
+    assert "2              1    33.33%" in content
 
     await invoke_command(Stats(), ctx, poll_id=9999)
     assert "No votes have been cast yet." in (ctx.sent[-1].content or "")

@@ -76,25 +76,26 @@ class Scheduler:
         if not self._ready.is_set():
             # never ticked — the task is parked on _ready.wait(), which is
             # safe to cancel (no db op in flight)
-            self._task.cancel()
+            await self._cancel_task()
+        else:
             try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
-            self._stopping = False
-            return
-        try:
-            await asyncio.wait_for(self._task, timeout=5)
-        except asyncio.TimeoutError:
-            # pathological: a tick handler hung; cancel as a last resort
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+                await asyncio.wait_for(self._task, timeout=5)
+            except asyncio.TimeoutError:
+                # pathological: a tick handler hung; cancel as a last resort
+                await self._cancel_task()
         self._task = None
         self._stopping = False
+
+    async def _cancel_task(self) -> None:
+        """Cancel the loop task and await its end.
+
+        Only safe when no db op is in flight (see ``stop``).
+        """
+        self._task.cancel()
+        try:
+            await self._task
+        except asyncio.CancelledError:
+            pass
 
     async def _on_started(self, _event: hikari.StartedEvent) -> None:
         """Tick only after the gateway is up (tasks may hit Discord APIs)."""
@@ -206,7 +207,7 @@ class Scheduler:
 					UPDATE tasks SET run_at = ?
 					WHERE id = ?
 					""",
-                    pendulum.now("UTC").add(seconds=30).isoformat(),
+                    _now(30),
                     task_id,
                 )
                 continue
@@ -236,5 +237,5 @@ class Task:
         )
 
 
-def _now() -> str:
-    return pendulum.now("UTC").isoformat()
+def _now(offset_seconds: int = 0) -> str:
+    return pendulum.now("UTC").add(seconds=offset_seconds).isoformat()

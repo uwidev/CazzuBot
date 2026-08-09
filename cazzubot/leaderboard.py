@@ -29,12 +29,11 @@ async def format_leaderboard_embed(
     align = ["<", ">", ">", ">"]
     max_padding = [0, 0, 0, 16]
 
-    scoreboard = format(
+    scoreboard, col_widths = _format(
         window, headers, align=align, max_padding=max_padding
     )
 
     if uid is not None and uid in uids:
-        col_widths = calc_max_col_width(window, headers, max_padding)
         highlight_row(scoreboard, uids.index(uid), col_widths)
 
     embed = hikari.Embed(
@@ -54,6 +53,27 @@ def format(
     max_padding: list[int] | None = None,
 ) -> list[str]:
     """Render row-major data as a text scoreboard (header first, then rows)."""
+    lines, _ = _format(
+        entries,
+        headers,
+        align=align,
+        fill=fill,
+        spacing=spacing,
+        max_padding=max_padding,
+    )
+    return lines
+
+
+def _format(
+    entries: Sequence[Sequence[str | int]],
+    headers: list[str],
+    *,
+    align: list[str],
+    fill: str = ".",
+    spacing: int = 2,
+    max_padding: list[int] | None = None,
+) -> tuple[list[str], list[int]]:
+    """Like ``format``, but also returns the per-column widths (one pass)."""
     padding = calc_max_col_width(entries, headers, max_padding)
 
     header_s = f"{' ' * spacing}".join(
@@ -71,7 +91,7 @@ def format(
         )
         rows_s.append(row_s)
 
-    return [header_s, *rows_s]
+    return [header_s, *rows_s], padding
 
 
 def highlight_row(
@@ -91,16 +111,23 @@ def highlight_row(
     return scoreboard
 
 
+_NO_CAP = 999
+
+
 def calc_max_col_width(
     entries: Sequence[Sequence[str | int]],
     headers: list[str] | None = None,
     max_padding: list[int] | None = None,
 ) -> list[int]:
-    """Per-column max rendered width (commas for ints, header respected)."""
+    """Per-column max rendered width (commas for ints, header respected).
+
+    ``max_padding`` caps each column; 0 means "no cap" (historical
+    sentinel). A list shorter than the column count is padded with no-cap.
+    """
     headers = headers or [""] * len(entries[0])
-    max_padding = [x if x else 999 for x in (max_padding or [])]
-    if not max_padding:
-        max_padding = [999] * len(headers)
+    caps = [_NO_CAP if x in (0, None) else x for x in (max_padding or [])]
+    if len(caps) < len(headers):
+        caps.extend([_NO_CAP] * (len(headers) - len(caps)))
 
     padding: list[int] = []
     for col in range(len(entries[0])):
@@ -111,7 +138,7 @@ def calc_max_col_width(
                 str(cell) if isinstance(cell, str) else f"{cell:,}"
             )
         widest_val = len(sorted(entire_col, key=len)[-1])
-        width = min(max(widest_val, len(headers[col])), max_padding[col])
+        width = min(max(widest_val, len(headers[col])), caps[col])
         padding.append(width)
     return padding
 

@@ -11,39 +11,3 @@ the boot-time drift check plugin.
 
 See docs/PLUGINS.md → channels for the format reference.
 """
-
-from cazzubot.channels.export import render_manifest
-from cazzubot.channels.parser import (
-    ChannelSpec,
-    GroupSpec,
-    Issue,
-    Manifest,
-    ManifestError,
-    parse,
-    rewrite_renames,
-)
-from cazzubot.channels.plan import (
-    CreateOp,
-    DeleteOp,
-    Plan,
-    RenameOp,
-    UpdateOp,
-    build_plan,
-)
-
-__all__ = [
-    "ChannelSpec",
-    "CreateOp",
-    "DeleteOp",
-    "GroupSpec",
-    "Issue",
-    "Manifest",
-    "ManifestError",
-    "Plan",
-    "RenameOp",
-    "UpdateOp",
-    "build_plan",
-    "parse",
-    "render_manifest",
-    "rewrite_renames",
-]

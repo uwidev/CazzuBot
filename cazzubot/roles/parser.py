@@ -11,13 +11,20 @@ on the first one) and reported with a line number and a suggestion.
 
 from __future__ import annotations
 
-import difflib
 import re
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
 import hikari
-from typing_extensions import override
+
+from cazzubot.manifest.lines import (
+    Issue,
+    ManifestError,
+    commit_group,
+    parse_rename,
+    split_name_line,
+    suggest,
+    validate_renames,
+)
 
 # Current Discord permission bits hikari hasn't wrapped yet (values from the
 # official API docs — hikari's layout matches Discord for everything it has).
@@ -195,33 +202,6 @@ class Manifest:
         return frozenset(base)
 
 
-@dataclass(frozen=True, slots=True)
-class Issue:
-    """One parse problem: line number plus human message."""
-
-    line: int
-    message: str
-
-    @override
-    def __str__(self) -> str:
-        return f"line {self.line}: {self.message}"
-
-
-class ManifestError(ValueError):
-    """Raised when a manifest has any parse problems (all collected)."""
-
-    def __init__(self, issues: list[Issue]) -> None:
-        super().__init__(f"{len(issues)} manifest error(s)")
-        self.issues = issues
-
-
-def _suggest(word: str, candidates: Iterable[str]) -> str:
-    matches = difflib.get_close_matches(word, list(candidates), n=1)
-    if not matches:
-        return ""
-    return f" — did you mean {matches[0]!r}?"
-
-
 def parse(text: str) -> Manifest:
     """Parse manifest text, raising :class:`ManifestError` on any problem."""
     issues: list[Issue] = []
@@ -250,25 +230,15 @@ def parse(text: str) -> Manifest:
                     line=preset.line,
                     flags=frozenset(preset_flags),
                 )
-        if group is not None:
-            if group.title is not None and group.title in seen_titles:
-                issues.append(
-                    Issue(
-                        group.line,
-                        f"duplicate group {group.title!r} (first at line {seen_titles[group.title]})",
-                    )
-                )
-            elif group.title is not None:
-                seen_titles[group.title] = group.line
-                groups.append(
-                    GroupSpec(group.title, group.line, tuple(roles))
-                )
-            else:
-                # implicit group — commit only if it has roles
-                if roles:
-                    groups.append(
-                        GroupSpec(None, group.line, tuple(roles))
-                    )
+        commit_group(
+            group,
+            roles,
+            groups,
+            seen_titles,
+            issues,
+            group_word="group",
+            items_field="roles",
+        )
         preset = None
         preset_flags = []
         group = None
@@ -336,7 +306,7 @@ def parse(text: str) -> Manifest:
                         Issue(
                             line_no,
                             f"unknown permission {token!r}"
-                            + _suggest(token, VALID_FLAGS)
+                            + suggest(token, VALID_FLAGS)
                             + " (if this is a role line, end the preset section with a blank line first)",
                         )
                     )
@@ -346,51 +316,16 @@ def parse(text: str) -> Manifest:
 
         if group is None:
             group = GroupSpec(title=None, line=line_no)  # implicit group
-        if " : " in stripped:
-            name_part, _, token_part = stripped.partition(" : ")
-        else:
-            name_part, token_part = stripped, ""
-        raw_name = name_part
-        name_part = name_part.strip()
-        if name_part != raw_name:
-            issues.append(
-                Issue(
-                    line_no,
-                    "role name has leading/trailing whitespace — verbatim names can't round-trip",
-                )
-            )
+        name_part, token_part = split_name_line(
+            raw, kind="role", line_no=line_no, issues=issues
+        )
 
-        renamed_from: str | None = None
-        if "->" in name_part:
-            old_part, _, new_part = name_part.partition("->")
-            old, new = old_part.strip(), new_part.strip()
-            if not old:
-                issues.append(
-                    Issue(
-                        line_no,
-                        "rename has no old name before '->'",
-                    )
-                )
-                continue
-            if not new:
-                issues.append(
-                    Issue(
-                        line_no,
-                        "rename has no new name after '->'",
-                    )
-                )
-                continue
-            if old == new:
-                issues.append(
-                    Issue(
-                        line_no,
-                        f"rename {old!r} -> {old!r} is a no-op",
-                    )
-                )
-                continue
-            name, renamed_from = new, old
-        else:
-            name = name_part
+        parsed = parse_rename(
+            name_part, kind="role", line_no=line_no, issues=issues
+        )
+        if parsed is None:
+            continue
+        name, renamed_from = parsed
         if not name:
             issues.append(Issue(line_no, "empty role name"))
             continue
@@ -437,25 +372,15 @@ def parse(text: str) -> Manifest:
                     Issue(
                         role.line,
                         f"role {role.name!r} references unknown preset {role.preset!r}"
-                        + _suggest(role.preset, presets),
+                        + suggest(role.preset, presets),
                     )
                 )
 
-    # rename validation: no chains (A->B then B->C)
-    rename_by_old = {
-        role.renamed_from: role
-        for g in groups
-        for role in g.roles
-        if role.renamed_from is not None
-    }
-    for old, role in rename_by_old.items():
-        if role.name in rename_by_old:
-            issues.append(
-                Issue(
-                    role.line,
-                    f"rename chain not supported: {old!r} -> {role.name!r} is itself renamed elsewhere",
-                )
-            )
+    # rename validation: no chains (A->B then B->C) and no duplicate
+    # sources (A->B and A->C would fight for the same live role)
+    validate_renames(
+        (role for g in groups for role in g.roles), issues
+    )
 
     if issues:
         raise ManifestError(issues)
@@ -523,7 +448,7 @@ def _parse_role(
                     Issue(
                         line_no,
                         f"unknown permission {flag!r}"
-                        + _suggest(flag, VALID_FLAGS),
+                        + suggest(flag, VALID_FLAGS),
                     )
                 )
                 continue
@@ -539,7 +464,7 @@ def _parse_role(
         issues.append(
             Issue(
                 line_no,
-                f"unknown token {token!r}" + _suggest(token, candidates),
+                f"unknown token {token!r}" + suggest(token, candidates),
             )
         )
 
@@ -555,23 +480,6 @@ def _parse_role(
         revokes=frozenset(revokes),
         renamed_from=renamed_from,
     )
-
-
-def rewrite_renames(
-    text: str, renames: Sequence[tuple[int, str, str]]
-) -> str:
-    """Rewrite applied ``OLD->NEW`` lines to just ``NEW``.
-
-    ``renames`` holds ``(line_no, old, new)`` for rename lines that were
-    applied successfully. Everything else in the file is preserved byte
-    for byte (comments, blank lines, tokens, the modeline).
-    """
-    lines = text.splitlines(keepends=True)
-    for line_no, old, new in renames:
-        idx = line_no - 1
-        if 0 <= idx < len(lines):
-            lines[idx] = lines[idx].replace(f"{old}->{new}", new, 1)
-    return "".join(lines)
 
 
 def _expand3(hex3: str) -> str:

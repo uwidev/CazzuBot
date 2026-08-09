@@ -7,14 +7,14 @@ Single-guild port of v1's ``ext/frog.py`` + ``src/frog_factory.py`` +
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import pendulum
 
-from typing import Any
-
 from cazzubot.db import Database
-from cazzubot.settings import Settings
 from cazzubot.models import FrogTypeEnum
+from cazzubot.settings import Settings
+from cazzubot.utils import rank_rows, season_bounds
 
 _log = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ async def lifetime_ranked(db: Database) -> list[tuple[int, int, int]]:
 		ORDER BY capture DESC
 		"""
     )
-    return _ranked([dict(r) for r in rows])
+    return rank_rows([dict(r) for r in rows], "cnt")
 
 
 async def sync_with_frog_logs(db: Database) -> None:
@@ -196,8 +196,7 @@ async def seasonal_ranked(
     db: Database, year: int, season: int
 ) -> list[tuple[int, int, int]]:
     """Members' captures this season, ranked: [(rank, uid, capture_count)]."""
-    start = pendulum.datetime(year, 1 + 3 * season, 1, tz="UTC")
-    end = start.add(months=3)
+    start, end = season_bounds(year, season)
     rows = await db.fetchall(
         """
 		SELECT uid, COUNT(*) AS cnt
@@ -206,17 +205,16 @@ async def seasonal_ranked(
 		GROUP BY uid
 		ORDER BY cnt DESC
 		""",
-        start.isoformat(),
-        end.isoformat(),
+        start,
+        end,
     )
-    return _ranked([dict(r) for r in rows])
+    return rank_rows([dict(r) for r in rows], "cnt")
 
 
 async def seasonal_captures(
     db: Database, uid: int, year: int, season: int
 ) -> int:
-    start = pendulum.datetime(year, 1 + 3 * season, 1, tz="UTC")
-    end = start.add(months=3)
+    start, end = season_bounds(year, season)
     val = await db.fetchval(
         """
 		SELECT COUNT(*)
@@ -224,8 +222,8 @@ async def seasonal_captures(
 		WHERE uid = ? AND at >= ? AND at < ?
 		""",
         uid,
-        start.isoformat(),
-        end.isoformat(),
+        start,
+        end,
     )
     return int(val or 0)
 
@@ -233,16 +231,15 @@ async def seasonal_captures(
 async def seasonal_total_members(
     db: Database, year: int, season: int
 ) -> int:
-    start = pendulum.datetime(year, 1 + 3 * season, 1, tz="UTC")
-    end = start.add(months=3)
+    start, end = season_bounds(year, season)
     val = await db.fetchval(
         """
 		SELECT COUNT(DISTINCT uid)
 		FROM member_frog_log
 		WHERE at >= ? AND at < ?
 		""",
-        start.isoformat(),
-        end.isoformat(),
+        start,
+        end,
     )
     return int(val or 0)
 
@@ -282,19 +279,6 @@ async def get_spawns(db: Database) -> list[Spawn]:
     return await db.fetch_models(
         Spawn, "SELECT cid, interval, persist, fuzzy FROM frog_spawn"
     )
-
-
-def _ranked(rows: list[dict[str, Any]]) -> list[tuple[int, int, int]]:
-    """Attach RANK()-style ranks (ties share, then skip) to (uid, cnt) rows."""
-    out: list[tuple[int, int, int]] = []
-    prev = None
-    rank = 0
-    for i, row in enumerate(rows, start=1):
-        if row["cnt"] != prev:
-            rank = i
-        out.append((rank, row["uid"], row["cnt"]))
-        prev = row["cnt"]
-    return out
 
 
 async def add_frog_message(db: Database, cid: int, mid: int) -> None:

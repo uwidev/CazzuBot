@@ -135,7 +135,6 @@ class Database:
         async with self.transaction():
             for statement in statements:
                 await self.conn.execute(statement)
-            await self.conn.execute("PRAGMA user_version = 1")
         _log.info("schema applied (%d statements)", len(statements))
 
     async def verify_schema(self, statements: Sequence[str]) -> None:
@@ -329,7 +328,11 @@ def dump_json(value: Any) -> str:
 
 
 def load_json(raw: str | None, default: Any = None) -> Any:
-    """Deserialize a value from a TEXT column."""
+    """Deserialize a value from a TEXT column.
+
+    Unparseable text is returned verbatim (settings tolerate legacy
+    plain-string values); ``None`` yields ``default``.
+    """
     if raw is None:
         return default
     try:

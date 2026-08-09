@@ -117,8 +117,8 @@ async def _notify_rank_up(
         level_old=plan.level_old,
         level_new=plan.level_new,
     )
-    channel = bot.cache.get_guild_channel(channel_id)
-    if channel is None or not hasattr(channel, "send"):
+    channel = utils.text_channel(bot, channel_id)
+    if channel is None:
         return
     sent = await templates.send(channel, msg_json)
     if delete_after:

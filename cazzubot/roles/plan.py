@@ -13,11 +13,18 @@ neither edited nor moved; they are reported, never touched. Managed roles
 
 from __future__ import annotations
 
-import difflib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
+from cazzubot.manifest.plan import (
+    RenameOp,
+    UpdateOp,
+    rename_hints,
+    render_hints,
+    render_rename_blocks,
+    render_updates,
+)
 from cazzubot.roles.parser import (
     Manifest,
     RoleSpec,
@@ -27,10 +34,6 @@ from cazzubot.roles.snapshot import RoleSnapshot
 
 EVERYONE = "@everyone"
 
-# similarity ratio at which a missing role + unlisted stray get a
-# "did you mean rename?" hint in the diff output
-RENAME_HINT_RATIO = 0.8
-
 
 @dataclass(frozen=True, slots=True)
 class CreateOp:
@@ -39,26 +42,10 @@ class CreateOp:
 
 
 @dataclass(frozen=True, slots=True)
-class UpdateOp:
-    name: str
-    id: int
-    changes: dict[str, tuple[Any, Any]] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
 class DeleteOp:
     name: str
     id: int
     member_count: int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class RenameOp:
-    """Rename the live role ``old`` to ``new`` (from an ``OLD->NEW`` line)."""
-
-    old: str
-    new: str
-    line: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,34 +149,18 @@ class Plan:
     def render(self) -> str:
         """Human-readable diff for the terminal / boot log."""
         out: list[str] = []
-        if self.renames:
-            out.append(f"rename {len(self.renames)}:")
-            for op in self.renames:
-                out.append(f"  ⇄ {op.old} -> {op.new}")
-        if self.cleanup_renames:
-            out.append(
-                f"cleanup {len(self.cleanup_renames)} (rename already applied — manifest line rewritten on apply):"
-            )
-            for op in self.cleanup_renames:
-                out.append(f"  ⇄ {op.old} -> {op.new}")
-        if self.rename_conflicts:
-            out.append("rename conflicts (new name already exists):")
-            for name in self.rename_conflicts:
-                out.append(f"  ✖ {name}")
+        render_rename_blocks(
+            out,
+            renames=self.renames,
+            cleanup_renames=self.cleanup_renames,
+            conflicts=self.rename_conflicts,
+        )
         if self.creates:
             out.append(f"create {len(self.creates)}:")
             for op in self.creates:
                 out.append(f"  + {op.spec.name}{_describe(op.spec)}")
-        if self.updates:
-            out.append(f"update {len(self.updates)}:")
-            for op in self.updates:
-                out.append(f"  ~ {op.name}")
-                for field_name, (old, new) in sorted(op.changes.items()):
-                    out.append(f"      {field_name}: {old} → {new}")
-        if self.rename_hints:
-            out.append("did you mean rename (instead of delete+create)?")
-            for old, new in self.rename_hints:
-                out.append(f"  ? {old} -> {new}")
+        render_updates(out, self.updates)
+        render_hints(out, self.rename_hints)
         if self.needs_reorder:
             out.append("reorder:")
             blockers = self.moving_unmovable()
@@ -352,7 +323,11 @@ def build_plan(
         deletes=deletes,
         renames=renames,
         rename_conflicts=conflicts,
-        rename_hints=_rename_hints(manifest, mapped, strays),
+        rename_hints=rename_hints(
+            (role for group in manifest.groups for role in group.roles),
+            mapped,
+            strays,
+        ),
         cleanup_renames=cleanup_renames,
         current_order=mapped_order,
         target_order=target_order,
@@ -362,33 +337,6 @@ def build_plan(
         unmovable=unmovable,
         top_index=top_index,
     )
-
-
-def _rename_hints(
-    manifest: Manifest,
-    mapped: Mapping[str, RoleSnapshot],
-    strays: list[str],
-) -> list[tuple[str, str]]:
-    """Read-only \"did you mean rename?\" suggestions.
-
-    Fires when a manifest role is missing from the guild and an unlisted
-    stray has a near-identical name — the exact delete+create pair a rename
-    would avoid. Explicit ``OLD->NEW`` lines are already handled elsewhere.
-    """
-    hints: list[tuple[str, str]] = []
-    for spec in (
-        role for group in manifest.groups for role in group.roles
-    ):
-        if spec.renamed_from is not None or spec.name in mapped:
-            continue
-        best: tuple[float, str] | None = None
-        for stray in strays:
-            ratio = difflib.SequenceMatcher(None, stray, spec.name).ratio()
-            if best is None or ratio > best[0]:
-                best = (ratio, stray)
-        if best is not None and best[0] >= RENAME_HINT_RATIO:
-            hints.append((best[1], spec.name))
-    return hints
 
 
 def _describe(spec: RoleSpec) -> str:

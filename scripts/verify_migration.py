@@ -48,10 +48,6 @@ def check(cond: bool, label: str, detail: str = "") -> None:
     print(f"  [{status}] {label}" + (f" — {detail}" if detail else ""))
 
 
-def iso(v: Any) -> str | None:
-    return v.isoformat() if v is not None else None
-
-
 def norm(v: Any) -> Any:
     """Normalize a value for PG-vs-sqlite row comparison."""
     if v is None:

@@ -2,7 +2,7 @@
 
 Service and core modules raise these instead of ``commands.BadArgument``
 so they never import the framework. The command edge translates them back
-into user-visible feedback (see ``CazzuBot.on_command_error``).
+into user-visible feedback (see ``CazzuBot._on_command_error``).
 """
 
 

@@ -27,6 +27,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from cazzubot.bot import CazzuBot
 
+from cazzubot.errors import UserInputError
+
 _log = logging.getLogger(__name__)
 
 # A scheduled-task handler: called when a task row with the matching tag is due.
@@ -55,6 +57,22 @@ class Plugin:
 
     async def on_unload(self, _bot: "CazzuBot") -> None:
         """Hook called when the plugin is unloaded (bot shutdown / hotswap)."""
+
+
+def load_plugin_module(module_name: str) -> Plugin:
+    """Import a plugin module and return its ``plugin`` attribute.
+
+    Raises ``UserInputError`` when the module has no usable ``plugin``
+    attribute. Defaults ``plugin.name`` to the module's final component
+    when the plugin left it empty.
+    """
+    module = importlib.import_module(module_name)
+    plugin = getattr(module, "plugin", None)
+    if not isinstance(plugin, Plugin):
+        raise UserInputError(f"{module_name} is not a plugin module")
+    if not plugin.name:
+        plugin.name = module_name.rsplit(".", 1)[-1]
+    return plugin
 
 
 def discover_plugins(plugins_dir: str) -> list[Plugin]:

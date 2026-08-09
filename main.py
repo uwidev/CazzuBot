@@ -6,7 +6,7 @@ Usage: CazzuBot [-h] [-d] [-p] [-s]
 Options:
   -d, --debug       Run in debug mode; only owner/debug users may run commands
   -p, --production  Run with the production token
-  -s, --sandbox     Load only the sandbox plugins (poll, board, dev)
+  -s, --sandbox     Load only the sandbox plugins (poll, dev)
 """
 
 import argparse

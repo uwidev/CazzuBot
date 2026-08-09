@@ -16,7 +16,7 @@ import hikari
 import lightbulb
 
 from cazzubot.bot import CazzuBot
-from cazzubot.window import window_success
+from cazzubot.window import window_error, window_success
 from lightbulb.prefab import checks as prefab_checks
 
 _log = logging.getLogger(__name__)
@@ -152,6 +152,7 @@ class ScrapeInktober(
     lightbulb.SlashCommand,
     name="scrape_inktober",
     description="Download inktober submissions from a channel into downloads/.",
+    hooks=[_OWNER],
 ):
     channel = lightbulb.channel(
         "channel",
@@ -269,6 +270,11 @@ class StoryWrite(
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         """Write out a compiled story from story/."""
+        if "/" in self.file_name or "\\" in self.file_name:
+            await window_error(
+                ctx, "file_name must be a plain file name, not a path"
+            )
+            return
         await ctx.respond(f"```fix\n>>> {self.file_name} <<<```")
         for suffix in ("", "-contributors"):
             path = Path(f"story/{self.file_name}{suffix}.txt")

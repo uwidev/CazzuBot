@@ -155,10 +155,6 @@ async def _one_off(ctx: Sendable, level: str, msg: object) -> None:
     await window.flush()
 
 
-async def window_debug(ctx: Sendable, msg: object) -> None:
-    await _one_off(ctx, "debug", msg)
-
-
 async def window_info(ctx: Sendable, msg: object) -> None:
     await _one_off(ctx, "info", msg)
 

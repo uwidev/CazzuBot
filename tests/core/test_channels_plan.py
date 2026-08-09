@@ -8,45 +8,7 @@ import pytest
 
 from cazzubot.channels.parser import parse
 from cazzubot.channels.plan import build_plan
-from cazzubot.channels.snapshot import ChannelSnapshot
-
-
-def ch(
-    id: str,
-    name: str,
-    kind: str = "text",
-    cat: str | None = None,
-    pos: int = 0,
-    nsfw: bool = False,
-    slow: int = 0,
-    **voice: object,
-) -> ChannelSnapshot:
-    d: ChannelSnapshot = {
-        "id": id,
-        "name": name,
-        "kind": kind,
-        "category": cat,
-        "position": pos,
-        "nsfw": nsfw,
-        "slowmode": slow,
-    }
-    if kind in ("voice", "stage"):
-        d.update(bitrate=64, limit=0, region=None, quality="auto")
-    d.update(cast(Any, voice))
-    return d
-
-
-SNAPSHOT: list[ChannelSnapshot] = [
-    ch("0", "welcome"),
-    ch("1", "general", slow=5),
-    ch("2", "lobby", "voice"),
-    ch("3", "Games", "category"),
-    ch("4", "minecraft", cat="Games"),
-    ch("5", "voice-chat", "voice", cat="Games", bitrate=96),
-    ch("6", "Info", "category", pos=1),
-    ch("7", "rules", cat="Info"),
-    ch("8", "announcements", "announcement", cat="Info", pos=1),
-]
+from tests.core.channels_data import SNAPSHOT, ch, mutated
 
 IDENTICAL = """\
 welcome
@@ -232,15 +194,7 @@ def test_out_of_scope_manifest_channel_inside_scope_not_deleted() -> None:
     # a channel declared above the boundary (out of scope) but physically
     # sitting inside an in-scope category must never become a delete
     # candidate — the manifest still governs it
-    snap = [
-        cast(
-            Any,
-            {**dict(c), "category": "Games"}
-            if c["name"] == "welcome"
-            else c,
-        )
-        for c in SNAPSHOT
-    ]
+    snap = mutated("welcome", category="Games")
     p = build_plan(
         parse(IDENTICAL),
         snap,
@@ -256,15 +210,8 @@ def test_scope_name_collision_never_touches_out_of_scope() -> None:
     # an out-of-scope channel whose name matches an in-scope manifest
     # name must never be updated/renamed/moved — the plan treats the
     # name as missing and excludes the id from in_scope_ids
-    snap = [
-        cast(
-            Any,
-            {**dict(c), "category": None}
-            if c["name"] == "minecraft"
-            else c,
-        )
-        for c in SNAPSHOT
-    ]  # minecraft physically sits ABOVE the boundary (uncategorized)
+    snap = mutated("minecraft", category=None)
+    # minecraft physically sits ABOVE the boundary (uncategorized)
     p = build_plan(
         parse(IDENTICAL),
         snap,
@@ -344,13 +291,7 @@ def test_category_title_held_by_non_category_blocks_apply() -> None:
     # a manifest [title] whose name is held by a live non-category
     # channel (Discord allows channel/category name collisions) must
     # block apply instead of misplacing children
-    snap = [
-        cast(
-            Any,
-            {**dict(c), "kind": "text"} if c["name"] == "Games" else c,
-        )
-        for c in SNAPSHOT
-    ]
+    snap = mutated("Games", kind="text")
     p = build_plan(parse(IDENTICAL), snap)
     assert "Games" in p.type_changes
     assert not p.is_clean()

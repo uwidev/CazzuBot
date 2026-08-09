@@ -13,20 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import json
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 import hikari
-import pendulum
 from hikari.internal import routes
 
 from cazzubot.channels.export import QUALITY_VALUES
 from cazzubot.channels.parser import (
     ChannelSpec,
-    parse,
 )
 from cazzubot.channels.plan import (
     Plan,
@@ -38,8 +34,12 @@ from cazzubot.channels.snapshot import (
     SLOWMODE_KINDS,
     VOICE_KINDS,
 )
-
-REORDER_ATTEMPTS = 5
+from cazzubot.manifest.executor import (
+    REORDER_ATTEMPTS,
+    REORDER_SETTLE,
+    ApplyResult,
+    backup_path as _backup_path,
+)
 
 # manifest kind -> Discord channel type id (the raw API value)
 CHANNEL_TYPE_ID = {
@@ -51,30 +51,15 @@ CHANNEL_TYPE_ID = {
     "category": 4,
 }
 
-# Kind lookup by the channel type's *name* so both discord.py and hikari
-# channel objects resolve (hikari's enum names are GUILD_* prefixed).
+# Kind lookup by the hikari ChannelType enum name (``GUILD_*``).
 _KIND_BY_TYPE_NAME = {
-    "text": "text",
-    "news": "announcement",
-    "voice": "voice",
-    "forum": "forum",
-    "stage_voice": "stage",
-    "category": "category",
     "GUILD_TEXT": "text",
     "GUILD_NEWS": "announcement",
     "GUILD_VOICE": "voice",
     "GUILD_FORUM": "forum",
-    "GUILD_STAGE_VOICE": "stage",
+    "GUILD_STAGE": "stage",
     "GUILD_CATEGORY": "category",
 }
-
-
-@dataclass(frozen=True, slots=True)
-class ApplyResult:
-    """Outcome of an apply: errors plus the renames that actually ran."""
-
-    errors: list[str]
-    applied_renames: list[RenameOp]
 
 
 # -- snapshots ---------------------------------------------------------------
@@ -93,7 +78,7 @@ async def snapshot_guild(
 
 
 def snapshot_channels(channels: Sequence[Any]) -> list[ChannelSnapshot]:
-    """The channels as plain dicts (works on discord.py or hikari objects).
+    """The channels as plain dicts (from hikari channel objects).
 
     Discord allows duplicate channel names; the engine keys channels by
     name, so every channel after the first with a given name is marked
@@ -133,8 +118,7 @@ def snapshot_channels(channels: Sequence[Any]) -> list[ChannelSnapshot]:
 
 
 def _kind_of(ch: Any) -> tuple[str, bool]:
-    """(kind, unsupported) for a live channel object (discord.py or hikari)."""
-    # hikari channels and anything unknown: resolve by the type name
+    """(kind, unsupported) for a live hikari channel object."""
     type_name = getattr(getattr(ch, "type", None), "name", None)
     kind = (
         _KIND_BY_TYPE_NAME.get(type_name)
@@ -150,8 +134,8 @@ def _seconds(value: Any) -> int:
     """A rate-limit value as whole seconds.
 
     hikari returns ``datetime.timedelta`` for ``rate_limit_per_user`` /
-    ``default_thread_rate_limit_per_user`` (its ``Intervalish`` type),
-    discord.py returns int seconds — both come out as seconds here.
+    ``default_thread_rate_limit_per_user`` (its ``Intervalish`` type);
+    both come out as seconds here.
     """
     if isinstance(value, datetime.timedelta):
         return int(value.total_seconds())
@@ -167,15 +151,12 @@ def _snapshot_channel(
         "kind": kind,
         "category": category,
         "position": getattr(ch, "position", 0),
-        "nsfw": bool(
-            getattr(ch, "nsfw", False) or getattr(ch, "is_nsfw", False)
-        ),
+        "nsfw": bool(getattr(ch, "is_nsfw", False)),
         "slowmode": 0,
     }
     if kind in SLOWMODE_KINDS:
         snap["slowmode"] = _seconds(
-            getattr(ch, "slowmode_delay", 0)
-            or getattr(ch, "rate_limit_per_user", 0)
+            getattr(ch, "rate_limit_per_user", 0)
             or getattr(ch, "default_thread_rate_limit_per_user", 0)
             or 0
         )
@@ -209,22 +190,9 @@ def _representable_name(name: str) -> bool:
     return True
 
 
-def save_snapshot(path: Path, channels: list[ChannelSnapshot]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(channels, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def load_snapshot(path: Path) -> list[ChannelSnapshot]:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def backup_path(base: Path) -> Path:
     """``<base>/channels-YYYYMMDD-HHMMSS.json`` in UTC."""
-    stamp = pendulum.now("UTC").format("YYYYMMDD-HHmmss")
-    return base / f"channels-{stamp}.json"
+    return _backup_path(base, "channels")
 
 
 # -- applying ----------------------------------------------------------------
@@ -427,10 +395,6 @@ async def _create_channel(
     )
 
 
-def _vqm(label: str) -> int:
-    return QUALITY_VALUES[label]
-
-
 async def _edit_channel(
     client: hikari.api.RESTClient,
     channel: Any,
@@ -440,8 +404,7 @@ async def _edit_channel(
     """Apply field changes via the raw PATCH /channels/{id} endpoint.
 
     hikari's ``edit_channel`` lacks the ``type`` field (text ↔
-    announcement), so the raw path carries every field uniformly — same
-    payload keys the old discord.py ``channel.edit`` sent.
+    announcement), so the raw path carries every field uniformly.
     """
     payload: dict[str, Any] = {}
     for field_name, (_, new) in changes.items():
@@ -461,7 +424,7 @@ async def _edit_channel(
         elif field_name == "region":
             payload["rtc_region"] = None if new == "auto" else new
         elif field_name == "quality":
-            payload["video_quality_mode"] = _vqm(new)
+            payload["video_quality_mode"] = QUALITY_VALUES[new]
     route = routes.PATCH_CHANNEL.compile(channel=channel.id)
     await cast(Any, client)._request(  # noqa: SLF001  # raw payload path
         route, json=payload, reason=reason
@@ -594,7 +557,7 @@ async def reorder_guild(
                 route, json=payload, reason="channels manifest apply"
             )
         await asyncio.sleep(
-            0.6
+            REORDER_SETTLE
         )  # let the gateway settle before re-reading
     payload = await _reorder_payload(client, guild_id, target, managed_ids)
     if payload:
@@ -615,12 +578,9 @@ async def _parent_moves(
     Names resolve only among ``managed_ids`` (the plan's in-scope set),
     so a colliding out-of-scope name can never hijack the move.
     """
-    channels = await client.fetch_guild_channels(guild_id)
-    cat_ids = _category_ids(channels, set(managed_ids))
-    by_name: dict[str, Any] = {}
-    for c in channels:
-        if c.id in managed_ids and c.name is not None:
-            by_name.setdefault(c.name, c)
+    channels, cat_ids, by_name = await _resolve_names(
+        client, guild_id, managed_ids
+    )
 
     moves: list[tuple[int, int | None]] = []
     seen: set[int] = set()
@@ -640,6 +600,26 @@ async def _parent_moves(
     return moves
 
 
+async def _resolve_names(
+    client: hikari.api.RESTClient,
+    guild_id: int,
+    managed_ids: tuple[int, ...],
+) -> tuple[Sequence[Any], dict[str, int], dict[str, Any]]:
+    """(channels, category name→id, name→channel) among managed ids.
+
+    First occurrence wins per name; the category map prefers managed
+    (in-scope) categories so a colliding out-of-scope category can never
+    be the move target.
+    """
+    channels = await client.fetch_guild_channels(guild_id)
+    cat_ids = _category_ids(channels, set(managed_ids))
+    by_name: dict[str, Any] = {}
+    for c in channels:
+        if c.id in managed_ids and c.name is not None:
+            by_name.setdefault(c.name, c)
+    return channels, cat_ids, by_name
+
+
 async def _reorder_payload(
     client: hikari.api.RESTClient,
     guild_id: int,
@@ -654,12 +634,9 @@ async def _reorder_payload(
     :func:`_parent_moves` — the bulk endpoint accepts at most one
     ``parent_id`` per request.
     """
-    channels = await client.fetch_guild_channels(guild_id)
-    cat_ids = _category_ids(channels, set(managed_ids))
-    by_name: dict[str, Any] = {}
-    for c in channels:
-        if c.id in managed_ids and c.name is not None:
-            by_name.setdefault(c.name, c)
+    channels, cat_ids, by_name = await _resolve_names(
+        client, guild_id, managed_ids
+    )
 
     payload: list[dict[str, Any]] = []
     for (category, section), names in target.items():
@@ -713,19 +690,3 @@ async def _reorder_payload(
             if ch.position != index:
                 payload.append({"id": ch.id, "position": index})
     return payload
-
-
-async def restore_guild(
-    client: hikari.api.RESTClient,
-    guild_id: int,
-    snapshot: list[ChannelSnapshot],
-) -> list[str]:
-    """Bring the guild back toward a snapshot (never deletes anything)."""
-    from cazzubot.channels.export import render_manifest
-
-    manifest = parse(render_manifest(snapshot))
-    from cazzubot.channels.plan import build_plan
-
-    plan = build_plan(manifest, snapshot, delete=False)
-    result = await apply_plan(client, guild_id, plan, delete=False)
-    return result.errors

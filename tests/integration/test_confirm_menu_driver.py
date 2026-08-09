@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 
 import hikari
+import pytest
 
 from cazzubot.bot import CazzuBot
 from tests.driver import press_button, run_slash, wait_for_menu
@@ -94,7 +95,19 @@ async def test_author_confirm_wrong_user_rejected(
         await asyncio.gather(task, return_exceptions=True)
 
 
-async def test_frog_consume_yes_awards_exp(full_bot: CazzuBot) -> None:
+@pytest.mark.parametrize(
+    ("button_label", "expected_normal", "expected_exp_logs"),
+    [
+        pytest.param("Yes", 4, 1, id="yes-awards-exp"),
+        pytest.param("No", 5, 0, id="no-changes-nothing"),
+    ],
+)
+async def test_frog_consume_confirm(
+    full_bot: CazzuBot,
+    button_label: str,
+    expected_normal: int,
+    expected_exp_logs: int,
+) -> None:
     await full_bot.db.execute(
         "INSERT OR IGNORE INTO member_frog (uid, normal, frozen, capture) VALUES (424242, 5, 0, 5)"
     )
@@ -104,39 +117,10 @@ async def test_frog_consume_yes_awards_exp(full_bot: CazzuBot) -> None:
     buttons = await wait_for_menu(full_bot)
 
     press = await press_button(
-        full_bot, custom_id=buttons["Yes"], message_id=555, user_id=424242
-    )
-    result = await task
-
-    assert press.exceptions == []
-    assert result.exceptions == []
-    # delete_after=False: the prompt keeps its message but loses its buttons
-    assert any(
-        payload.get("component") is None for _mid, payload in press.edits
-    )
-    row = await full_bot.db.fetchone(
-        "SELECT normal FROM member_frog WHERE uid = 424242"
-    )
-    assert row is not None and row["normal"] == 4
-    exp = await full_bot.db.fetchval(
-        "SELECT COUNT(*) FROM member_exp_log WHERE uid = 424242"
-    )
-    assert exp == 1
-    # the post-consume summary edits the prompt message
-    assert any("embed" in payload for _mid, payload in result.edits)
-
-
-async def test_frog_consume_no_changes_nothing(full_bot: CazzuBot) -> None:
-    await full_bot.db.execute(
-        "INSERT OR IGNORE INTO member_frog (uid, normal, frozen, capture) VALUES (424242, 5, 0, 5)"
-    )
-    task = asyncio.create_task(
-        run_slash(full_bot, "frog consume", user_id=424242, timeout=10.0)
-    )
-    buttons = await wait_for_menu(full_bot)
-
-    press = await press_button(
-        full_bot, custom_id=buttons["No"], message_id=555, user_id=424242
+        full_bot,
+        custom_id=buttons[button_label],
+        message_id=555,
+        user_id=424242,
     )
     result = await task
 
@@ -145,10 +129,18 @@ async def test_frog_consume_no_changes_nothing(full_bot: CazzuBot) -> None:
     row = await full_bot.db.fetchone(
         "SELECT normal FROM member_frog WHERE uid = 424242"
     )
-    assert row is not None and row["normal"] == 5
+    assert row is not None and row["normal"] == expected_normal
     assert (
         await full_bot.db.fetchval(
             "SELECT COUNT(*) FROM member_exp_log WHERE uid = 424242"
         )
-        == 0
+        == expected_exp_logs
     )
+    if button_label == "Yes":
+        # delete_after=False: the prompt keeps its message but loses its buttons
+        assert any(
+            payload.get("component") is None
+            for _mid, payload in press.edits
+        )
+        # the post-consume summary edits the prompt message
+        assert any("embed" in payload for _mid, payload in result.edits)

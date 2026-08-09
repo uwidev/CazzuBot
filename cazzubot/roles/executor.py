@@ -10,35 +10,27 @@ restores. Everything runs over the REST client — no gateway, no cache
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 import hikari
-import pendulum
 
+from cazzubot.manifest.executor import (
+    REORDER_ATTEMPTS,
+    REORDER_SETTLE,
+    ApplyResult,
+    backup_path as _backup_path,
+)
 from cazzubot.roles.parser import (
     CANONICAL_FLAGS,
     RoleSpec,
     flag_bit,
-    parse,
 )
 from cazzubot.roles.plan import Plan, RenameOp
 from cazzubot.roles.snapshot import RoleSnapshot
 
 EVERYONE = "@everyone"
-
-REORDER_ATTEMPTS = 5
-
-
-@dataclass(frozen=True, slots=True)
-class ApplyResult:
-    """Outcome of an apply: errors plus the renames that actually ran."""
-
-    errors: list[str]
-    applied_renames: list[RenameOp]
 
 
 # -- snapshots ---------------------------------------------------------------
@@ -117,22 +109,9 @@ async def bot_top_role_id(
     return int(max(candidates, key=lambda r: r.position).id)
 
 
-def save_snapshot(path: Path, roles: list[RoleSnapshot]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(roles, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def load_snapshot(path: Path) -> list[RoleSnapshot]:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def backup_path(base: Path) -> Path:
     """``<base>/roles-YYYYMMDD-HHMMSS.json`` in UTC."""
-    stamp = pendulum.now("UTC").format("YYYYMMDD-HHmmss")
-    return base / f"roles-{stamp}.json"
+    return _backup_path(base, "roles")
 
 
 # -- applying ----------------------------------------------------------------
@@ -314,7 +293,7 @@ async def apply_plan(
         else:
             try:
                 await reorder_guild(client, guild_id, plan.target_order)
-            except hikari.HikariError as err:
+            except (hikari.HikariError, RuntimeError) as err:
                 errors.append(f"reorder: {err}")
 
     return ApplyResult(errors=errors, applied_renames=applied_renames)
@@ -353,7 +332,7 @@ async def reorder_guild(
             reason="roles manifest apply",
         )
         await asyncio.sleep(
-            0.6
+            REORDER_SETTLE
         )  # let the gateway settle before re-reading
     moves = await _reorder_moves(client, guild_id, target_order)
     if moves:
@@ -428,24 +407,3 @@ async def _reorder_moves(
             )
         assigned.add(position)
     return moves
-
-
-async def restore_guild(
-    client: hikari.api.RESTClient,
-    guild_id: int,
-    snapshot: list[RoleSnapshot],
-) -> list[str]:
-    """Bring the guild back toward a snapshot (never deletes anything)."""
-    from cazzubot.roles.export import render_manifest
-
-    manifest = parse(render_manifest(snapshot))
-    from cazzubot.roles.plan import build_plan
-
-    plan = build_plan(
-        manifest,
-        snapshot,
-        bot_top_role_id=await bot_top_role_id(client, guild_id),
-        delete=False,
-    )
-    result = await apply_plan(client, guild_id, plan, delete=False)
-    return result.errors

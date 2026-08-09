@@ -43,12 +43,7 @@ def _bot(ctx: lightbulb.Context) -> CazzuBot:
 
 def formatter(s: str, *, member: MemberSnapshot) -> str:
     """Placeholders: {avatar} {name} {mention} {id}"""
-    return s.format(
-        avatar=member.avatar_url,
-        name=member.display_name,
-        mention=member.mention,
-        id=member.id,
-    )
+    return utils.format_member(s, member)
 
 
 @loader.listener(hikari.MemberUpdateEvent)
@@ -61,8 +56,8 @@ async def on_member_update(event: hikari.MemberUpdateEvent) -> None:
         return
 
     cid = await bot.settings.get("welcome.cid")
-    channel = bot.cache.get_guild_channel(cid) if cid else None
-    if channel is None or not hasattr(channel, "send"):
+    channel = utils.text_channel(bot, cid)
+    if channel is None:
         _log.warning("welcome channel %s not found", cid)
         return
 
@@ -138,29 +133,6 @@ class SetEnabled(
             "Welcome messages enabled"
             if self.enabled
             else "Welcome messages disabled",
-        )
-
-
-@welcome_set.register
-class SetVerifyFirst(
-    lightbulb.SlashCommand,
-    name="verify",
-    description="Enable or disable verify-first.",
-    hooks=[_ADMIN],
-):
-    verify_first = lightbulb.boolean(
-        "verify_first", "Whether verify-first is on"
-    )
-
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
-        await bot.settings.set("welcome.verify_first", self.verify_first)
-        await window_success(
-            ctx,
-            "Verify-first enabled"
-            if self.verify_first
-            else "Verify-first disabled",
         )
 
 

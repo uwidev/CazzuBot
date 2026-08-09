@@ -9,7 +9,7 @@ import logging
 
 import pendulum
 
-from cazzubot import Plugin
+from cazzubot import Plugin, utils
 from cazzubot.bot import CazzuBot
 from cazzubot.timeparse import parse_iso8601
 from typing_extensions import override
@@ -20,11 +20,6 @@ from plugins.frogs import db as frog_db
 _log = logging.getLogger(__name__)
 
 LAST_KEY = "daily.last_daily"
-
-
-def _next_midnight() -> pendulum.DateTime:
-    """The next 00:00 UTC instant."""
-    return pendulum.now("UTC").start_of("day").add(days=1)
 
 
 async def reset(bot: CazzuBot) -> None:
@@ -39,7 +34,7 @@ async def reset(bot: CazzuBot) -> None:
 
 async def on_daily_due(bot: CazzuBot, _payload: dict[str, object]) -> None:
     """Scheduler handler for tag ``daily`` — re-arm, then reset if due."""
-    await bot.scheduler.add("daily", _next_midnight(), {})
+    await utils.arm_midnight_cadence(bot, "daily")
     last: str | None = await bot.settings.get(LAST_KEY)
     now = pendulum.now("UTC")
     if last is None or parse_iso8601(last) < now.subtract(hours=24):
@@ -61,8 +56,7 @@ class DailyPlugin(Plugin):
             )
             await reset(bot)
         # re-arm the midnight cadence (drop stale rows first)
-        await bot.scheduler.drop_tag("daily")
-        await bot.scheduler.add("daily", _next_midnight(), {})
+        await utils.arm_midnight_cadence(bot, "daily")
 
 
 plugin = DailyPlugin()

@@ -27,6 +27,22 @@ def _bot(ctx: lightbulb.Context) -> CazzuBot:
     return cast(CazzuBot, ctx.client.app)
 
 
+def _plugin_names(bot: CazzuBot) -> list[str]:
+    return [p.name for p in bot.plugins]
+
+
+async def _download_emojis(
+    guild: hikari.GatewayGuild, out: Path, *, with_id: bool = False
+) -> None:
+    """Download every guild emoji into ``out`` (id-suffixed when asked)."""
+    out.mkdir(exist_ok=True, parents=True)
+    for emoji in guild.get_emojis().values():
+        ext = "gif" if emoji.is_animated else "png"
+        name = f"{emoji.name}_{emoji.id}.{ext}" if with_id else emoji.name
+        data = await hikari.files.URL(str(emoji.url)).read()
+        out.joinpath(name).write_bytes(data)
+
+
 @loader.command()
 class Owner(
     lightbulb.SlashCommand,
@@ -54,7 +70,7 @@ class CalcTo(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        await ctx.respond(f"{levels.exp_to_level(self.n):.2f}")
+        await ctx.respond(f"{levels.exp_for_level(self.n):.2f}")
 
 
 @calc.register
@@ -86,11 +102,7 @@ class ArchiveEmojis(
             await ctx.respond("Not in a guild.")
             return
         await ctx.respond("Saving server emoji's to disk...")
-        archive_pth = Path("archives") / str(guild.id)
-        archive_pth.mkdir(exist_ok=True, parents=True)
-        for emoji in guild.get_emojis().values():
-            data = await hikari.files.URL(str(emoji.url)).read()
-            archive_pth.joinpath(emoji.name).write_bytes(data)
+        await _download_emojis(guild, Path("archives") / str(guild.id))
         await ctx.respond("Saved!")
 
 
@@ -109,14 +121,7 @@ class Scrape(
             await ctx.respond("Not in a guild.")
             return
         await ctx.respond("Scraping server emojis...")
-        out = Path("emojis")
-        out.mkdir(exist_ok=True)
-        for emoji in guild.get_emojis().values():
-            ext = "gif" if emoji.is_animated else "png"
-            data = await hikari.files.URL(str(emoji.url)).read()
-            out.joinpath(f"{emoji.name}_{emoji.id}.{ext}").write_bytes(
-                data
-            )
+        await _download_emojis(guild, Path("emojis"), with_id=True)
         await ctx.respond("Saved!")
 
 
@@ -138,7 +143,7 @@ class PluginReload(
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = _bot(ctx)
-        if self.plugin_name not in [p.name for p in bot.plugins]:
+        if self.plugin_name not in _plugin_names(bot):
             await ctx.respond(
                 f"❌ plugin {self.plugin_name} is not loaded"
             )
@@ -161,7 +166,7 @@ class PluginLoad(
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = _bot(ctx)
-        if self.plugin_name in [p.name for p in bot.plugins]:
+        if self.plugin_name in _plugin_names(bot):
             await ctx.respond(
                 f"❌ plugin {self.plugin_name} is already loaded"
             )
@@ -182,7 +187,7 @@ class PluginUnload(
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = _bot(ctx)
-        if self.plugin_name not in [p.name for p in bot.plugins]:
+        if self.plugin_name not in _plugin_names(bot):
             await ctx.respond(
                 f"❌ plugin {self.plugin_name} is not loaded"
             )

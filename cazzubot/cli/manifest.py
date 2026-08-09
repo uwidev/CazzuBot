@@ -18,19 +18,10 @@ from cazzubot.cli.core import (
     EXPORT_PRESETS,
     export_stamp,
 )
+from cazzubot.cli.snapshot import SNAPSHOT_PATH
+from cazzubot.manifest.cli import add_file_args
 from cazzubot.roles.export import render_manifest
 from cazzubot.roles.parser import ManifestError, parse
-
-SNAPSHOT_PATH = Path("data/roles_export.json")
-
-
-def _add_file_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--file",
-        type=Path,
-        default=Path("roles.manifest"),
-        help="manifest path (default: roles.manifest)",
-    )
 
 
 async def cmd_render(args: argparse.Namespace) -> int:
@@ -75,7 +66,7 @@ async def cmd_lint(args: argparse.Namespace) -> int:
 domain = Domain(
     name="manifest",
     help="offline manifest file work (render/lint, no discord connection)",
-    common_args=(_add_file_args,),
+    common_args=(add_file_args(Path("roles.manifest")),),
     commands={
         "render": Command(
             cmd_render,

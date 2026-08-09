@@ -280,22 +280,27 @@ async def _drain_exceptions(
     """Collect exceptions from the fire-and-forget ExceptionEvent tasks.
 
     hikari re-dispatches listener failures as ``ExceptionEvent`` in a
-    separate task; the capture callback lands one loop tick later. Drain in
-    passes until the queue stays empty — no fixed-sleep race window.
+    separate task; the capture callback lands one loop tick later. Drain
+    until the queue stays empty for a grace period, so a failure that
+    lands between passes is still caught.
     """
     exceptions: list[BaseException] = []
-    for _ in range(4):
-        await asyncio.sleep(0.02)
+    empty_since: float | None = None
+    grace = 0.05  # generous vs the one-loop-tick dispatch delay
+    while True:
+        await asyncio.sleep(0.01)
+        if queue.empty():
+            if empty_since is None:
+                empty_since = asyncio.get_running_loop().time()
+            elif asyncio.get_running_loop().time() - empty_since >= grace:
+                return exceptions
+            continue
+        empty_since = None
         while True:
             try:
                 exceptions.append(queue.get_nowait())
             except asyncio.QueueEmpty:
                 break
-        if not exceptions:
-            # nothing has raised yet — a later pass would only catch
-            # cascading re-dispatches, which can't exist without one
-            return []
-    return exceptions
 
 
 async def _dispatch(

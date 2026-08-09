@@ -82,9 +82,7 @@ async def main() -> None:
                     ),
                 ):
                     print(
-                        print(
-                            f"    {getattr(c, 'position', 0):>3} {c.name} ({type(c).__name__})"
-                        )
+                        f"    {getattr(c, 'position', 0):>3} {c.name} ({type(c).__name__})"
                     )
     finally:
         await app.close()

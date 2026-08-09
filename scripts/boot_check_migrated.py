@@ -173,9 +173,12 @@ async def main() -> None:
         thr = await ranks_db.get(bot.db, mode=WindowEnum.SEASONAL)
         check(len(thr) == 11, "seasonal rank thresholds", f"{len(thr)}")
         lvl = await exp_db.seasonal_exp(bot.db, top[0][1], *season)
+        got_level = levels.level_from_exp(lvl)
         check(
-            levels.level_from_exp(lvl) >= 0,
+            levels.exp_to_level_cum(got_level) <= lvl
+            and lvl < levels.exp_to_level_cum(got_level + 1),
             "exp -> level math on migrated data",
+            f"exp={lvl} -> level={got_level}",
         )
 
         settings = settings_store

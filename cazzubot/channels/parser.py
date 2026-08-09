@@ -16,17 +16,22 @@ on the first one) and reported with a line number and a suggestion.
 
 from __future__ import annotations
 
-import difflib
 import re
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-
-from typing_extensions import override
 
 from cazzubot.channels.snapshot import (
     KINDS,
     SLOWMODE_KINDS,
     VOICE_KINDS,
+)
+from cazzubot.manifest.lines import (
+    Issue,
+    ManifestError,
+    commit_group,
+    parse_rename,
+    split_name_line,
+    suggest,
+    validate_renames,
 )
 
 _DIGITS = re.compile(r"^[0-9]+$")
@@ -104,33 +109,6 @@ class Manifest:
         )
 
 
-@dataclass(frozen=True, slots=True)
-class Issue:
-    """One parse problem: line number plus human message."""
-
-    line: int
-    message: str
-
-    @override
-    def __str__(self) -> str:
-        return f"line {self.line}: {self.message}"
-
-
-class ManifestError(ValueError):
-    """Raised when a manifest has any parse problems (all collected)."""
-
-    def __init__(self, issues: list[Issue]) -> None:
-        super().__init__(f"{len(issues)} manifest error(s)")
-        self.issues = issues
-
-
-def _suggest(word: str, candidates: Iterable[str]) -> str:
-    matches = difflib.get_close_matches(word, list(candidates), n=1)
-    if not matches:
-        return ""
-    return f" — did you mean {matches[0]!r}?"
-
-
 def _name_roundtrips(name: str) -> bool:
     """True when a channel name round-trips through the line format.
 
@@ -164,25 +142,15 @@ def parse(text: str) -> Manifest:
 
     def close_group() -> None:
         nonlocal group, channels
-        if group is not None:
-            if group.title is not None and group.title in seen_titles:
-                issues.append(
-                    Issue(
-                        group.line,
-                        f"duplicate category {group.title!r} (first at line {seen_titles[group.title]})",
-                    )
-                )
-            elif group.title is not None:
-                seen_titles[group.title] = group.line
-                groups.append(
-                    GroupSpec(group.title, group.line, tuple(channels))
-                )
-            else:
-                # implicit group — commit only if it has channels
-                if channels:
-                    groups.append(
-                        GroupSpec(None, group.line, tuple(channels))
-                    )
+        commit_group(
+            group,
+            channels,
+            groups,
+            seen_titles,
+            issues,
+            group_word="category",
+            items_field="channels",
+        )
         group = None
         channels = []
 
@@ -213,72 +181,33 @@ def parse(text: str) -> Manifest:
 
         if group is None:
             group = GroupSpec(title=None, line=line_no)  # implicit group
-        # split on the raw line so leading/trailing whitespace in the name
-        # is still visible (strip() would hide it)
-        if " : " in raw:
-            name_part, _, token_part = raw.partition(" : ")
-        elif raw.endswith(" :"):
-            # ``Name :`` with no tokens — trailing separator
-            name_part, token_part = raw[:-2], ""
-        else:
-            name_part, token_part = raw, ""
-        raw_name = name_part
-        name_part = name_part.strip()
-        if name_part != raw_name:
-            issues.append(
-                Issue(
-                    line_no,
-                    "channel name has leading/trailing whitespace — verbatim names can't round-trip",
-                )
-            )
+        name_part, token_part = split_name_line(
+            raw, kind="channel", line_no=line_no, issues=issues
+        )
 
-        renamed_from: str | None = None
-        if "->" in name_part:
-            old_part, _, new_part = name_part.partition("->")
-            old, new = old_part.strip(), new_part.strip()
-            if not old:
+        parsed = parse_rename(
+            name_part, kind="channel", line_no=line_no, issues=issues
+        )
+        if parsed is None:
+            continue
+        name, renamed_from = parsed
+        if renamed_from is not None:
+            if "->" in name:
                 issues.append(
                     Issue(
                         line_no,
-                        "rename has no old name before '->'",
+                        f"rename target {name!r} contains '->' — renames can't chain",
                     )
                 )
                 continue
-            if not new:
+            if not _name_roundtrips(name):
                 issues.append(
                     Issue(
                         line_no,
-                        "rename has no new name after '->'",
+                        f"rename target {name!r} can't round-trip through the manifest format",
                     )
                 )
                 continue
-            if old == new:
-                issues.append(
-                    Issue(
-                        line_no,
-                        f"rename {old!r} -> {old!r} is a no-op",
-                    )
-                )
-                continue
-            if "->" in new:
-                issues.append(
-                    Issue(
-                        line_no,
-                        f"rename target {new!r} contains '->' — renames can't chain",
-                    )
-                )
-                continue
-            if not _name_roundtrips(new):
-                issues.append(
-                    Issue(
-                        line_no,
-                        f"rename target {new!r} can't round-trip through the manifest format",
-                    )
-                )
-                continue
-            name, renamed_from = new, old
-        else:
-            name = name_part
         if not name:
             issues.append(Issue(line_no, "empty channel name"))
             continue
@@ -319,29 +248,9 @@ def parse(text: str) -> Manifest:
 
     # rename validation: no chains (A->B then B->C) and no duplicate
     # sources (A->B and A->C would fight for the same live channel)
-    rename_by_old: dict[str, ChannelSpec] = {}
-    for group in groups:
-        for ch in group.channels:
-            if ch.renamed_from is None:
-                continue
-            if ch.renamed_from in rename_by_old:
-                issues.append(
-                    Issue(
-                        ch.line,
-                        f"duplicate rename source {ch.renamed_from!r} "
-                        f"(first renamed at line {rename_by_old[ch.renamed_from].line})",
-                    )
-                )
-                continue
-            rename_by_old[ch.renamed_from] = ch
-    for old, ch in rename_by_old.items():
-        if ch.name in rename_by_old:
-            issues.append(
-                Issue(
-                    ch.line,
-                    f"rename chain not supported: {old!r} -> {ch.name!r} is itself renamed elsewhere",
-                )
-            )
+    validate_renames(
+        (ch for group in groups for ch in group.channels), issues
+    )
 
     if issues:
         raise ManifestError(issues)
@@ -380,7 +289,7 @@ def _parse_channel(
                     Issue(
                         line_no,
                         f"invalid channel type {kind!r}"
-                        + _suggest(kind, KINDS),
+                        + suggest(kind, KINDS),
                     )
                 )
                 continue
@@ -461,7 +370,7 @@ def _parse_channel(
         issues.append(
             Issue(
                 line_no,
-                f"unknown token {token!r}" + _suggest(token, candidates),
+                f"unknown token {token!r}" + suggest(token, candidates),
             )
         )
 
@@ -495,20 +404,3 @@ def _parse_channel(
         quality=quality,
         renamed_from=renamed_from,
     )
-
-
-def rewrite_renames(
-    text: str, renames: Sequence[tuple[int, str, str]]
-) -> str:
-    """Rewrite applied ``OLD->NEW`` lines to just ``NEW``.
-
-    ``renames`` holds ``(line_no, old, new)`` for rename lines that were
-    applied successfully. Everything else in the file is preserved byte
-    for byte (comments, blank lines, tokens, the modeline).
-    """
-    lines = text.splitlines(keepends=True)
-    for line_no, old, new in renames:
-        idx = line_no - 1
-        if 0 <= idx < len(lines):
-            lines[idx] = lines[idx].replace(f"{old}->{new}", new, 1)
-    return "".join(lines)

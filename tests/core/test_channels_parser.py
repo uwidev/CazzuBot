@@ -4,15 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from cazzubot.channels.parser import (
-    ManifestError,
-    parse,
-    rewrite_renames,
-)
-
-
-def parse_ok(text: str):
-    return parse(text)
+from cazzubot.channels.parser import ManifestError, parse
+from cazzubot.manifest.lines import rewrite_renames
 
 
 def issues(text: str) -> list[str]:

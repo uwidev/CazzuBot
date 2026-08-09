@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from cazzubot.db import Database
 from cazzubot.models import MemberSnapshot
-from cazzubot.utils import OldNew
+from cazzubot.utils import OldNew, format_member
 
 from . import db as ranks_db
 from .db import RankThreshold
@@ -102,11 +102,9 @@ def formatter(
     """Placeholders: {avatar} {name} {mention} {id} {rank_old} {rank_new}
     {level_old} {level_new} — ``rank_old``/``rank_new`` are mention strings
     (the presenter resolves ids; the service layer stays object-free)."""
-    return s.format(
-        avatar=member.avatar_url,
-        name=member.display_name,
-        mention=member.mention,
-        id=member.id,
+    return format_member(
+        s,
+        member,
         rank_old=rank_old,
         rank_new=rank_new,
         level_old=level_old,

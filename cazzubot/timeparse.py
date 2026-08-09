@@ -8,7 +8,7 @@ boundary.
 import logging
 import re
 from datetime import datetime
-from typing import Annotated, cast
+from typing import cast
 
 import parsedatetime
 import pendulum
@@ -106,6 +106,3 @@ def is_future(past: pendulum.DateTime, future: pendulum.DateTime) -> bool:
 
 def _spaces_out_shorthands(arg: str) -> str:
     return _any_shorthand_time.sub(r" \1 ", arg)
-
-
-NormalizedTime = Annotated[pendulum.DateTime, normalize_time_str]

@@ -195,9 +195,6 @@ class FakeMessage:
         self.embeds = embeds or []
         self.attachments: list[object] = []
         self.components: list[Any] = []
-        self.reactions: list[str] = []
-        self.deleted = False
-        self.edits: list[dict[str, Any]] = []
 
 
 # -- Cache / Rest ----------------------------------------------------------
@@ -223,10 +220,6 @@ class FakeCache:
         self._users: dict[int, FakeUser] = {}
         self._roles: dict[int, FakeRole] = {}
         self._channels: dict[int, FakeChannel] = {}
-        self._me: FakeUser | None = None
-
-    def get_me(self) -> FakeUser | None:
-        return self._me
 
     def get_guild(self, guild_id: int) -> FakeGuild | None:
         return self._guilds.get(guild_id)
@@ -277,7 +270,6 @@ class FakeRest:
         self.deleted: list[tuple[int, int]] = []
         self.edited: list[tuple[FakeMessage, dict[str, Any]]] = []
         self.reactions: list[tuple[int, int, str]] = []
-        self.typing_channels: list[int] = []
         self.channel_edits: list[tuple[int, dict[str, Any]]] = []
         # interaction endpoints (see the block below)
         self.interaction_log: dict[str, list[Any]] = {
@@ -389,7 +381,6 @@ class FakeRest:
         **kwargs: Any,
     ) -> FakeMessage:
         message = await self.fetch_message(channel_id, message_id)
-        message.edits.append(kwargs)
         self.edited.append((message, kwargs))
         return message
 
@@ -402,9 +393,6 @@ class FakeRest:
         self, channel_id: int, message_id: int, emoji: str
     ) -> None:
         self.reactions.append((channel_id, message_id, emoji))
-
-    async def trigger_typing(self, channel_id: int) -> None:
-        self.typing_channels.append(channel_id)
 
     async def edit_channel(self, channel_id: int, **kwargs: Any) -> None:
         self.channel_edits.append((channel_id, kwargs))
@@ -520,7 +508,6 @@ class FakeRest:
         target = self._check_webhook(token, message)
         mid = getattr(message, "id", message)
         self.interaction_log["edits"].append((token, mid, kwargs))
-        target.edits.append(kwargs)
         return target
 
     async def edit_interaction_response(
@@ -539,7 +526,6 @@ class FakeRest:
         target = self.webhook_messages.get(token)
         if target is None:
             target = self._mint_message(token)
-        target.edits.append({"content": content, **kwargs})
         return target
 
     async def delete_webhook_message(
@@ -627,6 +613,7 @@ class FakeClient:
         self.app = app
         self._attached_menus: set[object] = set()
         self._attached_modals: dict[str, object] = {}
+        # lightbulb's prefab hooks probe this for HOOK_INJECT_ALL_PARAMS
         self._features: set[object] = set()
         self._owner_ids: set[int] | None = {1}
 
@@ -900,6 +887,11 @@ def first_button_custom_id(
         if isinstance(child, InteractiveButtonBuilder):
             return child.custom_id or ""
     return ""
+
+
+def menu_button(menu: Any, index: int = 0) -> Any:
+    """A lightbulb menu's first-row button at ``index`` (callback drives it)."""
+    return cast(list[Any], menu._rows[0])[index]  # pyright: ignore[reportPrivateUsage]
 
 
 def rest_of(bot: Any) -> FakeRest:

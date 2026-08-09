@@ -8,7 +8,6 @@ import lightbulb
 
 from cazzubot import templates, utils
 from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
 from cazzubot.models import WindowEnum
 from lightbulb.prefab import checks as prefab_checks
 
@@ -38,13 +37,6 @@ def _mode_option(name: str = "mode", description: str = "The rank window"):
             lightbulb.Choice("Lifetime", "lifetime"),
         ],
     )
-
-
-def _parse_mode(raw: str) -> WindowEnum | None:
-    try:
-        return WindowEnum(raw.strip().lower())
-    except ValueError:
-        return None
 
 
 @rank.register
@@ -99,14 +91,17 @@ class Clean(
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = _bot(ctx)
         guild = bot.guild
-        rows = await ranks_db.get(bot.db)
         if guild is None:
             await window_error(
                 ctx, "Run rank clean in the server, not DMs."
             )
             return
-        removed = [r.rid for r in rows if not bot.cache.get_role(r.rid)]
-        await ranks_db.batch_delete(bot.db, removed)
+        rows = [
+            *await ranks_db.get(bot.db, mode=WindowEnum.SEASONAL),
+            *await ranks_db.get(bot.db, mode=WindowEnum.LIFETIME),
+        ]
+        removed = {r.rid for r in rows if not bot.cache.get_role(r.rid)}
+        await ranks_db.batch_delete(bot.db, list(removed))
         await window_success(
             ctx, f"Removed {len(removed)} stale rank roles"
         )
@@ -186,30 +181,16 @@ class SetMessage(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Set the rank-up message JSON.
-
-        Append a window name ("lifetime"/"seasonal") after the closing brace to
-        configure a specific window; otherwise the default argument applies.
-        """
+        """Set the rank-up message JSON for a window."""
         bot = _bot(ctx)
-        last_closing = len(self.message) - 1 - self.message[::-1].find("}")
-        tail = self.message[last_closing + 1 :].strip()
-        message = self.message[: last_closing + 1]
-        mode = WindowEnum(self.mode)
-        if tail:
-            parsed = _parse_mode(tail)
-            if parsed is None:
-                raise UserInputError(
-                    f"Unable to convert mode {tail} to type WindowEnum"
-                )
-            mode = parsed
-
         decoded = templates.verify(
-            message,
+            self.message,
             formatter,
             member=utils.member_snapshot(ctx.member or ctx.user),
         )
-        await ranks_db.set_message(bot.settings, decoded, mode)
+        await ranks_db.set_message(
+            bot.settings, decoded, WindowEnum(self.mode)
+        )
         await window_success(ctx, "Rank message set")
 
 

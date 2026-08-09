@@ -18,7 +18,8 @@ from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 
 _UID = 424242
-_DUMMY_TOKEN = "MTIzNDU2Nzg5MDEyMzQ1Ng.OTg3NjU0MzIxMDEyMzQ1Ng.dummy"
+
+from tests.conftest import _DUMMY_TOKEN  # noqa: E402  (constant, not a fixture)
 
 
 def _boot_bot(path: str, tmp_plugins: Path) -> CazzuBot:

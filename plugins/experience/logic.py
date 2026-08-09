@@ -30,9 +30,6 @@ _UNTIL_MSG = 77
 _DECAY_FACTOR = 2
 _EXP_COOLDOWN = 15  # seconds
 
-RE_MSG_EXP_CUMULATIVE: dict[int, int] = {}
-
-
 def from_msg(msg: int) -> int:
     """Expected exp reward for the message at daily count ``msg``."""
     if msg < 0:
@@ -42,13 +39,6 @@ def from_msg(msg: int) -> int:
     return round(
         (_BASE * _BONUS)
         - (_BASE * _BONUS - _BASE) * (msg / _UNTIL_MSG) ** _DECAY_FACTOR
-    )
-
-
-RE_MSG_EXP_CUMULATIVE[1] = _BASE + from_msg(0)
-for _i in range(2, _UNTIL_MSG + 1):
-    RE_MSG_EXP_CUMULATIVE[_i] = (
-        RE_MSG_EXP_CUMULATIVE[_i - 1] + _BASE + from_msg(_i - 1)
     )
 
 

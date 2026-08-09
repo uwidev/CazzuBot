@@ -191,7 +191,7 @@ class Lifetime(
             return
         if target.id not in [r[1] for r in rows]:
             await ctx.respond(
-                "You have not yet captured any frogs this season!"
+                "You have not yet captured any frogs!"
             )
             return
         await ctx.respond(
@@ -437,8 +437,8 @@ async def _prepare_personal_summary(
     frog_cnt = [r[2] for r in subset]
     names: list[str] = []
     for uid_ in [r[1] for r in subset]:
-        member = await utils.find_user(bot, ctx, uid_)
-        names.append(_found_name(member, uid_))
+        member = await utils.find_user(bot, uid_)
+        names.append(utils.found_name(member, uid_))
 
     window = list(zip(ranks, frog_cnt, names))
     headers = ["Rank", "Frogs", "User"]
@@ -486,11 +486,3 @@ async def _prepare_personal_summary(
 		```py\n{scoreboard_s}```
 		"""
     return embed
-
-
-def _found_name(user: hikari.User | hikari.Member | None, uid: int) -> str:
-    """A user's display name, or the raw id when unknown/partial."""
-    if user is None:
-        return str(uid)
-    name = user.display_name
-    return name if isinstance(name, str) else str(uid)

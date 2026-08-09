@@ -4,6 +4,7 @@ leaderboards."""
 import asyncio
 from math import trunc
 from typing import Any, cast
+from weakref import WeakValueDictionary
 
 import hikari
 import lightbulb
@@ -39,19 +40,11 @@ _ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
 
 # serialize exp updates per user so concurrent messages can't race the
 # msg_cnt/lifetime read-modify-write (single process, so module state is fine)
-_exp_locks: dict[int, asyncio.Lock] = {}
+_exp_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
 
 
 def _bot(ctx: lightbulb.Context) -> CazzuBot:
     return cast(CazzuBot, ctx.client.app)
-
-
-def _found_name(user: hikari.User | hikari.Member | None, uid: int) -> str:
-    """A user's display name, or the raw id when unknown/partial."""
-    if user is None:
-        return str(uid)
-    name = user.display_name
-    return name if isinstance(name, str) else str(uid)
 
 
 # -- message exp pipeline --------------------------------------------------
@@ -325,8 +318,8 @@ async def _prepare_personal_summary(
     lvls = [levels.level_from_exp(e) for e in exps]
     names: list[str] = []
     for uid_ in [r[1] for r in subset]:
-        found = await utils.find_user(bot, ctx, uid_)
-        names.append(_found_name(found, uid_))
+        found = await utils.find_user(bot, uid_)
+        names.append(utils.found_name(found, uid_))
 
     window = list(zip(ranks, exps, lvls, names))
     headers = ["Rank", "Exp", "Lv", "User"]
@@ -402,10 +395,9 @@ async def _top_embed(
     if not rows:
         scoreboard_s = "No data has been logged during this time period."
     else:
-        if rows and rows[0]:
-            top_user = await utils.find_user(bot, ctx, rows[0][1])
-            if top_user:
-                embed.set_thumbnail(str(top_user.display_avatar_url))
+        top_user = await utils.find_user(bot, rows[0][1])
+        if top_user:
+            embed.set_thumbnail(str(top_user.display_avatar_url))
 
         subset = rows[(page - 1) * 10 : page * 10]
         ranks = [r[0] for r in subset]
@@ -414,8 +406,8 @@ async def _top_embed(
         lvls = [levels.level_from_exp(e) for e in exps]
         names: list[str] = []
         for id_ in uids:
-            user = await utils.find_user(bot, ctx, id_)
-            names.append(_found_name(user, id_))
+            user = await utils.find_user(bot, id_)
+            names.append(utils.found_name(user, id_))
 
         window = list(zip(ranks, exps, lvls, names))
         headers = ["Rank", "Exp", "Lv", "User"]
@@ -485,24 +477,34 @@ class TopMenu(lightbulb.components.Menu):
             flags=hikari.MessageFlag.EPHEMERAL,
         )
 
-    async def _prev_season(
-        self, mctx: lightbulb.components.MenuContext
-    ) -> None:
+    async def _guard(self, mctx: lightbulb.components.MenuContext) -> bool:
+        """True when the clicker may page this leaderboard."""
         if mctx.interaction.user.id != self.author_id:
             await self._deny(mctx)
+            return False
+        return True
+
+    async def _step_season(
+        self, mctx: lightbulb.components.MenuContext, months: int
+    ) -> None:
+        if not await self._guard(mctx):
             return
-        self.date = self.date.subtract(months=3)
+        self.date = self.date.add(months=months)
         self.rows = await exp_db.seasonal_ranked(
             self.bot.db, self.date.year, (self.date.month - 1) // 3
         )
         self.page = 1
         await self._edit(mctx)
 
+    async def _prev_season(
+        self, mctx: lightbulb.components.MenuContext
+    ) -> None:
+        await self._step_season(mctx, -3)
+
     async def _prev_page(
         self, mctx: lightbulb.components.MenuContext
     ) -> None:
-        if mctx.interaction.user.id != self.author_id:
-            await self._deny(mctx)
+        if not await self._guard(mctx):
             return
         self.page = max(self.page - 1, 1)
         await self._edit(mctx)
@@ -510,8 +512,7 @@ class TopMenu(lightbulb.components.Menu):
     async def _next_page(
         self, mctx: lightbulb.components.MenuContext
     ) -> None:
-        if mctx.interaction.user.id != self.author_id:
-            await self._deny(mctx)
+        if not await self._guard(mctx):
             return
         # ceil(rows / 10): a floor division here strands the trailing
         # (rows % 10) entries on an unreachable page (12 rows -> 2 pages)
@@ -523,12 +524,4 @@ class TopMenu(lightbulb.components.Menu):
     async def _next_season(
         self, mctx: lightbulb.components.MenuContext
     ) -> None:
-        if mctx.interaction.user.id != self.author_id:
-            await self._deny(mctx)
-            return
-        self.date = self.date.add(months=3)
-        self.rows = await exp_db.seasonal_ranked(
-            self.bot.db, self.date.year, (self.date.month - 1) // 3
-        )
-        self.page = 1
-        await self._edit(mctx)
+        await self._step_season(mctx, 3)

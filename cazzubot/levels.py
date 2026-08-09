@@ -42,13 +42,13 @@ def exp_to_level_cum(n: int) -> float:
 
     last_key = list(_levels_exp_memo)[-1] or 1
     for i in range(last_key, n + 1):
-        _levels_exp_memo[i] = exp_to_level(i) + _levels_exp_memo[i - 1]
+        _levels_exp_memo[i] = exp_for_level(i) + _levels_exp_memo[i - 1]
     return _levels_exp_memo[n]
 
 
 def level_from_exp(exp: int) -> int:
     """Level for a given amount of exp."""
-    if not exp or exp <= 0:
+    if exp <= 0:
         return 0
 
     while True:
@@ -61,7 +61,7 @@ def level_from_exp(exp: int) -> int:
         exp_to_level_cum(last_level * 2)
 
 
-def exp_to_level(n: int) -> float:
+def exp_for_level(n: int) -> float:
     """Exp required to go from level n-1 to level n."""
     return _Y_SCALE * _combined(n / _X_SCALE)
 

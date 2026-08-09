@@ -5,7 +5,6 @@ runs the plugin lifecycle. Plugins reach everything through ``self.bot``.
 """
 
 import asyncio
-import importlib
 import logging
 import sys
 
@@ -15,7 +14,11 @@ import lightbulb
 from cazzubot.config import Config
 from cazzubot.db import Database, SchemaMismatchError
 from cazzubot.errors import UserInputError
-from cazzubot.plugin import Plugin, discover_plugins
+from cazzubot.plugin import (
+    Plugin,
+    discover_plugins,
+    load_plugin_module,
+)
 from cazzubot.scheduler import Scheduler
 from cazzubot.settings import Settings
 
@@ -105,7 +108,7 @@ class CazzuBot(hikari.GatewayBot):
         # order).
         plugins = discover_plugins(self.plugins_dir)
         if self.config.sandbox:
-            allowed = {"poll", "board", "dev"}
+            allowed = {"poll", "dev"}
             plugins = [p for p in plugins if p.name in allowed]
             _log.warning(
                 "sandbox mode: loading %s", [p.name for p in plugins]
@@ -155,13 +158,7 @@ class CazzuBot(hikari.GatewayBot):
     async def _on_guild_available(
         self, event: hikari.GuildAvailableEvent
     ) -> None:
-        """Run guild-dependent checks once the guild dump has landed.
-
-        hikari dispatches ``StartedEvent`` before the buffered
-        ``GuildAvailable`` events, so the cache is still empty inside
-        ``_on_started``; anything that needs ``self.guild`` runs from
-        here instead.
-        """
+        """Log when the configured guild's dump lands in the cache."""
         if event.guild_id == self.config.guild_id:
             _log.info("configured guild %s available", event.guild_id)
 
@@ -247,19 +244,13 @@ class CazzuBot(hikari.GatewayBot):
             if mod_name == prefix or mod_name.startswith(prefix + "."):
                 del sys.modules[mod_name]
 
-        module = importlib.import_module(prefix)
-        plugin = module.plugin
-        if not isinstance(plugin, Plugin):
-            raise UserInputError(f"{name} is not a plugin package")
+        plugin = load_plugin_module(prefix)
         await self.load_plugin(plugin)
         return plugin
 
     async def load_plugin_by_name(self, name: str) -> Plugin:
         """Import and load a plugin that isn't currently loaded."""
-        module = importlib.import_module(f"{self.plugins_dir}.{name}")
-        plugin = getattr(module, "plugin", None)
-        if not isinstance(plugin, Plugin):
-            raise UserInputError(f"{name} is not a plugin")
+        plugin = load_plugin_module(f"{self.plugins_dir}.{name}")
         await self.load_plugin(plugin)
         return plugin
 
@@ -269,9 +260,6 @@ class CazzuBot(hikari.GatewayBot):
         if plugin is None:
             raise UserInputError(f"plugin {name} is not loaded")
         await self.unload_plugin(plugin)
-
-    def _plugin_module(self, name: str):
-        return importlib.import_module(f"{self.plugins_dir}.{name}")
 
     @property
     def guild(self) -> hikari.GatewayGuild | None:

@@ -10,10 +10,9 @@ from dataclasses import dataclass
 
 import pendulum
 
-from typing import Any
-
 from cazzubot.db import Database
 from cazzubot.models import MemberExpLogSourceEnum
+from cazzubot.utils import rank_rows, season_bounds
 
 _log = logging.getLogger(__name__)
 
@@ -120,7 +119,7 @@ async def seasonal_ranked(
     db: Database, year: int, season: int
 ) -> list[tuple[int, int, int]]:
     """All members' exp in a season, ranked: [(rank, uid, exp)]."""
-    start, end = _season_bounds(year, season)
+    start, end = season_bounds(year, season)
     rows = await db.fetchall(
         """
 		SELECT uid, SUM(exp) AS exp
@@ -132,13 +131,13 @@ async def seasonal_ranked(
         start,
         end,
     )
-    return _ranked([dict(r) for r in rows])
+    return rank_rows([dict(r) for r in rows], "exp")
 
 
 async def seasonal_exp(
     db: Database, uid: int, year: int, season: int
 ) -> int:
-    start, end = _season_bounds(year, season)
+    start, end = season_bounds(year, season)
     val = await db.fetchval(
         """
 		SELECT COALESCE(SUM(exp), 0)
@@ -155,7 +154,7 @@ async def seasonal_exp(
 async def seasonal_total_members(
     db: Database, year: int, season: int
 ) -> int:
-    start, end = _season_bounds(year, season)
+    start, end = season_bounds(year, season)
     val = await db.fetchval(
         """
 		SELECT COUNT(DISTINCT uid)
@@ -172,7 +171,7 @@ async def lifetime_ranked(db: Database) -> list[tuple[int, int, int]]:
     rows = await db.fetchall(
         "SELECT uid, lifetime AS exp FROM member_exp ORDER BY lifetime DESC"
     )
-    return _ranked([dict(r) for r in rows])
+    return rank_rows([dict(r) for r in rows], "exp")
 
 
 async def total_members(db: Database) -> int:
@@ -203,21 +202,3 @@ async def sync_with_exp_logs(db: Database) -> None:
 		"""
     )
 
-
-def _season_bounds(year: int, season: int) -> tuple[str, str]:
-    start = pendulum.datetime(year, 1 + 3 * season, 1, tz="UTC")
-    end = start.add(months=3)
-    return start.isoformat(), end.isoformat()
-
-
-def _ranked(rows: list[dict[str, Any]]) -> list[tuple[int, int, int]]:
-    """Attach RANK()-style ranks (ties share, then skip) to (uid, exp) rows."""
-    out: list[tuple[int, int, int]] = []
-    prev_exp = None
-    rank = 0
-    for i, row in enumerate(rows, start=1):
-        if row["exp"] != prev_exp:
-            rank = i
-        out.append((rank, row["uid"], row["exp"]))
-        prev_exp = row["exp"]
-    return out

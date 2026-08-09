@@ -137,12 +137,11 @@ async def test_last_welcomed_guard_prevents_double(
     before = _member(fake_guild, 424242, pending=True)
     after = _member(fake_guild, 424242, pending=False)
 
-    welcome_cog.last_welcomed_id = None  # fresh state per test
+    monkeypatch.setattr(welcome_cog, "last_welcomed_id", None)  # fresh state
     await _fire(seeded_bot, before, after, fake_cache)
     await _fire(seeded_bot, before, after, fake_cache)  # same id again
 
     assert len(channel.sent) == 1
-    monkeypatch.setattr(welcome_cog, "last_welcomed_id", None)
 
 
 async def test_role_mode_welcomes_on_monitored_role(

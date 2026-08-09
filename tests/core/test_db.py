@@ -10,6 +10,7 @@ import pytest
 from cazzubot import CazzuBot, Config
 from cazzubot.db import Database, SchemaMismatchError
 from plugins.experience import db as exp_db
+from tests.conftest import _DUMMY_TOKEN
 
 
 def _make_drift_db(path: Path) -> None:
@@ -64,7 +65,7 @@ async def test_boot_aborts_on_schema_mismatch(tmp_path: Path) -> None:
     _make_drift_db(drift_path)
     drift_bot = CazzuBot(
         Config(
-            token="MTIzNDU2Nzg5MDEyMzQ1Ng.OTg3NjU0MzIxMDEyMzQ1Ng.dummy",
+            token=_DUMMY_TOKEN,
             owner_id=1,
             guild_id=2,
             db_path=str(drift_path),

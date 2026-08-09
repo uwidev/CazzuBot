@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import Enum
 
 from cazzubot.models import MemberSnapshot
-from cazzubot.utils import OldNew
+from cazzubot.utils import OldNew, format_member
 
 MESSAGE_KEY = "level.message"
 
@@ -52,11 +52,9 @@ def formatter(
     level_new: int | None = None,
 ) -> str:
     """Placeholders: {avatar} {name} {mention} {id} {level_old} {level_new}"""
-    return s.format(
-        avatar=member.avatar_url,
-        name=member.display_name,
-        mention=member.mention,
-        id=member.id,
+    return format_member(
+        s,
+        member,
         level_old=level_old,
         level_new=level_new,
     )

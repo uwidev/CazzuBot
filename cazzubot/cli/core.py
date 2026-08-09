@@ -21,8 +21,10 @@ LiveHandler: TypeAlias = Callable[
     [hikari.api.RESTClient, Config, argparse.Namespace], Awaitable[int]
 ]
 
-# Presets derived when exporting the manifest from this guild's live state
-# (used by both `roles export` and the offline `manifest render`).
+# Presets derived when exporting the manifest from the live guild's state.
+# Guild-specific by nature (preset "mod" names a live role in Club Cirno);
+# keep in sync when that guild's roles change. Used by both `roles export`
+# and the offline `manifest render`.
 EXPORT_PRESETS = {"member": "@everyone", "mod": "👀 | Mod Baka"}
 
 

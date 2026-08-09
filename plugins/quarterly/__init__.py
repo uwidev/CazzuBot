@@ -21,11 +21,6 @@ _log = logging.getLogger(__name__)
 LAST_KEY = "quarterly.last_quarterly"
 
 
-def _next_midnight() -> pendulum.DateTime:
-    """The next 00:00 UTC instant."""
-    return pendulum.now("UTC").start_of("day").add(days=1)
-
-
 async def reset(bot: CazzuBot) -> None:
     _log.info("Running quarterly reset — freezing frogs")
     await frog_db.freeze_frogs(bot.db)
@@ -36,7 +31,7 @@ async def on_quarterly_due(
     bot: CazzuBot, _payload: dict[str, object]
 ) -> None:
     """Scheduler handler for tag ``quarterly`` — check, then freeze."""
-    await bot.scheduler.add("quarterly", _next_midnight(), {})
+    await utils.arm_midnight_cadence(bot, "quarterly")
     last_raw = await bot.settings.get(LAST_KEY)
     now = pendulum.now("UTC")
     if last_raw:
@@ -75,8 +70,7 @@ class QuarterlyPlugin(Plugin):
         if force:
             await reset(bot)
         # re-arm the midnight cadence (drop stale rows first)
-        await bot.scheduler.drop_tag("quarterly")
-        await bot.scheduler.add("quarterly", _next_midnight(), {})
+        await utils.arm_midnight_cadence(bot, "quarterly")
 
 
 plugin = QuarterlyPlugin()
