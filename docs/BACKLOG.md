@@ -451,8 +451,10 @@ Design:
   schedule}` (validated, testable); a shell-like `&&`/`|` DSL parser is a
   possible later nicety that compiles to the same JSON.
 - **`pipelines` table + cadence** — name, schedule, definition, enabled;
-  a general interval-arm helper for the central scheduler (like
-  `arm_midnight_cadence`, but weekday/hour); `/pipeline` admin commands
+  a general interval-arm helper for the central scheduler
+  (`Scheduler.arm` + the `Cadence` spec — daily `{"time": "00:00"}` /
+  weekly `{"weekday": 0-6, "time": "HH:MM"}`, `next_run`/`previous_run`/
+  `missed` catch-up rule — landed 2026-08-09); `/pipeline` admin commands
   (define/list/run <name> for dry-runs).
 - **Semantics** — the definition carries the channel; pipelines run with
   owner privileges (only the owner defines them); abort-on-
@@ -460,6 +462,12 @@ Design:
   convention).
 - Refactor the `daily` and `quarterly` plugins onto the same cadence
   helper (they hand-roll the midnight pattern today).
+  > **Done** — `Cadence(time="00:00")` + `Scheduler.arm` in
+  > `cazzubot/scheduler.py`; both plugins re-arm with it, and `daily`
+  > boot-forces missed runs via `Cadence.missed` (occurrence-based: the
+  > last reset predates the most recent scheduled midnight — replaces
+  > the old "older than 24h" check). `utils.arm_midnight_cadence` /
+  > `next_midnight` deleted. Tests in `tests/core/test_cadence.py`.
 - First consumer: the board weekly flow — `board scrape` →
   `board post` (outputs the image count) → `poll register` (outputs pid)
   → `poll item auto_populate` (`pid` from output, `n` from count) →
@@ -477,6 +485,34 @@ test suffices vs the offline interaction driver (`tests/driver.py`
 `run_slash`/`press_button`/`submit_modal`), and how to run the suite
 (`uv run pytest`). `docs/TESTING.md` covers the *strategy* and layers; the
 "add a test for your new feature" recipe is what's missing.
+
+## ChaoticCadence — random-interval schedule (parked)
+
+Design riff on the cadence work (2026-08-09): the chaotic sibling of
+`Cadence` for random-interval timing (frogs, surprise schedules):
+
+- `ChaoticCadence(interval: int, jitter: float = 0.0)` in
+  `cazzubot/scheduler.py` — `next_run(now)` rolls
+  `now + interval * (1 ± jitter)` fresh every call. A seeded
+  `random.Random` field (repr=False, compare=False) makes tests
+  deterministic; validation at the type boundary: `interval > 0`,
+  `0 <= jitter <= 1` (today's `roll_fuzzy` has no clamp — `jitter > 1`
+  can roll negative offsets).
+- **No `previous_run`/`missed` by design** — a random schedule has no
+  scheduled occurrence to miss; late runs self-correct by re-rolling
+  from the actual completion instant (exactly the capture-reroll in
+  `on_frog_due`). This is the principled line: deterministic/missable
+  (`Cadence`) vs chaotic/self-correcting (`ChaoticCadence`).
+- Consumers if built: (1) frogs — replace `roll_future_frog`/`roll_fuzzy`
+  (`plugins/frogs/factory.py`, 3 call sites; bounds test at
+  `tests/plugins/frogs/test_cog.py::test_roll_future_frog_within_bounds`);
+  (2) future pipeline schedule specs — a second schedule family
+  `{"schedule": {"chaotic": {"interval": …, "jitter": …}}}` next to
+  `{"weekly": …}`.
+- `Scheduler.arm` stays Cadence-only (arm = drop_tag + one row; chaotic
+  rows are added per-consumer, like frogs' per-channel spawns).
+- Not designed yet: window-anchored chaos — "daily at a random time
+  between 12:00 and 18:00, re-rolled each day".
 
 ## Document how hikari works
 

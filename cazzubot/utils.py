@@ -61,11 +61,6 @@ def season_bounds(year: int, season: int) -> tuple[str, str]:
     return start.isoformat(), season_end(year, season).isoformat()
 
 
-def next_midnight() -> pendulum.DateTime:
-    """The next 00:00 UTC instant."""
-    return pendulum.now("UTC").start_of("day").add(days=1)
-
-
 _WEEK_STARTS = ("sunday", "monday")
 
 
@@ -126,12 +121,6 @@ def week_number(
     """
     iso = week_start(now, start=start).isocalendar()
     return iso[1], iso[0]
-
-
-async def arm_midnight_cadence(bot: CazzuBot, tag: str) -> None:
-    """Re-arm a once-a-midnight scheduler tag (drop stale rows first)."""
-    await bot.scheduler.drop_tag(tag)
-    await bot.scheduler.add(tag, next_midnight(), {})
 
 
 def ordinal(n: int) -> str:

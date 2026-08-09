@@ -228,6 +228,7 @@ class CazzuBot(hikari.GatewayBot):
         await plugin.on_unload(self)
         for tag in plugin.scheduled:
             self.scheduler.handlers.pop(tag, None)
+            self.scheduler.policies.pop(tag, None)
         if plugin.extensions:
             await self.lightbulb.unload_extensions(*plugin.extensions)
         self.plugins.remove(plugin)
