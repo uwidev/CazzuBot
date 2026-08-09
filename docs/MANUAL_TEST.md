@@ -5,6 +5,32 @@ migration. The offline unit suite covers the logic layers; this list targets
 what fakes cannot: the real gateway, live components/modals, permissions,
 rate limits, restart behavior.
 
+## Automated coverage (offline interaction driver)
+
+Since the rewrite, most interaction flows are covered **offline** by the
+driver in `tests/integration/` — no Discord needed, runs with `uv run
+pytest`:
+
+- `tests/driver.py` — `run_slash` / `press_button` / `submit_modal` feed
+  synthetic gateway interactions through hikari's own deserializer + event
+  manager, so the real routing runs: raw `InteractionCreateEvent` listeners,
+  lightbulb menu/modal lookup by `custom_id`, the command pipeline (option
+  solving, checks, error handler), and the interaction-response lifecycle
+  (single initial response within the 3s budget; webhook edits/deletes must
+  be acked and address a real message — the 404/stall bug classes from the
+  manual pass fail loudly instead). The `full_bot` fixture boots the real
+  bot with every plugin against a temp DB.
+- Covered scenarios: counter create + baka press + restart persistence
+  (H1/H2), author-confirm menus incl. wrong-user rejection (C4/D3), frog
+  spawn + catch + stale button (D4), poll vote modal + submit (F2/F3), the
+  debug gate (B2), UserInputError translation (L1), `exp top` paging (C3),
+  and the window reporting flow.
+- What stays manual/live: real gateway events, rate limits, Discord's own
+  payload validation, and two-real-user races.
+
+See `docs/TESTING.md` for the full layered-testing strategy, the driver
+mechanics, and the general automation boundaries.
+
 **No formal bug reports.** If something is wrong, paste the error / write
 whatever below the test item — raw, no template.
 

@@ -513,7 +513,11 @@ class TopMenu(lightbulb.components.Menu):
         if mctx.interaction.user.id != self.author_id:
             await self._deny(mctx)
             return
-        self.page = min(self.page + 1, max(len(self.rows) // 10, 1))
+        # ceil(rows / 10): a floor division here strands the trailing
+        # (rows % 10) entries on an unreachable page (12 rows -> 2 pages)
+        self.page = min(
+            self.page + 1, max((len(self.rows) - 1) // 10 + 1, 1)
+        )
         await self._edit(mctx)
 
     async def _next_season(

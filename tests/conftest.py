@@ -128,3 +128,69 @@ def seeded_bot(
     fake_rest.members[(fake_guild.id, author.id)] = author
     seed_bot(bot, cache=fake_cache, rest=fake_rest)
     return bot
+
+
+async def boot_full_bot(
+    tmp_path: Path, *, debug: bool = False
+) -> CazzuBot:
+    """Boot a real CazzuBot with every plugin loaded, fully offline.
+
+    The ``tests.driver`` harness presses buttons / runs slash commands
+    against this bot: real extensions, real lightbulb client (menus,
+    modals, command pipeline), real scheduler — with fake cache/rest wired
+    in before the lifecycle starts so plugin ``on_load`` hooks never touch
+    the network. lightbulb's command-tree sync (the one network call at
+    startup) is disabled while keeping the in-memory registration that
+    routes interactions.
+    """
+    import hikari
+
+    instance = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=str(tmp_path / "full.db"),
+            debug=debug,
+        ),
+        plugins_dir="plugins",
+    )
+    # keep the in-memory command registration, skip the REST sync
+    instance.lightbulb.sync_commands = False
+
+    cache, rest = FakeCache(), FakeRest()
+    guild = FakeGuild(id=2, owner_id=1)
+    member = FakeMember(
+        id=424242, name="cirno", guild=guild, administrator=True
+    )
+    channel = FakeChannel(id=99, name="general", guild_id=2)
+    cache.add_guild(guild)
+    cache.add_member(member)
+    cache.add_channel(channel)
+    rest.members[(guild.id, member.id)] = member
+    seed_bot(instance, cache=cache, rest=rest)
+    # owner checks short-circuit without a fetch_application round-trip
+    instance.lightbulb._owner_ids = {1}  # pyright: ignore[reportPrivateUsage]
+
+    # drive the lifecycle through the real event manager so the lightbulb
+    # client actually starts (the plain bot fixture calls handlers directly
+    # and never starts its client)
+    await instance.event_manager.dispatch(
+        hikari.StartingEvent(app=instance), return_tasks=True
+    )
+    await instance.event_manager.dispatch(
+        hikari.StartedEvent(app=instance), return_tasks=True
+    )
+    return instance
+
+
+@pytest.fixture
+async def full_bot(tmp_path: Path) -> AsyncGenerator[CazzuBot, None]:
+    """A fully-booted offline bot with every plugin loaded (driver tests)."""
+    import hikari
+
+    instance = await boot_full_bot(tmp_path)
+    yield instance
+    await instance._on_stopping(  # pyright: ignore[reportPrivateUsage]
+        hikari.StoppingEvent(app=instance)
+    )

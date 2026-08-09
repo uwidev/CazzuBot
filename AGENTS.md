@@ -16,6 +16,13 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - Lint: `uv run ruff check .` — Format: `uv run ruff format .`
 - Tests: `uv run pytest` (offline; per-feature tests in `tests/`, booted-bot
   fixtures in `tests/conftest.py`, typed discord fakes in `tests/fakes.py`).
+  Interaction flows (buttons/modals/slash pipeline) are covered end-to-end
+  offline by the driver in `tests/integration/` (`tests/driver.py` —
+  `run_slash`/`press_button`/`submit_modal` through the real lightbulb
+  routing; `full_bot` fixture boots every plugin). Verify interactive
+  changes there, not just with direct handler calls. See
+  `docs/TESTING.md` for the full layered-testing picture and what still
+  needs live/manual verification.
 - No unit-test suite.
 
 ## Architecture

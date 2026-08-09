@@ -19,8 +19,10 @@ faked here — they construct fine offline.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, cast
 
 import hikari
@@ -221,6 +223,10 @@ class FakeCache:
         self._users: dict[int, FakeUser] = {}
         self._roles: dict[int, FakeRole] = {}
         self._channels: dict[int, FakeChannel] = {}
+        self._me: FakeUser | None = None
+
+    def get_me(self) -> FakeUser | None:
+        return self._me
 
     def get_guild(self, guild_id: int) -> FakeGuild | None:
         return self._guilds.get(guild_id)
@@ -273,6 +279,19 @@ class FakeRest:
         self.reactions: list[tuple[int, int, str]] = []
         self.typing_channels: list[int] = []
         self.channel_edits: list[tuple[int, dict[str, Any]]] = []
+        # interaction endpoints (see the block below)
+        self.interaction_log: dict[str, list[Any]] = {
+            "responses": [],  # (token, ResponseType, payload)
+            "edits": [],  # (token, message_id, payload)
+            "deletes": [],  # (token, message_id)
+            "followups": [],  # (token, payload)
+            "modals": [],  # (token, title, custom_id, component)
+        }
+        self.responded_tokens: set[str] = set()
+        self.token_response_types: dict[str, hikari.ResponseType] = {}
+        self.webhook_messages: dict[str, FakeMessage] = {}
+        self._known_message_ids: dict[int, str] = {}
+        self._mint = itertools.count(1001)
 
     async def add_role_to_member(
         self,
@@ -389,6 +408,179 @@ class FakeRest:
 
     async def edit_channel(self, channel_id: int, **kwargs: Any) -> None:
         self.channel_edits.append((channel_id, kwargs))
+
+    # -- interaction endpoints ---------------------------------------------
+    # Real hikari interaction objects (deserialized by the driver) call
+    # these through ``bot.rest``. They model Discord's interaction-webhook
+    # lifecycle so lifecycle bugs fail loudly instead of passing silently:
+    #   * one initial response per interaction (a second call 404s)
+    #   * webhook edits/deletes need an acked (responded) interaction
+    #   * the addressed message must exist and belong to the token (or be
+    #     the message the component interaction was created on)
+    #   * ``@original`` resolves only after a response type that actually
+    #     materialises a message (MESSAGE_* / DEFERRED_MESSAGE_UPDATE)
+    # ``interaction_log`` keeps every call, token-tagged; the driver
+    # snapshots it before a dispatch and diffs after.
+
+    def _mint_message(self, token: str) -> FakeMessage:
+        """A message id Discord would assign to a webhook message."""
+        mid = next(self._mint)
+        message = FakeMessage(id=mid, content="")
+        self._known_message_ids[mid] = token
+        self.webhook_messages[token] = message
+        return message
+
+    def register_source_message(self, token: str, message_id: int) -> None:
+        """The message a component interaction was created on.
+
+        Discord lets a click's webhook manage the message the button lives
+        on once the click is acked — record it so the fake allows exactly
+        that and nothing else cross-token.
+        """
+        self._known_message_ids.setdefault(message_id, token)
+
+    def _original_addressable(self, token: str) -> bool:
+        """True when ``@original`` resolves for this interaction."""
+        return self.token_response_types.get(token) in (
+            hikari.ResponseType.MESSAGE_CREATE,
+            hikari.ResponseType.MESSAGE_UPDATE,
+            hikari.ResponseType.DEFERRED_MESSAGE_UPDATE,
+        )
+
+    def _check_webhook(self, token: str, message: Any) -> FakeMessage:
+        """Discord's webhook rules: acked token + an addressable message."""
+        if token not in self.responded_tokens:
+            raise _not_found("Unknown Webhook")
+        mid = getattr(message, "id", message)
+        if str(mid) == "@original":
+            return self.webhook_messages.get(token) or FakeMessage(id=0)
+        if self._known_message_ids.get(int(mid)) != token:
+            raise _not_found("Unknown Message")
+        return next(
+            (
+                m
+                for m in self.webhook_messages.values()
+                if m.id == int(mid)
+            ),
+            FakeMessage(id=int(mid)),
+        )
+
+    async def create_interaction_response(
+        self,
+        interaction: int,
+        token: str,
+        response_type: hikari.ResponseType,
+        content: Any = hikari.UNDEFINED,
+        **kwargs: Any,
+    ) -> None:
+        if token in self.responded_tokens:
+            raise _not_found("Unknown Webhook")
+        self.responded_tokens.add(token)
+        self.token_response_types[token] = response_type
+        self.interaction_log["responses"].append(
+            (token, response_type, {"content": content, **kwargs})
+        )
+        if response_type in (
+            hikari.ResponseType.MESSAGE_CREATE,
+            hikari.ResponseType.MESSAGE_UPDATE,
+        ):
+            self._mint_message(token)
+
+    async def create_modal_response(
+        self,
+        interaction: int,
+        token: str,
+        *,
+        title: str,
+        custom_id: str,
+        component: Any = hikari.UNDEFINED,
+        components: Any = hikari.UNDEFINED,
+    ) -> None:
+        if token in self.responded_tokens:
+            raise _not_found("Unknown Webhook")
+        self.responded_tokens.add(token)
+        self.token_response_types[token] = hikari.ResponseType.MODAL
+        self.interaction_log["modals"].append(
+            {
+                "token": token,
+                "title": title,
+                "custom_id": custom_id,
+                "component": component,
+                "components": components,
+            }
+        )
+
+    async def edit_webhook_message(
+        self,
+        webhook: int,
+        token: str,
+        message: Any,
+        **kwargs: Any,
+    ) -> FakeMessage:
+        target = self._check_webhook(token, message)
+        mid = getattr(message, "id", message)
+        self.interaction_log["edits"].append((token, mid, kwargs))
+        target.edits.append(kwargs)
+        return target
+
+    async def edit_interaction_response(
+        self,
+        application: int,
+        token: str,
+        content: Any = hikari.UNDEFINED,
+        **kwargs: Any,
+    ) -> FakeMessage:
+        """PATCH the interaction's initial response (``@original``)."""
+        if not self._original_addressable(token):
+            raise _not_found("Unknown Webhook")
+        self.interaction_log["edits"].append(
+            (token, "@original", {"content": content, **kwargs})
+        )
+        target = self.webhook_messages.get(token)
+        if target is None:
+            target = self._mint_message(token)
+        target.edits.append({"content": content, **kwargs})
+        return target
+
+    async def delete_webhook_message(
+        self, webhook: int, token: str, message: Any
+    ) -> None:
+        self._check_webhook(token, message)
+        mid = getattr(message, "id", message)
+        self.interaction_log["deletes"].append((token, mid))
+
+    async def delete_interaction_response(
+        self, application: int, token: str
+    ) -> None:
+        """DELETE the interaction's initial response (``@original``)."""
+        if not self._original_addressable(token):
+            raise _not_found("Unknown Webhook")
+        self.interaction_log["deletes"].append((token, "@original"))
+
+    async def execute_webhook(
+        self, webhook: int, token: str, **kwargs: Any
+    ) -> FakeMessage:
+        if token not in self.responded_tokens:
+            raise _not_found("Unknown Webhook")
+        self.interaction_log["followups"].append((token, kwargs))
+        return self._mint_message(token)
+
+    async def fetch_interaction_response(
+        self, application: int, token: str
+    ) -> FakeMessage:
+        if token not in self.responded_tokens:
+            raise _not_found("Unknown Webhook")
+        message = self.webhook_messages.get(token)
+        if message is None:
+            # no message exists yet (e.g. only a bare defer was sent)
+            raise _not_found("Unknown Message")
+        return message
+
+    async def fetch_application(self) -> Any:
+        """The bot's own application (owner checks read ``owner.id``)."""
+        return SimpleNamespace(
+            owner=FakeUser(id=1, name="owner", bot=True), team=None
+        )
 
 
 # -- Context / Interaction -------------------------------------------------
