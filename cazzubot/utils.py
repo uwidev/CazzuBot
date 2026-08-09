@@ -11,6 +11,7 @@ import lightbulb
 import pendulum
 
 from cazzubot.bot import CazzuBot
+from cazzubot.errors import UserInputError
 from cazzubot.models import MemberSnapshot
 
 # lightbulb's sentinel for "the initial interaction response" (context.py
@@ -63,6 +64,68 @@ def season_bounds(year: int, season: int) -> tuple[str, str]:
 def next_midnight() -> pendulum.DateTime:
     """The next 00:00 UTC instant."""
     return pendulum.now("UTC").start_of("day").add(days=1)
+
+
+_WEEK_STARTS = ("sunday", "monday")
+
+
+def week_start(
+    now: pendulum.DateTime, *, start: str = "sunday"
+) -> pendulum.DateTime:
+    """00:00 UTC of the week containing ``now`` (start: 'sunday'|'monday').
+
+    Pendulum weeks run Monday→Sunday, so ``start_of("week")`` lands on the
+    Monday *before* a Sunday ``now`` — for Sunday-start weeks, step back a
+    day, and for Sundays the week starts on the day itself.
+    """
+    if start not in _WEEK_STARTS:
+        raise UserInputError(f"week start must be one of {_WEEK_STARTS}")
+    if start == "monday":
+        return now.start_of("week")
+    if now.day_of_week == pendulum.SUNDAY:
+        return now.start_of("day")
+    return now.start_of("week").subtract(days=1)
+
+
+def week_start_of(
+    year: int, week: int, *, start: str = "sunday"
+) -> pendulum.DateTime:
+    """00:00 UTC of the first day of ``week`` of ``year``.
+
+    Week numbers follow ISO 8601; for Sunday-start weeks the week starts on
+    the Sunday that ends the ISO week (so ``week_start(now)`` and
+    ``week_start_of`` round-trip). Raises ``UserInputError`` for weeks that
+    don't exist in ``year``.
+    """
+    if not 1 <= week <= 53:
+        raise UserInputError(f"week must be between 1 and 53, got {week}")
+    try:
+        parsed = pendulum.parse(f"{year}-W{week:02}")
+    except ValueError as err:  # ParserError for nonexistent ISO weeks
+        raise UserInputError(
+            f"week {week} does not exist in {year}"
+        ) from err
+    if not isinstance(parsed, pendulum.DateTime):
+        raise UserInputError(f"week {week} does not exist in {year}")
+    monday = parsed
+    if monday.isocalendar()[1] != week:
+        raise UserInputError(f"week {week} does not exist in {year}")
+    if start == "monday":
+        return monday
+    return monday.add(days=6).start_of("day")
+
+
+def week_number(
+    now: pendulum.DateTime, *, start: str = "sunday"
+) -> tuple[int, int]:
+    """(week number, week year) of the week containing ``now``.
+
+    For Monday-start weeks this is the ISO week; for Sunday-start weeks the
+    week is numbered by the ISO week of its Sunday, so it round-trips with
+    ``week_start_of``.
+    """
+    iso = week_start(now, start=start).isocalendar()
+    return iso[1], iso[0]
 
 
 async def arm_midnight_cadence(bot: CazzuBot, tag: str) -> None:

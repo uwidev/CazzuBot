@@ -11,6 +11,7 @@ dependencies = [
     "jsonschema>=4.21.1",
     "parsedatetime>=2.6",
     "pendulum>=2.1.2",
+    "pillow>=12.3.0",
     "python-dotenv>=0.9.9",
     "typing_extensions>=4.3",
 ]

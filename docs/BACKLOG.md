@@ -162,12 +162,18 @@ Now we have a history of people who have pressed the button. From this, we can s
 
 We can also get the total count for the counter just by a sum call on the mid.
 
-> **Partly done** — `counter_baka` (mid, uid, name, updated_at) already IS
-> the per-press history, and the baka button derives "recent bakas" from it
-> (`SELECT name ... ORDER BY updated_at DESC`). Still open: the total count
-> is still maintained as `counter.count` (`UPDATE counter SET count = count + 1`)
-> instead of a `SUM` over the history — the "count by sum on mid" half of
-> the item remains.
+> **Done** — the history is now the source of truth. `counter` is the
+> registry (`mid` only, no `count` column); every press is one
+> `counter_event` row (`id, mid, uid, timestamp`, index on
+> `(mid, timestamp)`), recent bakas = `GROUP BY uid` over a 2h window
+> (`MAX(timestamp)` desc), total = `COUNT(*)` over the history. Legacy
+> pre-normalization presses were backfilled as anonymous rows
+> (`uid NULL`, epoch timestamp `1970-01-01T00:00:00+00:00`) — one per old
+> press — so totals carry over exactly. The PG→SQLite migration emits this
+> shape (`scripts/migrate_pg_to_sqlite.py`), `verify_migration.py` checks
+> it, and `scripts/migration/MAPPING.md` documents the mapping. The
+> baka-specific presentation (button, footer text, `recent_bakas`) is
+> unchanged by design.
 
 ## Fix mod duration parsing (single-token footgun)
 > **Done** — `split_duration_reason` takes the first parseable leading
@@ -384,3 +390,101 @@ followups, done" — ideas to evaluate later: defer with a progress message
 that gets edited as phases complete, or a single final summary edit.
 Owner's words: "I think optimally we want better UX here. Will think of a
 proper flow later. Backlog this."
+
+## Board plugin — weekly image scrape + numbered grid
+
+**Core DONE (2026-08-09):** `plugins/board/` — `/board scrape [channel]
+[week]` collects a week's image attachments (static only — animated
+uploads are skipped by frame count; content-hash dedup within the week)
+into a `board` table row per image (`ts` ISO-8601 UTC, `image_url` CDN
+url, `msg_url` message link, `sha256`), defaulting to last week (this
+week − 1); `/board post [columns] [cell_size]` stitches the most recent
+week's rows into a numbered grid (the `stich.py` script, absorbed as
+`plugins/board/stitcher.py`; defaults 9 cols / 768px cells, adjustable),
+pruning rows whose image no longer downloads (message deleted), and posts
+the grid with per-image message links in an embed. `plugins/misc/` holds
+the server utilities split out of the original plan: `/misc banner
+[image] [msg]` (16:9 guild banner, or from the first image attachment of
+a message link), `/misc welcome` (API-editable parts — the welcome-screen
+*background image* is client-side only and cannot be set via the API),
+and `/misc week [start] [msg]` (current week with Sunday/Monday start, or
+a message link placed in its week via snowflake decoding; the shared week
+math lives in `cazzubot.utils`).
+
+Remaining (all tied to the generic-scheduler item below):
+
+- Weekly cadence: at rollover (Sunday 00:00 UTC) scrape the just-ended
+  week, post the grid, and open voting for the week (24h, closing end of
+  Sunday). Catch-up on boot for weeks missed while down.
+- Poll tie-in: the grid message carries a `poll:vote:<pid>` button; the
+  poll plugin's modal voting (items = grid numbers, `max_vote=1`).
+- Winner flow: at close, pick the highest-voted image, set it as the guild
+  banner (16:9 prep via `plugins/misc.logic.prepare_banner`), and
+  announce the winner with a link to the original message.
+
+## Generic scheduler — time/interval-triggered command chains (pipelines)
+
+Owner's goal: write a "command" that runs at intervals — a chain of
+application commands (or functions marked public) piped together, e.g.:
+
+    at the start of every sunday
+    board scrape && board post | poll register && poll send
+
+where `board post` outputs the image count and `poll register`'s pid is
+auto-populated with it. Feasibility assessed (2026-08-09): very doable —
+the central scheduler and offline command invocation already exist; the
+real work is structured command output + a pipeline runner.
+
+Design:
+
+- **Structured command outputs** — the missing convention. Pipeable
+  commands set `ctx.output = {...}` (e.g. `{"count": 20}`, `{"pid": 7}`)
+  alongside their normal window feedback; only pipeable commands need it.
+- **Pipeline runner** — executes steps sequentially against the real bot
+  with a captured context (the same trick `tests/driver.py` /
+  `invoke_command` use offline); a step raising `UserInputError` aborts
+  the chain (that's the `&&`); otherwise the next step's params bind from
+  the previous output (that's the `|`), e.g. `n: "$prev.count"`. Runs as
+  its own task so the scheduler loop never blocks (pattern: poll modal
+  attach wait).
+- **Definitions** — JSON first: `{steps: [{command, args}, ...], channel,
+  schedule}` (validated, testable); a shell-like `&&`/`|` DSL parser is a
+  possible later nicety that compiles to the same JSON.
+- **`pipelines` table + cadence** — name, schedule, definition, enabled;
+  a general interval-arm helper for the central scheduler (like
+  `arm_midnight_cadence`, but weekday/hour); `/pipeline` admin commands
+  (define/list/run <name> for dry-runs).
+- **Semantics** — the definition carries the channel; pipelines run with
+  owner privileges (only the owner defines them); abort-on-
+  `UserInputError` is the failure rule (already the bot's error
+  convention).
+- Refactor the `daily` and `quarterly` plugins onto the same cadence
+  helper (they hand-roll the midnight pattern today).
+- First consumer: the board weekly flow — `board scrape` →
+  `board post` (outputs the image count) → `poll register` (outputs pid)
+  → `poll item auto_populate` (`pid` from output, `n` from count) →
+  `poll send`, Sunday 00:00 UTC.
+- Overlaps with `cazzubot/scheduler.py` (tags, payloads, retry, re-arm on
+  boot) — potential refactor there as well.
+
+## Document how to add a test for a feature
+
+A step-by-step how-to in the docs: where per-feature tests live
+(`tests/plugins/<feature>/`), the test-first rule (pin behavior at the
+highest layer that can express it), how to fake the framework surface
+(`tests/fakes.py`, `FakeContext`, `invoke_command`), when a layer-1 unit
+test suffices vs the offline interaction driver (`tests/driver.py`
+`run_slash`/`press_button`/`submit_modal`), and how to run the suite
+(`uv run pytest`). `docs/TESTING.md` covers the *strategy* and layers; the
+"add a test for your new feature" recipe is what's missing.
+
+## Document how hikari works
+
+Developer-facing doc on the framework itself: gateway vs REST, the event
+system (listeners, `event_factory` deserialization, the event manager),
+caches, components (buttons/menus/modals), and how lightbulb layers on
+(loader, commands, checks, error handling) — enough that a contributor
+new to hikari can orient without reading upstream docs cover-to-cover.
+The existing hikari documentation may already be enough; the work is to
+read it and distill what's relevant here (`docs/HIKARI_MIGRATION.md` has
+the port-time notes).

@@ -8,7 +8,7 @@ __pycache__
 data/
 archives/
 story/
-board/
+/board/
 download/
 emojis/
 *.db

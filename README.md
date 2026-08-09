@@ -51,6 +51,9 @@ handlers. See [docs/PLUGINS.md](docs/PLUGINS.md).
 - **poll** — app-command polls with a vote modal
 - **welcome** — onboarding/role-based welcomes with JSON message templates
 - **counter** — the baka button
-- **board** — weekly image scrape
+- **board** — weekly image scrape → numbered grid posting (core;
+  weekly automation + poll tie-in backlogged in `docs/BACKLOG.md`)
+- **misc** — server utilities: guild banner, welcome screen
+  (API-editable parts)
 - **fun** — ping/info/noot, echo, inktober, story compiler
 - **dev** — owner tools, plugin hotswap (`cog reload <name>`)

@@ -136,6 +136,10 @@ class FakeGuild:
         self.id = id
         self.name = name
         self.owner_id = owner_id
+        self.channels: dict[int, FakeChannel] = {}
+
+    def get_channels(self) -> dict[int, FakeChannel]:
+        return self.channels
 
 
 class FakeChannel:
@@ -171,6 +175,23 @@ class FakeChannel:
         return message
 
 
+class FakeAttachment:
+    """hikari.Attachment stand-in for the board/misc scrapers."""
+
+    def __init__(
+        self,
+        *,
+        id: int = 1,
+        filename: str = "a.png",
+        url: str = "https://example.com/a.png",
+        media_type: str = "image/png",
+    ) -> None:
+        self.id = id
+        self.filename = filename
+        self.url = url
+        self.media_type = media_type
+
+
 class FakeMessage:
     def __init__(
         self,
@@ -182,6 +203,7 @@ class FakeMessage:
         channel_id: int | None = None,
         created_at: datetime | None = None,
         embeds: list[hikari.Embed] | None = None,
+        attachments: list[FakeAttachment] | None = None,
     ) -> None:
         self.id = id
         self.content = content
@@ -193,7 +215,7 @@ class FakeMessage:
         self.channel_id = channel_id
         self.created_at = created_at or datetime.now(timezone.utc)
         self.embeds = embeds or []
-        self.attachments: list[object] = []
+        self.attachments: list[FakeAttachment] = attachments or []
         self.components: list[Any] = []
 
 
@@ -271,6 +293,8 @@ class FakeRest:
         self.edited: list[tuple[FakeMessage, dict[str, Any]]] = []
         self.reactions: list[tuple[int, int, str]] = []
         self.channel_edits: list[tuple[int, dict[str, Any]]] = []
+        self.guild_edits: list[tuple[int, dict[str, Any]]] = []
+        self.welcome_screen_edits: list[tuple[int, dict[str, Any]]] = []
         # interaction endpoints (see the block below)
         self.interaction_log: dict[str, list[Any]] = {
             "responses": [],  # (token, ResponseType, payload)
@@ -396,6 +420,16 @@ class FakeRest:
 
     async def edit_channel(self, channel_id: int, **kwargs: Any) -> None:
         self.channel_edits.append((channel_id, kwargs))
+
+    async def edit_guild(self, guild: Any, **kwargs: Any) -> None:
+        """Record a guild edit (banner, etc.) keyed by guild id."""
+        gid = int(getattr(guild, "id", guild))
+        self.guild_edits.append((gid, kwargs))
+
+    async def edit_welcome_screen(self, guild: Any, **kwargs: Any) -> None:
+        """Record a welcome-screen edit keyed by guild id."""
+        gid = int(getattr(guild, "id", guild))
+        self.welcome_screen_edits.append((gid, kwargs))
 
     # -- interaction endpoints ---------------------------------------------
     # Real hikari interaction objects (deserialized by the driver) call
@@ -583,6 +617,7 @@ class SentMessage:
     components: list[Any] | None = None
     flags: int = 0
     ephemeral: bool = False
+    attachment: Any = None
 
 
 class FakeInteraction:
@@ -665,6 +700,7 @@ class FakeContext:
         component: Any = None,
         components: list[Any] | None = None,
         flags: int = 0,
+        attachment: Any = None,
         **kwargs: Any,
     ) -> int:
         self.sent.append(
@@ -676,6 +712,7 @@ class FakeContext:
                 components=components,
                 flags=flags,
                 ephemeral=bool(flags & hikari.MessageFlag.EPHEMERAL),
+                attachment=attachment,
             )
         )
         return 1  # the response message id

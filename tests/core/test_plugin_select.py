@@ -88,6 +88,7 @@ def test_unknown_declared_dependency_raises() -> None:
 def test_real_plugin_set_is_consistent() -> None:
     plugins = discover_plugins("plugins")
     assert {p.name for p in plugins} == {
+        "board",
         "channels",
         "counter",
         "daily",
@@ -96,6 +97,7 @@ def test_real_plugin_set_is_consistent() -> None:
         "frogs",
         "fun",
         "levels",
+        "misc",
         "mod",
         "poll",
         "quarterly",
