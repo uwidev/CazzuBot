@@ -47,6 +47,8 @@ async def on_quarterly_due(
 class QuarterlyPlugin(Plugin):
     name = "quarterly"
     scheduled = {"quarterly": on_quarterly_due}
+    # the quarterly freeze lives in the frogs tables
+    depends_on = ("frogs",)
 
     @override
     async def on_load(self, bot: CazzuBot) -> None:

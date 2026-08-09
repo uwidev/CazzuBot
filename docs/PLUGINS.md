@@ -20,6 +20,8 @@ class MyFeature(Plugin):
     scheduled = {
         "mytag": my_due_handler
     }  # tag -> async handler(bot, payload)
+    depends_on = ("otherplugin",)  # names this plugin needs loaded first;
+    # transitively expanded — see "Dependencies and sandbox mode" below
 
     async def on_load(self, bot):
         """Optional startup hook (after every plugin's schema/extensions are ready)."""
@@ -60,6 +62,31 @@ is loaded) — done.
 
 For very small features, a single module `plugins/myfeature.py` with the same
 `plugin = MyFeature()` line works too.
+
+## Dependencies and sandbox mode
+
+A plugin that reaches into another plugin's modules (a `from plugins.x import
+...` anywhere in its tree) declares that with `depends_on = ("x", ...)` —
+the names of the plugins it needs loaded. At boot, `select_plugins`
+(`cazzubot/plugin.py`) resolves the selection:
+
+- **Transitive closure** — `-s myfeature` loads myfeature *and* everything
+  it depends on, recursively. Unknown names abort the boot with the list of
+  available plugins.
+- **Cycles load together** — plugins that depend on each other (e.g.
+  experience ↔ ranks, via `present_ranks` vs `of_member`) form one
+  strongly-connected component and always load as a unit.
+- **Dependency order** — the selected plugins load dependencies-first
+  (topological sort), so boot no longer relies on alphabetical luck.
+
+Declared today: `experience → (levels, ranks)`, `levels → (ranks,)`,
+`ranks → (experience,)`, `frogs → (experience,)`,
+`daily → (experience, frogs)`, `quarterly → (frogs,)`.
+
+Sandbox mode (`uv run python main.py -d -s [PLUGIN ...]`) loads **only** the
+named plugins plus their transitive dependencies — nothing else. A bare
+`-s` keeps the classic defaults (`poll`, `dev`). Production boots are
+unaffected; the same dependency ordering applies to the full plugin set.
 
 ## Services available on the bot
 

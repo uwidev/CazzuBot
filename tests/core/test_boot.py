@@ -11,6 +11,7 @@ from pathlib import Path
 
 import hikari
 import pendulum
+import pytest
 
 from cazzubot import CazzuBot, Config
 from cazzubot.models import FrogTypeEnum
@@ -79,6 +80,54 @@ async def test_boot_loads_plugins_and_commands(
         assert instance.lightbulb.registered_commands
         # every extension registered its commands with the client
         assert instance.lightbulb._extensions  # pyright: ignore[reportPrivateUsage]
+    finally:
+        await _shutdown(instance)
+
+
+async def test_sandbox_boot_loads_only_requested_plugins(
+    tmp_path: Path,
+) -> None:
+    """A filtered boot loads the allowlist plus declared dependencies."""
+    instance = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=str(tmp_path / "sandbox.db"),
+            sandbox_plugins=("frogs",),
+        ),
+        plugins_dir="plugins",
+    )
+    await _boot(instance)
+    try:
+        assert {p.name for p in instance.plugins} == {
+            "experience",
+            "levels",
+            "ranks",
+            "frogs",
+        }
+    finally:
+        await _shutdown(instance)
+
+
+async def test_sandbox_boot_unknown_plugin_aborts(tmp_path: Path) -> None:
+    """An unknown plugin name refuses to boot instead of loading nothing."""
+    instance = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=str(tmp_path / "sandbox.db"),
+            sandbox_plugins=("nope",),
+        ),
+        plugins_dir="plugins",
+    )
+    try:
+        with pytest.raises(SystemExit) as exc:
+            await instance._on_starting(  # pyright: ignore[reportPrivateUsage]
+                hikari.StartingEvent(app=instance)
+            )
+        assert exc.value.code == 1
     finally:
         await _shutdown(instance)
 

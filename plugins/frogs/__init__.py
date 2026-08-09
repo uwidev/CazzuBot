@@ -13,6 +13,8 @@ class FrogsPlugin(Plugin):
     schema = db.SCHEMA
     extensions = ["plugins.frogs.cog"]
     scheduled = {"frog": factory.on_frog_due}
+    # consuming frogs grants exp via the experience tables
+    depends_on = ("experience",)
 
     @override
     async def on_load(self, bot: CazzuBot) -> None:

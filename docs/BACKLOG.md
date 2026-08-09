@@ -33,6 +33,16 @@ loader (`cazzubot/bot.py`) should:
 - respect the sandbox allowlist,
 - detect dependency cycles.
 
+> **Done** — `Plugin.depends_on` + `select_plugins` (`cazzubot/plugin.py`)
+> ship this: transitive closure over `depends_on`, unknown names/deps fail
+> the boot with a clear message, dependencies load first (topological sort,
+> ties by discovery order), and cycles are *not* an error — strongly-
+> connected components (experience ↔ ranks) load together as a unit.
+> `main.py -s [PLUGIN ...]` feeds the allowlist; bare `-s` keeps the
+> `poll`/`dev` defaults. Declared: experience→(levels,ranks),
+> levels→(ranks,), ranks→(experience,), frogs→(experience,),
+> daily→(experience,frogs), quarterly→(frogs,).
+
 ## `bot.get_plugin(name)` + optional-dependency degrade
 
 Public accessor for loaded plugins (today callers reach into

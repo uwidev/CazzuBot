@@ -14,22 +14,34 @@ from cazzubot import Config
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [
-        (["CazzuBot"], (False, False, False)),
-        (["CazzuBot", "-d"], (True, False, False)),
-        (["CazzuBot", "-p"], (False, True, False)),
-        (["CazzuBot", "-s"], (False, False, True)),
+        (["CazzuBot"], (False, False, None)),
+        (["CazzuBot", "-d"], (True, False, None)),
+        (["CazzuBot", "-p"], (False, True, None)),
+        (["CazzuBot", "-s"], (False, False, ("poll", "dev"))),
+        (["CazzuBot", "-s", "frogs"], (False, False, ("frogs",))),
+        (
+            ["CazzuBot", "-s", "frogs", "poll"],
+            (False, False, ("frogs", "poll")),
+        ),
+        (
+            ["CazzuBot", "-d", "-s", "frogs"],
+            (True, False, ("frogs",)),
+        ),
     ],
 )
 def test_main_flags_reach_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     argv: list[str],
-    expected: tuple[bool, bool, bool],
+    expected: tuple[bool, bool, tuple[str, ...] | None],
 ) -> None:
     seen: dict[str, object] = {}
 
     def fake_load(
-        *, debug: bool = False, production: bool = False, sandbox: bool = False
+        *,
+        debug: bool = False,
+        production: bool = False,
+        sandbox: tuple[str, ...] | None = None,
     ) -> Config:
         seen["load"] = (debug, production, sandbox)
         return Config(
@@ -38,13 +50,15 @@ def test_main_flags_reach_config(
             guild_id=2,
             db_path=str(tmp_path / "boot.db"),
             debug=debug,
-            sandbox=sandbox,
+            sandbox_plugins=sandbox,
         )
 
     def fake_run(self: object) -> None:
         seen["run"] = True
 
-    monkeypatch.setattr(main_module.Config, "load", staticmethod(fake_load))
+    monkeypatch.setattr(
+        main_module.Config, "load", staticmethod(fake_load)
+    )
     monkeypatch.setattr(main_module.CazzuBot, "run", fake_run)
     monkeypatch.setattr(main_module, "setup_logging", lambda *a, **k: None)
     monkeypatch.setattr(sys, "argv", argv)

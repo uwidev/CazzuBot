@@ -18,6 +18,7 @@ from cazzubot.plugin import (
     Plugin,
     discover_plugins,
     load_plugin_module,
+    select_plugins,
 )
 from cazzubot.scheduler import Scheduler
 from cazzubot.settings import Settings
@@ -107,9 +108,12 @@ class CazzuBot(hikari.GatewayBot):
         # depend on every plugin's schema/extensions being ready (no load
         # order).
         plugins = discover_plugins(self.plugins_dir)
+        try:
+            plugins = select_plugins(plugins, self.config.sandbox_plugins)
+        except UserInputError as err:
+            _log.critical("refusing to boot: %s", err)
+            raise SystemExit(1) from err
         if self.config.sandbox:
-            allowed = {"poll", "dev"}
-            plugins = [p for p in plugins if p.name in allowed]
             _log.warning(
                 "sandbox mode: loading %s", [p.name for p in plugins]
             )

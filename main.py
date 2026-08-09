@@ -1,12 +1,13 @@
 #!/bin/env python
 """Run the bot.
 
-Usage: CazzuBot [-h] [-d] [-p] [-s]
+Usage: CazzuBot [-h] [-d] [-p] [-s [PLUGIN ...]]
 
 Options:
   -d, --debug       Run in debug mode; only owner/debug users may run commands
   -p, --production  Run with the production token
-  -s, --sandbox     Load only the sandbox plugins (poll, dev)
+  -s, --sandbox     Load only the named plugins (plus their declared
+                    dependencies); bare -s loads the defaults (poll, dev)
 """
 
 import argparse
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing_extensions import override
 
 from cazzubot import CazzuBot, Config
+from cazzubot.config import SANDBOX_DEFAULT_PLUGINS
 
 _log = logging.getLogger(__name__)
 
@@ -44,13 +46,29 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="CazzuBot")
     parser.add_argument("-d", "--debug", action="store_true")
     parser.add_argument("-p", "--production", action="store_true")
-    parser.add_argument("-s", "--sandbox", action="store_true")
+    parser.add_argument(
+        "-s",
+        "--sandbox",
+        nargs="*",
+        metavar="PLUGIN",
+        help=(
+            "load only the named plugins (plus their declared "
+            "dependencies); bare -s loads the defaults: poll dev"
+        ),
+    )
     args = parser.parse_args()
 
+    # None = flag absent; () = bare -s (default set); otherwise the
+    # requested plugin names
+    sandbox = (
+        None
+        if args.sandbox is None
+        else tuple(args.sandbox or SANDBOX_DEFAULT_PLUGINS)
+    )
     config = Config.load(
         debug=args.debug,
         production=args.production,
-        sandbox=args.sandbox,
+        sandbox=sandbox,
     )
 
     setup_logging("log", debug=config.debug)

@@ -44,6 +44,8 @@ async def on_daily_due(bot: CazzuBot, _payload: dict[str, object]) -> None:
 class DailyPlugin(Plugin):
     name = "daily"
     scheduled = {"daily": on_daily_due}
+    # resets message counts and cooldowns owned by experience and frogs
+    depends_on = ("experience", "frogs")
 
     @override
     async def on_load(self, bot: CazzuBot) -> None:

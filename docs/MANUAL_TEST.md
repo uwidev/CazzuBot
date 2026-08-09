@@ -59,7 +59,8 @@ whatever below the test item — raw, no template.
 - [x] A1. `-d` boots clean: db connects, schema verify passes, all plugins
       load, no errors/warnings in `log/discord.log`.
 
-- [x] A2. `-d -s` sandbox mode: only the sandbox plugins load, no crash.
+- [x] A2. `-d -s` sandbox mode: only the default sandbox plugins load,
+  no crash; `-d -s <plugin>` loads that plugin + its dependencies.
       **Open question:** the allowlist is `{"poll", "board", "dev"}` but no
       `plugins/board` exists — confirm this is intended (possible leftover).
 

@@ -15,7 +15,9 @@ uv sync
 cp .env.example .env   # fill in TOKEN_DEV / OWNER_ID / GUILD_ID
 uv run python main.py -d          # dev (prefix d!, debug gating on)
 uv run python main.py -p          # production (prefix c!)
-uv run python main.py -d -s       # sandbox: only poll, board, dev plugins
+uv run python main.py -d -s       # sandbox: only poll, dev plugins
+uv run python main.py -d -s frogs # sandbox: frogs + its dependencies
+                                  # (experience, levels, ranks)
 ```
 
 The database is a single sqlite file (`data/cazzubot.db`) created on first
@@ -29,7 +31,7 @@ handlers. See [docs/PLUGINS.md](docs/PLUGINS.md).
 
 ## Commands
 
-- Run: `uv run python main.py [-d|-p|-s]`
+- Run: `uv run python main.py [-d|-p|-s [PLUGIN ...]]`
 - Lint: `uv run ruff check .` — Format: `uv run ruff format .`
 - Tests: `uv run pytest` — offline unit/integration tests (per-feature, see
   `tests/`); no Discord connection, typed fakes in `tests/fakes.py`.
