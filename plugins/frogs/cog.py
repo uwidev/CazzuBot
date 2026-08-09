@@ -136,10 +136,10 @@ class Consume(
         try:
             await menu.attach(ctx.client, timeout=120)
         except asyncio.TimeoutError:
-            await ctx.delete_response(ctx.interaction.id)
+            await ctx.delete_response(utils.INITIAL_RESPONSE_IDENTIFIER)
             return
         if not menu.value:
-            await ctx.delete_response(ctx.interaction.id)
+            await ctx.delete_response(utils.INITIAL_RESPONSE_IDENTIFIER)
             return
 
         # re-check balance at the very moment of consumption
@@ -166,7 +166,9 @@ class Consume(
             + f"**`{balance}`** -> **`{balance - self.amount}`**",
         )
         embed_post.set_thumbnail("https://i.imgur.com/kCHjymJ.png")
-        await ctx.edit_response(ctx.interaction.id, embed=embed_post)
+        await ctx.edit_response(
+            utils.INITIAL_RESPONSE_IDENTIFIER, embed=embed_post
+        )
 
 
 @frog.register

@@ -160,10 +160,13 @@ async def test_frog_catch_captures_once(
     await _menu_button(menu).callback(mctx)
 
     assert menu.captured is True
-    assert mctx.deferred is True
+    assert mctx.deferred is False  # no "app is thinking" defer
     assert mctx.stopped is True
     assert await frog_db.get_frogs(bot.db, _UID) == 1
     assert mctx.sent[0].content == "caught cirno"
+    # the first response is the sentinel — the real message id is fetched
+    # so the 7s auto-delete targets the actual capture message
+    assert mctx.fetched == [utils.INITIAL_RESPONSE_IDENTIFIER]
 
     # second click is denied
     await _menu_button(menu).callback(mctx)

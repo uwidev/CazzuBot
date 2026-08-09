@@ -124,9 +124,9 @@ async def test_topview_pages_for_author(
     mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
     button = _buttons(menu)[2]
     await button.callback(mctx)
-    embed = mctx.edits[0]["embed"]
+    embed = mctx.sent[0].embed
     # one row -> max page is 1 -> next_page stays on page 1
-    assert embed.description is not None
+    assert embed is not None
     assert "Page: **`1`**" in embed.description
 
 

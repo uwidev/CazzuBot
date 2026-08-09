@@ -72,6 +72,10 @@ def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
 
+    # aiosqlite logs every statement at DEBUG — bury it or the console
+    # becomes unreadable in -d mode
+    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+
     console = logging.StreamHandler()
     console.setLevel(logging.DEBUG if debug else logging.INFO)
 

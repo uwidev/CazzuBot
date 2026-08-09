@@ -329,6 +329,9 @@ class SetMute(
         await window_success(ctx, f"Mute role set to {self.role}")
 
 
+loader.command(mod_set)
+
+
 @loader.command()
 class Slowmode(
     lightbulb.SlashCommand,

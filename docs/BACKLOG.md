@@ -355,3 +355,22 @@ script target; keep the existing `python main.py` path working.
 > the PG-migration scripts (`migrate_pg_to_sqlite.py`,
 > `verify_migration.py`) remain asyncpg-based (install with
 > `uv sync --group migration`).
+
+## Mod plugin — deferred, in development (manual test backlog)
+
+Manual testing of the whole `mod` feature (warn/mute/kick/ban/unmute/unban/
+set/slowmode) is parked by the owner: it is not core, not finalized, and
+"in progress" in terms of development. The E1–E5 items in
+`docs/MANUAL_TEST.md` stay untested until the feature is declared done.
+(Fixed along the way: the `mod set` group was defined but never registered
+— `loader.command(mod_set)` was missing, so `/mod set` didn't exist.)
+
+## Resync command UX — long ops after a confirm click
+
+`exp resync` and `frog resync` confirm with a Yes/No menu, then run a long
+DB rebuild. The click is now properly acked (menu fix, 2026-08-08), but the
+owner wants a better flow than "click Yes, prompt vanishes, a few status
+followups, done" — ideas to evaluate later: defer with a progress message
+that gets edited as phases complete, or a single final summary edit.
+Owner's words: "I think optimally we want better UX here. Will think of a
+proper flow later. Backlog this."

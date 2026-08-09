@@ -25,6 +25,8 @@ from typing import Any, cast
 
 import hikari
 
+from cazzubot import utils
+
 
 def _avatar_url(uid: int) -> str:
     return f"https://example.com/avatar/{uid}.png"
@@ -514,6 +516,10 @@ class FakeContext:
     async def delete_response(self, response_id: int) -> None:
         self.deleted.append(response_id)
 
+    async def fetch_response(self, response_id: int) -> FakeMessage:
+        """The response message — the fake responds with message id 1."""
+        return FakeMessage(id=1)
+
 
 class FakeMenuContext:
     """Lightbulb MenuContext stand-in: records respond/edit/stop calls."""
@@ -526,6 +532,8 @@ class FakeMenuContext:
         self.deleted: list[int] = []
         self.deferred: bool = False
         self.stopped: bool = False
+        self._responded: bool = False
+        self.fetched: list[int] = []
 
     async def respond(
         self,
@@ -547,9 +555,14 @@ class FakeMenuContext:
                 ephemeral=bool(flags & hikari.MessageFlag.EPHEMERAL),
             )
         )
+        # like lightbulb: the FIRST response returns the initial-response
+        # sentinel (not a message id); later responses return the message id
+        if not self._responded:
+            self._responded = True
+            return utils.INITIAL_RESPONSE_IDENTIFIER
         return 42  # the response message id
 
-    async def defer(self, *, flags: int = 0) -> None:
+    async def defer(self, *, flags: int = 0, **kwargs: Any) -> None:
         self.deferred = True
 
     async def edit_response(self, response_id: int, **kwargs: Any) -> None:
@@ -557,6 +570,11 @@ class FakeMenuContext:
 
     async def delete_response(self, response_id: int) -> None:
         self.deleted.append(response_id)
+
+    async def fetch_response(self, response_id: int) -> FakeMessage:
+        """The response message for the sentinel (id 7 by default)."""
+        self.fetched.append(response_id)
+        return FakeMessage(id=7)
 
     def stop_interacting(self) -> None:
         self.stopped = True

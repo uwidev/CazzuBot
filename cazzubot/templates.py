@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any, cast
 
 import hikari
+import lightbulb
 from hikari.undefined import UNDEFINED
 from jsonschema import ValidationError, validate
 
@@ -188,17 +189,21 @@ async def send(
     message: dict[str, Any],
     **kwargs: Any,
 ) -> Any:
-    """Send a stored template message via ``destination.send(**kwargs)``.
+    """Send a stored template message to a channel or command context.
 
-    ``destination`` is any send target (a hikari ``TextableChannel``, a
-    lightbulb ``Context``, or a fake); extra kwargs (``delete_after``,
-    ``wait``, ...) are forwarded unchanged. Unset payload keys go out as
+    ``destination`` is any send target: a hikari ``TextableChannel`` (uses
+    ``send``), a lightbulb ``Context`` (uses ``respond`` — it has no
+    ``send``), or a fake; extra kwargs are forwarded unchanged where the
+    target supports them. Unset payload keys go out as
     ``hikari.undefined.UNDEFINED`` (omitted), never ``None``.
     """
     content, embed, embeds = prepare(message)
-    return await destination.send(
+    payload = dict(
         content=content if content is not None else UNDEFINED,
         embed=embed_from_raw(embed) if embed is not None else UNDEFINED,
         embeds=[embed_from_raw(e) for e in embeds] or UNDEFINED,
-        **kwargs,
     )
+    if isinstance(destination, lightbulb.Context):
+        # hikari channels have ``send``; lightbulb contexts have ``respond``
+        return await destination.respond(**payload, **kwargs)
+    return await destination.send(**payload, **kwargs)

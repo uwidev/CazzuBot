@@ -13,6 +13,14 @@ import pendulum
 from cazzubot.bot import CazzuBot
 from cazzubot.models import MemberSnapshot
 
+# lightbulb's sentinel for "the initial interaction response" (context.py
+# compares response ids against it before choosing edit_initial_response vs
+# edit_message). Response ids returned by ``respond()`` are this sentinel
+# when the call created the initial response — NOT the message id.
+from lightbulb.internal import constants as _lb_constants
+
+INITIAL_RESPONSE_IDENTIFIER = _lb_constants.INITIAL_RESPONSE_IDENTIFIER
+
 _log = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -181,13 +189,24 @@ class ConfirmMenu(lightbulb.components.Menu):
             )
             return
         self.value = value
+        # lightbulb does NOT ack menu clicks before calling the callback, so
+        # the first response here must be a real interaction response — an
+        # edit/delete via the webhook on an un-acked interaction 404s
+        # (10015 Unknown Webhook) and the click dies with "did not respond".
+        await mctx.defer(edit=True)  # invisible ack of the click
         if self.delete_after:
             try:
-                await mctx.delete_response(mctx.interaction.id)
+                await mctx.delete_response(INITIAL_RESPONSE_IDENTIFIER)
             except hikari.NotFoundError:
                 pass
         else:
-            await mctx.edit_response(mctx.interaction.id, component=None)
+            try:
+                # strip the buttons from the prompt message
+                await mctx.edit_response(
+                    INITIAL_RESPONSE_IDENTIFIER, component=None
+                )
+            except hikari.NotFoundError:
+                pass
         mctx.stop_interacting()
 
     async def _yes(self, mctx: lightbulb.components.MenuContext) -> None:
@@ -216,7 +235,7 @@ async def author_confirm(
     except asyncio.TimeoutError:
         # timed out — mirror old behaviour: remove prompt
         try:
-            await ctx.delete_response(ctx.interaction.id)
+            await ctx.delete_response(INITIAL_RESPONSE_IDENTIFIER)
         except hikari.NotFoundError:
             pass
         return False

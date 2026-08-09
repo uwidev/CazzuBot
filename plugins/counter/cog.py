@@ -63,7 +63,11 @@ class Create(
             emoji=utils.button_emoji(CIRNO_HELP),
         )
         response_id = await ctx.respond(embed=embed, component=row)
-        await db.create(bot.db, int(response_id))
+        # respond() returns lightbulb's initial-response sentinel, not the
+        # message id — fetch the real message so the baka button's
+        # custom-id handler can find the counter row
+        message = await ctx.fetch_response(response_id)
+        await db.create(bot.db, message.id)
 
 
 @loader.listener(hikari.InteractionCreateEvent)

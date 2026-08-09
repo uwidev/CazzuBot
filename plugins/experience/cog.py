@@ -12,6 +12,7 @@ import pendulum
 from cazzubot import leaderboard, levels, utils
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
+from cazzubot.utils import INITIAL_RESPONSE_IDENTIFIER
 from lightbulb.prefab import checks as prefab_checks
 
 from cazzubot.window import command_window, window_success, window_warn
@@ -191,7 +192,9 @@ class Top(
         try:
             await menu.attach(ctx.client, timeout=30)
         except asyncio.TimeoutError:
-            await ctx.edit_response(ctx.interaction.id, component=None)
+            await ctx.edit_response(
+                INITIAL_RESPONSE_IDENTIFIER, component=None
+            )
 
 
 @exp.register
@@ -472,7 +475,9 @@ class TopMenu(lightbulb.components.Menu):
 
     async def _edit(self, mctx: lightbulb.components.MenuContext) -> None:
         embed = await _top_embed(self.ctx, self.date, self.rows, self.page)
-        await mctx.edit_response(mctx.interaction.id, embed=embed)
+        # respond(edit=True) is the atomic ack+edit: lightbulb menu clicks
+        # arrive un-acked, and edit_response on the un-acked interaction 404s
+        await mctx.respond(edit=True, embed=embed)
 
     async def _deny(self, mctx: lightbulb.components.MenuContext) -> None:
         await mctx.respond(

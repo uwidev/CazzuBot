@@ -85,7 +85,10 @@ class AutoPopulate(
             )
             return
         await db.add_items_dummy(bot.db, self.pid, self.n)
-        await ctx.respond("👍 Items have been added.")
+        await ctx.respond(
+            "👍 Items have been added.",
+            flags=hikari.MessageFlag.EPHEMERAL,
+        )
 
 
 @poll.register
@@ -130,7 +133,10 @@ class Send(
             emoji="📥",
         )
         response_id = await ctx.respond(embed=embed, component=row)
-        await db.set_mid(bot.db, self.poll_id, int(response_id))
+        # respond() returns lightbulb's initial-response sentinel, not the
+        # message id — fetch the real message id for the poll row
+        message = await ctx.fetch_response(response_id)
+        await db.set_mid(bot.db, self.poll_id, message.id)
 
 
 @poll.register

@@ -79,7 +79,8 @@ class ChannelsPlugin(Plugin):
         if plan.is_clean():
             if plan.strays:
                 _log.info(
-                    "channels manifest ok (%d unmanaged strays)",
+                    "channels manifest ok (%d unmanaged strays — on the"
+                    " guild but not in the manifest; kept as-is)",
                     len(plan.strays),
                 )
             else:

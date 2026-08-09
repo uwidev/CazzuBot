@@ -144,7 +144,6 @@ class FrogCatchMenu(lightbulb.components.Menu):
             )
             return
         self.captured = True
-        await mctx.defer()
         mctx.stop_interacting()  # unblocks spawn_and_wait, removes the frog
 
         uid = mctx.interaction.user.id
@@ -161,7 +160,9 @@ class FrogCatchMenu(lightbulb.components.Menu):
         )
         await frog_db.modify_capture(self.bot.db, uid, modify=1)
 
-        # send the capture message (user-configured template) as a followup
+        # the capture message IS the interaction's first response: no defer
+        # (no "app is thinking" bubble), no followup (not a reply) — the
+        # click is acked in the same payload.
         msg_json = await frog_db.get_message(self.bot.settings) or {}
         frog_cnt_total = await frog_db.get_frogs(self.bot.db, uid)
         seasonal = await frog_db.seasonal_captures(
@@ -189,6 +190,12 @@ class FrogCatchMenu(lightbulb.components.Menu):
                 or hikari.UNDEFINED
             ),
         )
+        if sent_id == utils.INITIAL_RESPONSE_IDENTIFIER:
+            # the initial response's id is the sentinel, not the message id
+            message = await mctx.fetch_response(
+                utils.INITIAL_RESPONSE_IDENTIFIER
+            )
+            sent_id = message.id
         utils.schedule_delete(self.bot, mctx.channel_id, int(sent_id), 7)
 
 
