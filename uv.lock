@@ -180,6 +180,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.21.1" },
     { name = "parsedatetime", specifier = ">=2.6" },
     { name = "pendulum", specifier = ">=2.1.2" },
+    { name = "pillow", specifier = ">=12.3.0" },
     { name = "python-dotenv", specifier = ">=0.9.9" },
     { name = "typing-extensions", specifier = ">=4.3" },
 ]

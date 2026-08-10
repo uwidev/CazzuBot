@@ -1,10 +1,10 @@
-# CazzuBot v1 → v2 database migration (PostgreSQL → SQLite)
+# CazzuBot v1 ↔ v2 database migration (PostgreSQL ↔ SQLite)
 
 The v2 rewrite (`rewrite` branch) is SQLite-only — one file at
 `data/cazzubot.db`, no PostgreSQL. This document is the ops protocol for
 switching the live production data over when you cut the rewrite branch into
 production. The per-table transform spec lives in
-[`scripts/migration/MAPPING.md`](../scripts/migration/MAPPING.md); the three
+[`scripts/migration/MAPPING.md`](../scripts/migration/MAPPING.md); the
 tools are:
 
 | Tool | Purpose |
@@ -12,10 +12,11 @@ tools are:
 | `scripts/migrate_pg_to_sqlite.py` | Reads the live PostgreSQL **read-only**, writes a fresh SQLite DB |
 | `scripts/verify_migration.py` | Full per-uid parity check of the migrated DB against the live PostgreSQL |
 | `scripts/boot_check_migrated.py` | Boots the v2 stack against the swapped-in DB (no Discord connection) and asserts the expected first-boot effects |
+| `scripts/sqlite_to_pg.py` | Reverse direction: refills the frozen v1 PostgreSQL from the SQLite file at rollback time (exp, frog, counter tables) |
 
-All three are one-off operational scripts — they are not part of the bot
-runtime and add no dependencies (`asyncpg` is pulled in ephemerally with
-`uv run --with asyncpg`).
+All four are one-off operational scripts — they are not part of the bot
+runtime. The only extra dependency (`asyncpg`) comes from the `migration`
+dependency group, activated per invocation with `--group migration`.
 
 ## Prerequisites
 
@@ -36,7 +37,7 @@ runtime and add no dependencies (`asyncpg` is pulled in ephemerally with
 ### 1. Migrate (read-only on PostgreSQL)
 
 ```bash
-uv run --with asyncpg python scripts/migrate_pg_to_sqlite.py
+PGPASSWORD=... uv run --group migration python scripts/migrate_pg_to_sqlite.py
 ```
 
 - Writes `data/cazzubot.migrated.db` (override with `--out`). It **never**
@@ -51,7 +52,7 @@ uv run --with asyncpg python scripts/migrate_pg_to_sqlite.py
 ### 2. Verify (read-only on both sides)
 
 ```bash
-uv run --with asyncpg python scripts/verify_migration.py
+PGPASSWORD=... uv run --group migration python scripts/verify_migration.py
 ```
 
 Compares every table per-uid against the live PostgreSQL: `member_exp`
@@ -146,6 +147,42 @@ silently.
   `mv data/cazzubot.db.bak-<timestamp> data/cazzubot.db`.
 - Or simply re-run the protocol — the PostgreSQL source is never written to,
   so a fresh migration is always possible while it is up.
+
+## Rolling back to v1 (SQLite → PostgreSQL)
+
+If the v2 trial fails and you want v1 back, the v1 PostgreSQL database must
+be refilled with what v2 recorded during the trial — v1 is frozen the whole
+time v2 runs, so its tables hold only the cutover state.
+`scripts/sqlite_to_pg.py` carries the exp, frog, and counter data back,
+which are the only tables that need to survive a rollback (deliberate scope
+decision; modlog, polls, rank_threshold, settings and tasks keep their
+cutover state on PostgreSQL, which is exactly what v1 expects).
+
+```bash
+PGPASSWORD=... uv run --group migration python scripts/sqlite_to_pg.py
+```
+
+- Defaults to a **dry run** (plan only, nothing written). Pass `--commit`.
+- Replace-per-guild: deletes the target guild's rows and inserts the full
+  SQLite contents in one transaction; re-runnable (idempotent). The SQLite
+  file is a superset of the guild's PostgreSQL rows because v1 never wrote
+  during the trial, so this is lossless for the ported tables.
+- Backfills the `user`/`channel`/`guild` FK-support rows first (v1 has real
+  FKs — trial-era members/channels would otherwise violate them), restores
+  `member_frog.deprecated_normal` from the archive table, and writes the
+  5,680 sentinel exp-log timestamps back as NULL (v1's original shape).
+- A built-in post-write per-uid parity check runs **before** commit — any
+  write-path mismatch (type/constraint/enum errors included) rolls the whole
+  transaction back, leaving PostgreSQL untouched.
+- Stop the v2 bot first so the SQLite snapshot is unambiguous.
+
+Ported: `member_exp`, `member_exp_log`, `member_frog`, `member_frog_log`,
+`frog_spawn`, `counter`. If the SQLite `counter` table predates the count
+column (legacy mid-only shape), only counter *presence* is ported — v1's
+existing counts are never touched and trial-created mids get the v1 default
+(0). Not ported: modlog entries created during the trial exist only
+in the SQLite `modlog` table — if a tempban/mute was issued mid-trial it
+won't be enforced by v1 unless v1 re-checks `modlog.expires_on` at boot.
 
 ## Audit trail from the initial migration (2026-08-05)
 
