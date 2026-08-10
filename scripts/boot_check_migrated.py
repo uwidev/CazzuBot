@@ -7,7 +7,8 @@ every plugin loads, schema applies, scheduler handlers register, and the
 ``on_load`` hooks run — exactly what happens at a real boot, minus the
 gateway. Then asserts the expected first-boot effects on migrated data:
 
-- quarterly catch-up freeze ran iff ``quarterly.last_quarterly`` is stale
+- quarterly cadence row armed for the next season boundary (no
+  boot-time freeze — the freeze runs when the row fires)
 - daily reset did NOT force (last_daily is today)
 - frog spawn tasks queued to match ``frog_spawn`` x enabled state
 - key read paths work: lifetime/seasonal rankings, rank thresholds,
@@ -31,13 +32,11 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 
-import pendulum  # noqa: E402
-
 from cazzubot import CazzuBot, Config  # noqa: E402
 from cazzubot import levels  # noqa: E402
 from cazzubot.models import WindowEnum  # noqa: E402
 from cazzubot.settings import Settings  # noqa: E402
-from cazzubot.timeparse import parse_iso8601  # noqa: E402
+import pendulum  # noqa: E402
 
 from plugins.experience import db as exp_db  # noqa: E402
 from plugins.ranks import db as ranks_db  # noqa: E402
@@ -96,39 +95,20 @@ async def main() -> None:
 
     try:
         after = snapshot()
-        total_normal_after = sum(s["n"] for s in after.values())
-        total_frozen_after = sum(s["f"] for s in after.values())
-
-        settings_store = Settings(bot.db)
         now = pendulum.now("UTC")
-        this_quarter = (now.year, (now.month - 1) // 3)
-        last_q_raw = await settings_store.get("quarterly.last_quarterly")
-        freeze_expected = True
-        if last_q_raw:
-            last_q = parse_iso8601(last_q_raw)
-            freeze_expected = this_quarter > (
-                last_q.year,
-                (last_q.month - 1) // 3,
-            )
+        settings_store = Settings(bot.db)
 
-        if freeze_expected:
-            # first boot after a stale quarterly marker: catch-up freeze
-            check(
-                total_normal_after == 0
-                and total_frozen_after
-                == total_frozen_before + total_normal_before,
-                "quarterly catch-up freeze ran (normal -> frozen)",
-                f"normal {total_normal_before} -> {total_normal_after}, "
-                + f"frozen {total_frozen_before} -> {total_frozen_after}",
-            )
-        else:
-            # live/steady state: this boot must not change balances
-            check(
-                total_normal_after == total_normal_before
-                and total_frozen_after == total_frozen_before,
-                "quarterly state steady (no freeze due)",
-                f"normal={total_normal_after} frozen={total_frozen_after}",
-            )
+        # quarterly: no boot-time freeze — the quarterly cadence row is
+        # armed for the next season boundary and the freeze runs when it
+        # fires (the migration leaves `tasks` empty, so on_load arms fresh)
+        q_rows = await bot.scheduler.get("quarterly")
+        check(
+            len(q_rows) == 1
+            and q_rows[0].run_at > pendulum.now("UTC").isoformat(),
+            "quarterly cadence armed for the next season boundary",
+            f"{len(q_rows)} row(s), run_at="
+            + (q_rows[0].run_at if q_rows else "none"),
+        )
 
         # daily reset must NOT have forced (last_daily is today)
         msg_drift: list[int] = [

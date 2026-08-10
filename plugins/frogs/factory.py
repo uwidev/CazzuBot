@@ -1,13 +1,14 @@
 """Frog spawning — the scheduler handler and capture flow.
 
-Frogs spawn on a deterministic cadence ``interval ± fuzzy%``; each frog lives
-``persist`` seconds. The next spawn is pre-rolled *before* the current frog is
-spawned so a crashed/failed spawn never kills the schedule (as v1 did).
+Frogs spawn on a pure chaotic timeline: each spawn fires on the row armed
+by the previous fire, rolled ``interval ± fuzzy%`` from the fire instant —
+independent of the frog's despawn or capture, so frogs may overlap. The
+next row is scheduled *before* the current frog spawns so a crashed or
+failed spawn never kills the schedule (as v1 did).
 """
 
 import asyncio
 import logging
-import random
 import time
 from dataclasses import asdict
 from typing import Any, cast
@@ -19,6 +20,7 @@ import pendulum
 from cazzubot import templates, utils
 from cazzubot.bot import CazzuBot
 from cazzubot.models import FrogTypeEnum, MemberSnapshot
+from cazzubot.scheduler import InChaotic
 
 from . import db as frog_db
 
@@ -29,35 +31,28 @@ FROG_NET_EMOJI = "<:cirnoNet:752290769712316506>"
 
 
 async def on_frog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
-    """Scheduler handler for tag ``frog``."""
-    now = pendulum.now("UTC")
-    cid = payload["cid"]
-    interval = payload["interval"]
-    persist = payload["persist"]
-    fuzzy = payload["fuzzy"]
+    """Scheduler handler for tag ``frog`` — pure chaotic timeline.
 
+    The next spawn is rolled from the fire instant, independent of this
+    frog's despawn or capture, and scheduled BEFORE spawning so a spawn
+    failure can't kill the schedule.
+    """
     # Safety: if frogs were disabled, the tasks should have been cleared, but
     # double-check anyway.
     if not await frog_db.get_enabled(bot.settings):
         return
 
-    # Pre-roll the next spawn (from when this frog despawns) so a failure below
-    # cannot kill the schedule.
-    next_run = roll_future_frog(now.add(seconds=persist), interval, fuzzy)
-    task_id = await bot.scheduler.add("frog", next_run, payload)
+    next_run = InChaotic(
+        interval=payload["interval"], jitter=payload["fuzzy"]
+    ).next_run(pendulum.now("UTC"))
+    await bot.scheduler.add("frog", next_run, payload)
 
     try:
-        captured = await spawn_and_wait(bot, persist, cid=cid)
+        await spawn_and_wait(bot, payload["persist"], cid=payload["cid"])
     except hikari.InternalServerError:
         _log.warning(
-            "discord server error while spawning frog; rescheduled"
+            "spawn failed (server error); next spawn already scheduled"
         )
-        return
-
-    if captured and task_id is not None:
-        # Reroll from the capture time for the next spawn.
-        run_at = roll_future_frog(pendulum.now("UTC"), interval, fuzzy)
-        await bot.scheduler.update_run_at(task_id, run_at)
 
 
 async def spawn_and_wait(
@@ -90,7 +85,9 @@ async def spawn_and_wait(
         if channel is None:
             _log.warning("frog channel %s not found; skipping", cid)
             return False
-        message = await channel.send(FROG_EMOJI, components=cast(Any, menu))
+        message = await channel.send(
+            FROG_EMOJI, components=cast(Any, menu)
+        )
         channel_id = cid
 
     # remember the frog message so a crashed process can clean it up on
@@ -201,9 +198,9 @@ async def queue_frog_spawns(bot: CazzuBot) -> None:
     """Insert one task per configured spawn channel."""
     for spawn in await frog_db.get_spawns(bot.db):
         payload = asdict(spawn)
-        run_at = roll_future_frog(
-            pendulum.now("UTC"), spawn.interval, spawn.fuzzy
-        )
+        run_at = InChaotic(
+            interval=spawn.interval, jitter=spawn.fuzzy
+        ).next_run(pendulum.now("UTC"))
         await bot.scheduler.add("frog", run_at, payload)
 
 
@@ -247,18 +244,6 @@ def _is_frog_message(message: Any, cid: int) -> bool:
             if getattr(component, "custom_id", None) == wanted:
                 return True
     return False
-
-
-def roll_future_frog(
-    now: pendulum.DateTime, interval: int, fuzzy: float
-) -> pendulum.DateTime:
-    """Next spawn time: ``interval`` seconds, offset by ±``fuzzy``%."""
-    offset = interval * (1 + roll_fuzzy(fuzzy))
-    return now.add(seconds=offset)
-
-
-def roll_fuzzy(fuzzy: float) -> float:
-    return ((random.random() - 0.5) * 2) * fuzzy
 
 
 def formatter(

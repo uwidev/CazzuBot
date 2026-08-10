@@ -154,6 +154,9 @@ class Mute(
                 {
                     "uid": self.member.id,
                     "log_type": ModlogTypeEnum.MUTE.value,
+                    # the expiry must eventually fire — a mute that never
+                    # lifts is a real harm; retry until it succeeds
+                    "retry": True,
                 },
             )
         await bot.rest.add_role_to_member(
@@ -190,7 +193,9 @@ class Kick(
             guild.id,
             self.member.id,
             reason=(
-                self.reason if self.reason is not None else hikari.UNDEFINED
+                self.reason
+                if self.reason is not None
+                else hikari.UNDEFINED
             ),
         )
         await window_info(ctx, f"Kicked {self.member}")
@@ -235,7 +240,12 @@ class Ban(
             await bot.scheduler.add(
                 "modlog",
                 duration,
-                {"uid": self.member.id, "log_type": ban_type.value},
+                {
+                    "uid": self.member.id,
+                    "log_type": ban_type.value,
+                    # the expiry must eventually fire — see the mute path
+                    "retry": True,
+                },
             )
         await bot.rest.ban_member(
             guild.id,
@@ -251,7 +261,10 @@ async def _drop_expiry_tasks(
     """Drop pending ``modlog`` expiry tasks matching a user + log type."""
     for task in await bot.scheduler.get("modlog"):
         payload = task.payload
-        if payload.get("uid") == uid and payload.get("log_type") == log_type:
+        if (
+            payload.get("uid") == uid
+            and payload.get("log_type") == log_type
+        ):
             await bot.scheduler.drop(task.id)
 
 

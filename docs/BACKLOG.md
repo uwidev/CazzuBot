@@ -451,23 +451,44 @@ Design:
   schedule}` (validated, testable); a shell-like `&&`/`|` DSL parser is a
   possible later nicety that compiles to the same JSON.
 - **`pipelines` table + cadence** — name, schedule, definition, enabled;
-  a general interval-arm helper for the central scheduler
-  (`Scheduler.arm` + the `Cadence` spec — daily `{"time": "00:00"}` /
-  weekly `{"weekday": 0-6, "time": "HH:MM"}`, `next_run`/`previous_run`/
-  `missed` catch-up rule — landed 2026-08-09); `/pipeline` admin commands
-  (define/list/run <name> for dry-runs).
+  the schedule spec family (`At` — absolute calendar declarations — and
+  `In` — relative durations — each with a `Chaotic` flavor; `next_run`/
+  `previous_run`/`missed` — landed 2026-08-09); `/pipeline` admin
+  commands (define/list/run <name> for dry-runs).
 - **Semantics** — the definition carries the channel; pipelines run with
   owner privileges (only the owner defines them); abort-on-
   `UserInputError` is the failure rule (already the bot's error
   convention).
 - Refactor the `daily` and `quarterly` plugins onto the same cadence
   helper (they hand-roll the midnight pattern today).
-  > **Done** — `Cadence(time="00:00")` + `Scheduler.arm` in
-  > `cazzubot/scheduler.py`; both plugins re-arm with it, and `daily`
-  > boot-forces missed runs via `Cadence.missed` (occurrence-based: the
-  > last reset predates the most recent scheduled midnight — replaces
-  > the old "older than 24h" check). `utils.arm_midnight_cadence` /
-  > `next_midnight` deleted. Tests in `tests/core/test_cadence.py`.
+  > **Done** — `At(time="00:00")` in `cazzubot/scheduler.py`; both
+  > plugins re-arm with it, and
+  > `utils.arm_midnight_cadence` / `next_midnight` deleted. Tests in
+  > `tests/core/test_cadence.py`. Follow-up (2026-08-09, design B):
+  > `daily` is now **row-based** — the task row is the sole schedule.
+  > `on_daily_due` resets then re-arms (arm-last, so a failed reset is
+  > retried by the scheduler's 30s policy instead of silently no-oping),
+  > and `on_load` arms only when no row exists — an overdue row fires
+  > on boot through the scheduler's native catch-up, so the missed
+  > reset runs late instead of being forced. `daily.last_daily` and the
+  > `Cadence.missed` gate are gone. Quarterly followed suit
+  > (2026-08-09): `At` grew a day-of-month family (`day` 1-31 +
+  > optional `months` 1-12, cron-skip semantics, e.g. Feb 31), and
+  > quarterly is now `At(day=1, months=(1, 4, 7, 10), time="00:00")`
+  > — the season rollover *is* the schedule, so `quarterly.last_quarterly`
+  > and the quarter-index gate are gone too: every fire freezes
+  > (idempotent) and re-arms. `scripts/boot_check_migrated.py` now
+  > asserts the armed row instead of a boot-time freeze. The declaration
+  > surface is cron-flavored: `weekday` also accepts a tuple of days,
+  > `day` accepts -31…-1 (the last day) or a tuple, and durations live
+  > in the `In` family (`In(interval="2h")`). `Scheduler.arm` was
+  > removed (handlers re-arm explicitly via `drop_tag` + `add`). Retry
+  > is **explicit**: a task resolves by default when due (v1's contract —
+  > the fired row is deleted whether the handler raised or not); a task
+  > opts into guaranteed handling with the reserved payload key
+  > `retry: True`, which keeps and re-arms the row per its tag's
+  > `TaskPolicy` (backoff, attempt cap). modlog expiry, daily, and
+  > quarterly opt in; frogs stay fire-and-forget.
 - First consumer: the board weekly flow — `board scrape` →
   `board post` (outputs the image count) → `poll register` (outputs pid)
   → `poll item auto_populate` (`pid` from output, `n` from count) →
@@ -486,33 +507,50 @@ test suffices vs the offline interaction driver (`tests/driver.py`
 (`uv run pytest`). `docs/TESTING.md` covers the *strategy* and layers; the
 "add a test for your new feature" recipe is what's missing.
 
-## ChaoticCadence — random-interval schedule (parked)
+## Chaotic schedules — the two families
 
-Design riff on the cadence work (2026-08-09): the chaotic sibling of
-`Cadence` for random-interval timing (frogs, surprise schedules):
+Design riff on the cadence work (2026-08-09): schedule specs split into
+an **absolute** family (`At` — the task runs AT a calendar time) and a
+**relative** family (`In` — the task runs IN a duration), each with a
+chaotic flavor:
 
-- `ChaoticCadence(interval: int, jitter: float = 0.0)` in
-  `cazzubot/scheduler.py` — `next_run(now)` rolls
-  `now + interval * (1 ± jitter)` fresh every call. A seeded
-  `random.Random` field (repr=False, compare=False) makes tests
-  deterministic; validation at the type boundary: `interval > 0`,
-  `0 <= jitter <= 1` (today's `roll_fuzzy` has no clamp — `jitter > 1`
-  can roll negative offsets).
-- **No `previous_run`/`missed` by design** — a random schedule has no
-  scheduled occurrence to miss; late runs self-correct by re-rolling
-  from the actual completion instant (exactly the capture-reroll in
-  `on_frog_due`). This is the principled line: deterministic/missable
-  (`Cadence`) vs chaotic/self-correcting (`ChaoticCadence`).
-- Consumers if built: (1) frogs — replace `roll_future_frog`/`roll_fuzzy`
-  (`plugins/frogs/factory.py`, 3 call sites; bounds test at
-  `tests/plugins/frogs/test_cog.py::test_roll_future_frog_within_bounds`);
-  (2) future pipeline schedule specs — a second schedule family
-  `{"schedule": {"chaotic": {"interval": …, "jitter": …}}}` next to
-  `{"weekly": …}`.
-- `Scheduler.arm` stays Cadence-only (arm = drop_tag + one row; chaotic
-  rows are added per-consumer, like frogs' per-channel spawns).
+- `At(time/weekday/day/months)` — the absolute declaration: daily,
+  weekly (tuple of days allowed), day-of-month (1-31 or -31…-1 = the
+  last day, tuples allowed), `months` eligibility (the quarterly
+  rollover is `At(day=1, months=(1, 4, 7, 10), time="00:00")`); cron
+  skip for months lacking a day; `next_run`/`previous_run`/`missed`
+  are grid-anchored.
+- `In(interval)` — the relative declaration: positive seconds or a
+  duration string (`"2h"`, `"90m"` via `timeparse.parse_duration`);
+  `next_run = now + interval`, sliding with each fire; `previous_run`/
+  `missed` are relative.
+- `AtChaotic(At)` — absolute + chaos: the run lands at the occurrence
+  plus up to `jitter` (0..1) of the period, drifting forward within the
+  window; `seed` for deterministic tests, `bounds()` RNG-free.
+- `InChaotic(In)` — relative + chaos: `now + interval * (1 ± jitter)`.
+- `previous_run`/`missed` are inherited per family; missed handling is
+  per-handler anyway (row-based catch-up: fire-always + re-arm-last).
+- `Scheduler.arm` was removed — handlers re-arm explicitly via
+  `drop_tag` + `add` (arm's empty-payload/drop-tag shape only ever fit
+  daily/quarterly; frogs add per-channel rows with payloads).
+- (2) future pipeline schedule specs — `{"at": …}` / `{"in": …}` /
+  `{"at_chaotic": …}` / `{"in_chaotic": …}` families.
 - Not designed yet: window-anchored chaos — "daily at a random time
-  between 12:00 and 18:00, re-rolled each day".
+  between 12:00 and 18:00, re-rolled each day" (AtChaotic's forward
+  drift is the first step; a two-sided window would follow).
+
+> **Done (2026-08-09)** — the split landed in `cazzubot/scheduler.py`.
+> Frogs spawn on the **pure chaotic timeline** via `InChaotic`:
+> `on_frog_due` rolls the next spawn from the fire instant and
+> schedules it *before* spawning (failure safety kept); the old
+> despawn-anchored pre-roll and capture re-roll (`persist`-anchored,
+> `update_run_at`) are gone, so frogs may overlap and capturing no
+> longer speeds up the next spawn. `roll_future_frog`/`roll_fuzzy`
+> deleted. `At`/`AtChaotic`/`In`/`InChaotic` replace the former
+> `Cadence`/`CadenceChaotic` (which had folded both modes into one
+> type); `Scheduler.arm` removed. Tests: `test_cadence.py`
+> (validation, seeded determinism, bounds, both families) + the
+> fire-instant spawn test.
 
 ## Document how hikari works
 

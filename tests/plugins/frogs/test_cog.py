@@ -31,17 +31,6 @@ from tests.fakes import (
 _UID = 424242
 
 
-# -- spawn math (pure) ------------------------------------------------------
-
-
-def test_roll_future_frog_within_bounds() -> None:
-    now = pendulum.now("UTC")
-    for _ in range(50):
-        dt = factory.roll_future_frog(now, 300, 0.5)
-        delta = (dt - now).in_seconds()
-        assert 150 <= delta <= 450  # 300s ± 50%
-
-
 # -- profile / register -----------------------------------------------------
 
 
@@ -193,6 +182,44 @@ async def test_on_frog_due_reschedules_and_despawns(
     assert len(channel.sent) == 1
     assert channel.sent[0]["content"] == factory.FROG_EMOJI
     assert rest_of(seeded_bot).deleted == [(channel.id, 1)]
+
+
+async def test_on_frog_due_rolls_from_fire_instant(
+    seeded_bot: CazzuBot,
+    channel: FakeChannel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The next spawn is rolled from the fire instant, not the despawn.
+
+    persist=600 would anchor the old design at now+600; the pure chaotic
+    timeline rolls interval ± 50% from now, so the armed row lands far
+    before the despawn window.
+    """
+    await frog_db.set_enabled(seeded_bot.settings, True)
+    payload = {
+        "cid": channel.id,
+        "interval": 120,
+        "persist": 600,
+        "fuzzy": 0.5,
+    }
+
+    async def _no_spawn(
+        _bot: CazzuBot, _persist: int, _ctx: Any = None, **_: Any
+    ) -> bool:
+        return False
+
+    monkeypatch.setattr(factory, "spawn_and_wait", _no_spawn)
+
+    before = pendulum.now("UTC")
+    await factory.on_frog_due(seeded_bot, payload)
+    rows = await seeded_bot.scheduler.get("frog")
+    assert len(rows) == 1
+    run_at = pendulum.parse(rows[0].run_at)
+    assert isinstance(run_at, pendulum.DateTime)
+    # interval ± 50% from the fire instant — the upper bound is what
+    # rejects the old despawn-anchored design (it would arm ≥ now+660)
+    assert before.add(seconds=60) <= run_at
+    assert run_at <= pendulum.now("UTC").add(seconds=180)
 
 
 def _frog_message(

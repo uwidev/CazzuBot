@@ -6,7 +6,13 @@ rows, so tasks survive restarts (mute expiry, frog spawns, counter expiry, …).
 
 Dispatch is concurrent: each due row runs in its own asyncio task (bounded
 by a semaphore), so a slow handler never stalls the loop or other tasks.
-Per-tag ``TaskPolicy`` controls retry behavior (backoff, attempt cap) and the
+
+Tasks resolve by default when due: the fired row is deleted whether or not
+the handler raised (v1's contract — "due, handled, gone"). Tasks that need
+guaranteed handling opt in via the reserved payload key ``retry: True``;
+on handler failure they are kept and re-armed per their tag's ``TaskPolicy``
+(backoff, attempt cap) until they succeed or the cap is hit. ``attempt`` is
+also reserved (the retry counter). ``TaskPolicy.stale_after`` is the
 missed-run rule for rows that came due while the bot was down.
 
 Replaces v1's per-cog ``@tasks.loop(seconds=1)`` polling of the same table.
@@ -15,14 +21,17 @@ Replaces v1's per-cog ``@tasks.loop(seconds=1)`` polling of the same table.
 import asyncio
 import json
 import logging
+import random
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 import aiosqlite
 import hikari
 import pendulum
+
+from cazzubot.timeparse import InvalidTimeError, parse_duration
 
 if TYPE_CHECKING:
     from cazzubot.bot import CazzuBot
@@ -46,21 +55,65 @@ _SCHEMA = [
 # the DDL without instantiating the class.
 SCHEMA = _SCHEMA
 
+# days per month, Feb counted at its leap maximum (29) so day=29 Feb-only
+# specs are valid; month scans below are bounded past the widest gap
+# between leap Februarys (8 years around century non-leap years)
+_DAYS_IN_MONTH = {
+    1: 31,
+    2: 29,
+    3: 31,
+    4: 30,
+    5: 31,
+    6: 30,
+    7: 31,
+    8: 31,
+    9: 30,
+    10: 31,
+    11: 30,
+    12: 31,
+}
+_MONTH_SCAN = 100
+
+
+def _as_weekday_list(weekday: int | tuple[int, ...]) -> tuple[int, ...]:
+    """Normalize a single weekday or a tuple into a tuple."""
+    return (weekday,) if isinstance(weekday, int) else weekday
+
+
+def _as_day_list(day: int | tuple[int, ...]) -> tuple[int, ...]:
+    """Normalize a single day or a tuple into a tuple."""
+    return (day,) if isinstance(day, int) else day
+
 
 @dataclass(frozen=True, slots=True)
-class Cadence:
-    """A repeating schedule: daily at ``time``, or weekly on ``weekday``.
+class At:
+    """An absolute schedule: the task runs AT the declared calendar time.
 
-    ``time`` is "HH:MM" (24h, UTC, zero-padded); ``weekday`` is ``None``
-    for daily or 0-6 (Monday=0 … Sunday=6) for weekly. ``next_run`` is
-    always strictly in the future; ``previous_run`` is the most recent
-    occurrence at or before ``now``. ``missed`` is the catch-up rule: the
-    last scheduled occurrence went unserviced (e.g. the bot was down at
-    the scheduled moment) and should be forced now.
+    ``time`` is "HH:MM" (24h, UTC, zero-padded). Exactly one period
+    selector applies:
+
+    - ``weekday`` (0-6, Monday=0 … Sunday=6, or a non-empty tuple of
+      them for several days a week): weekly on that/those weekday(s).
+    - ``day`` (1-31, or -31…-1 counting from the end of the month, or a
+      non-empty tuple of them): monthly on that/those day(s) of month —
+      ``day=-1`` is the last day, Feb included; ``day=(15, -1)`` is the
+      15th and the last day. ``months`` (1-12, ``None`` = every month)
+      narrows it — the quarterly season rollover is ``day=1,
+      months=(1, 4, 7, 10)``. A month lacking a day has no occurrence
+      that period (cron skip semantics); specs with no possible
+      occurrence at all are rejected at construction.
+    - neither calendar selector: daily at ``time``.
+
+    ``next_run`` is always strictly in the future; ``previous_run`` is
+    the most recent occurrence at or before ``now``. ``missed`` is the
+    catch-up rule: the last scheduled occurrence went unserviced (e.g.
+    the bot was down at the scheduled moment) and should be forced now.
     """
 
-    time: str
-    weekday: int | None = None
+    time: str = "00:00"
+    weekday: int | tuple[int, ...] | None = None
+    day: int | tuple[int, ...] | None = None
+    months: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
         match = re.fullmatch(r"(\d{2}):(\d{2})", self.time)
@@ -71,10 +124,44 @@ class Cadence:
         hour, minute = int(match.group(1)), int(match.group(2))
         if hour > 23 or minute > 59:
             raise ValueError(f"cadence time out of range: {self.time!r}")
-        if self.weekday is not None and not 0 <= self.weekday <= 6:
+        if self.weekday is not None:
+            if isinstance(self.weekday, tuple) and not self.weekday:
+                raise ValueError("cadence weekday must not be empty")
+            for w in _as_weekday_list(self.weekday):
+                if not 0 <= w <= 6:
+                    raise ValueError(
+                        f"cadence weekday must be 0-6, got {self.weekday}"
+                    )
+        if self.day is not None:
+            if isinstance(self.day, tuple) and not self.day:
+                raise ValueError("cadence day must not be empty")
+            for d in _as_day_list(self.day):
+                if not 1 <= abs(d) <= 31:
+                    raise ValueError(
+                        f"cadence day must be 1-31 or -31…-1, got {self.day}"
+                    )
+        if self.weekday is not None and self.day is not None:
             raise ValueError(
-                f"cadence weekday must be 0-6 (Monday=0), got {self.weekday}"
+                "cadence takes either weekday or day, not both"
             )
+        if self.months is not None:
+            if not self.months:
+                raise ValueError("cadence months must not be empty")
+            if self.day is None:
+                raise ValueError("cadence months require a day")
+            for month in self.months:
+                if not 1 <= month <= 12:
+                    raise ValueError(
+                        f"cadence month must be 1-12, got {month}"
+                    )
+            days = _as_day_list(self.day)
+            if all(
+                all(_DAYS_IN_MONTH[m] < abs(d) for d in days)
+                for m in self.months
+            ):
+                raise ValueError(
+                    "cadence never occurs: no eligible month has any declared day"
+                )
 
     def _clock(self) -> tuple[int, int]:
         match = re.fullmatch(r"(\d{2}):(\d{2})", self.time)
@@ -83,29 +170,19 @@ class Cadence:
 
     def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
         """The next occurrence of this cadence, strictly after ``now``."""
-        hour, minute = self._clock()
-        candidate = now.start_of("day").replace(hour=hour, minute=minute)
         if self.weekday is not None:
-            days_ahead = (self.weekday - now.weekday()) % 7
-            candidate = candidate.add(days=days_ahead)
-            if days_ahead == 0 and candidate <= now:
-                candidate = candidate.add(days=7)
-        elif candidate <= now:
-            candidate = candidate.add(days=1)
-        return candidate
+            return self._next_weekly(now, self.weekday)
+        if self.day is not None:
+            return self._next_monthly(now, self.day, self.months)
+        return self._next_daily(now)
 
     def previous_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
         """The most recent occurrence at or before ``now``."""
-        hour, minute = self._clock()
-        candidate = now.start_of("day").replace(hour=hour, minute=minute)
         if self.weekday is not None:
-            days_back = (now.weekday() - self.weekday) % 7
-            candidate = candidate.subtract(days=days_back)
-            if candidate > now:
-                candidate = candidate.subtract(days=7)
-        elif candidate > now:
-            candidate = candidate.subtract(days=1)
-        return candidate
+            return self._previous_weekly(now, self.weekday)
+        if self.day is not None:
+            return self._previous_monthly(now, self.day, self.months)
+        return self._previous_daily(now)
 
     def missed(
         self, last_run: pendulum.DateTime, now: pendulum.DateTime
@@ -118,17 +195,279 @@ class Cadence:
         """
         return last_run < self.previous_run(now)
 
+    # -- daily -----------------------------------------------------------
+
+    def _next_daily(self, now: pendulum.DateTime) -> pendulum.DateTime:
+        hour, minute = self._clock()
+        candidate = now.start_of("day").replace(hour=hour, minute=minute)
+        if candidate <= now:
+            candidate = candidate.add(days=1)
+        return candidate
+
+    def _previous_daily(self, now: pendulum.DateTime) -> pendulum.DateTime:
+        hour, minute = self._clock()
+        candidate = now.start_of("day").replace(hour=hour, minute=minute)
+        if candidate > now:
+            candidate = candidate.subtract(days=1)
+        return candidate
+
+    # -- weekly ----------------------------------------------------------
+
+    def _next_weekly(
+        self, now: pendulum.DateTime, weekdays: int | tuple[int, ...]
+    ) -> pendulum.DateTime:
+        """The soonest upcoming occurrence across the weekday(s)."""
+        hour, minute = self._clock()
+        base = now.start_of("day")
+        upcoming: list[pendulum.DateTime] = []
+        for w in _as_weekday_list(weekdays):
+            candidate = base.add(days=(w - now.weekday()) % 7).replace(
+                hour=hour, minute=minute
+            )
+            if candidate <= now:
+                candidate = candidate.add(days=7)
+            upcoming.append(candidate)
+        return min(upcoming)
+
+    def _previous_weekly(
+        self, now: pendulum.DateTime, weekdays: int | tuple[int, ...]
+    ) -> pendulum.DateTime:
+        """The most recent occurrence across the weekday(s), at-or-before now."""
+        hour, minute = self._clock()
+        base = now.start_of("day")
+        past: list[pendulum.DateTime] = []
+        for w in _as_weekday_list(weekdays):
+            candidate = base.subtract(
+                days=(now.weekday() - w) % 7
+            ).replace(hour=hour, minute=minute)
+            if candidate > now:
+                candidate = candidate.subtract(days=7)
+            past.append(candidate)
+        return max(past)
+
+    # -- monthly family --------------------------------------------------
+
+    def _next_monthly(
+        self,
+        now: pendulum.DateTime,
+        day: int | tuple[int, ...],
+        months: tuple[int, ...] | None,
+    ) -> pendulum.DateTime:
+        """The soonest upcoming occurrence across the day(s), month by month.
+
+        A month outside ``months`` or lacking every listed day simply has
+        no occurrence that period. Validated specs always find one within
+        the scan (the widest gap is a leap Feb 29, at most 8 years).
+        """
+        hour, minute = self._clock()
+        month = now.start_of("month")
+        for _ in range(_MONTH_SCAN):
+            for candidate in self._month_occurrences(
+                month, day, months, hour, minute
+            ):
+                if candidate > now:
+                    return candidate
+            month = month.add(months=1)
+        raise ValueError(f"cadence {self} has no upcoming occurrence")
+
+    def _previous_monthly(
+        self,
+        now: pendulum.DateTime,
+        day: int | tuple[int, ...],
+        months: tuple[int, ...] | None,
+    ) -> pendulum.DateTime:
+        """The most recent occurrence across the day(s), at-or-before now."""
+        hour, minute = self._clock()
+        month = now.start_of("month")
+        for _ in range(_MONTH_SCAN):
+            occurrences = self._month_occurrences(
+                month, day, months, hour, minute
+            )
+            for candidate in reversed(occurrences):
+                if candidate <= now:
+                    return candidate
+            month = month.subtract(months=1)
+        raise ValueError(f"cadence {self} has no previous occurrence")
+
+    def _month_occurrences(
+        self,
+        month: pendulum.DateTime,
+        day: int | tuple[int, ...],
+        months: tuple[int, ...] | None,
+        hour: int,
+        minute: int,
+    ) -> list[pendulum.DateTime]:
+        """The valid occurrences in ``month`` for the day(s), ascending.
+
+        Negative days count from the end of the month (``-1`` is the last
+        day); positions the month lacks are skipped (e.g. Feb 31, or
+        -31 in April).
+        """
+        if months is not None and month.month not in months:
+            return []
+        occurrences: list[pendulum.DateTime] = []
+        for d in _as_day_list(day):
+            target = month.days_in_month + d + 1 if d < 0 else d
+            try:
+                occurrences.append(
+                    month.replace(day=target, hour=hour, minute=minute)
+                )
+            except ValueError:
+                continue
+        return sorted(occurrences)
+
+
+@dataclass(frozen=True, slots=True)
+class AtChaotic(At):
+    """The chaotic flavor of ``At`` — same declarations, rolled runs.
+
+    Inherits the full absolute declaration (``time``/``weekday``/``day``/
+    ``months``) and adds the random-scheduling declarations: ``jitter``
+    (0..1) and ``seed`` (deterministic tests). ``next_run`` overrides the
+    base: the run lands at the scheduled occurrence plus up to ``jitter``
+    of the period, drifting forward within the window (never past the
+    next occurrence). ``previous_run``/``missed`` are inherited — the
+    calendar occurrence is the scheduled instant, and missed handling
+    stays per-handler (row-based catch-up). ``bounds`` is the RNG-free
+    window the next roll lands in.
+    """
+
+    jitter: float = 0.0
+    seed: int | None = None
+    _rng: random.Random = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not 0 <= self.jitter <= 1:
+            raise ValueError(
+                f"jitter must be between 0 and 1, got {self.jitter}"
+            )
+        object.__setattr__(self, "_rng", random.Random(self.seed))
+
+    @override
+    def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
+        """The next instant — the base occurrence, rolled chaotically."""
+        base = super().next_run(now)
+        if self.jitter == 0:
+            return base
+        return base.add(
+            seconds=self._rng.random() * self.jitter * self._period(base)
+        )
+
+    def bounds(
+        self, now: pendulum.DateTime
+    ) -> tuple[pendulum.DateTime, pendulum.DateTime]:
+        """The deterministic window the next roll lands in (no RNG)."""
+        base = super().next_run(now)
+        return (base, base.add(seconds=self.jitter * self._period(base)))
+
+    def _period(self, at: pendulum.DateTime) -> float:
+        """Seconds from one occurrence to the next (calendar mode)."""
+        return (super().next_run(at) - at).total_seconds()
+
+
+@dataclass(frozen=True, slots=True)
+class In:
+    """A relative schedule: the task runs IN the declared duration.
+
+    ``interval`` is positive seconds, or a duration string like ``"2h"``
+    / ``"90m"`` parsed via ``timeparse.parse_duration``. ``next_run`` is
+    ``now + interval``, re-armed relative to each fire — the schedule
+    slides with the actual completion instant, so ``previous_run`` is
+    ``now - interval`` and ``missed`` is "the last run is older than the
+    interval".
+    """
+
+    interval: int | str
+
+    def __post_init__(self) -> None:
+        if self._interval_seconds() <= 0:
+            raise ValueError(
+                f"interval must be positive, got {self.interval!r}"
+            )
+
+    def _interval_seconds(self) -> int:
+        """The duration declaration as whole seconds."""
+        interval = self.interval
+        if isinstance(interval, str):
+            try:
+                seconds = parse_duration(interval).total_seconds()
+            except InvalidTimeError as err:
+                raise ValueError(
+                    f"invalid cadence interval {interval!r}"
+                ) from err
+            return int(seconds)
+        return interval
+
+    def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
+        """The next instant: ``now + interval``."""
+        return now.add(seconds=self._interval_seconds())
+
+    def previous_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
+        """The most recent instant: ``now - interval``."""
+        return now.subtract(seconds=self._interval_seconds())
+
+    def missed(
+        self, last_run: pendulum.DateTime, now: pendulum.DateTime
+    ) -> bool:
+        """True when the last run is older than the interval."""
+        return last_run < self.previous_run(now)
+
+
+@dataclass(frozen=True, slots=True)
+class InChaotic(In):
+    """The chaotic flavor of ``In`` — the same declaration, rolled runs.
+
+    ``next_run`` rolls ``now + interval * (1 ± jitter)`` fresh every
+    call, so late runs self-correct by rolling from the actual
+    completion instant. ``seed`` makes rolls deterministic for tests;
+    ``bounds`` is the RNG-free window the next roll lands in.
+    """
+
+    jitter: float = 0.0
+    seed: int | None = None
+    _rng: random.Random = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not 0 <= self.jitter <= 1:
+            raise ValueError(
+                f"jitter must be between 0 and 1, got {self.jitter}"
+            )
+        object.__setattr__(self, "_rng", random.Random(self.seed))
+
+    @override
+    def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
+        """The next instant: ``now + interval * (1 ± jitter)``."""
+        offset = self._interval_seconds() * (
+            1 + (self._rng.random() - 0.5) * 2 * self.jitter
+        )
+        return now.add(seconds=offset)
+
+    def bounds(
+        self, now: pendulum.DateTime
+    ) -> tuple[pendulum.DateTime, pendulum.DateTime]:
+        """The deterministic window the next roll lands in (no RNG)."""
+        seconds = self._interval_seconds()
+        spread = seconds * self.jitter
+        return (
+            now.add(seconds=seconds - spread),
+            now.add(seconds=seconds + spread),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class TaskPolicy:
     """Dispatch policy for one task tag: retry + missed-run handling.
 
-    ``max_attempts`` caps handler retries before the task row is dropped;
-    ``None`` retries forever (the default, so expiries like mutes still
-    fire eventually). ``backoff`` is the delay in seconds between attempts;
-    the last value repeats. ``stale_after`` is the missed-run rule: a row
-    that came due while the bot was down and is this old when a tick sees
-    it is dropped instead of fired (``None`` fires it no matter how old).
+    Applies only to tasks whose payload declares ``retry: True`` — the
+    rest resolve on completion regardless of success. ``max_attempts``
+    caps handler retries before the task row is dropped (``None`` retries
+    forever, so expiries like mutes still fire eventually). ``backoff`` is
+    the delay in seconds between attempts; the last value repeats.
+    ``stale_after`` is the missed-run rule: a row that came due while the
+    bot was down and is this old when a tick sees it is dropped instead
+    of fired (``None`` fires it no matter how old).
     """
 
     max_attempts: int | None = None
@@ -143,9 +482,7 @@ class TaskPolicy:
 class Scheduler:
     """Owns the task table and dispatches due tasks once per second."""
 
-    def __init__(
-        self, bot: "CazzuBot", *, concurrency: int = 10
-    ) -> None:
+    def __init__(self, bot: "CazzuBot", *, concurrency: int = 10) -> None:
         self.bot = bot
         self.handlers: dict[str, TaskHandler] = {}
         self.policies: dict[str, TaskPolicy] = {}
@@ -298,17 +635,6 @@ class Scheduler:
             task_id,
         )
 
-    async def arm(self, tag: str, cadence: Cadence) -> None:
-        """Re-arm a cadence tag: drop stale rows, schedule the next run.
-
-        The generalized ``arm_midnight_cadence`` — any daily/weekly
-        cadence, not just midnight. Handlers call this to re-schedule
-        themselves; plugins force missed runs on boot via
-        ``Cadence.missed``.
-        """
-        await self.drop_tag(tag)
-        await self.add(tag, cadence.next_run(pendulum.now("UTC")), {})
-
     # -- loop -------------------------------------------------------------
 
     async def _tick(self) -> None:
@@ -365,12 +691,15 @@ class Scheduler:
         task: Task,
         policy: TaskPolicy,
     ) -> None:
-        """Run one dispatched task: success deletes the row, failure retries.
+        """Run one dispatched task: the row resolves when the handler ends.
 
-        Executes as its own asyncio task under the concurrency semaphore,
-        so a slow handler never blocks the tick loop or other tags.
-        Failure applies the tag's ``TaskPolicy`` (backoff + attempt cap);
-        success deletes the row exactly as before.
+        By default a task resolves regardless of success (the fired row is
+        deleted — v1's contract). A task whose payload declares
+        ``retry: True`` opts into guaranteed handling: on exception the
+        row is kept and re-armed per the tag's ``TaskPolicy`` (backoff,
+        attempt cap) until it succeeds or the cap is hit. Arm-last
+        handlers pair with retry (the fired row must stay live through
+        the work); fire-and-forget handlers pair with schedule-first.
         """
         assert self._sem is not None  # start() precedes any dispatch
         async with self._sem:
@@ -379,8 +708,21 @@ class Scheduler:
             except asyncio.CancelledError:
                 raise
             except Exception:
+                if not task.payload.get("retry"):
+                    # fire-and-forget: the task resolves anyway, like v1
+                    _log.exception(
+                        "task %s (%r) handler failed; resolving anyway",
+                        task.id,
+                        task.tag,
+                    )
+                    await self.bot.db.execute(
+                        "DELETE FROM tasks WHERE id = ?", task.id
+                    )
+                    return
                 _log.exception(
-                    "task %s (%r) handler failed", task.id, task.tag
+                    "task %s (%r) handler failed; retrying",
+                    task.id,
+                    task.tag,
                 )
                 await self._schedule_retry(task, policy)
                 return
@@ -388,7 +730,9 @@ class Scheduler:
                 "DELETE FROM tasks WHERE id = ?", task.id
             )
 
-    async def _schedule_retry(self, task: Task, policy: TaskPolicy) -> None:
+    async def _schedule_retry(
+        self, task: Task, policy: TaskPolicy
+    ) -> None:
         """Apply the retry policy after a handler failure.
 
         Bumps ``payload["attempt"]`` (persisted, so the count survives
@@ -396,7 +740,10 @@ class Scheduler:
         drops the row once ``max_attempts`` is exceeded.
         """
         attempt = int(task.payload.get("attempt", 0)) + 1
-        if policy.max_attempts is not None and attempt > policy.max_attempts:
+        if (
+            policy.max_attempts is not None
+            and attempt > policy.max_attempts
+        ):
             _log.error(
                 "task %s (%r) failed %d times; dropping",
                 task.id,
@@ -470,9 +817,7 @@ def _is_stale(
     if not isinstance(scheduled, pendulum.DateTime):
         # unparseable timestamp — run it rather than drop it
         return False
-    return (
-        now - scheduled
-    ).total_seconds() > stale_after.total_seconds()
+    return (now - scheduled).total_seconds() > stale_after.total_seconds()
 
 
 def _now(offset_seconds: int = 0) -> str:

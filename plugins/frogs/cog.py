@@ -190,9 +190,7 @@ class Lifetime(
             )
             return
         if target.id not in [r[1] for r in rows]:
-            await ctx.respond(
-                "You have not yet captured any frogs!"
-            )
+            await ctx.respond("You have not yet captured any frogs!")
             return
         await ctx.respond(
             embed=await _prepare_personal_summary(

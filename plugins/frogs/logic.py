@@ -1,9 +1,9 @@
 """Frogs service layer — pure economy decisions, no discord objects.
 
-Spawn math already lives (pure) in ``factory.py`` (``roll_fuzzy``,
-``roll_future_frog``); this module holds the consume-side decisions. The
-scheduler handler and capture view remain controllers (scheduling + discord
-side effects).
+Spawn timing lives in the core type ``InChaotic`` (interval ± jitter
+rolls); this module holds the consume-side decisions. The scheduler
+handler and capture view remain controllers (scheduling + discord side
+effects).
 """
 
 from __future__ import annotations

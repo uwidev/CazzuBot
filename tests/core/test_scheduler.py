@@ -36,7 +36,7 @@ async def _fail_once(bot: CazzuBot, tag: str) -> list[Task]:
 
     bot.scheduler.register(tag, bad_handler)
     await bot.scheduler.add(
-        tag, pendulum.now("UTC").subtract(seconds=1)
+        tag, pendulum.now("UTC").subtract(seconds=1), {"retry": True}
     )
     await _pump(bot)
     return await bot.scheduler.get(tag)
@@ -98,12 +98,8 @@ async def test_due_tasks_run_concurrently(bot: CazzuBot) -> None:
 
     bot.scheduler.register("a", slow)
     bot.scheduler.register("b", slow)
-    await bot.scheduler.add(
-        "a", pendulum.now("UTC").subtract(seconds=1)
-    )
-    await bot.scheduler.add(
-        "b", pendulum.now("UTC").subtract(seconds=1)
-    )
+    await bot.scheduler.add("a", pendulum.now("UTC").subtract(seconds=1))
+    await bot.scheduler.add("b", pendulum.now("UTC").subtract(seconds=1))
     await _pump(bot)
     assert len(started) == 2 and len(finished) == 2
     # both started before either finished ⟺ they overlapped
@@ -146,11 +142,29 @@ async def test_concurrency_limit(bot: CazzuBot) -> None:
 
 
 async def test_failed_task_kept_for_retry(bot: CazzuBot) -> None:
-    """A failing handler keeps its row, pushed into the future, attempt=1."""
+    """A retry-opted task keeps its row, pushed into the future, attempt=1."""
     rows = await _fail_once(bot, "flaky")
     assert len(rows) == 1, rows
     assert rows[0].payload["attempt"] == 1
     assert _parse_dt(rows[0].run_at) > pendulum.now("UTC")
+
+
+async def test_failed_task_resolves_by_default(bot: CazzuBot) -> None:
+    """Fire-and-forget default (v1): a failing handler's row still resolves."""
+    calls = 0
+
+    async def bad(_bot: CazzuBot, _payload: dict[str, Any]) -> None:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("boom")
+
+    bot.scheduler.register("resolve", bad)
+    await bot.scheduler.add(
+        "resolve", pendulum.now("UTC").subtract(seconds=1)
+    )
+    await _pump(bot)
+    assert calls == 1
+    assert await bot.scheduler.get("resolve") == []  # row deleted
 
 
 async def test_retry_backoff_delays(bot: CazzuBot) -> None:
@@ -172,7 +186,9 @@ async def test_failed_task_uses_policy_backoff(bot: CazzuBot) -> None:
         "slowflaky", bad, policy=TaskPolicy(backoff=(2, 60))
     )
     await bot.scheduler.add(
-        "slowflaky", pendulum.now("UTC").subtract(seconds=1)
+        "slowflaky",
+        pendulum.now("UTC").subtract(seconds=1),
+        {"retry": True},
     )
     await _pump(bot)
     rows = await bot.scheduler.get("slowflaky")
@@ -181,7 +197,9 @@ async def test_failed_task_uses_policy_backoff(bot: CazzuBot) -> None:
     assert 1 <= delta.total_seconds() <= 3, delta
 
 
-async def test_failed_task_dropped_after_max_attempts(bot: CazzuBot) -> None:
+async def test_failed_task_dropped_after_max_attempts(
+    bot: CazzuBot,
+) -> None:
     """max_attempts caps retries; the row is dropped once exceeded."""
     attempts: list[int] = []
 
@@ -193,7 +211,9 @@ async def test_failed_task_dropped_after_max_attempts(bot: CazzuBot) -> None:
         "doomed", bad, policy=TaskPolicy(max_attempts=2, backoff=(0,))
     )
     await bot.scheduler.add(
-        "doomed", pendulum.now("UTC").subtract(seconds=1)
+        "doomed",
+        pendulum.now("UTC").subtract(seconds=1),
+        {"retry": True},
     )
     for _ in range(3):
         await _pump(bot)

@@ -123,6 +123,7 @@ async def test_mute_applies_role_logs_and_schedules(
     assert tasks[0].payload == {
         "uid": author.id,
         "log_type": "mute",
+        "retry": True,
     }
     row = await seeded_bot.db.fetchone(
         "SELECT * FROM modlog ORDER BY id DESC"
