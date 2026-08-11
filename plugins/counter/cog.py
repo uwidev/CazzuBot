@@ -1,10 +1,13 @@
-"""Counter plugin extension — baka button view, create command, expiry.
+"""Counter plugin extension — baka button view, create/re-create, expiry.
 
 Single-guild port of v1's ``ext/counter.py``. A registered counter message
-carries a persistent button; each press increments the count, the footer shows
-who "did a baka", and a 2-hour expiry task (tag ``counter``) resets the footer.
-The button is a plain component with a fixed custom id handled by a component-
-interaction listener, so it survives restarts without re-registration.
+carries a persistent button; each press appends one ``counter_event`` row,
+the footer shows who "did a baka" recently (2h window), and a 2-hour expiry
+task (tag ``counter``) resets the footer. The button is a plain component
+with a fixed custom id handled by a component-interaction listener, so it
+survives restarts without re-registration. ``/counter create`` gains an
+optional ``counter_id`` to re-create a counter whose message was deleted —
+the events (and the count) carry over.
 """
 
 import logging
@@ -16,12 +19,16 @@ import pendulum
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
+from cazzubot.errors import UserInputError
+from lightbulb.prefab import checks as prefab_checks
 
 from . import db
 
 _log = logging.getLogger(__name__)
 
 loader = lightbulb.Loader()
+
+_ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
 
 FROG = "https://files.catbox.moe/qo7bkv.gif"
 POGFROG = "https://files.catbox.moe/k5qvvd.gif"
@@ -33,12 +40,18 @@ NO_BAKAS_TEXT = "There are no bakas as of recently..."
 
 CUSTOM_ID = "counter:baka"
 
+RECENT_WINDOW_HOURS = 2
+
 
 def _bot(ctx: lightbulb.Context) -> CazzuBot:
     return cast(CazzuBot, ctx.client.app)
 
 
-counter = lightbulb.Group("counter", "Baka counter management.")
+counter = lightbulb.Group(
+    "counter",
+    "Baka counter management.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+)
 
 
 @counter.register
@@ -46,12 +59,28 @@ class Create(
     lightbulb.SlashCommand,
     name="create",
     description="Create the baka counter message in this channel.",
+    hooks=[_ADMIN],
 ):
+    counter_id = lightbulb.integer(
+        "counter_id",
+        "Re-create a deleted counter by its id (keeps the count)",
+        default=None,
+    )
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = _bot(ctx)
+        count = 0
+        if self.counter_id is not None:
+            if await db.by_id(bot.db, self.counter_id) is None:
+                raise UserInputError(
+                    f"counter #{self.counter_id} does not exist"
+                )
+            count = await db.count_by_id(bot.db, self.counter_id)
+
         embed = utils.prepare_embed(
-            "Number of times people have touched the baka button", "> 0"
+            "Number of times people have touched the baka button",
+            f"> {count}",
         )
         embed.set_thumbnail(BORED)
         embed.set_footer(text=NO_BAKAS_TEXT, icon=FROG)
@@ -67,7 +96,10 @@ class Create(
         # message id — fetch the real message so the baka button's
         # custom-id handler can find the counter row
         message = await ctx.fetch_response(response_id)
-        await db.create(bot.db, message.id)
+        if self.counter_id is not None:
+            await db.reattach(bot.db, self.counter_id, message.id)
+        else:
+            await db.create(bot.db, message.id)
 
 
 @loader.listener(hikari.InteractionCreateEvent)
@@ -78,18 +110,15 @@ async def on_interaction(event: hikari.InteractionCreateEvent) -> None:
         return
     if interaction.custom_id != CUSTOM_ID:
         return
-    if interaction.message is None:
-        return
     await _handle_baka(cast(CazzuBot, event.app), interaction)
 
 
 async def _handle_baka(bot: CazzuBot, interaction: Any) -> None:
-    """One baka press: bump the count, record the baka, update the embed."""
+    """One baka press: append an event, show the count + recent bakas."""
     mid = interaction.message.id
 
-    # atomic increment — no lost updates under concurrent presses
-    count_new = await db.bump_count(bot.db, mid)
-    if count_new is None:
+    counter = await db.by_mid(bot.db, mid)
+    if counter is None:
         await interaction.create_initial_response(
             hikari.ResponseType.MESSAGE_CREATE,
             "This is not a baka counter anymore.",
@@ -99,15 +128,23 @@ async def _handle_baka(bot: CazzuBot, interaction: Any) -> None:
 
     user = interaction.user
     display_name = user.display_name
-    await db.record_baka(
+    now = pendulum.now("UTC").to_iso8601_string()
+    await db.record_event(
         bot.db,
-        mid,
+        counter["id"],
         user.id,
         display_name if isinstance(display_name, str) else user.username,
-        pendulum.now("UTC").to_iso8601_string(),
+        now,
     )
 
-    names = await db.recent_bakas(bot.db, mid)
+    count_new = await db.count_by_id(bot.db, counter["id"])
+    names = await db.recent_names(
+        bot.db,
+        counter["id"],
+        pendulum.now("UTC")
+        .subtract(hours=RECENT_WINDOW_HOURS)
+        .to_iso8601_string(),
+    )
 
     embed = utils.prepare_embed(
         "Number of times people have touched the baka button",
@@ -135,7 +172,7 @@ async def _schedule_expiry(bot: CazzuBot, mid: int, cid: int) -> None:
         await bot.scheduler.drop(task.id)
     await bot.scheduler.add(
         "counter",
-        pendulum.now("UTC").add(hours=2),
+        pendulum.now("UTC").add(hours=RECENT_WINDOW_HOURS),
         {"mid": mid, "cid": cid},
     )
 
@@ -143,10 +180,12 @@ async def _schedule_expiry(bot: CazzuBot, mid: int, cid: int) -> None:
 async def on_counter_expire(
     bot: CazzuBot, payload: dict[str, Any]
 ) -> None:
-    """Scheduler handler for tag ``counter`` — reset the embed footer."""
+    """Scheduler handler for tag ``counter`` — reset the embed footer.
+
+    Events are the history and are never deleted; only the message
+    display resets back to the idle footer.
+    """
     cid, mid = payload["cid"], payload["mid"]
-    # clear the recent-baka list even if the message is already gone
-    await db.clear_bakas(bot.db, mid)
 
     channel = bot.cache.get_guild_channel(cid)
     if channel is None:

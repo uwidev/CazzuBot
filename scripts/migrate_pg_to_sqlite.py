@@ -136,10 +136,6 @@ def modlog_row(r: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def counter_row(r: dict[str, Any]) -> tuple[Any, ...]:
-    return (r["mid"], r["count"])
-
-
 def poll_row(r: dict[str, Any]) -> tuple[Any, ...]:
     return (
         r["id"],
@@ -206,13 +202,6 @@ TABLES: list[TableSpec] = [
         modlog_row,
     ),
     (
-        "counter",
-        "SELECT mid, count FROM counter WHERE gid = $1",
-        "SELECT COUNT(*) FROM counter WHERE gid = $1",
-        "INSERT INTO counter (mid, count) VALUES (?, ?)",
-        counter_row,
-    ),
-    (
         "poll",
         "SELECT id, title, description, max_vote, mid, open FROM poll WHERE gid = $1",
         "SELECT COUNT(*) FROM poll WHERE gid = $1",
@@ -239,6 +228,48 @@ async def migrate_table(
         sqlite.commit()
         inserted += len(records)
     return {"table": name, "source": src_count, "inserted": inserted}
+
+
+async def migrate_counters(
+    pg: Any, sqlite: sqlite3.Connection, gid: int
+) -> list[dict[str, Any]]:
+    """Migrate v1 counters into the event-based v2 shape.
+
+    Each v1 row ``(mid, count)`` becomes one ``counter`` registry row plus
+    ``count`` anonymous ``counter_event`` rows (``uid``/``name`` NULL, epoch
+    timestamp) so the derived total carries over exactly. ``counter_baka``
+    does not exist in v1 (the footer history was embed-only), so nothing
+    else is ported.
+    """
+    rows = await pg.fetch(
+        "SELECT mid, count FROM counter WHERE gid = $1 ORDER BY mid", gid
+    )
+    counters = 0
+    events = 0
+    batch: list[tuple[int, str]] = []
+    for r in rows:
+        cur = sqlite.execute(
+            "INSERT INTO counter (mid) VALUES (?)", (r["mid"],)
+        )
+        counter_id = cur.lastrowid
+        assert counter_id is not None  # AUTOINCREMENT always assigns an id
+        counters += 1
+        events += r["count"]
+        batch.extend((counter_id, SENTINEL_AT) for _ in range(r["count"]))
+    sqlite.executemany(
+        "INSERT INTO counter_event (counter_id, uid, name, updated_at)"
+        + " VALUES (?, NULL, NULL, ?)",
+        batch,
+    )
+    sqlite.commit()
+    return [
+        {"table": "counter", "source": len(rows), "inserted": counters},
+        {
+            "table": "counter_event",
+            "source": sum(r["count"] for r in rows),
+            "inserted": events,
+        },
+    ]
 
 
 async def migrate_polls(
@@ -562,6 +593,20 @@ async def main() -> int:
                 )
 
             for info in await migrate_polls(pg, sqlite, args.gid):
+                status = (
+                    "OK"
+                    if info["source"] == info["inserted"]
+                    else "MISMATCH"
+                )
+                _log.info(
+                    "%-16s source=%9d inserted=%9d %s",
+                    info["table"],
+                    info["source"],
+                    info["inserted"],
+                    status,
+                )
+
+            for info in await migrate_counters(pg, sqlite, args.gid):
                 status = (
                     "OK"
                     if info["source"] == info["inserted"]

@@ -38,7 +38,9 @@ restored from the forward migration's archive table.
 
 If the SQLite ``counter`` table predates the count column (legacy mid-only
 shape), only counter *presence* is ported — existing v1 counts are never
-touched and trial-created mids are registered with the v1 default (0).
+touched and trial-created mids are registered with the v1 default (0). On
+the event-based shape (``counter_event`` exists) the aggregate count is
+derived from the press history instead of a stored column.
 
 Run after stopping the v2 bot (the SQLite read is safe alongside a live
 bot via WAL, but a quiescent file makes the snapshot unambiguous).
@@ -113,9 +115,36 @@ async def main() -> int:
         archive = load_archive(sqlite)
         uids, cids = collect_ids(sqlite)
         specs = table_specs()
-        # legacy DBs predate the counter count column: port presence only
-        counter_presence = not has_column(sqlite, "counter", "count")
-        if counter_presence:
+        # counter shape detection:
+        #  - counter_event exists: event-based v2 shape, count derived from
+        #    the history (one row per press)
+        #  - count column exists: pre-event shape, aggregate count stored
+        #  - neither: mid-only legacy shape — port presence only, never
+        #    touch the v1 counts
+        has_events = "counter_event" in {
+            r[0]
+            for r in sqlite.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        counter_presence = not has_events and not has_column(
+            sqlite, "counter", "count"
+        )
+        if has_events:
+            counter_spec = next(s for s in specs if s.name == "counter")
+            specs = [
+                counter_spec._replace(
+                    select=(
+                        "SELECT c.mid, COUNT(e.id) FROM counter c"
+                        + " LEFT JOIN counter_event e ON e.counter_id = c.id"
+                        + " GROUP BY c.id"
+                    )
+                )
+                if s.name == "counter"
+                else s
+                for s in specs
+            ]
+        elif counter_presence:
             specs = [s for s in specs if s.name != "counter"]
         if not args.commit:
             await print_plan(pg, sqlite, args.gid, specs, counter_presence)
@@ -411,9 +440,22 @@ async def verify_parity(
         pg_rows = await pg.fetch(
             "SELECT mid, count FROM counter WHERE gid = $1", gid
         )
-        sl_rows = sqlite.execute(
-            "SELECT mid, count FROM counter"
-        ).fetchall()
+        if "counter_event" in {
+            r[0]
+            for r in sqlite.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }:
+            # event-based shape: derive the count from the history
+            sl_rows = sqlite.execute(
+                "SELECT c.mid, COUNT(e.id) FROM counter c"
+                + " LEFT JOIN counter_event e ON e.counter_id = c.id"
+                + " GROUP BY c.mid"
+            ).fetchall()
+        else:
+            sl_rows = sqlite.execute(
+                "SELECT mid, count FROM counter"
+            ).fetchall()
         pg_set = {(r["mid"], r["count"]) for r in pg_rows}
         sl_set = {tuple(r) for r in sl_rows}
         if pg_set != sl_set:

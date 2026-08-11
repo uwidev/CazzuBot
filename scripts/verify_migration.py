@@ -190,12 +190,31 @@ async def table_parity(
                 "reason",
             ),
         ),
-        ("counter", ("mid", "count")),
+        ("counter", None),
         (
             "poll",
             ("id", "title", "description", "max_vote", "mid", "open"),
         ),
     ):
+        if table == "counter":
+            # the aggregate count is derived from the press history in v2
+            pg_rows = await pg.fetch(
+                "SELECT mid, count FROM counter WHERE gid = $1", gid
+            )
+            pg_set = {tuple(norm(v) for v in r) for r in pg_rows}
+            sl_rows = sqlite.execute(
+                "SELECT c.mid, COUNT(e.id) FROM counter c"
+                + " LEFT JOIN counter_event e ON e.counter_id = c.id"
+                + " GROUP BY c.mid"
+            ).fetchall()
+            sl_set = {tuple(norm(v) for v in r) for r in sl_rows}
+            check(
+                pg_set == sl_set,
+                table,
+                f"pg={len(pg_set)} sqlite={len(sl_set)}",
+            )
+            continue
+        cols = cast(tuple[str, ...], cols)
         pg_rows = await pg.fetch(
             f"SELECT {', '.join(cols)} FROM {table} WHERE gid = $1", gid
         )
@@ -330,8 +349,6 @@ async def settings_check(path: Path) -> None:
         "rank.lifetime.enabled": True,
         "welcome.enabled": True,
         "welcome.mode": "pending",
-        "daily.last_daily": "2026-08-05T00:00:00.400093+00:00",
-        "quarterly.last_quarterly": "2025-12-10T21:35:43.784501+00:00",
     }
     for key, want in expected.items():
         check(
@@ -339,6 +356,19 @@ async def settings_check(path: Path) -> None:
             f"settings.{key}",
             f"{all_settings.get(key)!r}",
         )
+    # cadence markers are moving runtime state, not snapshot constants:
+    # only require them to be present and parseable ISO timestamps
+    for key in ("daily.last_daily", "quarterly.last_quarterly"):
+        value = all_settings.get(key)
+        try:
+            if value is None:
+                ok = False
+            else:
+                pendulum.parse(value)
+                ok = True
+        except pendulum.ParserError:
+            ok = False
+        check(ok, f"settings.{key}", f"{value!r}")
     await db.close()
 
 

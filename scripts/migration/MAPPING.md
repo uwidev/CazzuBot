@@ -90,8 +90,15 @@ verbatim; v2 never reads `source`).
 - `case_id` → `id` (value preserved; v2 uses the id as the case number).
   Timestamps → ISO or NULL.
 
-### `counter` — 1 row
-- v1 `(gid, mid, count)` → v2 `(mid, count)`.
+### `counter` — 1 row (→ `counter` + `counter_event`)
+- v1 `(gid, mid, count)` → v2 `counter(id, mid)` registry plus one
+  `counter_event(counter_id, uid, name, updated_at)` row **per press** —
+  the count is never stored, it is derived (`COUNT(*)` over the events).
+- Legacy aggregate presses are backfilled as anonymous events
+  (`uid`/`name` NULL, epoch `updated_at` `1970-01-01T00:00:00+00:00`) —
+  one per old press — so the derived total carries over exactly.
+  (Same shape `scripts/migrate_counter_events.py` emits for an in-place
+  SQLite conversion.)
 
 ### `poll` / `poll_item` / `poll_vote` — 14 / 295 / 346 rows
 - Drop `gid`; **preserve `poll.id`** explicitly (v1 ids 1–14 are unique in the

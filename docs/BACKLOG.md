@@ -163,17 +163,22 @@ Now we have a history of people who have pressed the button. From this, we can s
 We can also get the total count for the counter just by a sum call on the mid.
 
 > **Done** — the history is now the source of truth. `counter` is the
-> registry (`mid` only, no `count` column); every press is one
-> `counter_event` row (`id, mid, uid, timestamp`, index on
-> `(mid, timestamp)`), recent bakas = `GROUP BY uid` over a 2h window
-> (`MAX(timestamp)` desc), total = `COUNT(*)` over the history. Legacy
-> pre-normalization presses were backfilled as anonymous rows
-> (`uid NULL`, epoch timestamp `1970-01-01T00:00:00+00:00`) — one per old
-> press — so totals carry over exactly. The PG→SQLite migration emits this
-> shape (`scripts/migrate_pg_to_sqlite.py`), `verify_migration.py` checks
-> it, and `scripts/migration/MAPPING.md` documents the mapping. The
-> baka-specific presentation (button, footer text, `recent_bakas`) is
-> unchanged by design.
+> registry (`id` PK + `mid`, no `count` column); every press is one
+> `counter_event` row (`counter_id` fkey to `counter.id`, `uid`, `name`,
+> `updated_at`, index on `(counter_id, updated_at)`), recent bakas = the
+> distinct `uid`s whose latest press is inside the 2h window
+> (`GROUP BY uid` over `MAX(updated_at)` desc), total = `COUNT(*)` over the
+> history. Legacy pre-normalization presses were backfilled as anonymous
+> rows (`uid`/`name` NULL, epoch timestamp `1970-01-01T00:00:00+00:00`) —
+> one per old press — so totals carry over exactly
+> (`scripts/migrate_counter_events.py` for an in-place SQLite conversion;
+> the PG→SQLite migration emits the same shape
+> (`scripts/migrate_pg_to_sqlite.py`), `verify_migration.py` checks it, and
+> `scripts/migration/MAPPING.md` documents the mapping). `counter create`
+> takes an optional `counter_id` to re-create a counter whose Discord
+> message was deleted — the events (and count) carry over. The baka-
+> specific presentation (button, footer text, `recent_bakas`) is unchanged
+> by design.
 
 ## Fix mod duration parsing (single-token footgun)
 > **Done** — `split_duration_reason` takes the first parseable leading
