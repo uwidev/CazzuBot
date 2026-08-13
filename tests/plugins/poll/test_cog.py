@@ -204,10 +204,29 @@ async def test_poll_send_records_message_id(
     poll = await get_poll(bot.db, pid)
     assert poll is not None and poll.mid == 1  # FakeContext response id
     assert poll.cid == 99  # the invoking channel
+    assert poll.open == 0  # sending alone does not open the poll
 
     # missing poll -> error
     await invoke_command(Send(), ctx, poll_id=9999)
     assert "does not exist" in (ctx.sent[-1].content or "")
+
+
+async def test_poll_send_open_flag_opens_poll(
+    bot: CazzuBot, ctx: FakeContext
+) -> None:
+    """send with open=True opens the poll (open footer icon) first."""
+    from plugins.poll.cog import EMOJI_OPEN
+
+    pid = await _poll_with_items(bot)
+
+    await invoke_command(Send(), ctx, poll_id=pid, open=True)
+
+    poll = await get_poll(bot.db, pid)
+    assert poll is not None and poll.open == 1
+    sent_embed = ctx.sent[0].embed
+    assert sent_embed is not None and sent_embed.footer is not None
+    footer_icon = sent_embed.footer.icon
+    assert footer_icon is not None and footer_icon.url == EMOJI_OPEN
 
 
 # -- register / open / stats / populate ------------------------------------

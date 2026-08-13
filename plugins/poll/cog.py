@@ -183,6 +183,9 @@ class Send(
     hooks=[_OWNER],
 ):
     poll_id = lightbulb.integer("poll_id", "ID associated with the poll")
+    open = lightbulb.boolean(
+        "open", "Open the poll when sent (default: no)", default=False
+    )
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
@@ -203,6 +206,18 @@ class Send(
                 flags=hikari.MessageFlag.EPHEMERAL,
             )
             return
+
+        if self.open:
+            # open + strip any stale results, exactly like /poll open
+            await db.set_open(bot.db, self.poll_id, True)
+            await _sync_results(bot.db, self.poll_id, open=True)
+            poll_row = await db.get_poll(bot.db, self.poll_id)
+            if poll_row is None:
+                await ctx.respond(
+                    f"❌ Poll ID#{self.poll_id} does not exist!",
+                    flags=hikari.MessageFlag.EPHEMERAL,
+                )
+                return
 
         embed, row = build_send_payload(poll_row)
         response_id = await ctx.respond(embed=embed, component=row)
