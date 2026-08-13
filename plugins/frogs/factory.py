@@ -47,6 +47,15 @@ async def on_frog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
     ).next_run(pendulum.now("UTC"))
     await bot.scheduler.add("frog", next_run, payload)
 
+    # the spawn channel may belong to the OTHER guild (rows armed while
+    # the bot served it) — never spawn into it under this guild mode
+    if not utils.channel_in_guild(bot, payload["cid"]):
+        _log.warning(
+            "frog spawn channel %s outside configured guild; skipping",
+            payload["cid"],
+        )
+        return
+
     try:
         await spawn_and_wait(bot, payload["persist"], cid=payload["cid"])
     except hikari.InternalServerError:

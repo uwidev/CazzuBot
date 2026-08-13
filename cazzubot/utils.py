@@ -221,6 +221,28 @@ def text_channel(
     return None
 
 
+def in_guild(bot: CazzuBot, guild_id: int | None) -> bool:
+    """True when an event's guild is the one this bot serves.
+
+    The gateway delivers events from every guild the token belongs to,
+    but the bot serves one guild (``config.guild_id``) — a development
+    run must ignore the production guild's events and vice versa
+    (welcomes, exp, persistent buttons, …).
+    """
+    return guild_id == bot.config.guild_id
+
+
+def channel_in_guild(bot: CazzuBot, channel_id: int) -> bool:
+    """True when the cached channel belongs to the configured guild.
+
+    For scheduler payloads that target a channel by id (frog spawns,
+    counter expiry): a row armed while the bot served the other guild
+    must not fire into it under the current guild mode.
+    """
+    channel = bot.cache.get_guild_channel(channel_id)
+    return channel is not None and channel.guild_id == bot.config.guild_id
+
+
 def format_member(s: str, member: MemberSnapshot, **extra: Any) -> str:
     """Format a template with the shared member placeholders + extras.
 

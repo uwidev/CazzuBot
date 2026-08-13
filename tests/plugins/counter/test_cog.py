@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pendulum
 
 from cazzubot import utils
@@ -10,11 +12,13 @@ from plugins.counter.cog import (
     NO_BAKAS_TEXT,
     _handle_baka,
     on_counter_expire,
+    on_interaction,
 )
 from plugins.counter.cog import Create
 from plugins.counter import db as counter_db
 from tests.fakes import (
     rest_of,
+    FakeCache,
     FakeChannel,
     FakeComponentInteraction,
     FakeContext,
@@ -24,6 +28,35 @@ from tests.fakes import (
 )
 
 _MID = 555
+
+
+async def test_baka_press_ignored_for_other_guild(
+    bot: CazzuBot, author: FakeMember
+) -> None:
+    """A button press in the OTHER guild never counts (dev bot in prod)."""
+    from types import SimpleNamespace
+
+    interaction = FakeComponentInteraction(
+        user=author, custom_id="counter:baka", guild_id=999
+    )
+    await on_interaction(
+        cast(Any, SimpleNamespace(interaction=interaction, app=bot))
+    )
+
+    assert interaction.responses == []
+    assert await bot.db.fetchval("SELECT COUNT(*) FROM counter_event") == 0
+
+
+async def test_counter_expiry_ignores_other_guild_channel(
+    seeded_bot: CazzuBot, fake_cache: FakeCache
+) -> None:
+    """An expiry armed for the other guild's channel never edits it."""
+    other = FakeChannel(id=777, name="other", guild_id=999)
+    fake_cache.add_channel(other)
+
+    await on_counter_expire(seeded_bot, {"mid": _MID, "cid": other.id})
+
+    assert rest_of(seeded_bot).edited == []
 
 
 async def test_counter_create_makes_message_and_row(

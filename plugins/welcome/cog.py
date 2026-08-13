@@ -51,6 +51,8 @@ async def on_member_update(event: hikari.MemberUpdateEvent) -> None:
     """Welcome said user when they finish verification."""
     global last_welcomed_id
     bot = cast(CazzuBot, event.app)
+    if not utils.in_guild(bot, event.guild_id):
+        return
     enabled = await bot.settings.get("welcome.enabled", False)
     if not enabled:
         return

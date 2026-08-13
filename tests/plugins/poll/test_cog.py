@@ -8,6 +8,8 @@ submission with a fake modal context.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from cazzubot.bot import CazzuBot
@@ -156,6 +158,27 @@ async def test_poll_vote_blocked_when_closed(
         "❌ Voting on this poll is closed."
     )
     assert interaction.responses[-1][1]["flags"] == 64  # ephemeral
+
+
+async def test_poll_vote_button_ignored_for_other_guild(
+    bot: CazzuBot, author: FakeMember
+) -> None:
+    """A vote-button press in the OTHER guild never opens the modal."""
+    from types import SimpleNamespace
+
+    from plugins.poll.cog import on_interaction
+
+    pid = await _poll_with_items(bot)
+    interaction = FakeComponentInteraction(
+        user=author, custom_id=f"poll:vote:{pid}", guild_id=999
+    )
+
+    await on_interaction(
+        cast(Any, SimpleNamespace(interaction=interaction, app=bot))
+    )
+
+    assert interaction.modals == []
+    assert interaction.responses == []
 
 
 async def test_modal_submit_blocked_when_closed(

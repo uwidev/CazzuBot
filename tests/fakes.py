@@ -833,12 +833,14 @@ class FakeComponentInteraction:
         user: FakeMember | FakeUser,
         message_id: int = 555,
         channel_id: int = 99,
+        guild_id: int = 2,
         custom_id: str = "counter:baka",
     ) -> None:
         self.id = 1
         self.user = user
         self.message = FakeMessage(id=message_id, channel_id=channel_id)
         self.channel_id = channel_id
+        self.guild_id = guild_id
         self.custom_id = custom_id
         self.responses: list[
             tuple[hikari.ResponseType, dict[str, Any]]

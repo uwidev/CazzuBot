@@ -322,8 +322,11 @@ async def on_interaction(event: hikari.InteractionCreateEvent) -> None:
     prefix = "poll:vote:"
     if not interaction.custom_id.startswith(prefix):
         return
+    bot = cast(CazzuBot, event.app)
+    if not utils.in_guild(bot, interaction.guild_id):
+        return
     poll_id = int(interaction.custom_id[len(prefix) :])
-    await _handle_vote(cast(CazzuBot, event.app), interaction, poll_id)
+    await _handle_vote(bot, interaction, poll_id)
 
 
 async def _handle_vote(

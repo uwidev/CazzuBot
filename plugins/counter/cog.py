@@ -110,7 +110,10 @@ async def on_interaction(event: hikari.InteractionCreateEvent) -> None:
         return
     if interaction.custom_id != CUSTOM_ID:
         return
-    await _handle_baka(cast(CazzuBot, event.app), interaction)
+    bot = cast(CazzuBot, event.app)
+    if not utils.in_guild(bot, interaction.guild_id):
+        return
+    await _handle_baka(bot, interaction)
 
 
 async def _handle_baka(bot: CazzuBot, interaction: Any) -> None:
@@ -189,6 +192,10 @@ async def on_counter_expire(
 
     channel = bot.cache.get_guild_channel(cid)
     if channel is None:
+        return
+    if channel.guild_id != bot.config.guild_id:
+        # a row armed while the bot served the other guild — never touch
+        # its message under this guild mode
         return
     try:
         msg = await bot.rest.fetch_message(cid, mid)

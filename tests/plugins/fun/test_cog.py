@@ -66,6 +66,25 @@ async def test_inktober_reacts_to_valid_submission(
     assert rest_of(seeded_bot).reactions == [(channel.id, 1, "👍")]
 
 
+async def test_inktober_ignores_other_guild(
+    seeded_bot: CazzuBot, channel: FakeChannel, author: FakeMember
+) -> None:
+    """A submission in the OTHER guild never gets the inktober reaction."""
+    await seeded_bot.settings.set("inktober.cid", channel.id)
+    message = FakeMessage(
+        id=1,
+        content="Inktober day 3 submission",
+        author=author,
+        guild_id=999,
+        channel_id=channel.id,
+    )
+    message.attachments = [object()]
+    await on_message(
+        cast(Any, FakeMessageCreateEvent(message=message, app=seeded_bot))
+    )
+    assert rest_of(seeded_bot).reactions == []
+
+
 async def test_inktober_ignores_non_submissions(
     seeded_bot: CazzuBot, channel: FakeChannel, author: FakeMember
 ) -> None:

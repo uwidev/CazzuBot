@@ -15,6 +15,7 @@ from typing import Any, cast
 import hikari
 import lightbulb
 
+from cazzubot import utils
 from cazzubot.bot import CazzuBot
 from cazzubot.window import window_error, window_success
 from lightbulb.prefab import checks as prefab_checks
@@ -111,8 +112,10 @@ class Echo(
 async def on_message(event: hikari.MessageCreateEvent) -> None:
     """React to valid inktober submissions in the watching channel."""
     bot = cast(CazzuBot, event.app)
-    watching_cid = await bot.settings.get("inktober.cid")
     message = event.message
+    if not utils.in_guild(bot, message.guild_id):
+        return
+    watching_cid = await bot.settings.get("inktober.cid")
     if message.channel_id != watching_cid:
         return
     if (

@@ -16,6 +16,7 @@ from plugins.frogs import db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.cog import Consume, Profile, Register
 from tests.fakes import (
+    FakeCache,
     FakeChannel,
     FakeContext,
     FakeInteraction,
@@ -182,6 +183,28 @@ async def test_on_frog_due_reschedules_and_despawns(
     assert len(channel.sent) == 1
     assert channel.sent[0]["content"] == factory.FROG_EMOJI
     assert rest_of(seeded_bot).deleted == [(channel.id, 1)]
+
+
+async def test_on_frog_due_skips_other_guild_channel(
+    seeded_bot: CazzuBot, fake_cache: FakeCache
+) -> None:
+    """A spawn armed for the OTHER guild's channel never fires (the dev
+    bot's DB can hold production spawn rows)."""
+    await frog_db.set_enabled(seeded_bot.settings, True)
+    other = FakeChannel(id=777, name="other", guild_id=999)
+    fake_cache.add_channel(other)
+    payload = {
+        "cid": other.id,
+        "interval": 120,
+        "persist": 1,
+        "fuzzy": 0.5,
+    }
+
+    await factory.on_frog_due(seeded_bot, payload)
+
+    # the schedule still re-armed, but nothing spawned into the other guild
+    assert len(await seeded_bot.scheduler.get("frog")) == 1
+    assert other.sent == []
 
 
 async def test_on_frog_due_rolls_from_fire_instant(

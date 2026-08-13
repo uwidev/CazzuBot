@@ -114,6 +114,33 @@ async def test_pending_mode_welcomes_and_adds_role(
     assert rest_of(seeded_bot).added_roles == [(424242, role.id, None)]
 
 
+async def test_other_guild_member_update_ignored(
+    seeded_bot: CazzuBot,
+    fake_guild: FakeGuild,
+    channel: FakeChannel,
+    fake_cache: FakeCache,
+) -> None:
+    """A member-update from the OTHER guild never welcomes (the dev bot
+    is a member of production too — its events must not act on it)."""
+    role = FakeRole(id=300, name="Member")
+    fake_cache.add_role(role)
+    await _configure(seeded_bot, default_rid=role.id)
+    before = _member(fake_guild, 424242, pending=True)
+    after = _member(fake_guild, 424242, pending=False)
+
+    await on_member_update(
+        FakeMemberUpdateEvent(
+            member=after,
+            old_member=before,
+            guild_id=999,
+            app=seeded_bot,
+        )
+    )
+
+    assert channel.sent == []
+    assert rest_of(seeded_bot).added_roles == []
+
+
 async def test_disabled_skips_welcome(
     seeded_bot: CazzuBot,
     fake_guild: FakeGuild,

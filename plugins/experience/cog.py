@@ -57,7 +57,7 @@ async def on_message(event: hikari.MessageCreateEvent) -> None:
     if not event.is_human:
         return
     message = event.message
-    if message.guild_id != bot.config.guild_id:
+    if not utils.in_guild(bot, message.guild_id):
         return
 
     lock = _exp_locks.setdefault(message.author.id, asyncio.Lock())
