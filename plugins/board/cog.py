@@ -174,7 +174,7 @@ class Post(
                 bot.db, start.isoformat(), end.isoformat()
             )
             window.info(
-                f"Stitching {len(rows)} image(s) for week {day}..."
+                f"Stitching {len(rows)} image(s) for week {week_no}..."
             )
             await window.flush()  # ack before downloads + CPU-bound stitch
 
