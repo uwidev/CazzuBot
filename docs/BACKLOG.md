@@ -94,10 +94,12 @@ Sunday: scrape the just-ended week (production = last week via
 `SCRAPE_CHANNEL_DEV`; targets picked by `Config.guild_kind`, the
 `.env`-loaded guild side), register + open a poll ("Week X of just-cirno
 Voting", `max_vote = n // 20 + 1`, items = grid cells — a random sample
-of 50 when a week overflows MAX_IMAGES), send the poll, post the numbered
-grid (9 cols / 768px), then a role-ping "voting has opened" announcement
-(`MESSAGE_OPEN` → `<@&VOTE_ROLE_ID>`, week-number header), all in
-`POST_CHANNEL_*`. A `board.weekly.done` settings claim-guard makes
+of 50 when a week overflows MAX_IMAGES), then sends ONE combined message:
+role-ping "voting has opened" announcement (`MESSAGE_OPEN` →
+`<@&VOTE_ROLE_ID>`) + numbered grid links in the content, the stitched
+grid as the attachment, and the poll embed + vote button as the
+embed/component — all in `POST_CHANNEL_*`. A `board.weekly.done` settings
+claim-guard makes
 retries safe, and `/board weekly` (owner) runs the flow manually
 (`force=True`, bypassing the guard) for testing. The service extraction
 prerequisite was folded in: `logic.scrape_week`/`logic.build_grid` are

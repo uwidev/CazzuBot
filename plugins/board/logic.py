@@ -129,12 +129,16 @@ async def build_grid(
     day: str,
     columns: int = 9,
     cell_size: int = 768,
+    header_prefix: str = "",
 ) -> GridResult:
     """Download the week's images fresh, prune dead rows, stitch a grid.
 
     Rows whose image no longer downloads are deleted (the message was
     deleted — don't call again). When nothing survives the result is
     empty and no stitch happens; the caller decides how to report it.
+    ``header_prefix`` is prepended to the post content's header (e.g. the
+    weekly voting-opened announcement) so the content budget accounts for
+    it in one pass.
     """
     paths: list[Path] = []
     survivors: list[BoardRow] = []
@@ -172,7 +176,9 @@ async def build_grid(
         f"Week {day} — {len(survivors)} image(s) · "
         f"{columns} cols · {cell_size}px"
     )
-    content = build_post_content(header, [row.msg_url for row in survivors])
+    content = build_post_content(
+        header_prefix + header, [row.msg_url for row in survivors]
+    )
     return GridResult(
         content=content, data=data, survivors=survivors, pruned=pruned
     )

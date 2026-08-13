@@ -128,14 +128,18 @@ async def test_run_weekly_full_flow_dev(
     assert len(await poll_db.get_items(bot.db, result.poll_id)) == 3
 
     created = rest_of(bot).created
-    assert [m.channel_id for m in created] == [POST_CHANNEL_DEV] * 3
-    assert created[0].embeds  # the poll message
-    day = utils.week_start(now).format("YYYY-MM-DD")
-    assert created[1].content.startswith(f"Week {day} — 3 image(s)")
-    assert created[2].content == MESSAGE_OPEN.format(
-        role_id=VOTE_ROLE_ID, week_no=week_no
+    assert len(created) == 1  # announcement + grid + poll in one message
+    msg = created[0]
+    assert msg.channel_id == POST_CHANNEL_DEV
+    assert msg.embeds  # the poll embed
+    content = msg.content
+    assert content.startswith(
+        MESSAGE_OPEN.format(role_id=VOTE_ROLE_ID, week_no=week_no)
     )
-    assert poll_row.mid == created[0].id
+    day = utils.week_start(now).format("YYYY-MM-DD")
+    assert f"Week {day} — 3 image(s) · 9 cols · 768px" in content
+    assert f"[1](https://discord.com/channels/2/{SCRAPE_CHANNEL_DEV}/1)" in content
+    assert poll_row.mid == msg.id
     assert poll_row.cid == POST_CHANNEL_DEV
     assert await bot.settings.get(DONE_KEY) == result.week_label
 
@@ -154,7 +158,7 @@ async def test_run_weekly_guard_skips_and_force_reruns(
     assert second.aborted
     assert "already done" in second.reason
     assert await bot.db.fetchval("SELECT COUNT(*) FROM poll") == 1
-    assert len(rest_of(bot).created) == 3
+    assert len(rest_of(bot).created) == 1
 
     forced = await run_weekly(bot, force=True)
     assert not forced.aborted
@@ -193,7 +197,7 @@ async def test_run_weekly_samples_over_max_images(
     assert poll_row is not None
     assert poll_row.max_vote == 3  # 50 // 20 + 1
     assert len(await poll_db.get_items(bot.db, result.poll_id)) == 50
-    assert "50 image(s)" in rest_of(bot).created[1].content
+    assert "50 image(s)" in rest_of(bot).created[0].content
 
 
 async def test_run_weekly_production_last_week_prod_channels(
@@ -214,7 +218,7 @@ async def test_run_weekly_production_last_week_prod_channels(
     assert result.week_label == f"{year}-W{week_no:02}"
     assert [m.channel_id for m in rest_of(bot).created] == [
         POST_CHANNEL_PROD
-    ] * 3
+    ]
     assert result.poll_id is not None
     poll_row = await poll_db.get_poll(bot.db, result.poll_id)
     assert poll_row is not None

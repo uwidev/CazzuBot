@@ -3,8 +3,9 @@
 The ``board_weekly`` scheduler tag fires at ``At(weekday=(6,), time="00:00")``
 (Sunday 00:00 UTC): scrape the just-ended week from the source channel,
 register + open a vote poll (items = grid cells, ``max_vote = n // 20 + 1``),
-send the poll, post the numbered grid, then ping the vote role with a
-"voting has opened" announcement (``MESSAGE_OPEN``). ``/board weekly`` runs
+then send ONE combined message — role-ping "voting has opened" announcement
++ numbered grid links in the content, the stitched grid as the attachment,
+the poll embed + vote button as the embed/component. ``/board weekly`` runs
 the same flow manually (``force=True``, bypassing the done-guard) for
 testing.
 
@@ -91,7 +92,7 @@ async def _download_url(url: str) -> bytes:
 
 async def run_weekly(bot: CazzuBot, *, force: bool = False) -> WeeklyResult:
     """The full weekly flow: targets → guard → scrape → claim → select →
-    poll → send poll → post board → MESSAGE_OPEN.
+    poll → one combined message (announcement + grid + poll embed/button).
 
     Re-arming the scheduler cadence is the scheduler handler's job, not
     this function's. ``force=True`` bypasses the done-guard so weeks can
@@ -166,12 +167,37 @@ async def run_weekly(bot: CazzuBot, *, force: bool = False) -> WeeklyResult:
     await poll_db.add_items_dummy(bot.db, pid, n)
     await poll_db.set_open(bot.db, pid, True)
 
+    # one combined message: the role-ping announcement + grid header/links
+    # in the content, the grid as the attachment, the poll embed + vote
+    # button as the embed/component
+    announcement = MESSAGE_OPEN.format(
+        role_id=VOTE_ROLE_ID, week_no=week_no
+    )
+    try:
+        grid = await build_grid(
+            bot.db,
+            rows,
+            download=_download_url,
+            day=day,
+            columns=GRID_COLUMNS,
+            cell_size=GRID_CELL_SIZE,
+            header_prefix=announcement + "\n",
+        )
+    except UserInputError as err:
+        raise RuntimeError(f"grid stitch failed: {err}") from err
+    if not grid.survivors:
+        raise RuntimeError("all scraped images vanished before posting")
+
     poll_row = await poll_db.get_poll(bot.db, pid)
     if poll_row is None:
         raise RuntimeError(f"poll #{pid} missing right after registration")
     embed, row = build_send_payload(poll_row)
     poll_message = await bot.rest.create_message(
-        post_channel, embed=embed, component=row
+        post_channel,
+        content=grid.content,
+        embed=embed,
+        component=row,
+        attachment=hikari.Bytes(grid.data, f"board-{day}.webp"),
     )
     await poll_db.set_mid(
         bot.db, pid, poll_message.id, post_channel
@@ -186,30 +212,6 @@ async def run_weekly(bot: CazzuBot, *, force: bool = False) -> WeeklyResult:
             "start": start.isoformat(),
             "retry": True,
         },
-    )
-
-    try:
-        grid = await build_grid(
-            bot.db,
-            rows,
-            download=_download_url,
-            day=day,
-            columns=GRID_COLUMNS,
-            cell_size=GRID_CELL_SIZE,
-        )
-    except UserInputError as err:
-        raise RuntimeError(f"grid stitch failed: {err}") from err
-    if not grid.survivors:
-        raise RuntimeError("all scraped images vanished before posting")
-    await bot.rest.create_message(
-        post_channel,
-        content=grid.content,
-        attachment=hikari.Bytes(grid.data, f"board-{day}.webp"),
-    )
-    await bot.rest.create_message(
-        post_channel, content=MESSAGE_OPEN.format(
-            role_id=VOTE_ROLE_ID, week_no=week_no
-        )
     )
 
     _log.info(
