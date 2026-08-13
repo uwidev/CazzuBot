@@ -178,7 +178,7 @@ async def run_weekly(bot: CazzuBot, *, force: bool = False) -> WeeklyResult:
             bot.db,
             rows,
             download=_download_url,
-            day=day,
+            week=week_no,
             columns=GRID_COLUMNS,
             cell_size=GRID_CELL_SIZE,
             header_prefix=announcement + "\n",

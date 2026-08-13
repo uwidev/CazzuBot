@@ -331,7 +331,7 @@ async def test_build_grid_stitches_survivors(bot: CazzuBot) -> None:
         bot.db,
         rows,
         download=_png_download,
-        day="2026-08-09",
+        week=33,
         columns=2,
         cell_size=64,
     )
@@ -339,7 +339,7 @@ async def test_build_grid_stitches_survivors(bot: CazzuBot) -> None:
     assert result.pruned == 0
     assert len(result.survivors) == 3
     assert result.content.startswith(
-        "Week 2026-08-09 — 3 image(s) · 2 cols · 64px"
+        "Week 33 — 3 image(s) · 2 cols · 64px"
     )
     assert "[1](https://discord.com/channels/2/99/10)" in result.content
     assert isinstance(result.data, bytes) and result.data
@@ -373,7 +373,9 @@ async def test_build_grid_prunes_dead_rows(bot: CazzuBot) -> None:
             raise RuntimeError("gone")
         return _png_bytes()
 
-    result = await build_grid(bot.db, rows, download=_download, day="2026-08-09")
+    result = await build_grid(
+        bot.db, rows, download=_download, week=33
+    )
 
     assert result.pruned == 1
     assert len(result.survivors) == 1
@@ -400,7 +402,9 @@ async def test_build_grid_all_dead_returns_empty(bot: CazzuBot) -> None:
     async def _download(_url: str) -> bytes:
         raise RuntimeError("gone")
 
-    result = await build_grid(bot.db, rows, download=_download, day="2026-08-09")
+    result = await build_grid(
+        bot.db, rows, download=_download, week=33
+    )
 
     assert result.survivors == []
     assert result.data == b""

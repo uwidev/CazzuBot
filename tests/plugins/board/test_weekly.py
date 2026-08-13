@@ -136,8 +136,7 @@ async def test_run_weekly_full_flow_dev(
     assert content.startswith(
         MESSAGE_OPEN.format(role_id=VOTE_ROLE_ID, week_no=week_no)
     )
-    day = utils.week_start(now).format("YYYY-MM-DD")
-    assert f"Week {day} — 3 image(s) · 9 cols · 768px" in content
+    assert f"Week {week_no} — 3 image(s) · 9 cols · 768px" in content
     assert f"[1](https://discord.com/channels/2/{SCRAPE_CHANNEL_DEV}/1)" in content
     assert poll_row.mid == msg.id
     assert poll_row.cid == POST_CHANNEL_DEV

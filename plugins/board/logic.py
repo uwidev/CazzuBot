@@ -126,7 +126,7 @@ async def build_grid(
     rows: list[BoardRow],
     *,
     download: Callable[[str], Awaitable[bytes]],
-    day: str,
+    week: int,
     columns: int = 9,
     cell_size: int = 768,
     header_prefix: str = "",
@@ -136,9 +136,9 @@ async def build_grid(
     Rows whose image no longer downloads are deleted (the message was
     deleted — don't call again). When nothing survives the result is
     empty and no stitch happens; the caller decides how to report it.
-    ``header_prefix`` is prepended to the post content's header (e.g. the
-    weekly voting-opened announcement) so the content budget accounts for
-    it in one pass.
+    ``week`` names the header ("Week N — …"); ``header_prefix`` is
+    prepended to it (e.g. the weekly voting-opened announcement) so the
+    content budget accounts for it in one pass.
     """
     paths: list[Path] = []
     survivors: list[BoardRow] = []
@@ -173,7 +173,7 @@ async def build_grid(
     # plain content so the text renders above the attachment; links on
     # their own line, tail-dropped when over the content limit
     header = (
-        f"Week {day} — {len(survivors)} image(s) · "
+        f"Week {week} — {len(survivors)} image(s) · "
         f"{columns} cols · {cell_size}px"
     )
     content = build_post_content(

@@ -315,15 +315,13 @@ async def test_post_uploads_grid_with_links(
     await invoke_command(board_cog.Post(), ctx)
 
     sent = ctx.sent[-1]
-    day = (
-        utils.week_start(now, start="sunday")
-        .subtract(days=7)
-        .format("YYYY-MM-DD")
-    )
+    week_no = utils.week_number(
+        utils.week_start(now, start="sunday").subtract(days=7)
+    )[0]
     assert sent.embed is None  # plain content: text above the attachment
     content = sent.content or ""
     lines = content.splitlines()
-    assert lines[0].startswith(f"Week {day} — ")
+    assert lines[0].startswith(f"Week {week_no} — ")
     assert lines[1].startswith("[1](https://discord.com/channels/2/99/1)")
     assert "3 image(s) · 9 cols · 768px" in content
     assert "[3](https://discord.com/channels/2/99/2)" in content
@@ -426,9 +424,8 @@ async def test_post_week_argument(
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     await invoke_command(board_cog.Post(), ctx, week=current_week)
 
-    day = utils.week_start(now, start="sunday").format("YYYY-MM-DD")
     assert (ctx.sent[-1].content or "").startswith(
-        f"Week {day} — 3 image(s)"
+        f"Week {current_week} — 3 image(s)"
     )
 
 

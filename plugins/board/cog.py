@@ -187,7 +187,7 @@ class Post(
                     bot.db,
                     selected,
                     download=_download_url,
-                    day=day,
+                    week=week_no,
                     columns=self.columns,
                     cell_size=self.cell_size,
                 )
