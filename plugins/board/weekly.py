@@ -27,8 +27,9 @@ from cazzubot.errors import UserInputError
 
 from plugins.board import db as board_db
 from plugins.board.logic import MAX_IMAGES, build_grid, scrape_week
+from plugins.misc.logic import prepare_banner
 from plugins.poll import db as poll_db
-from plugins.poll.cog import build_send_payload
+from plugins.poll.cog import build_send_payload, set_poll_open
 
 _log = logging.getLogger(__name__)
 
@@ -53,6 +54,11 @@ GRID_CELL_SIZE = 768
 
 # settings key recording which week was already run (the claim guard)
 DONE_KEY = "board.weekly.done"
+
+# the Monday-00:00 close task (payload: pid, cid, start, retry)
+CLOSE_TAG = "board_weekly_close"
+WINNER_MSG = "# Week {week_no} of just-cirno voting — winner:\n{msg_url}"
+NO_VOTES_MSG = "# Week {week_no} of just-cirno voting — no votes!"
 
 
 def weekly_targets(guild_kind: str) -> tuple[int, int, bool]:
@@ -167,7 +173,20 @@ async def run_weekly(bot: CazzuBot, *, force: bool = False) -> WeeklyResult:
     poll_message = await bot.rest.create_message(
         post_channel, embed=embed, component=row
     )
-    await poll_db.set_mid(bot.db, pid, poll_message.id)
+    await poll_db.set_mid(
+        bot.db, pid, poll_message.id, post_channel
+    )
+    # auto-close 24h after the open (Monday 00:00 UTC for a Sunday open)
+    await bot.scheduler.add(
+        CLOSE_TAG,
+        now.add(days=1),
+        {
+            "pid": pid,
+            "cid": post_channel,
+            "start": start.isoformat(),
+            "retry": True,
+        },
+    )
 
     try:
         grid = await build_grid(
@@ -197,3 +216,70 @@ async def run_weekly(bot: CazzuBot, *, force: bool = False) -> WeeklyResult:
         "weekly board done: %s, %d image(s), poll #%d", week_label, n, pid
     )
     return WeeklyResult(week_label=week_label, scraped=n, poll_id=pid)
+
+
+async def on_board_weekly_close(
+    bot: CazzuBot, payload: dict[str, object]
+) -> None:
+    """Scheduler handler for ``board_weekly_close`` — close the weekly
+    poll (button removed) and resolve the winner: highest-voted image →
+    guild banner + winner announcement in the poll channel.
+    """
+    pid = int(str(payload["pid"]))
+    cid = int(str(payload["cid"]))
+    start = pendulum.parse(str(payload["start"]))
+    if not isinstance(start, pendulum.DateTime):
+        raise UserInputError("invalid week start in close payload")
+
+    err = await set_poll_open(bot, pid, open=False)
+    if err:
+        _log.warning("board_weekly_close: %s", err)
+    await _announce_winner(bot, pid, cid, start)
+
+
+async def _announce_winner(
+    bot: CazzuBot, pid: int, cid: int, start: pendulum.DateTime
+) -> None:
+    """The highest-voted grid cell → guild banner + winner message.
+
+    Poll items are the grid numbers in row order, so the winning iid maps
+    straight onto the week's board rows. A poll with no votes just gets
+    the no-votes message (no banner change).
+    """
+    week_no = utils.week_number(start)[0]
+    results = await poll_db.get_results(bot.db, pid)
+    if not results:
+        _log.info("board_weekly_close: poll #%d had no votes", pid)
+        await bot.rest.create_message(
+            cid, content=NO_VOTES_MSG.format(week_no=week_no)
+        )
+        return
+
+    rows = await board_db.get_week_images(
+        bot.db, start.isoformat(), start.add(days=7).isoformat()
+    )
+    index = results[0].iid - 1  # ORDER BY count DESC
+    if not 0 <= index < len(rows):
+        _log.warning(
+            "board_weekly_close: winner iid %d out of range (%d rows)",
+            results[0].iid,
+            len(rows),
+        )
+        return
+    winner = rows[index]
+
+    try:
+        data = await _download_url(winner.image_url)
+        banner = prepare_banner(data)
+        await bot.rest.edit_guild(
+            bot.config.guild_id, banner=hikari.Bytes(banner, "banner.jpg")
+        )
+    except Exception:
+        # a failed banner must not lose the winner announcement
+        _log.exception(
+            "board_weekly_close: failed to set guild banner from %s",
+            winner.image_url,
+        )
+    await bot.rest.create_message(
+        cid, content=WINNER_MSG.format(week_no=week_no, msg_url=winner.msg_url)
+    )

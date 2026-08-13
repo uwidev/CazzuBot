@@ -16,7 +16,8 @@ SCHEMA = [
 		description TEXT NOT NULL DEFAULT '',
 		max_vote  INTEGER NOT NULL DEFAULT 1,
 		mid       INTEGER,
-		open      INTEGER NOT NULL DEFAULT 0
+		open      INTEGER NOT NULL DEFAULT 0,
+		cid       INTEGER
 	)
 	""",
     """
@@ -39,7 +40,8 @@ SCHEMA = [
 
 @dataclass(slots=True)
 class Poll:
-    """One ``poll`` row (``mid`` = the message id hosting the vote button)."""
+    """One ``poll`` row (``mid``/``cid`` = the message hosting the vote
+    button; ``cid`` is NULL for polls sent before the cid migration)."""
 
     id: int
     title: str
@@ -47,6 +49,7 @@ class Poll:
     max_vote: int
     mid: int | None
     open: int
+    cid: int | None
 
 
 @dataclass(slots=True)
@@ -85,8 +88,10 @@ async def get_poll(db: Database, pid: int) -> Poll | None:
     )
 
 
-async def set_mid(db: Database, pid: int, mid: int) -> None:
-    await db.execute("UPDATE poll SET mid = ? WHERE id = ?", mid, pid)
+async def set_mid(db: Database, pid: int, mid: int, cid: int) -> None:
+    await db.execute(
+        "UPDATE poll SET mid = ?, cid = ? WHERE id = ?", mid, cid, pid
+    )
 
 
 async def set_open(db: Database, pid: int, val: bool) -> None:

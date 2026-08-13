@@ -19,7 +19,7 @@ from cazzubot.scheduler import At
 from typing_extensions import override
 
 from . import db
-from .weekly import run_weekly
+from .weekly import on_board_weekly_close, run_weekly
 
 _log = logging.getLogger(__name__)
 
@@ -56,7 +56,10 @@ class BoardPlugin(Plugin):
     name = "board"
     schema = db.SCHEMA
     extensions = ["plugins.board.cog"]
-    scheduled = {"board_weekly": on_board_weekly_due}
+    scheduled = {
+        "board_weekly": on_board_weekly_due,
+        "board_weekly_close": on_board_weekly_close,
+    }
     # the weekly flow registers polls and sends the poll message
     depends_on = ("poll",)
 

@@ -61,6 +61,15 @@ async def _register_poll_with_items(
 async def test_poll_vote_modal_flow(full_bot: CazzuBot) -> None:
     pid, mid = await _register_poll_with_items(full_bot)
 
+    opened = await run_slash(
+        full_bot,
+        "poll open",
+        options={"poll_id": pid, "open": True},
+        user_id=1,
+        username="owner",
+    )
+    assert opened.exceptions == []
+
     vote = await press_button(
         full_bot,
         custom_id=f"poll:vote:{pid}",
@@ -98,6 +107,13 @@ async def test_poll_vote_modal_flow(full_bot: CazzuBot) -> None:
 
 async def test_poll_vote_rejects_invalid_items(full_bot: CazzuBot) -> None:
     pid, mid = await _register_poll_with_items(full_bot)
+    await run_slash(
+        full_bot,
+        "poll open",
+        options={"poll_id": pid, "open": True},
+        user_id=1,
+        username="owner",
+    )
     vote = await press_button(
         full_bot,
         custom_id=f"poll:vote:{pid}",

@@ -104,11 +104,19 @@ prerequisite was folded in: `logic.scrape_week`/`logic.build_grid` are
 shared by the commands and the automation, and `poll`'s embed+button
 construction is the shared `build_send_payload`.
 
-Remaining — the winner flow:
+Remaining — none for the weekly pipeline: the close + winner flow is
+implemented too (2026-08-13):
 
-- At poll close, pick the highest-voted image, set it as the guild banner
-  (16:9 prep via `plugins/misc.logic.prepare_banner`), and announce the
-  winner with a link to the original message.
+- Every weekly poll auto-closes 24h after opening (a `board_weekly_close`
+  scheduler row → Monday 00:00 UTC). Closing removes the vote button and
+  the vote flow refuses closed polls; `/poll open`/`/poll close` sync the
+  button on the poll's message. The poll table stores the message's
+  channel (`cid`) for that — migrated by `scripts/migrate_poll_cid.py`
+  (run while the bot is stopped, before booting the new code).
+- At close, the highest-voted image becomes the guild banner (16:9 prep
+  via `plugins/misc.logic.prepare_banner`) and a winner announcement with
+  the original message link is posted in the poll channel; a no-votes
+  week just announces that (no banner change).
 
 ## Document how to add a test for a feature
 

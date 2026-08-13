@@ -17,9 +17,15 @@ from PIL import Image
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
-from plugins.board import CADENCE, BoardPlugin, on_board_weekly_due
+from plugins.board import (
+    CADENCE,
+    BoardPlugin,
+    on_board_weekly_close,
+    on_board_weekly_due,
+)
 from plugins.board import weekly
 from plugins.board.weekly import (
+    CLOSE_TAG,
     DONE_KEY,
     MESSAGE_OPEN,
     POLL_DESC,
@@ -130,6 +136,7 @@ async def test_run_weekly_full_flow_dev(
         role_id=VOTE_ROLE_ID, week_no=week_no
     )
     assert poll_row.mid == created[0].id
+    assert poll_row.cid == POST_CHANNEL_DEV
     assert await bot.settings.get(DONE_KEY) == result.week_label
 
 
@@ -255,3 +262,79 @@ def test_cadence_is_sunday_midnight() -> None:
     assert nxt.day_of_week == pendulum.SUNDAY
     assert (nxt.hour, nxt.minute) == (0, 0)
     assert nxt > now
+
+
+# -- close + winner ----------------------------------------------------------
+
+
+async def test_run_weekly_schedules_monday_close(
+    seeded_bot: CazzuBot, monkeypatch
+) -> None:
+    """The open poll auto-closes 24h later (Monday 00:00 UTC)."""
+    monkeypatch.setattr(weekly, "_download_url", _fake_download_url)
+    bot = seeded_bot
+    now = pendulum.now("UTC")
+    _seed_week(bot, channel_id=SCRAPE_CHANNEL_DEV, week=0, count=2)
+
+    result = await run_weekly(bot)
+
+    rows = await bot.scheduler.get(CLOSE_TAG)
+    assert len(rows) == 1
+    task = rows[0]
+    assert task.payload["pid"] == result.poll_id
+    assert task.payload["cid"] == POST_CHANNEL_DEV
+    assert task.payload["retry"] is True
+    assert pendulum.parse(str(task.payload["start"])) is not None
+    assert task.run_at >= now.add(days=1).start_of("minute").isoformat()
+
+
+async def test_board_weekly_close_resolves_winner(
+    seeded_bot: CazzuBot, monkeypatch
+) -> None:
+    """Close: poll flag off + button removed; winner → guild banner + msg."""
+    monkeypatch.setattr(weekly, "_download_url", _fake_download_url)
+    bot = seeded_bot
+    _seed_week(bot, channel_id=SCRAPE_CHANNEL_DEV, week=0, count=3)
+    result = await run_weekly(bot)
+    assert result.poll_id is not None
+    await poll_db.add_votes(bot.db, result.poll_id, [1, 1, 1], 424242)
+    rows = await bot.scheduler.get(CLOSE_TAG)
+    assert len(rows) == 1
+
+    rest = rest_of(bot)
+    rest.created.clear()
+    await on_board_weekly_close(bot, rows[0].payload)
+
+    poll_row = await poll_db.get_poll(bot.db, result.poll_id)
+    assert poll_row is not None and poll_row.open == 0
+    # the vote button was removed from the poll message
+    assert rest.edited and rest.edited[-1][1]["component"] is None
+    # the winning image became the guild banner
+    assert len(rest.guild_edits) == 1
+    assert "banner" in rest.guild_edits[0][1]
+    # winner announcement in the post channel, linking the original message
+    assert rest.created and rest.created[-1].channel_id == POST_CHANNEL_DEV
+    winner_msg = rest.created[-1].content or ""
+    assert "# Week" in winner_msg
+    assert "https://discord.com/channels/2/" in winner_msg
+
+
+async def test_board_weekly_close_no_votes(
+    seeded_bot: CazzuBot, monkeypatch
+) -> None:
+    """No votes → a no-votes message and no banner change."""
+    monkeypatch.setattr(weekly, "_download_url", _fake_download_url)
+    bot = seeded_bot
+    _seed_week(bot, channel_id=SCRAPE_CHANNEL_DEV, week=0, count=2)
+    result = await run_weekly(bot)
+    assert result.poll_id is not None
+    rows = await bot.scheduler.get(CLOSE_TAG)
+    assert len(rows) == 1
+
+    rest = rest_of(bot)
+    rest.created.clear()
+    await on_board_weekly_close(bot, rows[0].payload)
+
+    assert rest.guild_edits == []  # no winner → no banner change
+    last = rest.created[-1].content or ""
+    assert "no votes" in last

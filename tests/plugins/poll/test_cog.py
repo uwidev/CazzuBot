@@ -13,12 +13,14 @@ import pytest
 from cazzubot.bot import CazzuBot
 from plugins.poll.cog import (
     AutoPopulate,
+    Close,
     Open,
     PollModal,
     Register,
     Send,
     Stats,
     _handle_vote,
+    set_poll_open,
 )
 from plugins.poll.db import (
     add_items_dummy,
@@ -26,6 +28,8 @@ from plugins.poll.db import (
     add_votes,
     get_poll,
     get_results,
+    set_mid,
+    set_open,
 )
 from plugins.poll.logic import parse_votes, validate_votes
 from tests.fakes import (
@@ -35,6 +39,7 @@ from tests.fakes import (
     FakeModalContext,
     first_button_custom_id,
     invoke_command,
+    rest_of,
 )
 
 _UID = 424242
@@ -79,6 +84,7 @@ async def test_modal_submit_records_and_replaces_votes(
     bot: CazzuBot, author: FakeMember
 ) -> None:
     pid = await _poll_with_items(bot)
+    await set_open(bot.db, pid, True)
     poll = await get_poll(bot.db, pid)
     assert poll is not None
     modal = PollModal(bot, poll, [1, 2, 3])
@@ -100,6 +106,7 @@ async def test_modal_submit_rejects_invalid(
     bot: CazzuBot, author: FakeMember
 ) -> None:
     pid = await _poll_with_items(bot)
+    await set_open(bot.db, pid, True)
     poll = await get_poll(bot.db, pid)
     assert poll is not None
     modal = PollModal(bot, poll, [1, 2, 3])
@@ -121,6 +128,7 @@ async def test_poll_vote_opens_modal(
     bot: CazzuBot, author: FakeMember
 ) -> None:
     pid = await _poll_with_items(bot)
+    await set_open(bot.db, pid, True)
     interaction = FakeComponentInteraction(
         user=author, custom_id=f"poll:vote:{pid}"
     )
@@ -130,6 +138,40 @@ async def test_poll_vote_opens_modal(
     assert len(interaction.modals) == 1
     assert interaction.modals[0]["custom_id"] == f"poll:submit:{pid}"
     assert isinstance(interaction.modals[0]["components"], PollModal)
+
+
+async def test_poll_vote_blocked_when_closed(
+    bot: CazzuBot, author: FakeMember
+) -> None:
+    """A closed poll refuses the vote button instead of opening the modal."""
+    pid = await _poll_with_items(bot)  # default open=0
+    interaction = FakeComponentInteraction(
+        user=author, custom_id=f"poll:vote:{pid}"
+    )
+
+    await _handle_vote(bot, interaction, pid)
+
+    assert interaction.modals == []
+    assert interaction.responses[-1][1]["content"] == (
+        "❌ Voting on this poll is closed."
+    )
+    assert interaction.responses[-1][1]["flags"] == 64  # ephemeral
+
+
+async def test_modal_submit_blocked_when_closed(
+    bot: CazzuBot, author: FakeMember
+) -> None:
+    """A poll closed mid-typing refuses the modal submission."""
+    pid = await _poll_with_items(bot)
+    poll = await get_poll(bot.db, pid)
+    assert poll is not None
+    modal = PollModal(bot, poll, [1, 2, 3])
+
+    mctx = FakeModalContext(values={modal.vote_input: "1"}, user=author)
+    await modal.on_submit(mctx)
+
+    assert "closed" in mctx.sent[-1]["content"]
+    assert await get_results(bot.db, pid) == []
 
 
 async def test_poll_vote_missing_poll(
@@ -161,6 +203,7 @@ async def test_poll_send_records_message_id(
     )
     poll = await get_poll(bot.db, pid)
     assert poll is not None and poll.mid == 1  # FakeContext response id
+    assert poll.cid == 99  # the invoking channel
 
     # missing poll -> error
     await invoke_command(Send(), ctx, poll_id=9999)
@@ -191,6 +234,51 @@ async def test_poll_open_toggles(bot: CazzuBot, ctx: FakeContext) -> None:
     poll = await get_poll(bot.db, pid)
     assert poll is not None and poll.open == 0
     assert "closed" in (ctx.sent[-1].content or "")
+
+
+async def test_poll_close_command_sets_flag(
+    bot: CazzuBot, ctx: FakeContext
+) -> None:
+    pid = await _poll_with_items(bot)
+    await set_open(bot.db, pid, True)
+
+    await invoke_command(Close(), ctx, poll_id=pid)
+
+    poll = await get_poll(bot.db, pid)
+    assert poll is not None and poll.open == 0
+    assert "closed" in (ctx.sent[-1].content or "")
+
+    await invoke_command(Close(), ctx, poll_id=9999)
+    assert "does not exist" in (ctx.sent[-1].content or "")
+
+
+async def test_poll_open_close_sync_message_button(
+    seeded_bot: CazzuBot,
+) -> None:
+    """Closing removes the vote button from the message; opening re-adds it."""
+    from tests.fakes import FakeMessage
+
+    pid = await _poll_with_items(seeded_bot)
+    rest = rest_of(seeded_bot)
+    rest.messages[(99, 77)] = FakeMessage(id=77, channel_id=99)
+    await set_mid(seeded_bot.db, pid, 77, 99)
+
+    assert await set_poll_open(seeded_bot, pid, open=False) is None
+    poll = await get_poll(seeded_bot.db, pid)
+    assert poll is not None and poll.open == 0
+    closed_edit = rest.edited[-1]
+    assert closed_edit[0].id == 77
+    assert closed_edit[1]["component"] is None
+
+    assert await set_poll_open(seeded_bot, pid, open=True) is None
+    poll = await get_poll(seeded_bot.db, pid)
+    assert poll is not None and poll.open == 1
+    opened_edit = rest.edited[-1]
+    assert opened_edit[0].id == 77
+    assert (
+        first_button_custom_id(opened_edit[1]["component"])
+        == f"poll:vote:{pid}"
+    )
 
 
 async def test_poll_stats_formats_results(

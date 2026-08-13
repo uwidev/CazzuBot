@@ -60,6 +60,37 @@ def build_send_payload(
     return embed, row
 
 
+async def set_poll_open(
+    bot: CazzuBot, pid: int, *, open: bool
+) -> str | None:
+    """Set the open flag and sync the vote button on the poll's message.
+
+    Closing removes the button (and the vote flow refuses closed polls);
+    opening re-adds it. Returns an error message when the poll doesn't
+    exist. A missing message (deleted or pre-cid migration) only sets the
+    flag — the DB is the source of truth.
+    """
+    poll_row = await db.get_poll(bot.db, pid)
+    if poll_row is None:
+        return f"Poll ID#{pid} does not exist!"
+    await db.set_open(bot.db, pid, open)
+    if poll_row.mid is not None and poll_row.cid is not None:
+        refreshed = await db.get_poll(bot.db, pid)
+        if refreshed is not None:
+            embed, row = build_send_payload(refreshed)
+            try:
+                await bot.rest.edit_message(
+                    poll_row.cid,
+                    poll_row.mid,
+                    embed=embed,
+                    component=row if open else None,
+                )
+            except hikari.NotFoundError:
+                # the poll message is gone — the flag is the source of truth
+                pass
+    return None
+
+
 @poll.register
 class Register(
     lightbulb.SlashCommand,
@@ -147,14 +178,16 @@ class Send(
         # respond() returns lightbulb's initial-response sentinel, not the
         # message id — fetch the real message id for the poll row
         message = await ctx.fetch_response(response_id)
-        await db.set_mid(bot.db, self.poll_id, message.id)
+        await db.set_mid(
+            bot.db, self.poll_id, message.id, ctx.channel_id
+        )
 
 
 @poll.register
 class Open(
     lightbulb.SlashCommand,
     name="open",
-    description="Open or close voting on a poll.",
+    description="Open or close voting on a poll (syncs its vote button).",
     hooks=[_OWNER],
 ):
     poll_id = lightbulb.integer("poll_id", "Poll ID to toggle")
@@ -165,10 +198,35 @@ class Open(
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = _bot(ctx)
-        await db.set_open(bot.db, self.poll_id, self.open)
+        err = await set_poll_open(bot, self.poll_id, open=self.open)
+        if err:
+            await ctx.respond(err, flags=hikari.MessageFlag.EPHEMERAL)
+            return
         await ctx.respond(
             f"Voting on poll ID#{self.poll_id} is now "
             + f"{'**open**' if self.open else '**closed**'}.",
+            flags=hikari.MessageFlag.EPHEMERAL,
+        )
+
+
+@poll.register
+class Close(
+    lightbulb.SlashCommand,
+    name="close",
+    description="Close voting on a poll and remove its vote button.",
+    hooks=[_OWNER],
+):
+    poll_id = lightbulb.integer("poll_id", "Poll ID to close")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        err = await set_poll_open(bot, self.poll_id, open=False)
+        if err:
+            await ctx.respond(err, flags=hikari.MessageFlag.EPHEMERAL)
+            return
+        await ctx.respond(
+            f"Voting on poll ID#{self.poll_id} is now **closed**.",
             flags=hikari.MessageFlag.EPHEMERAL,
         )
 
@@ -236,6 +294,13 @@ async def _handle_vote(
             flags=hikari.MessageFlag.EPHEMERAL,
         )
         return
+    if not poll_row.open:
+        await interaction.create_initial_response(
+            hikari.ResponseType.MESSAGE_CREATE,
+            "❌ Voting on this poll is closed.",
+            flags=hikari.MessageFlag.EPHEMERAL,
+        )
+        return
 
     modal = PollModal(bot, poll_row, items)
     custom_id = f"poll:submit:{poll_id}"
@@ -289,6 +354,14 @@ class PollModal(modals.Modal):
     async def on_submit(self, ctx: modals.ModalContext) -> None:
         raw = ctx.value_for(self.vote_input) or ""
         try:
+            pid = self.poll.id
+            # the poll may have closed while the user was typing
+            poll_row = await db.get_poll(self.bot.db, pid)
+            if poll_row is None or not poll_row.open:
+                await ctx.respond(
+                    "❌ Voting on this poll is closed.", ephemeral=True
+                )
+                return
             votes = parse_votes(raw)
             errors = validate_votes(
                 votes, upper=self.upper, max_vote=self.max_vote
@@ -300,7 +373,6 @@ class PollModal(modals.Modal):
                 )
                 return
 
-            pid = self.poll.id
             uid = ctx.user.id
             await db.drop_user_on_poll(self.bot.db, pid, uid)
             await db.add_votes(self.bot.db, pid, votes, uid)
