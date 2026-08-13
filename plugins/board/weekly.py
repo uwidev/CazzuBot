@@ -41,16 +41,15 @@ POST_CHANNEL_PROD = 327160579624009729
 POST_CHANNEL_DEV = 460208165070307328
 
 # poll copy + the voting-opened announcement (role ping + week header)
-POLL_TITLE = "Week {week_no} of just-cirno Voting"
+POLL_TITLE = "#just-cirno Voting W{week_no}"
 POLL_DESC = "Which image best represents last week?"
 VOTE_ROLE_ID = 325859646512431104
 MESSAGE_OPEN = (
-    "<@&{role_id}>\n"
-    "# Week {week_no} of just-cirno voting has opened!"
+    "<@&{role_id}> Week {week_no} of #just-cirno voting is now open!"
 )
 
 # grid geometry for the weekly board post
-GRID_COLUMNS = 9
+GRID_COLUMNS = 5
 GRID_CELL_SIZE = 768
 
 # settings key recording which week was already run (the claim guard)
