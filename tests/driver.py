@@ -9,7 +9,8 @@ and the response lifecycle — with ``FakeRest`` standing in for Discord's
 interaction-webhook endpoints (see ``tests.fakes.FakeRest``).
 
 What is NOT exercised: the network, Discord's payload validation, rate
-limits, and real gateway/cache events. Those stay in the live sandbox suite.
+limits, and real gateway/cache events. Those stay in the live
+development-guild suite.
 
 Usage::
 

@@ -14,18 +14,36 @@ from cazzubot import Config
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [
-        (["CazzuBot"], (False, False, None)),
-        (["CazzuBot", "-d"], (True, False, None)),
-        (["CazzuBot", "-p"], (False, True, None)),
-        (["CazzuBot", "-s"], (False, False, ("poll", "dev"))),
-        (["CazzuBot", "-s", "frogs"], (False, False, ("frogs",))),
+        (["CazzuBot"], (False, "develop", "develop", None)),
+        (["CazzuBot", "-d"], (True, "develop", "develop", None)),
+        (
+            ["CazzuBot", "-b", "production"],
+            (False, "production", "develop", None),
+        ),
+        (["CazzuBot", "-g", "d"], (False, "develop", "d", None)),
+        (
+            ["CazzuBot", "-b", "p", "-g", "production"],
+            (False, "p", "production", None),
+        ),
+        (
+            ["CazzuBot", "--bot", "develop", "--guild", "production"],
+            (False, "develop", "production", None),
+        ),
+        (
+            ["CazzuBot", "-s"],
+            (False, "develop", "develop", ("poll", "dev")),
+        ),
+        (
+            ["CazzuBot", "-s", "frogs"],
+            (False, "develop", "develop", ("frogs",)),
+        ),
         (
             ["CazzuBot", "-s", "frogs", "poll"],
-            (False, False, ("frogs", "poll")),
+            (False, "develop", "develop", ("frogs", "poll")),
         ),
         (
             ["CazzuBot", "-d", "-s", "frogs"],
-            (True, False, ("frogs",)),
+            (True, "develop", "develop", ("frogs",)),
         ),
     ],
 )
@@ -33,17 +51,18 @@ def test_main_flags_reach_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     argv: list[str],
-    expected: tuple[bool, bool, tuple[str, ...] | None],
+    expected: tuple[bool, str, str, tuple[str, ...] | None],
 ) -> None:
     seen: dict[str, object] = {}
 
     def fake_load(
         *,
         debug: bool = False,
-        production: bool = False,
+        bot: str = "develop",
+        guild: str = "develop",
         sandbox: tuple[str, ...] | None = None,
     ) -> Config:
-        seen["load"] = (debug, production, sandbox)
+        seen["load"] = (debug, bot, guild, sandbox)
         return Config(
             token="MTIzNDU2Nzg5MDEyMzQ1Ng.OTg3NjU0MzIxMDEyMzQ1Ng.dummy",
             owner_id=1,

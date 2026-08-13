@@ -4,7 +4,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 
 ## Project
 
-- Entry point: `main.py` (`-d` debug, `-p` production, `-s [PLUGIN ...]` sandbox = load only the named plugins plus their declared dependencies; bare `-s` = defaults poll/dev). Reads `TOKEN`/`TOKEN_DEV`, `OWNER_ID`, `GUILD_ID`, `DB_PATH` from `.env` (see `.env.example`). Slash commands are guild-scoped (`default_enabled_guilds`).
+- Entry point: `main.py` (`-d` debug, `-b/--bot` + `-g/--guild` side flags (default develop), `-s [PLUGIN ...]` sandbox = load only the named plugins plus their declared dependencies; bare `-s` = defaults poll/dev). Reads `TOKEN`/`TOKEN_DEV`, `OWNER_ID`, `GUILD_ID_PROD`/`GUILD_ID_DEV`, `DB_PATH` from `.env` (see `.env.example`). Slash commands are guild-scoped (`default_enabled_guilds`).
 - `cazzubot/` = core package (bot, config, db, errors, models, settings, scheduler, plugin loader, utils, levels, leaderboard, templates, timeparse, window) + the manifest engine: `cazzubot/manifest/` (shared roles/channels machinery) with the domain engines `cazzubot/roles/*` + `cazzubot/channels/*` and the admin CLI `cazzubot/cli/*`. `plugins/` = one folder per feature, auto-discovered; `board/`/`download/`/`emojis/` = asset dirs (gitignored).
 - Single sqlite file `data/cazzubot.db`, created on first boot — no docker/Postgres. PG→SQLite migration tooling still lives in `scripts/` (migrate_pg_to_sqlite.py, verify_migration.py, boot_check_migrated.py; see docs/MIGRATION.md) and may run again.
 - Design docs: `docs/ARCHITECTURE.md`, `docs/PLUGINS.md`, `docs/TESTING.md`. **Read PLUGINS.md before adding a feature.** README.md is stale (pre-hikari) — don't trust it.
@@ -12,8 +12,8 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 ## Commands
 
 - Install: `uv sync`
-- Run: `uv run python main.py -d` (dev) / `-p` (prod) / `-s [PLUGIN ...]` (sandbox; bare `-s` = poll+dev)
-- Admin CLI: `uv run cazzubot-cli <domain> <verb>` — domains `roles`/`channels` (export/diff/check/apply/restore), `snapshot` (fetch), `manifest` (offline render/lint). `--production` uses the prod token; target the sandbox with `GUILD_ID=408801760581386245`. Default `--file`/backup paths point at the production manifests — always use a temp `--file` during sandbox tests.
+- Run: `uv run python main.py -d` (default develop bot+guild) / `-b production -g production` (prod bot + prod guild) / `-s [PLUGIN ...]` (sandbox; bare `-s` = poll+dev)
+- Admin CLI: `uv run cazzubot-cli <domain> <verb>` — domains `roles`/`channels` (export/diff/check/apply/restore), `snapshot` (fetch), `manifest` (offline render/lint). `--bot production --guild production` targets the production bot + production guild; no flags = development bot + development guild (default). Default `--file`/backup paths point at the production manifests — always use a temp `--file` during development-guild tests.
 - Lint: `uv run ruff check .` — Format: `uv run ruff format .` — Types: `uv run basedpyright`
 - Tests: `uv run pytest` (308 offline tests). Per-feature tests in `tests/`, booted-bot fixtures in `tests/conftest.py`, typed hikari fakes in `tests/fakes.py`. Interaction flows (buttons/modals/slash pipeline) run end-to-end offline via `tests/driver.py` (`run_slash`/`press_button`/`submit_modal` through the real lightbulb routing; `full_bot` fixture boots every plugin). Verify interactive changes there, not just with direct handler calls. See `docs/TESTING.md` for the layered picture and what still needs live verification.
 
@@ -66,8 +66,9 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
   no role/channel/emoji changes, no `roles apply`, unless the user
   explicitly authorizes it (per-turn, per-operation). Read-only commands
   (`roles diff`/`check`, `snapshot fetch`) are fine.
-- **Sandbox guild `408801760581386245` is free to mutate** for CLI/testing
-  validation. Use the dev token (`TOKEN_DEV`, the CLI default) and target
-  the sandbox with `GUILD_ID=408801760581386245 uv run cazzubot-cli …`.
-  Always point `--file` at a temp manifest during sandbox tests so the
-  production `roles.manifest` and `data/roles_export.json` aren't clobbered.
+- **Development guild `408801760581386245` is free to mutate** for
+  CLI/testing validation. The CLI defaults to the development bot + guild
+  (no flags needed): `uv run cazzubot-cli …`.
+  Always point `--file` at a temp manifest during development-guild tests
+  so the production `roles.manifest` and `data/roles_export.json` aren't
+  clobbered.

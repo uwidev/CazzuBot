@@ -45,9 +45,16 @@ def build_parser() -> argparse.ArgumentParser:
     for name, domain in DOMAINS.items():
         common = argparse.ArgumentParser(add_help=False)
         common.add_argument(
-            "--production",
-            action="store_true",
-            help="use the production token instead of TOKEN_DEV",
+            "--bot",
+            default="develop",
+            choices=("production", "p", "develop", "d"),
+            help="which bot to run: production (TOKEN) or develop (TOKEN_DEV)",
+        )
+        common.add_argument(
+            "--guild",
+            default="develop",
+            choices=("production", "p", "develop", "d"),
+            help="which guild to target: production or development",
         )
         for add_group in domain.common_args:
             add_group(common)

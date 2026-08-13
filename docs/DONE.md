@@ -471,3 +471,27 @@ Design:
   `poll send`, Sunday 00:00 UTC.
 - Overlaps with `cazzubot/scheduler.py` (tags, payloads, retry, re-arm on
   boot) — potential refactor there as well.
+
+## One switch for prod vs sandbox guild
+
+Today `GUILD_ID` in `.env` is hand-edited to point the bot at production
+(`293796316193095690`) or the sandbox dev guild (`408801760581386245`).
+Want a trivial, unified way to pick the guild — e.g. a `GUILD=prod|sandbox`
+(dev) selector in `.env` mapping to the two known ids, or having `-p`
+imply the production guild (with the default dev run implying the sandbox
+guild) — that both the bot (`main.py`) and the
+CLI (`cazzubot-cli`, which already honors a shell `GUILD_ID=…` override)
+share. Keep `GUILD_ID` working as the escape hatch for any other guild.
+
+> **Done** — `--bot`/`--guild` side flags replace `-p/--production` in both
+> `main.py` and `cazzubot-cli`. Each accepts `production|p|develop|d`
+> (default `develop`): `--bot` picks the token (`TOKEN` vs `TOKEN_DEV`),
+> `--guild` picks the guild. The guild ids moved out of the repo into
+> `.env` as `GUILD_ID_PROD`/`GUILD_ID_DEV` (gitignored; required when that
+> side is selected) — `GUILD_ID` env is no longer read, and there is no
+> hardcoded-id escape hatch. `Config.load(bot=…, guild=…)` stores the
+> chosen side as `Config.guild_kind` (the canonical "which guild am I on"
+> reference). Terminology: the second guild is now the **development**
+> guild; "sandbox" means only the `-s` plugin-allowlist mode. `scripts/
+> probe_channels.py` follows the new flags; the legacy PG migration
+> scripts still read `GUILD_ID` env directly (follow-up).

@@ -49,7 +49,7 @@ class Domain:
     ``common_args`` holds flag-group callables applied to a shared parent
     parser that every verb inherits via argparse ``parents=`` — the way to
     give a whole domain a flag (e.g. ``--file``) without repeating it per
-    verb. The framework itself only adds ``--production``.
+    verb. The framework itself only adds ``--bot``/``--guild``.
     """
 
     name: str
@@ -68,7 +68,7 @@ async def with_client(
     offline. hikari's REST client needs an explicit ``"Bot"`` token type
     (its acquire default is BEARER).
     """
-    config = Config.load(production=args.production)
+    config = Config.load(bot=args.bot, guild=args.guild)
     app = hikari.RESTApp()
     await app.start()
     try:

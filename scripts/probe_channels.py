@@ -1,6 +1,7 @@
 """Read-only probe: print guild channel tree + bot permissions.
 
-Usage: uv run python scripts/probe_channels.py [--production] [--guild ID]
+Usage: uv run python scripts/probe_channels.py [--bot SIDE] [--guild SIDE]
+       [--guild-id ID]
 """
 
 from __future__ import annotations
@@ -10,26 +11,44 @@ import asyncio
 
 import hikari
 
-from cazzubot.config import Config
+from cazzubot.config import Config, parse_side
+
+_SIDES = ("production", "p", "develop", "d")
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--production", action="store_true")
-    parser.add_argument("--guild", type=int, default=None)
+    parser.add_argument(
+        "--bot",
+        default="develop",
+        choices=_SIDES,
+        help="which bot to run: production (TOKEN) or develop (TOKEN_DEV)",
+    )
+    parser.add_argument(
+        "--guild",
+        default="develop",
+        choices=_SIDES,
+        help="which guild to probe: production or development",
+    )
+    parser.add_argument(
+        "--guild-id", type=int, default=None, help="override the guild id"
+    )
     args = parser.parse_args()
 
-    config = Config.load(production=args.production)
+    config = Config.load(bot=args.bot, guild=args.guild)
+    bot_side = parse_side(args.bot)
     app = hikari.RESTApp()
     await app.start()
     try:
         async with app.acquire(config.token, "Bot") as client:
-            guild_id = args.guild or config.guild_id
+            guild_id = args.guild_id or config.guild_id
             try:
                 guild = await client.fetch_guild(guild_id)
             except hikari.NotFoundError:
+                token_label = "PROD" if bot_side == "production" else "DEV"
                 print(
-                    f"error: guild {guild_id} not found (token {'PROD' if args.production else 'DEV'})"
+                    "error: guild "
+                    + f"{guild_id} not found (token {token_label})"
                 )
                 return
             me = await client.fetch_my_user()
@@ -46,9 +65,10 @@ async def main() -> None:
                 if rid in roles:
                     perms |= roles[rid].permissions
             print(
-                f"guild perms: manage_channels={bool(perms & hikari.Permissions.MANAGE_CHANNELS)} "
-                f"manage_roles={bool(perms & hikari.Permissions.MANAGE_ROLES)} "
-                f"manage_guild={bool(perms & hikari.Permissions.MANAGE_GUILD)}"
+                "guild perms: "
+                + f"manage_channels={bool(perms & hikari.Permissions.MANAGE_CHANNELS)} "
+                + f"manage_roles={bool(perms & hikari.Permissions.MANAGE_ROLES)} "
+                + f"manage_guild={bool(perms & hikari.Permissions.MANAGE_GUILD)}"
             )
             channels = await client.fetch_guild_channels(guild_id)
             cats = [

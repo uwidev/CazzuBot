@@ -13,7 +13,7 @@ and determinism against fidelity:
 |---|---|---|---|
 | 1. Unit tests | Pure logic + plugins with typed fakes | The logic is correct | milliseconds |
 | 2. Offline interaction driver | Real bot, real lightbulb routing, fake REST | The feature works when a user touches it | seconds |
-| 3. Manual / live | Real bot, real Discord (sandbox guild) | Discord accepts it, real timing/events hold | minutes, human |
+| 3. Manual / live | Real bot, real Discord (development guild) | Discord accepts it, real timing/events hold | minutes, human |
 
 Rule of thumb: a change belongs in the highest layer that can express it.
 Only what layer 2 cannot express falls through to layer 3.
@@ -152,9 +152,10 @@ test_driver_harness.py`).
 
 ## Layer 3 — manual / live verification
 
-Location: `docs/MANUAL_TEST.md` (the checklist) against the **sandbox
+Location: `docs/MANUAL_TEST.md` (the checklist) against the **development
 guild** (`CazzuBot Dev`). **The production guild is never mutated** — the
-sandbox is the only place mutating tests run, always with the dev token.
+development guild is the only place mutating tests run, always with the
+dev token.
 
 The manual checklist is the fallback for everything the offline harness
 cannot express, in these general categories:
@@ -198,7 +199,7 @@ cannot express, in these general categories:
 | Rate limits, real timing | **No** | manual/live |
 | Two-real-user races | **No** | manual/live (two accounts) |
 | Real event fidelity | **No** | manual/live |
-| CLI live verbs against real Discord | **No** | manual/live (sandbox, temp manifests) |
+| CLI live verbs against real Discord | **No** | manual/live (development guild, temp manifests) |
 | Production guild behavior | **No** | never automated; per-turn permission |
 
 ## Workflow
@@ -210,15 +211,16 @@ cannot express, in these general categories:
    (line-length 75, double quotes); basedpyright in the editor.
 3. **Interactive changes** → before merging, either the driver test proves
    the flow end-to-end, or the scenario is added to `docs/MANUAL_TEST.md`
-   for a live pass against the sandbox guild.
+   for a live pass against the development guild.
 4. **Live pass** → work through the checklist items the change touches;
    paste failures raw under the item. CLI verbs always use temp
    `--file` paths so production manifests are never clobbered.
 
 ## Future: automating layer 3
 
-The remaining manual surface could be reduced with a sandbox **user bot**
-(a separate Discord account driven programmatically) that performs real
+The remaining manual surface could be reduced with a development-guild
+**user bot** (a separate Discord account driven programmatically) that
+performs real
 clicks, real slash invocations, and two-account races — covering payload
 validation and event fidelity hands-free. It cannot cover gateway
 reconnect behavior (needs network fault injection), rate-limit stress

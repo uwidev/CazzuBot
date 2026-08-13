@@ -1,11 +1,12 @@
 #!/bin/env python
 """Run the bot.
 
-Usage: CazzuBot [-h] [-d] [-p] [-s [PLUGIN ...]]
+Usage: CazzuBot [-h] [-d] [-b SIDE] [-g SIDE] [-s [PLUGIN ...]]
 
 Options:
   -d, --debug       Run in debug mode; only owner/debug users may run commands
-  -p, --production  Run with the production token
+  -b, --bot         Which bot to run: production (TOKEN) or develop (TOKEN_DEV)
+  -g, --guild       Which guild to serve: production or development
   -s, --sandbox     Load only the named plugins (plus their declared
                     dependencies); bare -s loads the defaults (poll, dev)
 """
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing_extensions import override
 
 from cazzubot import CazzuBot, Config
-from cazzubot.config import SANDBOX_DEFAULT_PLUGINS
+from cazzubot.config import SANDBOX_DEFAULT_PLUGINS, parse_side
 
 _log = logging.getLogger(__name__)
 
@@ -45,7 +46,22 @@ class _ColourFormatter(logging.Formatter):
 def main() -> None:
     parser = argparse.ArgumentParser(prog="CazzuBot")
     parser.add_argument("-d", "--debug", action="store_true")
-    parser.add_argument("-p", "--production", action="store_true")
+    parser.add_argument(
+        "-b",
+        "--bot",
+        default="develop",
+        choices=("production", "p", "develop", "d"),
+        help=(
+            "which bot to run: production (TOKEN) or develop (TOKEN_DEV)"
+        ),
+    )
+    parser.add_argument(
+        "-g",
+        "--guild",
+        default="develop",
+        choices=("production", "p", "develop", "d"),
+        help="which guild to serve: production or development",
+    )
     parser.add_argument(
         "-s",
         "--sandbox",
@@ -67,18 +83,23 @@ def main() -> None:
     )
     config = Config.load(
         debug=args.debug,
-        production=args.production,
+        bot=args.bot,
+        guild=args.guild,
         sandbox=sandbox,
     )
 
     setup_logging("log", debug=config.debug)
 
     _log.info(
-        "running in %s mode",
-        "SANDBOX"
-        if config.sandbox
-        else ("PRODUCTION" if args.production else "DEVELOP"),
+        "running bot=%s guild=%s",
+        parse_side(args.bot),
+        config.guild_kind,
     )
+    if config.sandbox:
+        _log.info(
+            "sandbox mode — loading only the selected plugins: %s",
+            ", ".join(config.sandbox_plugins or ()),
+        )
     _log.info("guild_id=%s", config.guild_id)
 
     bot = CazzuBot(config)

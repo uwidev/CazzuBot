@@ -37,8 +37,8 @@ whatever below the test item — raw, no template.
 ## Test environment
 
 - **Never** mutate the production guild `293796316193095690` (Club Cirno).
-- All mutating tests run against the **sandbox guild `408801760581386245`**
-  (`CazzuBot Dev`) with the dev token.
+- All mutating tests run against the **development guild
+  `408801760581386245`** (`CazzuBot Dev`) with the dev token.
 - CLI tests: point `--file` at a temp manifest so the production
   `roles.manifest` / `channels.manifest` and `data/roles_export.json` are
   never clobbered.
@@ -50,7 +50,7 @@ whatever below the test item — raw, no template.
 
 1. `uv sync` on the `rewrite-hikari` branch.
 2. Boot the bot: `uv run python main.py -d`.
-3. Confirm the slash tree registered in the sandbox guild (B1).
+3. Confirm the slash tree registered in the development guild (B1).
 
 ---
 
@@ -69,7 +69,7 @@ whatever below the test item — raw, no template.
 - [x] A4. Schema drift: add a junk column to a table, reboot → clean refusal
       with the mismatch report, exit 1 (then revert the drift).
 
-- [x] A5. Mutate a sandbox role/channel, reboot → roles/channels drift
+- [x] A5. Mutate a development-guild role/channel, reboot → roles/channels drift
       warning appears **after the guild dump lands** (new
       `GuildAvailable`-gated logic — timing-sensitive).
 
@@ -114,7 +114,7 @@ whatever below the test item — raw, no template.
       confirm `exp card` progress; cross a level threshold → level-up
       message with template, **rank role granted, rank-up message sent**.
 
-- [x] C2. `exp quiet add/list/del` on a sandbox channel → level-ups
+- [x] C2. `exp quiet add/list/del` on a development-guild channel → level-ups
       suppressed there only.
 
 - [!] C3. `exp top` paging (next/prev buttons), 30 s timeout → buttons
@@ -262,7 +262,7 @@ Backlog all of mod. This isn't core nor is it finalized right now and is "in pro
 
 ## G. welcome
 
-- [x] G1. PENDING mode: sandbox member completes onboarding → welcome fires;
+- [x] G1. PENDING mode: development-guild member completes onboarding → welcome fires;
       double-welcome race guard holds.
 
 - [x] G2. ROLE mode: member gains the monitored role (with several roles at
@@ -324,7 +324,7 @@ Backlog all of mod. This isn't core nor is it finalized right now and is "in pro
 
 ## M. CLI tooling (roles / channels / snapshot / manifest)
 
-Sandbox only; always temp `--file` paths.
+Development guild only; always temp `--file` paths.
 
 - [ ] M1. `snapshot fetch` → `data/roles_export.json`; `manifest lint` +
       `render` round-trip.
