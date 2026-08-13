@@ -95,7 +95,8 @@ Sunday: scrape the just-ended week (production = last week via
 `.env`-loaded guild side), register + open a poll ("Week X of just-cirno
 Voting", `max_vote = n // 20 + 1`, items = grid cells — a random sample
 of 50 when a week overflows MAX_IMAGES), send the poll, post the numbered
-grid (9 cols / 768px), then the `MESSAGE_OPEN` placeholder, all in
+grid (9 cols / 768px), then a role-ping "voting has opened" announcement
+(`MESSAGE_OPEN` → `<@&VOTE_ROLE_ID>`, week-number header), all in
 `POST_CHANNEL_*`. A `board.weekly.done` settings claim-guard makes
 retries safe, and `/board weekly` (owner) runs the flow manually
 (`force=True`, bypassing the guard) for testing. The service extraction
@@ -107,8 +108,7 @@ Remaining — the winner flow:
 
 - At poll close, pick the highest-voted image, set it as the guild banner
   (16:9 prep via `plugins/misc.logic.prepare_banner`), and announce the
-  winner with a link to the original message — `MESSAGE_OPEN` is its
-  placeholder.
+  winner with a link to the original message.
 
 ## Document how to add a test for a feature
 

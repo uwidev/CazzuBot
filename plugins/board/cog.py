@@ -83,18 +83,14 @@ class Scrape(
         else:
             start = utils.week_start_of(now.year, self.week)
         end = start.add(days=7)
-        day = start.format("YYYY-MM-DD")
-        week_year, week_no = start.isocalendar()[0], start.isocalendar()[1]
+        week_no = start.isocalendar()[1]
         cid = (
             self.channel.id if self.channel is not None else ctx.channel_id
         )
         guild_id = bot.config.guild_id
 
         async with command_window(ctx) as window:
-            window.info(
-                f"Scraping <#{cid}> for {week_year}-W{week_no:02} "
-                f"({day})..."
-            )
+            window.info(f"Scraping <#{cid}> for week {week_no}...")
             await window.flush()  # ack before the long history walk
 
             result = await scrape_week(
@@ -119,7 +115,7 @@ class Scrape(
             window.success(
                 "Scraped "
                 f"{result.scraped} new image(s) from <#{cid}> for "
-                f"{week_year}-W{week_no:02} ({day})."
+                f"week {week_no}."
             )
 
 

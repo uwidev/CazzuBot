@@ -28,6 +28,7 @@ from plugins.board.weekly import (
     POST_CHANNEL_PROD,
     SCRAPE_CHANNEL_DEV,
     SCRAPE_CHANNEL_PROD,
+    VOTE_ROLE_ID,
     run_weekly,
     weekly_targets,
 )
@@ -125,7 +126,9 @@ async def test_run_weekly_full_flow_dev(
     assert created[0].embeds  # the poll message
     day = utils.week_start(now).format("YYYY-MM-DD")
     assert created[1].content.startswith(f"Week {day} — 3 image(s)")
-    assert created[2].content == MESSAGE_OPEN
+    assert created[2].content == MESSAGE_OPEN.format(
+        role_id=VOTE_ROLE_ID, week_no=week_no
+    )
     assert poll_row.mid == created[0].id
     assert await bot.settings.get(DONE_KEY) == result.week_label
 

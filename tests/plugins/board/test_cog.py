@@ -277,7 +277,7 @@ async def test_scrape_week_argument_targets_that_week(
     )
     assert len(rows) == 3
     flushed = ctx.sent[-1].content or ""
-    assert f"for {now.year}-W{current_week:02} (" in flushed
+    assert f"for week {current_week}" in flushed
 
 
 async def test_scrape_invalid_week_rejected(
@@ -519,7 +519,11 @@ async def test_board_weekly_command_runs_flow_via_driver(
     """/board weekly runs the full flow through the real command pipeline
     (owner hook + window reporting + rest sends to the dev channels)."""
     from plugins.board import weekly as board_weekly
-    from plugins.board.weekly import POST_CHANNEL_DEV, SCRAPE_CHANNEL_DEV
+    from plugins.board.weekly import (
+        POST_CHANNEL_DEV,
+        SCRAPE_CHANNEL_DEV,
+        VOTE_ROLE_ID,
+    )
     from plugins.poll import db as poll_db
     from tests.driver import run_slash
 
@@ -551,6 +555,7 @@ async def test_board_weekly_command_runs_flow_via_driver(
     created = rest.created
     assert [m.channel_id for m in created] == [POST_CHANNEL_DEV] * 3
     assert created[0].embeds  # the poll message
-    assert created[2].content == "foobar"
+    assert f"<@&{VOTE_ROLE_ID}>\n# Week" in created[2].content
+    assert "has opened!" in created[2].content
     poll_count = await full_bot.db.fetchval("SELECT COUNT(*) FROM poll")
     assert poll_count == 1

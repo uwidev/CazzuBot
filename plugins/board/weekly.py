@@ -3,9 +3,10 @@
 The ``board_weekly`` scheduler tag fires at ``At(weekday=(6,), time="00:00")``
 (Sunday 00:00 UTC): scrape the just-ended week from the source channel,
 register + open a vote poll (items = grid cells, ``max_vote = n // 20 + 1``),
-send the poll, post the numbered grid, then send ``MESSAGE_OPEN`` (the
-winner-flow placeholder). ``/board weekly`` runs the same flow manually
-(``force=True``, bypassing the done-guard) for testing.
+send the poll, post the numbered grid, then ping the vote role with a
+"voting has opened" announcement (``MESSAGE_OPEN``). ``/board weekly`` runs
+the same flow manually (``force=True``, bypassing the done-guard) for
+testing.
 
 Targets are selected by ``bot.config.guild_kind`` (loaded from
 ``GUILD_ID_PROD``/``GUILD_ID_DEV`` in ``.env``): production scrapes the
@@ -37,10 +38,14 @@ SCRAPE_CHANNEL_DEV = 584858037605498891
 POST_CHANNEL_PROD = 327160579624009729
 POST_CHANNEL_DEV = 460208165070307328
 
-# poll copy + the placeholder message (winner flow is still backlogged)
+# poll copy + the voting-opened announcement (role ping + week header)
 POLL_TITLE = "Week {week_no} of just-cirno Voting"
 POLL_DESC = "Which image best represents last week?"
-MESSAGE_OPEN = "foobar"
+VOTE_ROLE_ID = 325859646512431104
+MESSAGE_OPEN = (
+    "<@&{role_id}>\n"
+    "# Week {week_no} of just-cirno voting has opened!"
+)
 
 # grid geometry for the weekly board post
 GRID_COLUMNS = 9
@@ -182,7 +187,11 @@ async def run_weekly(bot: CazzuBot, *, force: bool = False) -> WeeklyResult:
         content=grid.content,
         attachment=hikari.Bytes(grid.data, f"board-{day}.webp"),
     )
-    await bot.rest.create_message(post_channel, content=MESSAGE_OPEN)
+    await bot.rest.create_message(
+        post_channel, content=MESSAGE_OPEN.format(
+            role_id=VOTE_ROLE_ID, week_no=week_no
+        )
+    )
 
     _log.info(
         "weekly board done: %s, %d image(s), poll #%d", week_label, n, pid
