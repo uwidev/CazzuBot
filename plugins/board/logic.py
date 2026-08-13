@@ -172,10 +172,7 @@ async def build_grid(
 
     # plain content so the text renders above the attachment; links on
     # their own line, tail-dropped when over the content limit
-    header = (
-        f"Week {week} — {len(survivors)} image(s) · "
-        f"{columns} cols · {cell_size}px"
-    )
+    header = f"Week {week} — {len(survivors)} image(s)"
     content = build_post_content(
         header_prefix + header, [row.msg_url for row in survivors]
     )

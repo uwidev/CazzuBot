@@ -338,9 +338,7 @@ async def test_build_grid_stitches_survivors(bot: CazzuBot) -> None:
 
     assert result.pruned == 0
     assert len(result.survivors) == 3
-    assert result.content.startswith(
-        "Week 33 — 3 image(s) · 2 cols · 64px"
-    )
+    assert result.content.startswith("Week 33 — 3 image(s)")
     assert "[1](https://discord.com/channels/2/99/10)" in result.content
     assert isinstance(result.data, bytes) and result.data
     # 3 images in 2 columns → 2 rows; label area 96px, 8px borders

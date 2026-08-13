@@ -323,7 +323,8 @@ async def test_post_uploads_grid_with_links(
     lines = content.splitlines()
     assert lines[0].startswith(f"Week {week_no} — ")
     assert lines[1].startswith("[1](https://discord.com/channels/2/99/1)")
-    assert "3 image(s) · 9 cols · 768px" in content
+    assert "3 image(s)" in content
+    assert "cols" not in content and "px" not in content
     assert "[3](https://discord.com/channels/2/99/2)" in content
     assert isinstance(sent.attachment, hikari.Bytes)
 
@@ -350,8 +351,7 @@ async def test_post_custom_grid_args(
     await invoke_command(board_cog.Post(), ctx, columns=2, cell_size=100)
 
     sent = ctx.sent[-1]
-    assert "2 cols · 100px" in (sent.content or "")
-    # 3 images in 2 columns → 2 rows; label area 96px, 8px borders
+    # geometry flows through to the stitched grid (header shows no dims)
     data = sent.attachment.data
     assert isinstance(data, bytes)
     with Image.open(io.BytesIO(data)) as image:
