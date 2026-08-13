@@ -10,7 +10,7 @@ import pytest
 from cazzubot import templates, utils
 from cazzubot.errors import UserInputError
 from plugins.levels.logic import formatter
-from tests.fakes import FakeMember
+from tests.fakes import FakeChannel, FakeMember
 
 
 def test_verify_accepts_valid_template_with_formatter() -> None:
@@ -85,3 +85,51 @@ def test_prepare_keeps_color_only_embed() -> None:
     content, embed, embeds = templates.prepare({"embed": {"color": 12345}})
     assert embed == {"color": 12345}
     assert embeds == []
+
+
+# -- send: mention parsing (the "Unknown User" welcome fix) ----------------
+
+
+async def test_send_default_parses_users_and_roles() -> None:
+    """Absent ``allowed_mentions`` → users + roles parsed, no @everyone."""
+    channel = FakeChannel(id=1)
+    await templates.send(channel, {"content": "hi {mention}"})
+    sent = channel.sent[-1]
+    assert sent["user_mentions"] is True
+    assert sent["role_mentions"] is True
+    assert "mentions_everyone" not in sent
+
+
+async def test_send_allowed_mentions_true_adds_everyone() -> None:
+    channel = FakeChannel(id=1)
+    await templates.send(
+        channel, {"content": "hi", "allowed_mentions": True}
+    )
+    sent = channel.sent[-1]
+    assert sent["user_mentions"] is True
+    assert sent["role_mentions"] is True
+    assert sent["mentions_everyone"] is True
+
+
+async def test_send_allowed_mentions_false_parses_nothing() -> None:
+    channel = FakeChannel(id=1)
+    await templates.send(
+        channel, {"content": "hi", "allowed_mentions": False}
+    )
+    sent = channel.sent[-1]
+    assert "user_mentions" not in sent
+    assert "role_mentions" not in sent
+    assert "mentions_everyone" not in sent
+
+
+async def test_send_caller_mention_kwargs_win() -> None:
+    channel = FakeChannel(id=1)
+    await templates.send(
+        channel,
+        {"content": "hi", "allowed_mentions": True},
+        user_mentions=False,
+    )
+    sent = channel.sent[-1]
+    assert sent["user_mentions"] is False
+    assert sent["role_mentions"] is True
+    assert sent["mentions_everyone"] is True

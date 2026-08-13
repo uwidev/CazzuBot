@@ -33,7 +33,7 @@ def _has_cid(conn: sqlite3.Connection) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--db", default="data/cazzubot.db", help="sqlite database file"
+        "--db", default="data/cazzubot-prod.db", help="sqlite database file"
     )
     parser.add_argument(
         "--backup-dir",

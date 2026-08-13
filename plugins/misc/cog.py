@@ -39,7 +39,11 @@ async def _download(attachment: hikari.Attachment) -> bytes:
     return await hikari.files.URL(str(attachment.url)).read()
 
 
-misc = lightbulb.Group("misc", "Misc server utilities.")
+misc = lightbulb.Group(
+    "misc",
+    "Misc server utilities.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+)
 
 
 @misc.register

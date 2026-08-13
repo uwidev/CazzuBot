@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, cast
 
+import hikari
 import pendulum
 import pytest
 
@@ -141,22 +142,32 @@ async def test_frog_consume_rejects_zero(
 
 
 async def test_frog_catch_captures_once(
-    bot: CazzuBot, author: FakeMember
+    seeded_bot: CazzuBot, author: FakeMember
 ) -> None:
-    await frog_db.set_message(bot.settings, {"content": "caught {name}"})
-    menu = factory.FrogCatchMenu(bot, 99)
-    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
+    await frog_db.set_message(
+        seeded_bot.settings, {"content": "caught {name}"}
+    )
+    menu = factory.FrogCatchMenu(seeded_bot, 99)
+    interaction = FakeInteraction(id=1, member=author, channel_id=99)
+    mctx = FakeMenuContext(interaction)
 
     await menu_button(menu).callback(mctx)
 
     assert menu.captured is True
-    assert mctx.deferred is False  # no "app is thinking" defer
     assert mctx.stopped is True
-    assert await frog_db.get_frogs(bot.db, _UID) == 1
-    assert mctx.sent[0].content == "caught cirno"
-    # the first response is the sentinel — the real message id is fetched
-    # so the 7s auto-delete targets the actual capture message
-    assert mctx.fetched == [utils.INITIAL_RESPONSE_IDENTIFIER]
+    # the click is acked silently (DEFERRED_MESSAGE_UPDATE — no response
+    # message, no "thinking" bubble); the capture is a standalone channel
+    # message, not an interaction response (no reply styling)
+    assert (
+        interaction.initial_response_type
+        == hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+    assert mctx.sent == []
+    created = rest_of(seeded_bot).created
+    assert len(created) == 1
+    assert created[0].content == "caught cirno"
+    assert created[0].channel_id == 99
+    assert await frog_db.get_frogs(seeded_bot.db, _UID) == 1
 
     # second click is denied
     await menu_button(menu).callback(mctx)

@@ -8,7 +8,6 @@ Two modes:
 A ``last_welcomed_id`` guard prevents double welcomes (v1's hard-won fix).
 """
 
-import asyncio
 import json
 import logging
 from typing import Any, cast
@@ -17,6 +16,7 @@ import hikari
 import lightbulb
 
 from cazzubot import templates, utils
+from cazzubot.listeners import guild_listener
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
 from cazzubot.models import MemberSnapshot, WelcomeModeEnum
@@ -31,7 +31,11 @@ loader = lightbulb.Loader()
 
 _ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
 
-welcome = lightbulb.Group("welcome", "Welcome message settings.")
+welcome = lightbulb.Group(
+    "welcome",
+    "Welcome message settings.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+)
 welcome_set = welcome.subgroup("set", "Set welcome settings.")
 
 last_welcomed_id: int | None = None
@@ -46,13 +50,11 @@ def formatter(s: str, *, member: MemberSnapshot) -> str:
     return utils.format_member(s, member)
 
 
-@loader.listener(hikari.MemberUpdateEvent)
+@guild_listener(loader, hikari.MemberUpdateEvent)
 async def on_member_update(event: hikari.MemberUpdateEvent) -> None:
     """Welcome said user when they finish verification."""
     global last_welcomed_id
     bot = cast(CazzuBot, event.app)
-    if not utils.in_guild(bot, event.guild_id):
-        return
     enabled = await bot.settings.get("welcome.enabled", False)
     if not enabled:
         return
@@ -103,7 +105,6 @@ async def _send_welcome(
     member: hikari.Member,
     msg_json: dict[str, Any] | None,
 ) -> None:
-    await asyncio.sleep(1)  # let user UI update so the ping works
     if not msg_json:
         return
     utils.deep_map(

@@ -48,6 +48,7 @@ class Owner(
     lightbulb.SlashCommand,
     name="owner",
     description="The bot owner check.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
     hooks=[_OWNER],
 ):
     @lightbulb.invoke
@@ -56,7 +57,11 @@ class Owner(
         await ctx.respond(f"You are {(ctx.member or ctx.user).mention}!")
 
 
-calc = lightbulb.Group("calc", "Helpers for level math.")
+calc = lightbulb.Group(
+    "calc",
+    "Helpers for level math.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+)
 
 
 @calc.register
@@ -92,6 +97,7 @@ class ArchiveEmojis(
     lightbulb.SlashCommand,
     name="archive_emojis",
     description="Save this guild's emojis to archives/{guild_id}/.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
     hooks=[_OWNER],
 ):
     @lightbulb.invoke
@@ -111,6 +117,7 @@ class Scrape(
     lightbulb.SlashCommand,
     name="scrape",
     description="Download every guild emoji into emojis/.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
     hooks=[_OWNER],
 ):
     @lightbulb.invoke
@@ -128,7 +135,11 @@ class Scrape(
 # -- plugin hotswap ---------------------------------------------------------
 
 
-cog = lightbulb.Group("cog", "Plugin hotswap.")
+cog = lightbulb.Group(
+    "cog",
+    "Plugin hotswap.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+)
 
 
 @cog.register

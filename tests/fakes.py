@@ -217,6 +217,9 @@ class FakeMessage:
         self.embeds = embeds or []
         self.attachments: list[FakeAttachment] = attachments or []
         self.components: list[Any] = []
+        # kwargs the FakeRest.create_message call was made with (for tests
+        # to assert e.g. user_mentions/role_mentions on the board post)
+        self.create_kwargs: dict[str, Any] | None = None
 
 
 # -- Cache / Rest ----------------------------------------------------------
@@ -284,6 +287,7 @@ class FakeRest:
         self.members: dict[tuple[int, int], FakeMember] = {}
         self.users: dict[int, FakeUser] = {}
         self.messages: dict[tuple[int, int], FakeMessage] = {}
+        self.created: list[FakeMessage] = []
         self.added_roles: list[tuple[int, int, str | None]] = []
         self.removed_roles: list[tuple[int, int, str | None]] = []
         self.kicked: list[tuple[int, str | None]] = []
@@ -406,6 +410,32 @@ class FakeRest:
     ) -> FakeMessage:
         message = await self.fetch_message(channel_id, message_id)
         self.edited.append((message, kwargs))
+        return message
+
+    async def create_message(
+        self,
+        channel_id: int,
+        content: Any = hikari.UNDEFINED,
+        **kwargs: Any,
+    ) -> FakeMessage:
+        """Create a standalone channel message (not an interaction response).
+
+        Recorded in ``self.created`` and stored under ``self.messages`` so
+        it is fetchable like a real message. ``embed``/``embeds`` kwargs
+        land on the message so tests can assert the capture content.
+        """
+        message = FakeMessage(
+            id=next(self._mint),
+            content=content if content is not hikari.UNDEFINED else "",
+            channel_id=channel_id,
+        )
+        message.create_kwargs = kwargs
+        if "embeds" in kwargs:
+            message.embeds = kwargs["embeds"]
+        elif "embed" in kwargs:
+            message.embeds = [kwargs["embed"]]
+        self.messages[(channel_id, message.id)] = message
+        self.created.append(message)
         return message
 
     async def delete_message(
@@ -639,6 +669,18 @@ class FakeInteraction:
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.custom_id = custom_id
+        self.initial_response_type: hikari.ResponseType | None = None
+        self.initial_response: dict[str, Any] = {}
+
+    async def create_initial_response(
+        self,
+        response_type: hikari.ResponseType,
+        content: Any = hikari.UNDEFINED,
+        **kwargs: Any,
+    ) -> None:
+        """Record the interaction's initial response (like FakeRest)."""
+        self.initial_response_type = response_type
+        self.initial_response = {"content": content, **kwargs}
 
 
 class FakeClient:

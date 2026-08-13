@@ -14,6 +14,15 @@ SANDBOX_DEFAULT_PLUGINS: tuple[str, ...] = ("poll", "dev")
 GUILD_ID_PROD = "GUILD_ID_PROD"
 GUILD_ID_DEV = "GUILD_ID_DEV"
 
+# Per-guild database files — the bot keeps development and production data
+# apart (a development run must never touch production's rows, and a cloned
+# production DB dropped in as the dev file keeps the clone isolated).
+# Env var names (overridable, like GUILD_ID_PROD) + default file paths.
+DB_PATH_PROD = "DB_PATH_PROD"
+DB_PATH_DEV = "DB_PATH_DEV"
+DB_PATH_DEFAULT_PROD = "data/cazzubot-prod.db"
+DB_PATH_DEFAULT_DEV = "data/cazzubot-dev.db"
+
 # Accepted spellings for the ``--bot``/``--guild`` sides (case-insensitive).
 _SIDES = {
     "production": ("production", "p"),
@@ -48,7 +57,8 @@ class Config:
     - ``TOKEN`` / ``TOKEN_DEV``: discord bot token (dev unless production)
     - ``OWNER_ID``: the bot owner's user id
     - ``GUILD_ID_PROD`` / ``GUILD_ID_DEV``: the two guilds this bot serves
-    - ``DB_PATH``: sqlite database file (default ``data/cazzubot.db``)
+    - ``DB_PATH_PROD`` / ``DB_PATH_DEV``: per-guild sqlite database files
+      (defaults ``data/cazzubot-prod.db`` / ``data/cazzubot-dev.db``)
     """
 
     token: str
@@ -88,6 +98,13 @@ class Config:
             GUILD_ID_PROD if guild_side == "production" else GUILD_ID_DEV
         )
         guild_id = os.getenv(guild_var)
+        # one database per guild side (DB_PATH_* env overrides the default)
+        db_var = DB_PATH_PROD if guild_side == "production" else DB_PATH_DEV
+        default_db = (
+            DB_PATH_DEFAULT_PROD
+            if guild_side == "production"
+            else DB_PATH_DEFAULT_DEV
+        )
 
         if token is None:
             raise RuntimeError(
@@ -105,7 +122,7 @@ class Config:
             token=token,
             owner_id=int(owner_id),
             guild_id=int(guild_id),
-            db_path=os.getenv("DB_PATH", "data/cazzubot.db"),
+            db_path=os.getenv(db_var, default_db),
             debug=debug,
             sandbox_plugins=sandbox,
             debug_users=[

@@ -1,7 +1,7 @@
 #!/bin/env python
 """Boot the real bot stack against the migrated database (no Discord).
 
-Constructs ``CazzuBot`` with ``db_path=data/cazzubot.db``, patches
+Constructs ``CazzuBot`` with ``db_path=data/cazzubot-prod.db``, patches
 ``wait_until_ready`` (as ``scripts/smoke.py`` does), runs ``setup_hook`` so
 every plugin loads, schema applies, scheduler handlers register, and the
 ``on_load`` hooks run — exactly what happens at a real boot, minus the
@@ -41,7 +41,7 @@ import pendulum  # noqa: E402
 from plugins.experience import db as exp_db  # noqa: E402
 from plugins.ranks import db as ranks_db  # noqa: E402
 
-DB = Path(__file__).resolve().parent.parent / "data" / "cazzubot.db"
+DB = Path(__file__).resolve().parent.parent / "data" / "cazzubot-prod.db"
 
 FAILS: list[str] = []
 

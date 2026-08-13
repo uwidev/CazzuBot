@@ -20,7 +20,11 @@ from .logic import MESSAGE_KEY, formatter
 
 loader = lightbulb.Loader()
 
-level = lightbulb.Group("level", "Configure the level-up message.")
+level = lightbulb.Group(
+    "level",
+    "Configure the level-up message.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+)
 
 
 def _bot(ctx: lightbulb.Context) -> CazzuBot:

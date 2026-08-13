@@ -4,9 +4,9 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 
 ## Project
 
-- Entry point: `main.py` (`-d` debug, `-b/--bot` + `-g/--guild` side flags (default develop), `-s [PLUGIN ...]` sandbox = load only the named plugins plus their declared dependencies; bare `-s` = defaults poll/dev). Reads `TOKEN`/`TOKEN_DEV`, `OWNER_ID`, `GUILD_ID_PROD`/`GUILD_ID_DEV`, `DB_PATH` from `.env` (see `.env.example`). Slash commands are guild-scoped (`default_enabled_guilds`).
+- Entry point: `main.py` (`-d` debug, `-b/--bot` + `-g/--guild` side flags (default develop), `-s [PLUGIN ...]` sandbox = load only the named plugins plus their declared dependencies; bare `-s` = defaults poll/dev). Reads `TOKEN`/`TOKEN_DEV`, `OWNER_ID`, `GUILD_ID_PROD`/`GUILD_ID_DEV`, `DB_PATH_PROD`/`DB_PATH_DEV` from `.env` (see `.env.example`). Slash commands are guild-scoped (`default_enabled_guilds`).
 - `cazzubot/` = core package (bot, config, db, errors, models, settings, scheduler, plugin loader, utils, levels, leaderboard, templates, timeparse, window) + the manifest engine: `cazzubot/manifest/` (shared roles/channels machinery) with the domain engines `cazzubot/roles/*` + `cazzubot/channels/*` and the admin CLI `cazzubot/cli/*`. `plugins/` = one folder per feature, auto-discovered; `board/`/`download/`/`emojis/` = asset dirs (gitignored).
-- Single sqlite file `data/cazzubot.db`, created on first boot — no docker/Postgres. PG→SQLite migration tooling still lives in `scripts/` (migrate_pg_to_sqlite.py, verify_migration.py, boot_check_migrated.py; see docs/MIGRATION.md) and may run again.
+- Per-guild sqlite files — `data/cazzubot-prod.db` (production) and `data/cazzubot-dev.db` (development), created on first boot — so development and production data never mix. To work against production data in the dev guild, clone the prod file over the dev one; the runtime guild gates (below) keep the bot within its configured guild either way. PG→SQLite migration tooling still lives in `scripts/` (migrate_pg_to_sqlite.py, verify_migration.py, boot_check_migrated.py; see docs/MIGRATION.md) and may run again.
 - Design docs: `docs/ARCHITECTURE.md`, `docs/PLUGINS.md`, `docs/TESTING.md`, `docs/MIGRATION.md`, `docs/MANUAL_TEST.md`. **Read PLUGINS.md before adding a feature.** README.md is stale (pre-hikari) — don't trust it.
 
 ## Commands
@@ -38,6 +38,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - Variable naming: common noun first, variant suffix always last — `SCRAPE_CHANNEL_DEV`/`SCRAPE_CHANNEL_PROD`, never `DEV_SCRAPE_CHANNEL`/`PROD_SCRAPE_CHANNEL`. Applies to any paired constants/variables (dev/prod, prod/sandbox, left/right, …).
 - Scripts and CLI modules are organized top-down by abstraction: docstring → imports → constants → core/top-level functions first → helpers toward the bottom → `if __name__ == "__main__":` guard last (see `cazzubot/cli/roles.py`).
 - Non-`.txt` custom-format files (`roles.manifest`, `channels.manifest`) end with a `# vim: ft=txt :` modeline on the last line.
+- **Guild isolation:** the gateway streams events from every guild the token belongs to, but the bot serves ONE guild. Guild-scoped listeners MUST be registered with `cazzubot.listeners.guild_listener(loader, event_type)` (never bare `@loader.listener`) — it drops other-guild/DM events before the handler runs; scheduler payloads that target channels (frog spawns, counter expiry) are guarded with `utils.channel_in_guild`. New guild-scoped listeners that skip the helper are a bug.
 - Service modules (`logic.py`/`factory.py`/`db.py`) never import discord —
   enforced by `tests/core/test_csr_boundary.py` (only carve-out:
   `plugins/frogs/factory.py`, controller-shaped by design). Service/core

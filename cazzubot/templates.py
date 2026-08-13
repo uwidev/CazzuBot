@@ -195,6 +195,11 @@ async def send(
     ``send``), or a fake; extra kwargs are forwarded unchanged where the
     target supports them. Unset payload keys go out as
     ``hikari.undefined.UNDEFINED`` (omitted), never ``None``.
+
+    Mention parsing follows the template's ``allowed_mentions`` flag:
+    absent → users + roles are parsed (``@everyone``/``@here`` never),
+    ``true`` → everything, ``false`` → nothing. Caller-supplied mention
+    kwargs win over the template default.
     """
     content, embed, embeds = prepare(message)
     payload = dict(
@@ -202,7 +207,27 @@ async def send(
         embed=embed_from_raw(embed) if embed is not None else UNDEFINED,
         embeds=[embed_from_raw(e) for e in embeds] or UNDEFINED,
     )
+    for key, value in _mention_kwargs(
+        message.get("allowed_mentions")
+    ).items():
+        kwargs.setdefault(key, value)
     if isinstance(destination, lightbulb.Context):
         # hikari channels have ``send``; lightbulb contexts have ``respond``
         return await destination.respond(**payload, **kwargs)
     return await destination.send(**payload, **kwargs)
+
+
+def _mention_kwargs(allowed: bool | None) -> dict[str, bool]:
+    """Map a template's ``allowed_mentions`` flag to hikari mention kwargs.
+
+    absent → parse users + roles (Discord's platform default minus
+    ``@everyone``); ``true`` → also parse ``@everyone``/``@here``;
+    ``false`` → parse nothing (hikari's no-mentions default). Discord
+    validates mention presence server-side, so phantom pings can't occur.
+    """
+    if allowed is False:
+        return {}
+    kwargs = {"user_mentions": True, "role_mentions": True}
+    if allowed is True:
+        kwargs["mentions_everyone"] = True
+    return kwargs

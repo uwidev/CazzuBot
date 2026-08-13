@@ -13,6 +13,7 @@ import pendulum
 from cazzubot import leaderboard, levels, utils
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
+from cazzubot.listeners import guild_listener
 from cazzubot.utils import INITIAL_RESPONSE_IDENTIFIER
 from lightbulb.prefab import checks as prefab_checks
 
@@ -50,15 +51,13 @@ def _bot(ctx: lightbulb.Context) -> CazzuBot:
 # -- message exp pipeline --------------------------------------------------
 
 
-@loader.listener(hikari.MessageCreateEvent)
+@guild_listener(loader, hikari.MessageCreateEvent)
 async def on_message(event: hikari.MessageCreateEvent) -> None:
     """Award exp based on daily message count; handle level/rank ups."""
     bot = cast(CazzuBot, event.app)
     if not event.is_human:
         return
     message = event.message
-    if not utils.in_guild(bot, message.guild_id):
-        return
 
     lock = _exp_locks.setdefault(message.author.id, asyncio.Lock())
     async with lock:

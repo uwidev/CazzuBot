@@ -20,7 +20,11 @@ loader = lightbulb.Loader()
 
 _ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
 
-rank = lightbulb.Group("rank", "Manage ranked roles.")
+rank = lightbulb.Group(
+    "rank",
+    "Manage ranked roles.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+)
 
 
 def _bot(ctx: lightbulb.Context) -> CazzuBot:

@@ -92,6 +92,18 @@ def test_load_guild_production_uses_prod_guild(
     assert config.guild_kind == "production"
 
 
+def test_load_db_path_follows_guild_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each guild side gets its own database file (dev/prod data apart)."""
+    _env(monkeypatch)
+    assert Config.load().db_path == "data/cazzubot-dev.db"
+    assert Config.load(guild="production").db_path == "data/cazzubot-prod.db"
+    # per-side env override wins
+    monkeypatch.setenv("DB_PATH_DEV", "/tmp/dev.db")
+    assert Config.load().db_path == "/tmp/dev.db"
+
+
 def test_load_short_sides(monkeypatch: pytest.MonkeyPatch) -> None:
     _env(monkeypatch)
     config = Config.load(bot="p", guild="d")

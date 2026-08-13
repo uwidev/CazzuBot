@@ -89,7 +89,9 @@ async def _download_url(url: str) -> bytes:
     return await hikari.files.URL(url).read()
 
 
-async def run_weekly(bot: CazzuBot, *, force: bool = False) -> WeeklyResult:
+async def run_weekly(
+    bot: CazzuBot, *, force: bool = False
+) -> WeeklyResult:
     """The full weekly flow: targets → guard → scrape → claim → select →
     poll → one combined message (announcement + grid + poll embed/button).
 
@@ -197,10 +199,12 @@ async def run_weekly(bot: CazzuBot, *, force: bool = False) -> WeeklyResult:
         embed=embed,
         component=row,
         attachment=hikari.Bytes(grid.data, f"board-{day}.webp"),
+        # the content opens with a <@&VOTE_ROLE_ID> ping — hikari's default
+        # allowed_mentions is {"parse": []} (no pings), so enable them
+        user_mentions=True,
+        role_mentions=True,
     )
-    await poll_db.set_mid(
-        bot.db, pid, poll_message.id, post_channel
-    )
+    await poll_db.set_mid(bot.db, pid, poll_message.id, post_channel)
     # auto-close 24h after the open (Monday 00:00 UTC for a Sunday open)
     await bot.scheduler.add(
         CLOSE_TAG,
@@ -282,5 +286,6 @@ async def _announce_winner(
             winner.image_url,
         )
     await bot.rest.create_message(
-        cid, content=WINNER_MSG.format(week_no=week_no, msg_url=winner.msg_url)
+        cid,
+        content=WINNER_MSG.format(week_no=week_no, msg_url=winner.msg_url),
     )

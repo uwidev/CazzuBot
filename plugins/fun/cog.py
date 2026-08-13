@@ -15,8 +15,8 @@ from typing import Any, cast
 import hikari
 import lightbulb
 
-from cazzubot import utils
 from cazzubot.bot import CazzuBot
+from cazzubot.listeners import guild_listener
 from cazzubot.window import window_error, window_success
 from lightbulb.prefab import checks as prefab_checks
 
@@ -25,6 +25,7 @@ _log = logging.getLogger(__name__)
 loader = lightbulb.Loader()
 
 _OWNER = prefab_checks.owner_only
+_ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
 
 submission_keyword = re.compile(r"inktober\s+day\s+\d\d?")
 
@@ -108,14 +109,12 @@ class Echo(
 # -- inktober ---------------------------------------------------------------
 
 
-@loader.listener(hikari.MessageCreateEvent)
+@guild_listener(loader, hikari.MessageCreateEvent)
 async def on_message(event: hikari.MessageCreateEvent) -> None:
     """React to valid inktober submissions in the watching channel."""
     bot = cast(CazzuBot, event.app)
-    message = event.message
-    if not utils.in_guild(bot, message.guild_id):
-        return
     watching_cid = await bot.settings.get("inktober.cid")
+    message = event.message
     if message.channel_id != watching_cid:
         return
     if (
@@ -130,6 +129,8 @@ class RegisterInktober(
     lightbulb.SlashCommand,
     name="register_inktober",
     description="Set the channel to watch for inktober submissions.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+    hooks=[_ADMIN],
 ):
     channel = lightbulb.channel(
         "channel",
@@ -155,6 +156,7 @@ class ScrapeInktober(
     lightbulb.SlashCommand,
     name="scrape_inktober",
     description="Download inktober submissions from a channel into downloads/.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
     hooks=[_OWNER],
 ):
     channel = lightbulb.channel(
@@ -198,7 +200,11 @@ class ScrapeInktober(
 # -- story ------------------------------------------------------------------
 
 
-story = lightbulb.Group("story", "Compile and write channel stories.")
+story = lightbulb.Group(
+    "story",
+    "Compile and write channel stories.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+)
 
 
 @story.register

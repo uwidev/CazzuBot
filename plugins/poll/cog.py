@@ -18,6 +18,7 @@ import lightbulb
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
 from cazzubot.db import Database
+from cazzubot.listeners import guild_listener
 from lightbulb.components import modals
 from lightbulb.prefab import checks as prefab_checks
 
@@ -36,7 +37,11 @@ EMOJI_OPEN = "https://files.catbox.moe/xd4h7v.webp"
 
 _OWNER = prefab_checks.owner_only
 
-poll = lightbulb.Group("poll", "Poll management.")
+poll = lightbulb.Group(
+    "poll",
+    "Poll management.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+)
 poll_item = poll.subgroup("item", "Poll item management.")
 
 
@@ -313,7 +318,7 @@ loader.command(poll)
 # -- persistent vote button + modal ----------------------------------------
 
 
-@loader.listener(hikari.InteractionCreateEvent)
+@guild_listener(loader, hikari.InteractionCreateEvent)
 async def on_interaction(event: hikari.InteractionCreateEvent) -> None:
     """Persistent vote button — open the vote modal for the poll."""
     interaction = event.interaction
@@ -322,11 +327,8 @@ async def on_interaction(event: hikari.InteractionCreateEvent) -> None:
     prefix = "poll:vote:"
     if not interaction.custom_id.startswith(prefix):
         return
-    bot = cast(CazzuBot, event.app)
-    if not utils.in_guild(bot, interaction.guild_id):
-        return
     poll_id = int(interaction.custom_id[len(prefix) :])
-    await _handle_vote(bot, interaction, poll_id)
+    await _handle_vote(cast(CazzuBot, event.app), interaction, poll_id)
 
 
 async def _handle_vote(

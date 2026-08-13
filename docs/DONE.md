@@ -495,3 +495,43 @@ share. Keep `GUILD_ID` working as the escape hatch for any other guild.
 > guild; "sandbox" means only the `-s` plugin-allowlist mode. `scripts/
 > probe_channels.py` follows the new flags; the legacy PG migration
 > scripts still read `GUILD_ID` env directly (follow-up).
+
+## Welcome "Unknown User" mention — users-cache race
+
+The welcome message's `{mention}` placeholder occasionally renders as
+"Unknown User" in Discord: the `<@id>` mention is resolved through the
+users cache, and a member who just finished onboarding may not be in it
+yet when the welcome is sent. `_send_welcome` already sleeps a fixed 1s
+("let user UI update so the ping works") — insufficient, and it's not
+clear whether the stale cache is the bot's or Discord's own. Fix ideas to
+investigate: wait (poll with timeout) until `bot.cache.get_member` returns
+the member before sending, or add a longer/retrying delay; first figure
+out which cache actually fails to be populated in time.
+
+> **Done** — root cause found, and it is neither a race nor the bot's
+> cache: **every message this bot sends goes out with
+> `allowed_mentions: {"parse": []}`** — hikari's default (mention args
+> default to `UNDEFINED`, and `generate_allowed_mentions` maps that to
+> "parse nothing"), never overridden in the codebase (the template
+> schema's `allowed_mentions` boolean was dead since the rewrite).
+> Discord treats `parse: []` as "completely suppress all mentions": the
+> `<@id>` stays raw text, the user is not in the message's `mentions`
+> array, and no notification fires. Clients then render the unparsed
+> mention by resolving it against the *viewer's own* user cache — a
+> just-onboarded member is cached in no one's client, hence "Unknown
+> User" (and "occasionally fine" on clients that happen to know the
+> user). The 1s sleep was a v1-inherited folk fix that could never help:
+> parsing is decided once, server-side, at message-create.
+>
+> **Fixed** — `templates.send` now maps the template's
+> `allowed_mentions` flag to hikari mention kwargs: absent → parse
+> users + roles (Discord's platform default minus `@everyone`), `true` →
+> also `@everyone`/`@here`, `false` → parse nothing; caller kwargs win.
+> The board weekly post's direct `create_message` passes
+> `user_mentions=True, role_mentions=True` (the `<@&VOTE_ROLE_ID>`
+> opener now actually pings — it never had before). The useless
+> `asyncio.sleep(1)` in `_send_welcome` was removed. Regression tests
+> pin the mention kwargs in `tests/core/test_templates.py`, the welcome
+> flow, and the board weekly flow; full suite green (528 passed).
+> Caveat: `{mention}` placed *inside an embed* can never be fixed —
+> Discord only parses mentions in content/components, never embeds.

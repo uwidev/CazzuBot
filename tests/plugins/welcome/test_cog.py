@@ -1,9 +1,8 @@
 # pyright: reportArgumentType=false
 """Welcome extension tests — on_member_update flows + config commands.
 
-The ``_send_welcome`` path sleeps 1s (production "let the UI update" delay);
-the autouse fixture stubs the sleep out. ``old``/``member`` are two
-FakeMembers with the same id (Discord's before/after states of one member).
+``old``/``member`` are two FakeMembers with the same id (Discord's
+before/after states of one member).
 """
 
 from __future__ import annotations
@@ -37,16 +36,6 @@ from tests.fakes import (
 )
 
 _MSG = {"content": "hi {mention}"}
-
-
-@pytest.fixture(autouse=True)
-def _no_send_delay(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub the 1s production UI-update sleep."""
-
-    async def _noop(*_args: object, **_kwargs: object) -> None:
-        pass
-
-    monkeypatch.setattr(welcome_cog.asyncio, "sleep", _noop)
 
 
 def _member(
@@ -111,6 +100,10 @@ async def test_pending_mode_welcomes_and_adds_role(
     await _fire(seeded_bot, before, after, fake_cache)
 
     assert channel.sent[-1]["content"] == "hi <@424242>"
+    # the welcome mentions must actually parse (the "Unknown User" fix) —
+    # hikari's default allowed_mentions is {"parse": []}
+    assert channel.sent[-1]["user_mentions"] is True
+    assert channel.sent[-1]["role_mentions"] is True
     assert rest_of(seeded_bot).added_roles == [(424242, role.id, None)]
 
 
@@ -164,7 +157,9 @@ async def test_last_welcomed_guard_prevents_double(
     before = _member(fake_guild, 424242, pending=True)
     after = _member(fake_guild, 424242, pending=False)
 
-    monkeypatch.setattr(welcome_cog, "last_welcomed_id", None)  # fresh state
+    monkeypatch.setattr(
+        welcome_cog, "last_welcomed_id", None
+    )  # fresh state
     await _fire(seeded_bot, before, after, fake_cache)
     await _fire(seeded_bot, before, after, fake_cache)  # same id again
 

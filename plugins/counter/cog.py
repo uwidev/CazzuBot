@@ -19,6 +19,7 @@ import pendulum
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
+from cazzubot.listeners import guild_listener
 from cazzubot.errors import UserInputError
 from lightbulb.prefab import checks as prefab_checks
 
@@ -102,7 +103,7 @@ class Create(
             await db.create(bot.db, message.id)
 
 
-@loader.listener(hikari.InteractionCreateEvent)
+@guild_listener(loader, hikari.InteractionCreateEvent)
 async def on_interaction(event: hikari.InteractionCreateEvent) -> None:
     """Persistent baka button — one press = one count."""
     interaction = event.interaction
@@ -110,10 +111,7 @@ async def on_interaction(event: hikari.InteractionCreateEvent) -> None:
         return
     if interaction.custom_id != CUSTOM_ID:
         return
-    bot = cast(CazzuBot, event.app)
-    if not utils.in_guild(bot, interaction.guild_id):
-        return
-    await _handle_baka(bot, interaction)
+    await _handle_baka(cast(CazzuBot, event.app), interaction)
 
 
 async def _handle_baka(bot: CazzuBot, interaction: Any) -> None:

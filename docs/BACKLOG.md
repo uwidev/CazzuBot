@@ -154,15 +154,3 @@ and `plugins/frogs/` and delete the two wrapper folders. Watch the one
 structural wrinkle: the scheduler keys tags by name, so the two halves of
 the midnight reset need distinct tags (e.g. `daily.exp`/`daily.frog`) or a
 shared orchestrator — pick whichever keeps the retry semantics intact.
-
-## Welcome "Unknown User" mention — users-cache race
-
-The welcome message's `{mention}` placeholder occasionally renders as
-"Unknown User" in Discord: the `<@id>` mention is resolved through the
-users cache, and a member who just finished onboarding may not be in it
-yet when the welcome is sent. `_send_welcome` already sleeps a fixed 1s
-("let user UI update so the ping works") — insufficient, and it's not
-clear whether the stale cache is the bot's or Discord's own. Fix ideas to
-investigate: wait (poll with timeout) until `bot.cache.get_member` returns
-the member before sending, or add a longer/retrying delay; first figure
-out which cache actually fails to be populated in time.

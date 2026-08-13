@@ -150,57 +150,63 @@ class FrogCatchMenu(lightbulb.components.Menu):
         self.captured = True
         mctx.stop_interacting()  # unblocks spawn_and_wait, removes the frog
 
-        uid = mctx.interaction.user.id
-        now = pendulum.now("UTC")
-        await frog_db.add_capture_log(
-            self.bot.db,
-            uid,
-            now,
-            waited_for=time.time() - self._spawned_at,
-            frog_type=FrogTypeEnum.NORMAL,
+        await mctx.interaction.create_initial_response(
+            hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
         )
-        await frog_db.modify_frog(
-            self.bot.db, uid, modify=1, frog_type=FrogTypeEnum.NORMAL
-        )
-        await frog_db.modify_capture(self.bot.db, uid, modify=1)
 
-        # the capture message IS the interaction's first response: no defer
-        # (no "app is thinking" bubble), no followup (not a reply) — the
-        # click is acked in the same payload.
-        msg_json = await frog_db.get_message(self.bot.settings) or {}
-        frog_cnt_total = await frog_db.get_frogs(self.bot.db, uid)
-        seasonal = await frog_db.seasonal_captures(
-            self.bot.db, uid, now.year, (now.month - 1) // 3
-        )
-        utils.deep_map(
-            msg_json,
-            formatter,
-            member=utils.member_snapshot(mctx.interaction.user),
-            frog_cnt_old=frog_cnt_total - 1,
-            frog_cnt_new=frog_cnt_total,
-            seasonal_cap_old=seasonal - 1,
-            seasonal_cap_new=seasonal,
-        )
-        content, embed, embeds = templates.prepare(msg_json)
-        sent_id = await mctx.respond(
-            content=content if content is not None else hikari.UNDEFINED,
-            embed=(
-                templates.embed_from_raw(embed)
-                if embed is not None
-                else hikari.UNDEFINED
-            ),
-            embeds=(
-                [templates.embed_from_raw(e) for e in embeds]
-                or hikari.UNDEFINED
-            ),
-        )
-        if sent_id == utils.INITIAL_RESPONSE_IDENTIFIER:
-            # the initial response's id is the sentinel, not the message id
-            message = await mctx.fetch_response(
-                utils.INITIAL_RESPONSE_IDENTIFIER
+        try:
+            uid = mctx.interaction.user.id
+            now = pendulum.now("UTC")
+            await frog_db.add_capture_log(
+                self.bot.db,
+                uid,
+                now,
+                waited_for=time.time() - self._spawned_at,
+                frog_type=FrogTypeEnum.NORMAL,
             )
-            sent_id = message.id
-        utils.schedule_delete(self.bot, mctx.channel_id, int(sent_id), 7)
+            await frog_db.modify_frog(
+                self.bot.db, uid, modify=1, frog_type=FrogTypeEnum.NORMAL
+            )
+            await frog_db.modify_capture(self.bot.db, uid, modify=1)
+
+            msg_json = await frog_db.get_message(self.bot.settings) or {}
+            frog_cnt_total = await frog_db.get_frogs(self.bot.db, uid)
+            seasonal = await frog_db.seasonal_captures(
+                self.bot.db, uid, now.year, (now.month - 1) // 3
+            )
+            utils.deep_map(
+                msg_json,
+                formatter,
+                member=utils.member_snapshot(mctx.interaction.user),
+                frog_cnt_old=frog_cnt_total - 1,
+                frog_cnt_new=frog_cnt_total,
+                seasonal_cap_old=seasonal - 1,
+                seasonal_cap_new=seasonal,
+            )
+            content, embed, embeds = templates.prepare(msg_json)
+            sent = await self.bot.rest.create_message(
+                mctx.channel_id,
+                content=content
+                if content is not None
+                else hikari.UNDEFINED,
+                embed=(
+                    templates.embed_from_raw(embed)
+                    if embed is not None
+                    else hikari.UNDEFINED
+                ),
+                embeds=(
+                    [templates.embed_from_raw(e) for e in embeds]
+                    or hikari.UNDEFINED
+                ),
+            )
+            utils.schedule_delete(
+                self.bot, mctx.channel_id, int(sent.id), 7
+            )
+        except Exception:
+            # the click is already acked (and the frog removed by
+            # spawn_and_wait) — a failure here is invisible to the catcher,
+            # so it must at least hit the log
+            _log.exception("frog capture processing failed (uid=%s)", uid)
 
 
 async def queue_frog_spawns(bot: CazzuBot) -> None:

@@ -2,8 +2,9 @@
 
 ``frog spawn`` blocks on the catch menu like in production; the test
 presses the catch button the way a user would and asserts the whole
-capture pipeline (DB rows, capture message as the click's first response,
-frog message cleanup) plus the stale-button behavior after the catch.
+capture pipeline (DB rows, silent click ack, capture as a standalone
+channel message, frog message cleanup) plus the stale-button behavior
+after the catch.
 """
 
 from __future__ import annotations
@@ -41,10 +42,19 @@ async def test_frog_spawn_then_catch(full_bot: CazzuBot) -> None:
 
     assert press.exceptions == []
     assert spawn.exceptions == []
-    # the capture message IS the click's first response — no defer, no
-    # followup (the manual-test "app is thinking" regression)
-    assert press.response_type == hikari.ResponseType.MESSAGE_CREATE
+    # the click is acked silently — DEFERRED_MESSAGE_UPDATE (no response
+    # message, no "thinking" bubble); the capture is a standalone channel
+    # message, not an interaction response (no reply styling)
+    assert (
+        press.response_type == hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+    assert press.response_message_id is None
     assert spawn.followups == []
+    # exactly one standalone channel message: the frog itself was spawned
+    # via the slash interaction response (webhook-minted, not in `created`)
+    created = rest_of(full_bot).created
+    assert len(created) == 1
+    assert created[0].channel_id == 99
     # capture recorded: log row + inventory + capture counter
     row = await full_bot.db.fetchone(
         "SELECT normal, capture FROM member_frog WHERE uid = 424242"
@@ -83,7 +93,9 @@ async def test_catch_button_is_stale_after_capture(
         user_id=424242,
     )
     await task
-    assert first.response_type == hikari.ResponseType.MESSAGE_CREATE
+    assert (
+        first.response_type == hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
 
     second = await press_button(
         full_bot,

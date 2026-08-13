@@ -137,7 +137,15 @@ async def test_run_weekly_full_flow_dev(
         MESSAGE_OPEN.format(role_id=VOTE_ROLE_ID, week_no=week_no)
     )
     assert f"Week {week_no} — 3 image(s)" in content
-    assert f"[1](https://discord.com/channels/2/{SCRAPE_CHANNEL_DEV}/1)" in content
+    assert (
+        f"[1](https://discord.com/channels/2/{SCRAPE_CHANNEL_DEV}/1)"
+        in content
+    )
+    # the <@&VOTE_ROLE_ID> opener must actually ping — hikari's default
+    # allowed_mentions is {"parse": []}
+    assert msg.create_kwargs is not None
+    assert msg.create_kwargs["role_mentions"] is True
+    assert msg.create_kwargs["user_mentions"] is True
     assert poll_row.mid == msg.id
     assert poll_row.cid == POST_CHANNEL_DEV
     assert await bot.settings.get(DONE_KEY) == result.week_label

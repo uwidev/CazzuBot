@@ -24,7 +24,7 @@ Usage::
 
     PGPASSWORD=... uv run --group migration python scripts/sqlite_to_pg.py
                            [--gid 293796316193095690]
-                           [--sqlite data/cazzubot.db]
+                           [--sqlite data/cazzubot-prod.db]
 
 Defaults to a **dry run** that prints the plan and writes nothing. Pass
 ``--commit`` to write; everything runs inside one transaction, and the
@@ -651,8 +651,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--sqlite",
-        default="data/cazzubot.db",
-        help="v2 sqlite db path (default: data/cazzubot.db)",
+        default="data/cazzubot-prod.db",
+        help="v2 sqlite db path (default: data/cazzubot-prod.db)",
     )
     parser.add_argument(
         "--commit",
