@@ -255,13 +255,16 @@ async def test_poll_close_command_sets_flag(
 async def test_poll_open_close_sync_message_button(
     seeded_bot: CazzuBot,
 ) -> None:
-    """Closing removes the vote button from the message; opening re-adds it."""
+    """Closing removes the vote button and appends results to the
+    description; opening re-adds the button and strips them again."""
     from tests.fakes import FakeMessage
 
     pid = await _poll_with_items(seeded_bot)
     rest = rest_of(seeded_bot)
     rest.messages[(99, 77)] = FakeMessage(id=77, channel_id=99)
     await set_mid(seeded_bot.db, pid, 77, 99)
+    await set_open(seeded_bot.db, pid, True)
+    await add_votes(seeded_bot.db, pid, [1, 1, 3], 424242)
 
     assert await set_poll_open(seeded_bot, pid, open=False) is None
     poll = await get_poll(seeded_bot.db, pid)
@@ -269,6 +272,9 @@ async def test_poll_open_close_sync_message_button(
     closed_edit = rest.edited[-1]
     assert closed_edit[0].id == 77
     assert closed_edit[1]["component"] is None
+    assert "**Results**" in closed_edit[1]["embed"].description
+    assert "1 — 2 votes" in closed_edit[1]["embed"].description
+    assert "3 — 1 vote" in closed_edit[1]["embed"].description
 
     assert await set_poll_open(seeded_bot, pid, open=True) is None
     poll = await get_poll(seeded_bot.db, pid)
@@ -279,6 +285,37 @@ async def test_poll_open_close_sync_message_button(
         first_button_custom_id(opened_edit[1]["component"])
         == f"poll:vote:{pid}"
     )
+    assert "**Results**" not in opened_edit[1]["embed"].description
+
+
+async def test_poll_close_appends_results_to_description(
+    bot: CazzuBot,
+) -> None:
+    """Without a message (mid/cid NULL) the description still updates."""
+    pid = await _poll_with_items(bot)
+    await set_open(bot.db, pid, True)
+    await add_votes(bot.db, pid, [1, 1], 424242)
+
+    assert await set_poll_open(bot, pid, open=False) is None
+    poll = await get_poll(bot.db, pid)
+    assert poll is not None
+    assert poll.description == "desc\n\n**Results**\n1 — 2 votes"
+
+    # reopening restores the original description
+    assert await set_poll_open(bot, pid, open=True) is None
+    poll = await get_poll(bot.db, pid)
+    assert poll is not None and poll.description == "desc"
+
+
+async def test_poll_close_no_votes_appends_nothing(
+    bot: CazzuBot,
+) -> None:
+    pid = await _poll_with_items(bot)
+    await set_open(bot.db, pid, True)
+
+    assert await set_poll_open(bot, pid, open=False) is None
+    poll = await get_poll(bot.db, pid)
+    assert poll is not None and poll.description == "desc"
 
 
 async def test_poll_stats_formats_results(

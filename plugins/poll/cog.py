@@ -17,11 +17,17 @@ import lightbulb
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
+from cazzubot.db import Database
 from lightbulb.components import modals
 from lightbulb.prefab import checks as prefab_checks
 
 from . import db
-from .logic import parse_votes, validate_votes
+from .logic import (
+    RESULTS_MARKER,
+    format_results,
+    parse_votes,
+    validate_votes,
+)
 
 loader = lightbulb.Loader()
 
@@ -63,32 +69,57 @@ def build_send_payload(
 async def set_poll_open(
     bot: CazzuBot, pid: int, *, open: bool
 ) -> str | None:
-    """Set the open flag and sync the vote button on the poll's message.
+    """Set the open flag and sync the poll's message.
 
-    Closing removes the button (and the vote flow refuses closed polls);
-    opening re-adds it. Returns an error message when the poll doesn't
-    exist. A missing message (deleted or pre-cid migration) only sets the
-    flag — the DB is the source of truth.
+    Closing removes the vote button (and the vote flow refuses closed
+    polls) and appends the vote results to the description; opening
+    re-adds the button and strips the results again. Returns an error
+    message when the poll doesn't exist. A missing message (deleted or
+    pre-cid migration) only updates the DB — the flag and description are
+    the source of truth.
     """
     poll_row = await db.get_poll(bot.db, pid)
     if poll_row is None:
         return f"Poll ID#{pid} does not exist!"
     await db.set_open(bot.db, pid, open)
-    if poll_row.mid is not None and poll_row.cid is not None:
-        refreshed = await db.get_poll(bot.db, pid)
-        if refreshed is not None:
-            embed, row = build_send_payload(refreshed)
-            try:
-                await bot.rest.edit_message(
-                    poll_row.cid,
-                    poll_row.mid,
-                    embed=embed,
-                    component=row if open else None,
-                )
-            except hikari.NotFoundError:
-                # the poll message is gone — the flag is the source of truth
-                pass
+    await _sync_results(bot.db, pid, open=open)
+    refreshed = await db.get_poll(bot.db, pid)
+    if (
+        poll_row.mid is not None
+        and poll_row.cid is not None
+        and refreshed is not None
+    ):
+        embed, row = build_send_payload(refreshed)
+        try:
+            await bot.rest.edit_message(
+                poll_row.cid,
+                poll_row.mid,
+                embed=embed,
+                component=row if open else None,
+            )
+        except hikari.NotFoundError:
+            # the poll message is gone — the flag is the source of truth
+            pass
     return None
+
+
+async def _sync_results(
+    database: Database, pid: int, *, open: bool
+) -> None:
+    """Append the vote results to the poll description on close, strip
+    them again on reopen (idempotent in both directions)."""
+    poll_row = await db.get_poll(database, pid)
+    if poll_row is None:
+        return
+    description = poll_row.description
+    if open:
+        if RESULTS_MARKER in description:
+            description = description.split(RESULTS_MARKER, 1)[0].rstrip()
+    else:
+        results = await db.get_results(database, pid)
+        if results and RESULTS_MARKER not in description:
+            description = description + format_results(results)
+    await db.set_description(database, pid, description)
 
 
 @poll.register

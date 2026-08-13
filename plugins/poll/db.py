@@ -100,6 +100,12 @@ async def set_open(db: Database, pid: int, val: bool) -> None:
     )
 
 
+async def set_description(db: Database, pid: int, description: str) -> None:
+    await db.execute(
+        "UPDATE poll SET description = ? WHERE id = ?", description, pid
+    )
+
+
 async def add_items_dummy(db: Database, pid: int, n: int) -> None:
     await db.executemany(
         "INSERT INTO poll_item (pid) VALUES (?)", [(pid,)] * n

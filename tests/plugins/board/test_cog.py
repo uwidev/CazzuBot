@@ -554,8 +554,8 @@ async def test_board_weekly_command_runs_flow_via_driver(
     msg = created[0]
     assert msg.channel_id == POST_CHANNEL_DEV
     assert msg.embeds  # the poll embed
-    assert f"<@&{VOTE_ROLE_ID}>\n# Week" in msg.content
-    assert "has opened!" in msg.content
+    assert f"<@&{VOTE_ROLE_ID}>" in msg.content  # role ping
+    assert "just-cirno voting is now open!" in msg.content
     assert "Week " in msg.content and "image(s)" in msg.content
     poll_count = await full_bot.db.fetchval("SELECT COUNT(*) FROM poll")
     assert poll_count == 1
