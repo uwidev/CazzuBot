@@ -9,7 +9,7 @@ Validation failures raise ``cazzubot.errors.UserInputError`` (never
 
 One permanent carve-out: ``plugins/frogs/factory.py`` stays
 controller-shaped by design (the spawn handler and capture view are
-scheduling + discord side effects — see docs/BACKLOG.md). Everything else
+scheduling + discord side effects — see docs/DONE.md). Everything else
 under ``plugins`` must NOT import discord — and since the hikari port, the
 test infrastructure (``tests/fakes.py``/``conftest.py``) must not either:
 the suite's fakes are the contract for the hikari surface.
@@ -22,7 +22,7 @@ from pathlib import Path
 
 SERVICE_FILENAMES = ("logic.py", "factory.py", "db.py")
 
-# Permanent controller-shaped carve-out (documented in docs/BACKLOG.md).
+# Permanent controller-shaped carve-out (documented in docs/DONE.md).
 _ALLOWLIST = {
     "plugins.frogs.factory",  # spawn handler + capture view (controller)
 }
