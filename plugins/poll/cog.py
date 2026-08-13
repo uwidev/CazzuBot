@@ -38,6 +38,28 @@ def _bot(ctx: lightbulb.Context) -> CazzuBot:
     return cast(CazzuBot, ctx.client.app)
 
 
+def build_send_payload(
+    poll_row: db.Poll,
+) -> tuple[hikari.Embed, hikari.impl.MessageActionRowBuilder]:
+    """The embed + vote-button row for a poll's message.
+
+    Shared by ``/poll send`` (which responds via the interaction) and the
+    board weekly automation (which sends via ``bot.rest``).
+    """
+    embed = utils.prepare_embed(poll_row.title, poll_row.description)
+    embed.set_footer(
+        text=f"Poll ID#{poll_row.id}",
+        icon=EMOJI_OPEN if poll_row.open else EMOJI_CLOSED,
+    )
+    row = hikari.impl.MessageActionRowBuilder().add_interactive_button(
+        hikari.ButtonStyle.PRIMARY,
+        f"poll:vote:{poll_row.id}",
+        label="Vote",
+        emoji="📥",
+    )
+    return embed, row
+
+
 @poll.register
 class Register(
     lightbulb.SlashCommand,
@@ -120,18 +142,7 @@ class Send(
             )
             return
 
-        embed = utils.prepare_embed(poll_row.title, poll_row.description)
-        embed.set_footer(
-            text=f"Poll ID#{self.poll_id}",
-            icon=EMOJI_OPEN if poll_row.open else EMOJI_CLOSED,
-        )
-
-        row = hikari.impl.MessageActionRowBuilder().add_interactive_button(
-            hikari.ButtonStyle.PRIMARY,
-            f"poll:vote:{self.poll_id}",
-            label="Vote",
-            emoji="📥",
-        )
+        embed, row = build_send_payload(poll_row)
         response_id = await ctx.respond(embed=embed, component=row)
         # respond() returns lightbulb's initial-response sentinel, not the
         # message id — fetch the real message id for the poll row

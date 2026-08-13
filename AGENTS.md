@@ -7,7 +7,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - Entry point: `main.py` (`-d` debug, `-b/--bot` + `-g/--guild` side flags (default develop), `-s [PLUGIN ...]` sandbox = load only the named plugins plus their declared dependencies; bare `-s` = defaults poll/dev). Reads `TOKEN`/`TOKEN_DEV`, `OWNER_ID`, `GUILD_ID_PROD`/`GUILD_ID_DEV`, `DB_PATH` from `.env` (see `.env.example`). Slash commands are guild-scoped (`default_enabled_guilds`).
 - `cazzubot/` = core package (bot, config, db, errors, models, settings, scheduler, plugin loader, utils, levels, leaderboard, templates, timeparse, window) + the manifest engine: `cazzubot/manifest/` (shared roles/channels machinery) with the domain engines `cazzubot/roles/*` + `cazzubot/channels/*` and the admin CLI `cazzubot/cli/*`. `plugins/` = one folder per feature, auto-discovered; `board/`/`download/`/`emojis/` = asset dirs (gitignored).
 - Single sqlite file `data/cazzubot.db`, created on first boot — no docker/Postgres. PG→SQLite migration tooling still lives in `scripts/` (migrate_pg_to_sqlite.py, verify_migration.py, boot_check_migrated.py; see docs/MIGRATION.md) and may run again.
-- Design docs: `docs/ARCHITECTURE.md`, `docs/PLUGINS.md`, `docs/TESTING.md`. **Read PLUGINS.md before adding a feature.** README.md is stale (pre-hikari) — don't trust it.
+- Design docs: `docs/ARCHITECTURE.md`, `docs/PLUGINS.md`, `docs/TESTING.md`, `docs/MIGRATION.md`, `docs/MANUAL_TEST.md`. **Read PLUGINS.md before adding a feature.** README.md is stale (pre-hikari) — don't trust it.
 
 ## Commands
 
@@ -15,7 +15,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - Run: `uv run python main.py -d` (default develop bot+guild) / `-b production -g production` (prod bot + prod guild) / `-s [PLUGIN ...]` (sandbox; bare `-s` = poll+dev)
 - Admin CLI: `uv run cazzubot-cli <domain> <verb>` — domains `roles`/`channels` (export/diff/check/apply/restore), `snapshot` (fetch), `manifest` (offline render/lint). `--bot production --guild production` targets the production bot + production guild; no flags = development bot + development guild (default). Default `--file`/backup paths point at the production manifests — always use a temp `--file` during development-guild tests.
 - Lint: `uv run ruff check .` — Format: `uv run ruff format .` — Types: `uv run basedpyright`
-- Tests: `uv run pytest` (308 offline tests). Per-feature tests in `tests/`, booted-bot fixtures in `tests/conftest.py`, typed hikari fakes in `tests/fakes.py`. Interaction flows (buttons/modals/slash pipeline) run end-to-end offline via `tests/driver.py` (`run_slash`/`press_button`/`submit_modal` through the real lightbulb routing; `full_bot` fixture boots every plugin). Verify interactive changes there, not just with direct handler calls. See `docs/TESTING.md` for the layered picture and what still needs live verification.
+- Tests: `uv run pytest` (508 offline tests). Per-feature tests in `tests/`, booted-bot fixtures in `tests/conftest.py`, typed hikari fakes in `tests/fakes.py`. Interaction flows (buttons/modals/slash pipeline) run end-to-end offline via `tests/driver.py` (`run_slash`/`press_button`/`submit_modal` through the real lightbulb routing; `full_bot` fixture boots every plugin). Verify interactive changes there, not just with direct handler calls. See `docs/TESTING.md` for the layered picture and what still needs live verification.
 
 ## Architecture
 
@@ -26,7 +26,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - `cazzubot/settings.py` — JSON key-value store (single guild), namespaced keys (e.g. `frog.enabled`, `rank.seasonal.message`, `level.quiet`).
 - `cazzubot/window.py` — buffered, level-tagged command reporting to Discord (`command_window(ctx)` CM, `@windowed` decorator, `window_*` one-off helpers); auto-flushes at end of command and on error; ephemeral on slash. Distinct from CLI logging.
 - Manifest engine — the roles/channels CLIs share one core: `cazzubot/manifest/lines.py` (parser machinery: Issue/ManifestError/rewrite_renames/split_name_line/parse_rename/validate_renames/commit_group), `plan.py` (UpdateOp/RenameOp, rename_hints, render blocks), `executor.py` (ApplyResult, snapshot JSON I/O, backup_path, REORDER_ATTEMPTS), `cli.py` (the five verbs driven by a `ManifestDomain` spec). The domain engines hold the parser specs, plan diffing and apply bodies; `cazzubot/cli/{roles,channels,snapshot,manifest}.py` are thin wiring shells. New domains = one module under `cazzubot/cli/` exposing a `Domain`.
-- Plugins: experience (message exp pipeline + membership card + `exp top` paging), levels, ranks (thresholds → roles, seasonal/lifetime), frogs (spawn cadence `interval ± fuzzy%`, capture, consume-for-exp, quarterly freeze), daily, quarterly, mod (modlog + scheduled mute/tempban), poll (app commands + modal view), welcome, counter (baka button), fun (member/echo/inktober/story), roles + channels (warn-only boot drift-check for the manifests), dev (owner tools + `cog reload` hotswap).
+- Plugins: experience (message exp pipeline + membership card + `exp top` paging), levels, ranks (thresholds → roles, seasonal/lifetime), frogs (spawn cadence `interval ± fuzzy%`, capture, consume-for-exp, quarterly freeze), daily, quarterly, mod (modlog + scheduled mute/tempban), poll (app commands + modal view), welcome, counter (baka button), fun (memes: echo/ping/noot/inktober/write), board (weekly image scrape → numbered grid: `/board scrape`/`post`), misc (server utilities: banner/welcome/week), roles + channels (warn-only boot drift-check for the manifests), dev (owner tools + `cog reload` hotswap).
 - Cross-plugin flow: `experience.on_message` awards exp then calls
   `plugins.levels.presenter.present_level_up` and
   `plugins.ranks.presenter.present_ranks` (the pure decisions live in
@@ -35,6 +35,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 ## Conventions
 
 - **Spaces**, double quotes, line-length 75 (`ruff format`). Run `ruff check` after edits.
+- Variable naming: common noun first, variant suffix always last — `SCRAPE_CHANNEL_DEV`/`SCRAPE_CHANNEL_PROD`, never `DEV_SCRAPE_CHANNEL`/`PROD_SCRAPE_CHANNEL`. Applies to any paired constants/variables (dev/prod, prod/sandbox, left/right, …).
 - Scripts and CLI modules are organized top-down by abstraction: docstring → imports → constants → core/top-level functions first → helpers toward the bottom → `if __name__ == "__main__":` guard last (see `cazzubot/cli/roles.py`).
 - Non-`.txt` custom-format files (`roles.manifest`, `channels.manifest`) end with a `# vim: ft=txt :` modeline on the last line.
 - Service modules (`logic.py`/`factory.py`/`db.py`) never import discord —
@@ -58,6 +59,7 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 ## Notes
 
 - `frog register`/`exp`/`rank`/`level`/`welcome`/`frog set` require admin; `consume` confirms via a Yes/No button view (`cazzubot.utils.ConfirmMenu`).
+- Command security: every admin/owner command is hidden from non-admins via `default_member_permissions=hikari.Permissions.ADMINISTRATOR` where the framework allows (fully-gated groups: `board`/`counter`/`level`/`rank`/`welcome`/`poll`/`misc`/`story` + dev's `calc`/`cog`; top-level: dev `owner`/`archive_emojis`/`scrape`, fun `register_inktober`/`scrape_inktober`) and always carries an execution hook. Mixed groups (`frog`/`exp`/`mod`) stay visible because subcommands can't carry the field, but every mutating subcommand is check-gated. Enforced by `tests/core/test_command_guards.py` (whole-tree sweep: every command must be hidden, hook-checked, or explicitly user-facing) and `tests/integration/test_guard_driver.py` (real-pipeline block/allow).
 - Deploy: `push_to_prod.sh` (untracked, machine-specific).
 
 ## Guild safety

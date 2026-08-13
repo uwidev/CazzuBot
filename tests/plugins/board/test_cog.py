@@ -23,7 +23,6 @@ from tests.fakes import (
     invoke_command,
     rest_of,
 )
-
 # one distinct color per attachment url, so hashes differ
 _COLORS = {
     "https://example.com/a.png": (10, 200, 40),
@@ -512,3 +511,46 @@ async def test_scrape_defaults_to_invoking_channel(
     await invoke_command(board_cog.Scrape(), ctx, channel=channel_arg)
 
     assert "Scraped 3 new image(s)" in (ctx.sent[-1].content or "")
+
+
+async def test_board_weekly_command_runs_flow_via_driver(
+    full_bot: CazzuBot, monkeypatch
+) -> None:
+    """/board weekly runs the full flow through the real command pipeline
+    (owner hook + window reporting + rest sends to the dev channels)."""
+    from plugins.board import weekly as board_weekly
+    from plugins.board.weekly import POST_CHANNEL_DEV, SCRAPE_CHANNEL_DEV
+    from plugins.poll import db as poll_db
+    from tests.driver import run_slash
+
+    monkeypatch.setattr(board_weekly, "_download_url", _fake_download_url)
+    rest = rest_of(full_bot)
+    now = pendulum.now("UTC")
+    start = utils.week_start(now, start="sunday")
+    inside = start.add(hours=12)
+    for i in range(2):
+        rest.messages[(SCRAPE_CHANNEL_DEV, i + 1)] = FakeMessage(
+            id=i + 1,
+            channel_id=SCRAPE_CHANNEL_DEV,
+            created_at=inside.add(hours=i),
+            attachments=[
+                FakeAttachment(
+                    id=i + 1,
+                    filename=f"img{i}.png",
+                    url=f"https://example.com/img{i}.png",
+                )
+            ],
+        )
+
+    result = await run_slash(
+        full_bot, "board weekly", user_id=1, username="owner"
+    )
+
+    assert result.exceptions == []
+    assert result.responded
+    created = rest.created
+    assert [m.channel_id for m in created] == [POST_CHANNEL_DEV] * 3
+    assert created[0].embeds  # the poll message
+    assert created[2].content == "foobar"
+    poll_count = await full_bot.db.fetchval("SELECT COUNT(*) FROM poll")
+    assert poll_count == 1

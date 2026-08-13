@@ -1,0 +1,190 @@
+"""Weekly board automation — Sunday 00:00 scrape → poll → grid → open.
+
+The ``board_weekly`` scheduler tag fires at ``At(weekday=(6,), time="00:00")``
+(Sunday 00:00 UTC): scrape the just-ended week from the source channel,
+register + open a vote poll (items = grid cells, ``max_vote = n // 20 + 1``),
+send the poll, post the numbered grid, then send ``MESSAGE_OPEN`` (the
+winner-flow placeholder). ``/board weekly`` runs the same flow manually
+(``force=True``, bypassing the done-guard) for testing.
+
+Targets are selected by ``bot.config.guild_kind`` (loaded from
+``GUILD_ID_PROD``/``GUILD_ID_DEV`` in ``.env``): production scrapes the
+previous week with the production channels, development scrapes the
+current week with the development channels.
+"""
+
+import logging
+import random
+from dataclasses import dataclass
+
+import hikari
+import pendulum
+
+from cazzubot import utils
+from cazzubot.bot import CazzuBot
+from cazzubot.errors import UserInputError
+
+from plugins.board import db as board_db
+from plugins.board.logic import MAX_IMAGES, build_grid, scrape_week
+from plugins.poll import db as poll_db
+from plugins.poll.cog import build_send_payload
+
+_log = logging.getLogger(__name__)
+
+# -- channel ids (common noun first, variant suffix last) -----------------
+SCRAPE_CHANNEL_PROD = 1002249390792122378
+SCRAPE_CHANNEL_DEV = 584858037605498891
+POST_CHANNEL_PROD = 327160579624009729
+POST_CHANNEL_DEV = 460208165070307328
+
+# poll copy + the placeholder message (winner flow is still backlogged)
+POLL_TITLE = "Week {week_no} of just-cirno Voting"
+POLL_DESC = "Which image best represents last week?"
+MESSAGE_OPEN = "foobar"
+
+# grid geometry for the weekly board post
+GRID_COLUMNS = 9
+GRID_CELL_SIZE = 768
+
+# settings key recording which week was already run (the claim guard)
+DONE_KEY = "board.weekly.done"
+
+
+def weekly_targets(guild_kind: str) -> tuple[int, int, bool]:
+    """(scrape_channel, post_channel, current_week) for the guild side.
+
+    production → the production channels, scraping last week (the
+    ``/board scrape`` default); development → the development channels,
+    scraping the current week.
+    """
+    if guild_kind == "production":
+        return SCRAPE_CHANNEL_PROD, POST_CHANNEL_PROD, False
+    return SCRAPE_CHANNEL_DEV, POST_CHANNEL_DEV, True
+
+
+@dataclass(slots=True)
+class WeeklyResult:
+    """Outcome of one weekly run; aborted runs carry a reason."""
+
+    aborted: bool = False
+    reason: str = ""
+    week_label: str = ""
+    scraped: int = 0
+    poll_id: int | None = None
+
+
+async def _download_url(url: str) -> bytes:
+    """Fetch raw bytes from a URL (module-level for test stubbing)."""
+    return await hikari.files.URL(url).read()
+
+
+async def run_weekly(bot: CazzuBot, *, force: bool = False) -> WeeklyResult:
+    """The full weekly flow: targets → guard → scrape → claim → select →
+    poll → send poll → post board → MESSAGE_OPEN.
+
+    Re-arming the scheduler cadence is the scheduler handler's job, not
+    this function's. ``force=True`` bypasses the done-guard so weeks can
+    be re-run (the manual ``/board weekly`` test command).
+    """
+    now = pendulum.now("UTC")
+    scrape_channel, post_channel, current_week = weekly_targets(
+        bot.config.guild_kind
+    )
+    start = utils.week_start(now)
+    if not current_week:
+        start = start.subtract(days=7)
+    end = start.add(days=7)
+    week_no, year = utils.week_number(start)
+    week_label = f"{year}-W{week_no:02}"
+    day = start.format("YYYY-MM-DD")
+
+    if not force:
+        done = await bot.settings.get(DONE_KEY, "")
+        if done == week_label:
+            _log.info(
+                "weekly run for %s already done; skipping", week_label
+            )
+            return WeeklyResult(
+                aborted=True,
+                reason=f"{week_label} already done",
+                week_label=week_label,
+            )
+
+    # the scrape is incremental (re-scrapes add nothing), so the abort
+    # decision keys on whether the week HAS rows — a force re-run of an
+    # already-scraped week proceeds from the stored rows
+    await scrape_week(
+        bot.rest,
+        bot.db,
+        bot.config.guild_id,
+        scrape_channel,
+        start,
+        end,
+        download=_download_url,
+    )
+    rows = await board_db.get_week_images(
+        bot.db, start.isoformat(), end.isoformat()
+    )
+    if not rows:
+        _log.warning(
+            "weekly scrape for %s found no images; aborting", week_label
+        )
+        return WeeklyResult(
+            aborted=True,
+            reason=f"No images scraped for {week_label}",
+            week_label=week_label,
+        )
+    # claim the week — a failure from here on must never duplicate the
+    # poll/board on retry; the owner re-runs via /board weekly or by
+    # clearing the key
+    await bot.settings.set(DONE_KEY, week_label)
+
+    if len(rows) > MAX_IMAGES:
+        # the grid holds MAX_IMAGES cells — sample so the poll items
+        # always match the grid numbers
+        rows = sorted(
+            random.sample(rows, MAX_IMAGES), key=lambda r: (r.ts, r.id)
+        )
+    n = len(rows)
+
+    pid = await poll_db.add_poll(
+        bot.db, POLL_TITLE.format(week_no=week_no), POLL_DESC, n // 20 + 1
+    )
+    if pid is None:
+        raise RuntimeError("poll registration returned no id")
+    await poll_db.add_items_dummy(bot.db, pid, n)
+    await poll_db.set_open(bot.db, pid, True)
+
+    poll_row = await poll_db.get_poll(bot.db, pid)
+    if poll_row is None:
+        raise RuntimeError(f"poll #{pid} missing right after registration")
+    embed, row = build_send_payload(poll_row)
+    poll_message = await bot.rest.create_message(
+        post_channel, embed=embed, component=row
+    )
+    await poll_db.set_mid(bot.db, pid, poll_message.id)
+
+    try:
+        grid = await build_grid(
+            bot.db,
+            rows,
+            download=_download_url,
+            day=day,
+            columns=GRID_COLUMNS,
+            cell_size=GRID_CELL_SIZE,
+        )
+    except UserInputError as err:
+        raise RuntimeError(f"grid stitch failed: {err}") from err
+    if not grid.survivors:
+        raise RuntimeError("all scraped images vanished before posting")
+    await bot.rest.create_message(
+        post_channel,
+        content=grid.content,
+        attachment=hikari.Bytes(grid.data, f"board-{day}.webp"),
+    )
+    await bot.rest.create_message(post_channel, content=MESSAGE_OPEN)
+
+    _log.info(
+        "weekly board done: %s, %d image(s), poll #%d", week_label, n, pid
+    )
+    return WeeklyResult(week_label=week_label, scraped=n, poll_id=pid)

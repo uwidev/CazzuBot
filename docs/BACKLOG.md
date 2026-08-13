@@ -86,25 +86,29 @@ and `/misc week [start] [msg]` (current week with Sunday/Monday start, or
 a message link placed in its week via snowflake decoding; the shared week
 math lives in `cazzubot.utils`).
 
-Remaining — the weekly automation, implemented as code (the generic
-pipeline engine was decided against 2026-08-13; see docs/DONE.md):
+**Weekly automation DONE (2026-08-13):** the `board_weekly` scheduler tag
+(`At(weekday=(6,), time="00:00")` — Sunday 00:00 UTC, catch-up on boot
+for weeks missed while down) runs the scrape → poll → grid flow every
+Sunday: scrape the just-ended week (production = last week via
+`SCRAPE_CHANNEL_PROD`, development guild = current week via
+`SCRAPE_CHANNEL_DEV`; targets picked by `Config.guild_kind`, the
+`.env`-loaded guild side), register + open a poll ("Week X of just-cirno
+Voting", `max_vote = n // 20 + 1`, items = grid cells — a random sample
+of 50 when a week overflows MAX_IMAGES), send the poll, post the numbered
+grid (9 cols / 768px), then the `MESSAGE_OPEN` placeholder, all in
+`POST_CHANNEL_*`. A `board.weekly.done` settings claim-guard makes
+retries safe, and `/board weekly` (owner) runs the flow manually
+(`force=True`, bypassing the guard) for testing. The service extraction
+prerequisite was folded in: `logic.scrape_week`/`logic.build_grid` are
+shared by the commands and the automation, and `poll`'s embed+button
+construction is the shared `build_send_payload`.
 
-- Scheduled flow: a `weekly` scheduler tag (`At(weekday=(6,), time="00:00")`,
-  mirroring `plugins/daily/__init__.py`, catch-up on boot for weeks missed
-  while down) whose handler calls the board + poll service functions
-  directly: scrape the just-ended week, post the grid, register the poll
-  and open voting (24h, closing end of Sunday).
-- Service extraction (prerequisite): `Scrape.invoke`/`Post.invoke` in
-  `plugins/board/cog.py` are thick controllers — move the history walk,
-  dedup, prune and stitch orchestration into `plugins/board/logic.py`
-  service functions (test-first, per the CSR loop); extract the poll
-  `Send` embed+button construction into a shared helper so the scheduled
-  handler can send via `bot.rest`.
-- Poll tie-in: the grid message carries a `poll:vote:<pid>` button; the
-  poll plugin's modal voting (items = grid numbers, `max_vote=1`).
-- Winner flow: at close, pick the highest-voted image, set it as the guild
-  banner (16:9 prep via `plugins/misc.logic.prepare_banner`), and
-  announce the winner with a link to the original message.
+Remaining — the winner flow:
+
+- At poll close, pick the highest-voted image, set it as the guild banner
+  (16:9 prep via `plugins/misc.logic.prepare_banner`), and announce the
+  winner with a link to the original message — `MESSAGE_OPEN` is its
+  placeholder.
 
 ## Document how to add a test for a feature
 
@@ -127,3 +131,16 @@ new to hikari can orient without reading upstream docs cover-to-cover.
 The existing hikari documentation may already be enough; the work is to
 read it and distill what's relevant here (`docs/HIKARI_MIGRATION.md` has
 the port-time notes).
+
+## Fold the `daily`/`quarterly` scheduler plugins into their owning plugins
+
+`plugins/daily/` and `plugins/quarterly/` are scheduler-only wrappers that
+own no data: `daily`'s `reset()` runs experience resets
+(`exp_db.reset_all_msg_cnt`, `reset_all_cdr`, `sync_with_exp_logs`) plus a
+frog sync (`frog_db.sync_with_frog_logs`), and `quarterly`'s `reset()` is
+entirely `frog_db.freeze_frogs`. The cadences should live with the work —
+move the scheduled handlers and `on_load` arming into `plugins/experience/`
+and `plugins/frogs/` and delete the two wrapper folders. Watch the one
+structural wrinkle: the scheduler keys tags by name, so the two halves of
+the midnight reset need distinct tags (e.g. `daily.exp`/`daily.frog`) or a
+shared orchestrator — pick whichever keeps the retry semantics intact.

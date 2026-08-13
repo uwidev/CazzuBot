@@ -8,12 +8,12 @@ downloads the most recent week's rows fresh (rows whose image no longer
 downloads are pruned — the message was deleted), stitches them into a
 numbered grid, and posts the grid with per-image message links in the
 message content (text renders above the attachment). The weekly
-automation (scheduled cadence, poll tie-in, winner banner) is backlogged.
+automation (``board_weekly`` scheduler tag, see ``weekly.py``) runs the
+scrape → poll → grid flow every Sunday 00:00 UTC; ``/board weekly``
+triggers it manually for testing. The winner banner is still backlogged.
 """
 
 import logging
-import tempfile
-from pathlib import Path
 from typing import cast
 
 import hikari
@@ -27,15 +27,8 @@ from cazzubot.errors import UserInputError
 from cazzubot.window import command_window, window_error
 
 from . import db
-from .logic import (
-    MAX_IMAGES,
-    build_post_content,
-    content_sha256,
-    in_week,
-    is_animated,
-    is_image_attachment,
-)
-from .stitcher import ImageGridStitcher
+from .logic import MAX_IMAGES, build_grid, scrape_week
+from .weekly import run_weekly
 
 _log = logging.getLogger(__name__)
 
@@ -53,12 +46,11 @@ async def _download_url(url: str) -> bytes:
     return await hikari.files.URL(url).read()
 
 
-async def _download(attachment: hikari.Attachment) -> bytes:
-    """Fetch an attachment's bytes."""
-    return await _download_url(str(attachment.url))
-
-
-board = lightbulb.Group("board", "Weekly image board.")
+board = lightbulb.Group(
+    "board",
+    "Weekly image board.",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+)
 
 
 @board.register
@@ -105,55 +97,28 @@ class Scrape(
             )
             await window.flush()  # ack before the long history walk
 
-            candidates: list[tuple[hikari.Message, hikari.Attachment]] = []
-            messages = bot.rest.fetch_messages(cid, after=start)
-            async for message in messages:
-                if not in_week(message.created_at, start, end):
-                    continue
-                for attachment in message.attachments:
-                    if is_image_attachment(attachment.media_type):
-                        candidates.append((message, attachment))
-            # chronological order → stable row order across re-scrapes
-            candidates.sort(key=lambda m_a: (m_a[0].created_at, m_a[0].id))
-
-            start_iso, end_iso = start.isoformat(), end.isoformat()
-            scraped = 0
-            skipped_animated = 0
-            skipped_duplicates = 0
-            for message, attachment in candidates:
-                data = await _download(attachment)
-                if is_animated(data):
-                    skipped_animated += 1
-                    continue
-                sha = content_sha256(data)
-                if await db.has_sha_in_week(
-                    bot.db, sha, start_iso, end_iso
-                ):
-                    skipped_duplicates += 1
-                    continue
-                ts = pendulum.instance(message.created_at).isoformat()
-                msg_url = (
-                    f"https://discord.com/channels/{guild_id}/{cid}/"
-                    f"{message.id}"
-                )
-                if await db.add_image(
-                    bot.db, ts, str(attachment.url), msg_url, sha
-                ):
-                    scraped += 1
-
-            if skipped_animated:
+            result = await scrape_week(
+                bot.rest,
+                bot.db,
+                guild_id,
+                cid,
+                start,
+                end,
+                download=_download_url,
+            )
+            if result.skipped_animated:
                 window.info(
-                    f"Skipped {skipped_animated} animated image(s) — "
+                    f"Skipped {result.skipped_animated} animated image(s) — "
                     "the grid is static-only."
                 )
-            if skipped_duplicates:
+            if result.skipped_duplicates:
                 window.info(
-                    f"Skipped {skipped_duplicates} duplicate image(s) — "
-                    "already scraped this week."
+                    f"Skipped {result.skipped_duplicates} duplicate "
+                    "image(s) — already scraped this week."
                 )
             window.success(
                 "Scraped "
-                f"{scraped} new image(s) from <#{cid}> for "
+                f"{result.scraped} new image(s) from <#{cid}> for "
                 f"{week_year}-W{week_no:02} ({day})."
             )
 
@@ -221,59 +186,57 @@ class Post(
             if len(selected) < len(rows):
                 window.warn(f"Truncated to the first {MAX_IMAGES} images.")
 
-            paths: list[Path] = []
-            survivors: list[db.BoardRow] = []
-            pruned = 0
-            with tempfile.TemporaryDirectory() as tmp:
-                for row in selected:
-                    try:
-                        data = await _download_url(row.image_url)
-                    except Exception:
-                        # the message is gone — drop the row, no more calls
-                        await db.delete_image(bot.db, row.id)
-                        pruned += 1
-                        continue
-                    path = Path(tmp) / f"{row.id}.img"
-                    path.write_bytes(data)
-                    paths.append(path)
-                    survivors.append(row)
-                if pruned:
-                    window.warn(
-                        f"Deleted {pruned} row(s) — image no longer "
-                        "downloads (message deleted)."
-                    )
-                if not paths:
-                    window.error(
-                        "No images left — their messages are gone. "
-                        "Re-run /board scrape."
-                    )
-                    return
+            try:
+                grid = await build_grid(
+                    bot.db,
+                    selected,
+                    download=_download_url,
+                    day=day,
+                    columns=self.columns,
+                    cell_size=self.cell_size,
+                )
+            except UserInputError as err:
+                window.error(str(err))
+                return
+            if grid.pruned:
+                window.warn(
+                    f"Deleted {grid.pruned} row(s) — image no longer "
+                    "downloads (message deleted)."
+                )
+            if not grid.survivors:
+                window.error(
+                    "No images left — their messages are gone. "
+                    "Re-run /board scrape."
+                )
+                return
 
-                out = Path(tmp) / "grid.webp"
-                try:
-                    ImageGridStitcher().stitch(
-                        [str(p) for p in paths],
-                        str(out),
-                        images_per_row=self.columns,
-                        target_size=(self.cell_size, self.cell_size),
-                    )
-                except UserInputError as err:
-                    window.error(str(err))
-                    return
-                data = out.read_bytes()
-
-            # plain content so the text renders above the attachment;
-            # links on their own line, tail-dropped when over the limit
-            header = (
-                f"Week {day} — {len(paths)} image(s) · "
-                f"{self.columns} cols · {self.cell_size}px"
-            )
-            content = build_post_content(
-                header, [row.msg_url for row in survivors]
-            )
+            # plain content so the text renders above the attachment
             await ctx.respond(
-                content=content,
-                attachment=hikari.Bytes(data, f"board-{day}.webp"),
+                content=grid.content,
+                attachment=hikari.Bytes(grid.data, f"board-{day}.webp"),
+            )
+
+
+@board.register
+class Weekly(
+    lightbulb.SlashCommand,
+    name="weekly",
+    description="Run the weekly board scrape + poll flow now (testing).",
+    hooks=[_OWNER],
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        async with command_window(ctx) as window:
+            window.info("Running weekly board flow...")
+            await window.flush()  # ack before the long scrape
+            result = await run_weekly(bot, force=True)
+            if result.aborted:
+                window.error(result.reason)
+                return
+            window.success(
+                f"Weekly board done: {result.week_label} · "
+                f"{result.scraped} image(s) · poll ID#{result.poll_id}"
             )
 
 
