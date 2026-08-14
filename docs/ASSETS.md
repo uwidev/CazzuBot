@@ -96,10 +96,11 @@ CREATE TABLE IF NOT EXISTS asset (
 )
 ```
 
-- **Keys are content-anchored and namespaced** (`frog.species.leaf_frog`,
-  not `leaf.png`). Code references assets *by key only* — never by path or
-  URL. That inversion is what lets you swap storage, swap art, and add
-  variants without touching callers.
+- **Keys are derived and typed** — the registry key comes from the asset's
+  enum identity (`asset_key(member)` → e.g. `FrogAsset.LEAF_FROG`), never a
+  hand-written string. Code references assets *by enum member only* — never
+  by path, string, or URL. That inversion is what lets you swap storage,
+  swap art, and add variants without touching callers.
 - **Content addressing** (sha256) is what makes everything else work:
   identical files dedupe, drift is detectable (file changed without being
   re-registered), and a new hash is a natural cache-buster.
@@ -202,7 +203,9 @@ designed to serve it:
   `effect_key`; time-boxed effects map onto `bot.scheduler.add(...)`.
 
 Asset keys follow: `frog.species.leaf_frog`, `frog.dish.stew`,
-`frog.shop.icon.leaf_frog`, `rank.badge.cirno`.
+`frog.shop.icon.leaf_frog`, `rank.badge.cirno`. (The implemented registry
+derives keys from enum identity instead — see `docs/ROADMAP.md` Phase 1;
+the dotted names here are the conceptual namespace, not literals.)
 
 ## Open decisions (not blocking the doc)
 

@@ -4,6 +4,78 @@ Deferred work, parked by request ("we will work on it later when I request it").
 Pick these up when the owner asks; each item links to the discussion that
 motivated it. Completed items are archived in `docs/DONE.md`.
 
+## Game features — the app is becoming a game
+
+Design discussion (2026-08): the bot has evolved into a casual
+collection/progression game hosted in Discord (message exp → levels/ranks,
+frog capture → inventory, consume = the exp sink, quarterly freeze = the
+seasonal soft reset). The systems below were scoped in that discussion; the
+shared substrate (generic `inventory` + `member_effect` stores, typed
+keys, `bot.events`) is built first. Member-state design decision recorded:
+**no central member row** — scalar per-feature state lives in narrow
+per-feature tables, shapes that repeat across features earn a generic
+store, history stays in append-only logs, and the "whole member" is a
+derived profile view composed on read (never stored).
+
+### Badge / achievement system (earned)
+
+The event bus's first real consumer demo. Badge definitions in code (like
+species), a **trigger registry reusing the effects convention**
+(`TriggerKey` enum → typed config → predicate) over `bot.events` (and
+gateway events for message-content triggers), and a
+`member_badge(uid, badge_key, earned_at)` table — **earned** records
+(criteria-based, one-time), distinct from owned vanity items below.
+
+### Vanity collectables (owned)
+
+Pins/frames/titles as **inventory items** — the generic `inventory` store
++ typed keys + assets for art + a display/equip mechanism. **Owned**
+(countable, tradeable later). The earned-vs-owned split is the design
+principle: achievements record, inventory owns.
+
+### Classes / activity tracks / professions
+
+A **track** = per-activity progression (uniform xp/level/leaderboard per
+activity — the message-exp pattern generalized). Frog catcher ↔ capture
+track, alchemist ↔ combine track, etc. A `member_track(uid, track_key, xp)`
+table only once a second track exists (first track can be a narrow
+per-feature table); a "class" = a named track bundle; role-bound variants
+need no table (derived from roles). Hard RPG classes (exclusive abilities,
+per-class leveling) are out of scope.
+
+### Combining / recipes (chef · alchemist)
+
+Code-defined **recipe registry** (inputs `{species: qty}` → output
+species) — "a dish is just a crafted species" (roadmap). Combine = the
+inventory ledger as the mechanism (consume input stacks, grant the output)
+— a new economy sink; the alchemist profession is the combine track.
+
+### Game-patterns lexicon (docs)
+
+Name the patterns and map each to its code home so "new feature" = "which
+pattern is this?": loot tables → `roll_species`, inventory ledger →
+`inventory`, buffs/modifiers → `member_effect`, seasonal resets →
+quarterly, achievements → badges, event spine → `bot.events`, faucets /
+sinks → capture / consume. Include the emergent-dynamics vocabulary
+(hold-vs-spend, conversion + decay, the daily/weekly/quarterly tempo
+layers).
+
+## Self-documenting / low-friction sweep
+
+Per the design principles in `AGENTS.md`: sweep the codebase so it conforms
+to (1) **self-documenting code** — where the call graph is ambiguous, add a
+comment naming the caller/emitter/subscriber at the point of ambiguity
+(who calls this method, who emits this event, who invokes this handler,
+who consumes these rows), so a reader never has to hunt for "what pulls
+this"; and (2) **minimum friction to build on** — spot-check that
+infrastructure shapes don't force awkward workarounds on their consumers
+(isolation/atomicity/modularity kept, no needless indirection). The event
+system is the annotated reference case: `cazzubot/events.py` states who
+calls `on`/`emit`, `plugins/frogs/events.py` names the sole emitter of
+each event, and the emit call sites in `factory.py`/`cog.py` state the
+same. Extend that pattern to the rest of the codebase (scheduler
+handlers, service entry points, listeners, template formatters).
+
 ## `bot.get_plugin(name)` + optional-dependency degrade
 
 Public accessor for loaded plugins (today callers reach into
@@ -13,30 +85,28 @@ skip their call instead of crashing.
 
 ## Core event bus — `bot.events`
 
-`emit`/`on`/`off` for bot-specific events (`member_leveled_up`,
-`frog_captured`, …) so producers never know their consumers. Design decision
-already made: the bus lives in **core** (`cazzubot/events.py`) — a generic
-capability, not feature logic. Caveat to respect: events are less traceable
-than direct calls and ordering isn't guaranteed — reach for them only when the
-producer shouldn't know the consumer exists.
+**IMPLEMENTED (2026-08-14)** — `cazzubot/events.py`: typed `emit`/`on`,
+subscribers awaited in registration order with failures isolated (an
+observer can never break the emitter). The frogs plugin emits
+`FrogCapturedEvent`/`FrogConsumedEvent` after its transactional work. The
+bus is for **observations** only; entity-bound behavior (species effects)
+stays inline with the flow that owns the entity.
 
 ## Event-bus consumer demo
 
-One real consumer (e.g. a "level-up milestone" channel) to validate the bus
-design before wider adoption.
+One real consumer to validate the bus end-to-end. The planned badge /
+achievement system is the natural candidate — its triggers subscribe to
+the bus (and gateway events) exactly like the effects registry's
+enum-key → typed-config → handler convention, over events instead of
+species fields.
 
 ## Core asset management (design in docs/ASSETS.md)
 
 Full design written up in `docs/ASSETS.md` from the gamification planning
-discussion — parked here for later review and potential implementation. The
-short version: a three-layer system — plugin-declared definitions (static in
-git / dynamic via admin upload), a content-addressed registry table (catalog
-of records, namespaced keys), and Discord-CDN delivery (sha256-diffed sync to
-a private asset channel, URL-only so templates/embeds stay untouched).
-Prerequisite (also designed there): the frogs catalog rework — species rows +
-inventory + recipes replace the current column-per-type model
-(`member_frog.normal/frozen`, `FrogTypeEnum`), with effects via a
-string-key → handler registry and dishes as crafted species.
+discussion — parked here for later review and potential implementation.
+The static half is implemented (2026-08-14): `Plugin.assets` declarations,
+the content-addressed registry, boot reconcile, and CDN sync to a private
+asset channel (the dynamic admin-upload path stays deferred).
 
 ## Run the bot via a [project.scripts] entry
 

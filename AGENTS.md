@@ -57,6 +57,24 @@ Discord bot for Club Cirno — v2 rewrite: plugin-based, SQLite, single guild. P
 - Command feedback goes through `cazzubot.window` (levels debug/info/success/warn/error; success/warn/error prefix ✓/⚠︎/✖) — no emoji-reaction feedback. CLI `logging` stays for bot internals (db, connection, plugin hooks); command-local state goes to the user via the window, flushed before blocking ops and always at command end (even on error).
 - Ruff select `["E4", "E7", "E9", "F"]`; basedpyright config present (Python 3.14, Linux, recommended mode with rule overrides for the dynamic layers).
 
+## Design principles
+
+- **Minimum friction to build on.** Infrastructure and code are designed
+  and implemented so that modifying them or building on top of them costs
+  as little as possible: prefer isolated, atomic, modular shapes (one
+  feature = one folder, service/repository/controller splits, typed
+  registries, one table per concern) whenever the overhead stays
+  reasonable. An abstraction that makes the common modification harder is
+  a net loss — this is the lesson of the v1 rewrite (see
+  `docs/ARCHITECTURE.md`). Least friction wins over cleverness.
+- **Self-documenting code.** Code should explain itself; understanding it
+  should not require an external document. When the call graph is
+  ambiguous — what calls a method, who emits an event, who invokes a
+  handler — name it in a comment at the ambiguous point: event emitters
+  state their subscribers, bus handlers state who invokes them, entry
+  points state their callers. If a reader has to hunt for "what pulls
+  this", the code is missing a comment.
+
 ## Notes
 
 - `frog register`/`exp`/`rank`/`level`/`welcome`/`frog set` require admin; `consume` confirms via a Yes/No button view (`cazzubot.utils.ConfirmMenu`).
