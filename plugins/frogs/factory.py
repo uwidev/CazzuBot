@@ -5,6 +5,10 @@ by the previous fire, rolled ``interval ± fuzzy%`` from the fire instant —
 independent of the frog's despawn or capture, so frogs may overlap. The
 next row is scheduled *before* the current frog spawns so a crashed or
 failed spawn never kills the schedule (as v1 did).
+
+The visible frog is a **species**: the spawn rolls one by weight and the
+catch button carries it in its custom_id (``frog:catch:{cid}:{key}``, so
+the boot sweep can still recognise and clean up stale frogs).
 """
 
 import asyncio
@@ -19,15 +23,20 @@ import pendulum
 
 from cazzubot import templates, utils
 from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogTypeEnum, MemberSnapshot
+from cazzubot.models import FrogState, MemberSnapshot, SpeciesKey
 from cazzubot.scheduler import InChaotic
 
 from . import db as frog_db
+from .events import FrogCapturedEvent
+from .species import by_key, roll_species
 
 _log = logging.getLogger(__name__)
 
 FROG_EMOJI = "<:cirnoFrog:695126166301835304>"
 FROG_NET_EMOJI = "<:cirnoNet:752290769712316506>"
+
+# the catch button custom_id prefix: frog:catch:<cid>:<species_key>
+_CATCH_PREFIX = "frog:catch:"
 
 
 async def on_frog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
@@ -70,22 +79,28 @@ async def spawn_and_wait(
     ctx: lightbulb.Context | None = None,
     *,
     cid: int,
+    species_key: SpeciesKey | None = None,
 ) -> bool:
     """Spawn a frog and wait for someone to capture it.
 
-    The frog is a fresh message (frog emoji + Catch button) sent to ``cid``
-    in a single payload. It lives ``persist`` seconds: pressing the button
-    catches it and the message is deleted on the spot, otherwise the frog
-    gets bored and the message is removed. Returns True if it was caught.
+    The species is rolled when ``species_key`` is None (the owner spawn/
+    fake commands can force one for testing). The frog is a fresh message
+    (species name + art + Catch button) sent to ``cid`` in a single
+    payload. It lives ``persist`` seconds: pressing the button catches it
+    and the message is deleted on the spot, otherwise the frog gets bored
+    and the message is removed. Returns True if it was caught.
 
     ``ctx`` is the lightbulb context for the owner ``spawn``/``fake``
     commands (the frog becomes the slash response); without it the frog is
     sent to the channel directly.
     """
-    menu = FrogCatchMenu(bot, cid)
+    if species_key is None:
+        species_key = roll_species().key
+    menu = FrogCatchMenu(bot, cid, species_key)
+    content = await _frog_content(bot, species_key)
     if ctx is not None:
         response_id = await ctx.respond(
-            FROG_EMOJI, components=cast(Any, menu)
+            content, components=cast(Any, menu)
         )
         message = await ctx.fetch_response(response_id)
         channel_id = ctx.channel_id
@@ -94,9 +109,7 @@ async def spawn_and_wait(
         if channel is None:
             _log.warning("frog channel %s not found; skipping", cid)
             return False
-        message = await channel.send(
-            FROG_EMOJI, components=cast(Any, menu)
-        )
+        message = await channel.send(content, components=cast(Any, menu))
         channel_id = cid
 
     # remember the frog message so a crashed process can clean it up on
@@ -117,6 +130,14 @@ async def spawn_and_wait(
     return menu.captured
 
 
+async def _frog_content(bot: CazzuBot, species_key: SpeciesKey) -> str:
+    """The spawned frog's message text: species name + its art URL."""
+    species = by_key(species_key)
+    name = species.name if species is not None else species_key.value
+    art = await bot.assets.get(species.art) if species else None
+    return f"{name}\n{art}" if art else name
+
+
 class FrogCatchMenu(lightbulb.components.Menu):
     """Capture button on a spawned frog; the first click wins.
 
@@ -125,17 +146,20 @@ class FrogCatchMenu(lightbulb.components.Menu):
     frog is caught or once it gets bored.
     """
 
-    def __init__(self, bot: CazzuBot, cid: int) -> None:
+    def __init__(
+        self, bot: CazzuBot, cid: int, species_key: SpeciesKey
+    ) -> None:
         super().__init__()
         self.bot = bot
         self.captured = False
         self._spawned_at = time.time()
+        self.species_key = species_key
         self.add_interactive_button(
             hikari.ButtonStyle.SUCCESS,
             self.catch,
-            # a channel-scoped fixed id: one frog per channel at a time, and
-            # it lets the boot sweep recognise (and clean up) stale frogs
-            custom_id=f"frog:catch:{cid}",
+            # a channel-scoped fixed id carrying the species; the prefix
+            # lets the boot sweep recognise (and clean up) stale frogs
+            custom_id=f"{_CATCH_PREFIX}{cid}:{species_key.value}",
             # buttons need the emoji id, not the <:name:id> tag
             emoji=utils.button_emoji(FROG_NET_EMOJI),
         )
@@ -154,23 +178,49 @@ class FrogCatchMenu(lightbulb.components.Menu):
             hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
         )
 
+        uid: int | None = None
         try:
             uid = mctx.interaction.user.id
             now = pendulum.now("UTC")
+            species = by_key(self.species_key)
+            if species is None:
+                _log.error(
+                    "capture of unknown species %r (uid=%s)",
+                    self.species_key.value,
+                    uid,
+                )
+                return
             await frog_db.add_capture_log(
                 self.bot.db,
                 uid,
                 now,
                 waited_for=time.time() - self._spawned_at,
-                frog_type=FrogTypeEnum.NORMAL,
+                species_key=species.key,
             )
-            await frog_db.modify_frog(
-                self.bot.db, uid, modify=1, frog_type=FrogTypeEnum.NORMAL
+            await frog_db.modify_inventory(
+                self.bot.db,
+                uid,
+                species.key,
+                FrogState.NORMAL,
+                1,
             )
             await frog_db.modify_capture(self.bot.db, uid, modify=1)
 
+            if species.catch_effect is not None:
+                payload = species.catch_effect
+                # the enum member's value IS the handler — no lookup
+                await payload.key.value.catch(
+                    self.bot,
+                    payload,
+                    uid=uid,
+                    species_key=species.key,
+                    now=now,
+                )
+
             msg_json = await frog_db.get_message(self.bot.settings) or {}
-            frog_cnt_total = await frog_db.get_frogs(self.bot.db, uid)
+            frog_cnt_total = await frog_db.total_inventory(
+                self.bot.db, uid
+            )
             seasonal = await frog_db.seasonal_captures(
                 self.bot.db, uid, now.year, (now.month - 1) // 3
             )
@@ -182,6 +232,8 @@ class FrogCatchMenu(lightbulb.components.Menu):
                 frog_cnt_new=frog_cnt_total,
                 seasonal_cap_old=seasonal - 1,
                 seasonal_cap_new=seasonal,
+                species=species.name,
+                species_art=(await self.bot.assets.get(species.art) or ""),
             )
             content, embed, embeds = templates.prepare(msg_json)
             sent = await self.bot.rest.create_message(
@@ -201,6 +253,16 @@ class FrogCatchMenu(lightbulb.components.Menu):
             )
             utils.schedule_delete(
                 self.bot, mctx.channel_id, int(sent.id), 7
+            )
+            # the sole FrogCapturedEvent emitter: observers subscribed via
+            # bot.events.on (badges etc.) see the completed capture here;
+            # failures are isolated by the bus and cannot break the catch
+            await self.bot.events.emit(
+                FrogCapturedEvent(
+                    uid=uid,
+                    species_key=species.key,
+                    at=now.isoformat(),
+                )
             )
         except Exception:
             # the click is already acked (and the frog removed by
@@ -252,11 +314,18 @@ async def cleanup_dangling_frogs(bot: CazzuBot) -> None:
 
 
 def _is_frog_message(message: Any, cid: int) -> bool:
-    """True when a message still carries the catch button for its channel."""
-    wanted = f"frog:catch:{cid}"
+    """True when a message still carries the catch button for its channel.
+
+    Matches by prefix so the species-bearing custom_id
+    (``frog:catch:<cid>:<key>``) is recognised; the trailing colon keeps
+    channel ids that prefix each other apart (``frog:catch:99:`` never
+    matches a frog in channel 999).
+    """
+    wanted = f"{_CATCH_PREFIX}{cid}:"
     for row in message.components:
         for component in row.components:
-            if getattr(component, "custom_id", None) == wanted:
+            custom_id = getattr(component, "custom_id", None)
+            if isinstance(custom_id, str) and custom_id.startswith(wanted):
                 return True
     return False
 
@@ -269,9 +338,12 @@ def formatter(
     frog_cnt_new: int | None = None,
     seasonal_cap_old: int | None = None,
     seasonal_cap_new: int | None = None,
+    species: str | None = None,
+    species_art: str | None = None,
 ) -> str:
     """Placeholders: {avatar} {name} {mention} {id} {frog_cnt_old}
-    {frog_cnt_new} {seasonal_cap_old} {seasonal_cap_new}"""
+    {frog_cnt_new} {seasonal_cap_old} {seasonal_cap_new} {species}
+    {species_art}"""
     return utils.format_member(
         s,
         member,
@@ -279,4 +351,6 @@ def formatter(
         frog_cnt_new=frog_cnt_new,
         seasonal_cap_old=seasonal_cap_old,
         seasonal_cap_new=seasonal_cap_new,
+        species=species,
+        species_art=species_art,
     )

@@ -5,7 +5,8 @@ from typing_extensions import override
 from cazzubot import Plugin
 from cazzubot.bot import CazzuBot
 
-from . import db, factory
+from . import db, factory, species as species
+from .assets import FrogAsset
 
 
 class FrogsPlugin(Plugin):
@@ -15,6 +16,7 @@ class FrogsPlugin(Plugin):
     scheduled = {"frog": factory.on_frog_due}
     # consuming frogs grants exp via the experience tables
     depends_on = ("experience",)
+    asset_decl = FrogAsset
 
     @override
     async def on_load(self, bot: CazzuBot) -> None:

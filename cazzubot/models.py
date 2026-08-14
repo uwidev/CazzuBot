@@ -29,9 +29,22 @@ class MemberExpLogSourceEnum(Enum):
     FROG = "frog"
 
 
-class FrogTypeEnum(Enum):
+class FrogState(Enum):
+    """A frog inventory state — per species, per member."""
+
     NORMAL = "normal"
     FROZEN = "frozen"
+
+
+class SpeciesKey(Enum):
+    """The valid frog species keys — code references them, never strings.
+
+    Lives next to ``FrogState`` because both are stored as TEXT and shared
+    across the frogs plugin's modules (and future consumers like badges).
+    """
+
+    LEAF_FROG = "leaf_frog"
+    CLASSY_FROG = "classy_frog"
 
 
 class WelcomeModeEnum(Enum):

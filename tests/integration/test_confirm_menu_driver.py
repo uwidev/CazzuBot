@@ -109,7 +109,15 @@ async def test_frog_consume_confirm(
     expected_exp_logs: int,
 ) -> None:
     await full_bot.db.execute(
-        "INSERT OR IGNORE INTO member_frog (uid, normal, frozen, capture) VALUES (424242, 5, 0, 5)"
+        """
+		INSERT OR IGNORE INTO inventory (uid, item, qty)
+		VALUES (424242, 'frog:leaf_frog:normal', 5)
+		"""
+    )
+    await full_bot.db.execute(
+        """
+		INSERT OR IGNORE INTO member_frog (uid, capture) VALUES (424242, 5)
+		"""
     )
     task = asyncio.create_task(
         run_slash(full_bot, "frog consume", user_id=424242, timeout=10.0)
@@ -127,9 +135,12 @@ async def test_frog_consume_confirm(
     assert press.exceptions == []
     assert result.exceptions == []
     row = await full_bot.db.fetchone(
-        "SELECT normal FROM member_frog WHERE uid = 424242"
+        """
+		SELECT qty FROM inventory
+		WHERE uid = 424242 AND item = 'frog:leaf_frog:normal'
+		"""
     )
-    assert row is not None and row["normal"] == expected_normal
+    assert row is not None and row["qty"] == expected_normal
     assert (
         await full_bot.db.fetchval(
             "SELECT COUNT(*) FROM member_exp_log WHERE uid = 424242"

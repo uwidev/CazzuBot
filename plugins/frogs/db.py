@@ -1,8 +1,12 @@
-"""Frogs plugin — token economy. DB queries.
+"""Frogs plugin — species token economy. DB queries.
 
 Single-guild port of v1's ``ext/frog.py`` + ``src/frog_factory.py`` +
 ``src/db/member_frog.py`` + ``src/db/member_frog_log.py`` + ``src/db/frog.py``
-+ ``src/db/frog_spawn.py``.
++ ``src/db/frog_spawn.py``, reworked for the species model: holdings live in
+the **generic inventory** (``cazzubot/inventory.py`` — frog stacks are
+``FrogItem`` identities over it), ``member_frog`` only the lifetime capture
+counter, and ``member_frog_log.type`` stores the species key. The species
+*definitions* themselves live in code (``species.py`` — no catalog table).
 """
 
 import logging
@@ -11,10 +15,13 @@ from typing import Any
 
 import pendulum
 
+from cazzubot import inventory
 from cazzubot.db import Database
-from cazzubot.models import FrogTypeEnum
+from cazzubot.models import FrogState, SpeciesKey
 from cazzubot.settings import Settings
 from cazzubot.utils import rank_rows, season_bounds
+
+from .species import SPECIES
 
 _log = logging.getLogger(__name__)
 
@@ -22,8 +29,6 @@ SCHEMA = [
     """
 	CREATE TABLE IF NOT EXISTS member_frog (
 		uid     INTEGER PRIMARY KEY,
-		normal  INTEGER NOT NULL DEFAULT 0,
-		frozen  INTEGER NOT NULL DEFAULT 0,
 		capture INTEGER NOT NULL DEFAULT 0
 	)
 	""",
@@ -31,7 +36,7 @@ SCHEMA = [
 	CREATE TABLE IF NOT EXISTS member_frog_log (
 		id         INTEGER PRIMARY KEY AUTOINCREMENT,
 		uid        INTEGER NOT NULL,
-		type       TEXT NOT NULL DEFAULT 'normal',
+		type       TEXT NOT NULL DEFAULT 'leaf_frog',
 		at         TEXT NOT NULL,
 		waited_for REAL
 	)
@@ -86,37 +91,72 @@ async def set_enabled(settings: Settings, val: bool) -> None:
     await settings.set(ENABLED_KEY, val)
 
 
-# -- member_frog -----------------------------------------------------------
+# -- inventory (frog holdings over the generic ledger) ----------------------
 
 
-async def get_frogs(
+@dataclass(frozen=True, slots=True)
+class FrogItem:
+    """One frog inventory item: a species in a state.
+
+    The generic inventory's typed identity (``cazzubot.inventory``): ``key``
+    derives the stored string from two enum values — never a literal at
+    call sites; ``parse`` is the read-side inverse, used once at the DB
+    boundary. Item *definitions* stay in code (``species.py``); this only
+    identifies a stack.
+    """
+
+    species: SpeciesKey
+    state: FrogState
+
+    @property
+    def key(self) -> str:
+        return f"frog:{self.species.value}:{self.state.value}"
+
+    @classmethod
+    def parse(cls, key: str) -> FrogItem:
+        """Build a FrogItem from a stored inventory item string."""
+        _, species, state = key.split(":")
+        return cls(species=SpeciesKey(species), state=FrogState(state))
+
+
+async def get_inventory(
     db: Database,
     uid: int,
-    frog_type: FrogTypeEnum = FrogTypeEnum.NORMAL,
+    species_key: SpeciesKey,
+    state: FrogState = FrogState.NORMAL,
 ) -> int:
-    val = await db.fetchval(
-        f"SELECT {frog_type.value} FROM member_frog WHERE uid = ?", uid
-    )
-    return int(val or 0)
+    """A member's stack of ``species`` in ``state``."""
+    return await inventory.get(db, uid, FrogItem(species_key, state))
 
 
-async def modify_frog(
+async def modify_inventory(
     db: Database,
     uid: int,
-    *,
+    species_key: SpeciesKey,
+    state: FrogState,
     modify: int,
-    frog_type: FrogTypeEnum = FrogTypeEnum.NORMAL,
 ) -> None:
-    await db.execute(
-        f"""
-		INSERT INTO member_frog (uid, {frog_type.value})
-		VALUES (?, ?)
-		ON CONFLICT (uid) DO UPDATE SET
-			{frog_type.value} = member_frog.{frog_type.value} + excluded.{frog_type.value}
-		""",
-        uid,
-        modify,
-    )
+    """Add (or subtract) frogs of a species/state; stacks prune at zero."""
+    await inventory.add(db, uid, FrogItem(species_key, state), modify)
+
+
+async def inventory_rows(
+    db: Database, uid: int
+) -> list[tuple[SpeciesKey, FrogState, int]]:
+    """A member's whole frog inventory: [(species_key, state, qty)]."""
+    rows = await inventory.rows(db, uid, prefix="frog:")
+    return [
+        (item.species, item.state, qty)
+        for item, qty in ((FrogItem.parse(k), q) for k, q in rows)
+    ]
+
+
+async def total_inventory(db: Database, uid: int) -> int:
+    """Every frog a member holds, across species and states."""
+    return await inventory.total(db, uid, prefix="frog:")
+
+
+# -- member_frog (lifetime capture counter) --------------------------------
 
 
 async def modify_capture(db: Database, uid: int, modify: int) -> None:
@@ -159,14 +199,18 @@ async def sync_with_frog_logs(db: Database) -> None:
 
 
 async def freeze_frogs(db: Database) -> None:
-    """Quarterly: turn every normal frog into a frozen frog."""
-    await db.execute(
-        """
-		UPDATE member_frog
-		SET frozen = frozen + normal,
-			normal = 0
-		"""
-    )
+    """Quarterly: fold every normal stack into frozen, per species.
+
+    Built on the generic inventory's ``move_all`` — one call per species
+    (normal → frozen). Idempotent: a second run has no normal stacks left,
+    so nothing folds and nothing is deleted.
+    """
+    for species in SPECIES:
+        await inventory.move_all(
+            db,
+            FrogItem(species.key, FrogState.NORMAL),
+            FrogItem(species.key, FrogState.FROZEN),
+        )
 
 
 # -- member_frog_log -------------------------------------------------------
@@ -178,7 +222,7 @@ async def add_capture_log(
     at: pendulum.DateTime,
     *,
     waited_for: float,
-    frog_type: FrogTypeEnum = FrogTypeEnum.NORMAL,
+    species_key: SpeciesKey,
 ) -> None:
     await db.execute(
         """
@@ -186,7 +230,7 @@ async def add_capture_log(
 		VALUES (?, ?, ?, ?)
 		""",
         uid,
-        frog_type.value,
+        species_key.value,
         at.isoformat(),
         waited_for,
     )

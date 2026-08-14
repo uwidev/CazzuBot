@@ -21,6 +21,7 @@ import hikari
 import pendulum
 
 from cazzubot import utils
+from cazzubot.models import SpeciesKey
 from dotenv import load_dotenv
 
 load_dotenv(".env")
@@ -48,7 +49,9 @@ def _payloads(client: hikari.api.RESTClient) -> list[tuple[str, object]]:
         pendulum.datetime(2026, 1, 1),
         [(1, 1, 100)],
     )
-    frog = factory.FrogCatchMenu(cast(Any, client), 99)
+    frog = factory.FrogCatchMenu(
+        cast(Any, client), 99, SpeciesKey.LEAF_FROG
+    )
     return [
         ("confirm", confirm),
         ("top", top),

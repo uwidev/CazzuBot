@@ -11,9 +11,13 @@ import sys
 import hikari
 import lightbulb
 
+from cazzubot.assets import AssetError, Assets
 from cazzubot.config import Config
 from cazzubot.db import Database, SchemaMismatchError
 from cazzubot.errors import UserInputError
+from cazzubot.events import EventBus
+from cazzubot.inventory import Inventory
+from cazzubot.member_effects import MemberEffects
 from cazzubot.plugin import (
     Plugin,
     discover_plugins,
@@ -52,6 +56,10 @@ class CazzuBot(hikari.GatewayBot):
         self.db = Database(config.db_path)
         self.settings = Settings(self.db)
         self.scheduler = Scheduler(self)
+        self.assets = Assets(self, config, plugins_dir)
+        self.events = EventBus()
+        self.inventory = Inventory(self)
+        self.member_effects = MemberEffects(self)
 
         self.plugins: list[Plugin] = []
         self._plugin_by_name: dict[str, Plugin] = {}
@@ -103,6 +111,9 @@ class CazzuBot(hikari.GatewayBot):
         # core schema
         await self.db.run_schema(self.settings.schema)
         await self.db.run_schema(self.scheduler.schema)
+        await self.db.run_schema(self.assets.schema)
+        await self.db.run_schema(self.inventory.schema)
+        await self.db.run_schema(self.member_effects.schema)
 
         # discover and load plugins — two phases so any on_load hook can
         # depend on every plugin's schema/extensions being ready (no load
@@ -124,7 +135,13 @@ class CazzuBot(hikari.GatewayBot):
         # boot-time schema guard: every table the DDL defines must exist in
         # the database exactly as defined. Terminate rather than let the
         # on-disk schema silently diverge (extra DB tables are allowed).
-        statements = [*self.settings.schema, *self.scheduler.schema]
+        statements = [
+            *self.settings.schema,
+            *self.scheduler.schema,
+            *self.assets.schema,
+            *self.inventory.schema,
+            *self.member_effects.schema,
+        ]
         for plugin in plugins:
             statements.extend(plugin.schema)
         try:
@@ -136,10 +153,25 @@ class CazzuBot(hikari.GatewayBot):
             raise SystemExit(1) from err
 
         for plugin in plugins:
-            await plugin.on_load(self)
+            try:
+                await plugin.on_load(self)
+            except AssetError as err:
+                # a plugin's boot-time asset drift check failed (e.g. the
+                # frogs plugin found a species referencing an undeclared
+                # art key) — same fail-fast as the reconcile below
+                _log.critical("asset drift — refusing to boot: %s", err)
+                raise SystemExit(1) from err
 
         # central task scheduler
         await self.scheduler.start()
+
+        # asset reconcile at the end of starting (after every on_load hook
+        # seeded content rows): register declared files, fail fast on drift
+        try:
+            await self.assets.reconcile()
+        except AssetError as err:
+            _log.critical("asset drift — refusing to boot: %s", err)
+            raise SystemExit(1) from err
 
     async def _on_started(self, _event: hikari.StartedEvent) -> None:
         me = self.get_me()

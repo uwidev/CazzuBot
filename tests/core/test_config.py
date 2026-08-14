@@ -98,7 +98,9 @@ def test_load_db_path_follows_guild_side(
     """Each guild side gets its own database file (dev/prod data apart)."""
     _env(monkeypatch)
     assert Config.load().db_path == "data/cazzubot-dev.db"
-    assert Config.load(guild="production").db_path == "data/cazzubot-prod.db"
+    assert (
+        Config.load(guild="production").db_path == "data/cazzubot-prod.db"
+    )
     # per-side env override wins
     monkeypatch.setenv("DB_PATH_DEV", "/tmp/dev.db")
     assert Config.load().db_path == "/tmp/dev.db"
@@ -109,6 +111,28 @@ def test_load_short_sides(monkeypatch: pytest.MonkeyPatch) -> None:
     config = Config.load(bot="p", guild="d")
     assert config.token == _TOKEN_PROD
     assert config.guild_id == int(_GID_DEV)
+
+
+def test_load_asset_channel_follows_guild_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each guild side reads its own ASSET_CHANNEL_* (common part front)."""
+    _env(monkeypatch)
+    monkeypatch.setenv("ASSET_CHANNEL_DEV", "111")
+    monkeypatch.setenv("ASSET_CHANNEL_PROD", "222")
+    assert Config.load().asset_channel_id == 111
+    assert Config.load(guild="production").asset_channel_id == 222
+
+
+def test_load_asset_channel_is_optional(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No channel configured: the bot boots and skips the CDN sync."""
+    _env(monkeypatch)
+    monkeypatch.delenv("ASSET_CHANNEL_DEV", raising=False)
+    monkeypatch.delenv("ASSET_CHANNEL_PROD", raising=False)
+    assert Config.load().asset_channel_id is None
+    assert Config.load(guild="production").asset_channel_id is None
 
 
 def test_load_missing_token(monkeypatch: pytest.MonkeyPatch) -> None:

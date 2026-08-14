@@ -20,7 +20,13 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-SERVICE_FILENAMES = ("logic.py", "factory.py", "db.py")
+SERVICE_FILENAMES = (
+    "logic.py",
+    "factory.py",
+    "db.py",
+    "species.py",
+    "effects.py",
+)
 
 # Permanent controller-shaped carve-out (documented in docs/DONE.md).
 _ALLOWLIST = {

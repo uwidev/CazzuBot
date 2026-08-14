@@ -12,10 +12,11 @@ import pytest
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
+from cazzubot.models import FrogState, SpeciesKey
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
-from plugins.frogs.cog import Consume, Profile, Register
+from plugins.frogs.cog import Catalog, Consume, Profile, Register
 from tests.fakes import (
     FakeCache,
     FakeChannel,
@@ -33,7 +34,7 @@ from tests.fakes import (
 _UID = 424242
 
 
-# -- profile / register -----------------------------------------------------
+# -- profile / register / catalog ------------------------------------------
 
 
 async def test_frog_profile_no_captures_yet(
@@ -79,6 +80,19 @@ async def test_frog_register_rejects_bad_fuzzy(
         await invoke_command(Register(), ctx, interval="2m", fuzzy=2.0)
 
 
+async def test_frog_catalog_lists_species(
+    bot: CazzuBot, ctx: FakeContext
+) -> None:
+    await invoke_command(Catalog(), ctx)
+
+    embed = ctx.sent[-1].embed
+    assert embed is not None
+    assert embed.title == "Frog Species Catalog"
+    assert len(embed.fields) == 2
+    assert any("Leaf Frog" in field.name for field in embed.fields)
+    assert any("Classy Frog" in field.name for field in embed.fields)
+
+
 # -- consume -----------------------------------------------------------------
 
 
@@ -88,7 +102,9 @@ async def test_frog_consume_full_flow(
     author: FakeMember,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    await frog_db.modify_frog(bot.db, _UID, modify=3)
+    await frog_db.modify_inventory(
+        bot.db, _UID, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 3
+    )
 
     async def _fake_attach(
         menu: utils.ConfirmMenu, _client: object, **_: object
@@ -112,7 +128,10 @@ async def test_frog_consume_full_flow(
     await menu_button(menu).callback(mctx)
     await task
 
-    assert await frog_db.get_frogs(bot.db, _UID) == 1
+    assert (
+        await frog_db.get_inventory(bot.db, _UID, SpeciesKey.LEAF_FROG)
+        == 1
+    )
     now = pendulum.now("UTC")
     assert (
         await exp_db.seasonal_exp(
@@ -123,10 +142,105 @@ async def test_frog_consume_full_flow(
     assert ctx.edits[-1]["embed"].title == "Frog(s) have been consumed!"
 
 
+async def test_frog_consume_classy_frog_double_exp(
+    bot: CazzuBot,
+    ctx: FakeContext,
+    author: FakeMember,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The decision: classy frogs grant double the default's exp."""
+    await frog_db.modify_inventory(
+        bot.db, _UID, SpeciesKey.CLASSY_FROG, FrogState.NORMAL, 1
+    )
+
+    async def _fake_attach(
+        menu: utils.ConfirmMenu, _client: object, **_: object
+    ) -> None:
+        while menu.value is None:
+            await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(utils.ConfirmMenu, "attach", _fake_attach)
+
+    task = asyncio.create_task(
+        invoke_command(Consume(), ctx, amount=1, species="classy_frog")
+    )
+    client = cast(Any, ctx.client)
+    for _ in range(200):
+        if client._attached_menus:  # pyright: ignore[reportPrivateUsage]
+            break
+        await asyncio.sleep(0.01)
+    menu = ctx.sent[0].components
+    assert isinstance(menu, utils.ConfirmMenu)
+    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
+    await menu_button(menu).callback(mctx)
+    await task
+
+    assert (
+        await frog_db.get_inventory(bot.db, _UID, SpeciesKey.CLASSY_FROG)
+        == 0
+    )
+    now = pendulum.now("UTC")
+    assert (
+        await exp_db.seasonal_exp(
+            bot.db, _UID, now.year, (now.month - 1) // 3
+        )
+        == 20
+    )  # classy: 20 exp/frog
+
+
+async def test_frog_consume_frozen_state_uses_frozen_exp(
+    bot: CazzuBot,
+    ctx: FakeContext,
+    author: FakeMember,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await frog_db.modify_inventory(
+        bot.db, _UID, SpeciesKey.LEAF_FROG, FrogState.FROZEN, 2
+    )
+
+    async def _fake_attach(
+        menu: utils.ConfirmMenu, _client: object, **_: object
+    ) -> None:
+        while menu.value is None:
+            await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(utils.ConfirmMenu, "attach", _fake_attach)
+
+    task = asyncio.create_task(
+        invoke_command(Consume(), ctx, amount=2, state="frozen")
+    )
+    client = cast(Any, ctx.client)
+    for _ in range(200):
+        if client._attached_menus:  # pyright: ignore[reportPrivateUsage]
+            break
+        await asyncio.sleep(0.01)
+    menu = ctx.sent[0].components
+    assert isinstance(menu, utils.ConfirmMenu)
+    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
+    await menu_button(menu).callback(mctx)
+    await task
+
+    assert (
+        await frog_db.get_inventory(
+            bot.db, _UID, SpeciesKey.LEAF_FROG, FrogState.FROZEN
+        )
+        == 0
+    )
+    now = pendulum.now("UTC")
+    assert (
+        await exp_db.seasonal_exp(
+            bot.db, _UID, now.year, (now.month - 1) // 3
+        )
+        == 6
+    )  # frozen: 3 exp/frog * 2
+
+
 async def test_frog_consume_rejects_insufficient(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
-    await frog_db.modify_frog(bot.db, _UID, modify=1)
+    await frog_db.modify_inventory(
+        bot.db, _UID, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 1
+    )
     with pytest.raises(UserInputError):
         await invoke_command(Consume(), ctx, amount=5)
 
@@ -138,6 +252,54 @@ async def test_frog_consume_rejects_zero(
         await invoke_command(Consume(), ctx, amount=0)
 
 
+async def test_frog_consume_emits_consumed_event(
+    bot: CazzuBot,
+    ctx: FakeContext,
+    author: FakeMember,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Observers (badges) see the completed consume via the event bus."""
+    from plugins.frogs.events import FrogConsumedEvent
+
+    received: list[FrogConsumedEvent] = []
+
+    async def on_consumed(event: FrogConsumedEvent) -> None:
+        received.append(event)
+
+    bot.events.on(FrogConsumedEvent, on_consumed)
+    await frog_db.modify_inventory(
+        bot.db, _UID, SpeciesKey.CLASSY_FROG, FrogState.NORMAL, 1
+    )
+
+    async def _fake_attach(
+        menu: utils.ConfirmMenu, _client: object, **_: object
+    ) -> None:
+        while menu.value is None:
+            await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(utils.ConfirmMenu, "attach", _fake_attach)
+
+    task = asyncio.create_task(
+        invoke_command(Consume(), ctx, amount=1, species="classy_frog")
+    )
+    client = cast(Any, ctx.client)
+    for _ in range(200):
+        if client._attached_menus:  # pyright: ignore[reportPrivateUsage]
+            break
+        await asyncio.sleep(0.01)
+    menu = ctx.sent[0].components
+    assert isinstance(menu, utils.ConfirmMenu)
+    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
+    await menu_button(menu).callback(mctx)
+    await task
+
+    assert len(received) == 1
+    assert received[0].uid == _UID
+    assert received[0].species_key is SpeciesKey.CLASSY_FROG
+    assert received[0].amount == 1
+    assert received[0].state is FrogState.NORMAL
+
+
 # -- capture menu -----------------------------------------------------------
 
 
@@ -145,9 +307,9 @@ async def test_frog_catch_captures_once(
     seeded_bot: CazzuBot, author: FakeMember
 ) -> None:
     await frog_db.set_message(
-        seeded_bot.settings, {"content": "caught {name}"}
+        seeded_bot.settings, {"content": "caught {species} by {name}"}
     )
-    menu = factory.FrogCatchMenu(seeded_bot, 99)
+    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
     interaction = FakeInteraction(id=1, member=author, channel_id=99)
     mctx = FakeMenuContext(interaction)
 
@@ -165,14 +327,67 @@ async def test_frog_catch_captures_once(
     assert mctx.sent == []
     created = rest_of(seeded_bot).created
     assert len(created) == 1
-    assert created[0].content == "caught cirno"
+    assert created[0].content == "caught Leaf Frog by cirno"
     assert created[0].channel_id == 99
-    assert await frog_db.get_frogs(seeded_bot.db, _UID) == 1
+    assert (
+        await frog_db.get_inventory(
+            seeded_bot.db, _UID, SpeciesKey.LEAF_FROG
+        )
+        == 1
+    )
+    # capture log records the species key
+    assert (
+        await seeded_bot.db.fetchval(
+            "SELECT type FROM member_frog_log WHERE uid = ?", _UID
+        )
+        == "leaf_frog"
+    )
 
     # second click is denied
     await menu_button(menu).callback(mctx)
     assert mctx.sent[-1].content == "This frog was already caught."
     assert mctx.sent[-1].ephemeral is True
+
+
+async def test_frog_catch_emits_captured_event(
+    seeded_bot: CazzuBot, author: FakeMember
+) -> None:
+    """Observers (badges) see the completed capture via the event bus."""
+    from plugins.frogs.events import FrogCapturedEvent
+
+    received: list[FrogCapturedEvent] = []
+
+    async def on_captured(event: FrogCapturedEvent) -> None:
+        received.append(event)
+
+    seeded_bot.events.on(FrogCapturedEvent, on_captured)
+    await frog_db.set_message(seeded_bot.settings, {"content": "ok"})
+
+    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    mctx = FakeMenuContext(
+        FakeInteraction(id=1, member=author, channel_id=99)
+    )
+    await menu_button(menu).callback(mctx)
+
+    assert len(received) == 1
+    assert received[0].uid == _UID
+    assert received[0].species_key is SpeciesKey.LEAF_FROG
+
+
+async def test_frog_catch_button_carries_species(
+    seeded_bot: CazzuBot, author: FakeMember
+) -> None:
+    """The custom_id embeds the species so the boot sweep still matches."""
+    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.CLASSY_FROG)
+    button = menu_button(menu)
+    assert button.custom_id == "frog:catch:99:classy_frog"
+    assert factory._is_frog_message(  # pyright: ignore[reportPrivateUsage]
+        _frog_message(99, 1, "frog:catch:99:classy_frog"), 99
+    )
+    # channel prefixes stay apart: frog:catch:99: never matches channel 999
+    assert not factory._is_frog_message(  # pyright: ignore[reportPrivateUsage]
+        _frog_message(999, 1, "frog:catch:99:classy_frog"), 999
+    )
 
 
 async def test_on_frog_due_reschedules_and_despawns(
@@ -190,9 +405,9 @@ async def test_on_frog_due_reschedules_and_despawns(
 
     # next spawn was pre-rolled before this one spawned
     assert len(await seeded_bot.scheduler.get("frog")) == 1
-    # frog message sent, then removed when bored
+    # frog message sent (a rolled species), then removed when bored
     assert len(channel.sent) == 1
-    assert channel.sent[0]["content"] == factory.FROG_EMOJI
+    assert channel.sent[0]["content"] in {"Leaf Frog", "Classy Frog"}
     assert rest_of(seeded_bot).deleted == [(channel.id, 1)]
 
 
@@ -257,14 +472,14 @@ async def test_on_frog_due_rolls_from_fire_instant(
 
 
 def _frog_message(
-    cid: int, mid: int, *, with_button: bool = True
+    cid: int, mid: int, custom_id: str | None
 ) -> FakeMessage:
-    """A message whose components carry (or lack) the catch button."""
+    """A message whose components carry (or lack) a catch button."""
     from types import SimpleNamespace
 
     msg = FakeMessage(id=mid, channel_id=cid, guild_id=2)
-    if with_button:
-        button = SimpleNamespace(custom_id=f"frog:catch:{cid}")
+    if custom_id is not None:
+        button = SimpleNamespace(custom_id=custom_id)
         msg.components = [SimpleNamespace(components=[button])]
     return msg
 
@@ -297,7 +512,9 @@ async def test_cleanup_dangling_frogs(
     await frog_db.add_frog_message(seeded_bot.db, channel.id, mid)
     if with_message:
         fake_rest.messages[(channel.id, mid)] = _frog_message(
-            channel.id, mid, with_button=with_button
+            channel.id,
+            mid,
+            f"frog:catch:{channel.id}:leaf_frog" if with_button else None,
         )
 
     await factory.cleanup_dangling_frogs(seeded_bot)

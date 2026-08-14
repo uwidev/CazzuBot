@@ -14,7 +14,7 @@ import pendulum
 import pytest
 
 from cazzubot import CazzuBot, Config
-from cazzubot.models import FrogTypeEnum
+from cazzubot.models import FrogState, SpeciesKey
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 
@@ -132,6 +132,48 @@ async def test_sandbox_boot_unknown_plugin_aborts(tmp_path: Path) -> None:
         await _shutdown(instance)
 
 
+async def test_plugin_on_load_asset_drift_aborts(tmp_path: Path) -> None:
+    """A plugin whose on_load reports asset drift refuses to boot."""
+    # a distinct package name: the real ``plugins`` package is already in
+    # sys.modules (other tests import it), which would shadow a tmp one
+    plugin_dir = tmp_path / "drift_plugins"
+    plugin_dir.mkdir()
+    (plugin_dir / "__init__.py").write_text("")
+    (plugin_dir / "drifty.py").write_text(
+        "from cazzubot import Plugin\n"
+        "from cazzubot.assets import AssetError\n"
+        "\n"
+        "class Drifty(Plugin):\n"
+        "    name = 'drifty'\n"
+        "\n"
+        "    async def on_load(self, _bot):\n"
+        "        raise AssetError('boom')\n"
+        "\n"
+        "plugin = Drifty()\n"
+    )
+    instance = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=str(tmp_path / "drift.db"),
+        ),
+        plugins_dir=str(plugin_dir),
+    )
+    import sys
+
+    sys.path.insert(0, str(tmp_path))
+    try:
+        with pytest.raises(SystemExit) as exc:
+            await instance._on_starting(  # pyright: ignore[reportPrivateUsage]
+                hikari.StartingEvent(app=instance)
+            )
+        assert exc.value.code == 1
+    finally:
+        sys.path.remove(str(tmp_path))
+        await _shutdown(instance)
+
+
 async def test_data_layer_roundtrip(bot: CazzuBot) -> None:
     await bot.scheduler.add("smoke", pendulum.now("UTC"), {"k": "v"})
     assert await bot.scheduler.get("smoke")
@@ -154,8 +196,8 @@ async def test_data_persists_across_reopen(tmp_path: Path) -> None:
     await exp_db.add_member_exp(bot1.db, _UID)
     await exp_db.add_exp_log(bot1.db, _UID, 80, now)
     await exp_db.sync_with_exp_logs(bot1.db)
-    await frog_db.modify_frog(
-        bot1.db, _UID, modify=5, frog_type=FrogTypeEnum.FROZEN
+    await frog_db.modify_inventory(
+        bot1.db, _UID, SpeciesKey.LEAF_FROG, FrogState.FROZEN, 5
     )
     await bot1.settings.set("welcome.message", {"content": "hi {name}"})
     await _shutdown(bot1)
@@ -166,8 +208,11 @@ async def test_data_persists_across_reopen(tmp_path: Path) -> None:
         member = await exp_db.get_member_exp(bot2.db, _UID)
         assert member is not None and member.lifetime == 80
         assert (
-            await frog_db.get_frogs(bot2.db, _UID, FrogTypeEnum.FROZEN)
-        ) == 5
+            await frog_db.get_inventory(
+                bot2.db, _UID, SpeciesKey.LEAF_FROG, FrogState.FROZEN
+            )
+            == 5
+        )
         msg = await bot2.settings.get("welcome.message")
         assert msg is not None and msg["content"] == "hi {name}"
     finally:

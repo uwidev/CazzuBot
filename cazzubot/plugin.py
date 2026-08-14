@@ -21,6 +21,7 @@ import importlib
 import logging
 import pkgutil
 from collections.abc import Awaitable, Callable
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +46,9 @@ class Plugin:
                         defines a module-level ``lightbulb.Loader``)
             schema      list of DDL statements (idempotent)
             scheduled   tag -> handler(bot, payload) for the central scheduler
+            asset_decl  the plugin's asset declaration enum — each member's
+                        value is an ``AssetSpec`` and the member IS the
+                        reference; reconciled into the registry at boot
             depends_on  names of plugins this one needs loaded first
                         (transitively expanded by ``select_plugins``; cycles
                         load together as one strongly-connected component)
@@ -54,6 +58,7 @@ class Plugin:
     extensions: list[str] = []
     schema: list[str] = []
     scheduled: dict[str, TaskHandler] = {}
+    asset_decl: type[Enum] | None = None
     depends_on: tuple[str, ...] = ()
 
     async def on_load(self, _bot: "CazzuBot") -> None:

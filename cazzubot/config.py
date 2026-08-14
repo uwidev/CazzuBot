@@ -23,6 +23,13 @@ DB_PATH_DEV = "DB_PATH_DEV"
 DB_PATH_DEFAULT_PROD = "data/cazzubot-prod.db"
 DB_PATH_DEFAULT_DEV = "data/cazzubot-dev.db"
 
+# The private channel per guild that hosts published asset blobs (the CDN
+# sync uploads new/changed files here and stores the returned URLs).
+# Common part front, side at the back, like GUILD_ID_*. Optional: without
+# a channel the bot boots and skips the sync with a warning.
+ASSET_CHANNEL_PROD = "ASSET_CHANNEL_PROD"
+ASSET_CHANNEL_DEV = "ASSET_CHANNEL_DEV"
+
 # Accepted spellings for the ``--bot``/``--guild`` sides (case-insensitive).
 _SIDES = {
     "production": ("production", "p"),
@@ -59,6 +66,9 @@ class Config:
     - ``GUILD_ID_PROD`` / ``GUILD_ID_DEV``: the two guilds this bot serves
     - ``DB_PATH_PROD`` / ``DB_PATH_DEV``: per-guild sqlite database files
       (defaults ``data/cazzubot-prod.db`` / ``data/cazzubot-dev.db``)
+    - ``ASSET_CHANNEL_PROD`` / ``ASSET_CHANNEL_DEV``: the private channel
+      per guild that hosts published asset blobs (``None`` skips the CDN
+      sync with a boot warning)
     """
 
     token: str
@@ -68,6 +78,7 @@ class Config:
     debug: bool = False
     sandbox_plugins: tuple[str, ...] | None = None
     debug_users: list[int] = field(default_factory=list)
+    asset_channel_id: int | None = None
     # the guild side this config was loaded with ('production'/'development');
     # direct constructions (tests) default to the development side
     guild_kind: str = "development"
@@ -99,12 +110,21 @@ class Config:
         )
         guild_id = os.getenv(guild_var)
         # one database per guild side (DB_PATH_* env overrides the default)
-        db_var = DB_PATH_PROD if guild_side == "production" else DB_PATH_DEV
+        db_var = (
+            DB_PATH_PROD if guild_side == "production" else DB_PATH_DEV
+        )
         default_db = (
             DB_PATH_DEFAULT_PROD
             if guild_side == "production"
             else DB_PATH_DEFAULT_DEV
         )
+        # the asset channel follows the guild side too (optional)
+        asset_var = (
+            ASSET_CHANNEL_PROD
+            if guild_side == "production"
+            else ASSET_CHANNEL_DEV
+        )
+        asset_channel = os.getenv(asset_var)
 
         if token is None:
             raise RuntimeError(
@@ -130,5 +150,8 @@ class Config:
                 for uid in os.getenv("DEBUG_USERS", "").split(",")
                 if uid.strip()
             ],
+            asset_channel_id=int(asset_channel)
+            if asset_channel and asset_channel.strip().isdigit()
+            else None,
             guild_kind=guild_side,
         )

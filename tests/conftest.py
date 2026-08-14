@@ -63,6 +63,10 @@ async def bot(tmp_path: Path) -> AsyncGenerator[CazzuBot, None]:
     # plugin and get their own fixtures; db tests just need the DDL.
     for plugin in discover_plugins("plugins"):
         await instance.db.run_schema(plugin.schema)
+    # the asset registry rows (NULL url — offline, like a production
+    # boot without a configured asset channel). Species need no seeding:
+    # they are defined in code.
+    await seed_asset_registry(instance)
     await instance._on_started(  # pyright: ignore[reportPrivateUsage]
         hikari.StartedEvent(app=instance)
     )
@@ -113,7 +117,7 @@ def ctx(
 
 
 @pytest.fixture
-def seeded_bot(
+async def seeded_bot(
     bot: CazzuBot,
     fake_cache: FakeCache,
     fake_rest: FakeRest,
@@ -127,7 +131,35 @@ def seeded_bot(
     fake_cache.add_channel(channel)
     fake_rest.members[(fake_guild.id, author.id)] = author
     seed_bot(bot, cache=fake_cache, rest=fake_rest)
+    await seed_asset_registry(bot)
     return bot
+
+
+async def seed_asset_registry(bot: CazzuBot) -> None:
+    """Register every declared asset with a NULL url (offline tests).
+
+    ``bot.assets.get(member)`` then resolves to None — the same state a
+    production boot without a configured asset channel ends up in — while
+    unknown members still raise like they would in production.
+    """
+    from cazzubot.assets import asset_key
+    from cazzubot.plugin import discover_plugins
+
+    for plugin in discover_plugins("plugins"):
+        decl = plugin.asset_decl
+        if decl is None:
+            continue
+        for asset in decl:
+            spec = asset.value
+            await bot.db.execute(
+                """
+				INSERT OR IGNORE INTO asset (key, kind, sha256, path)
+				VALUES (?, ?, '', ?)
+				""",
+                asset_key(asset),
+                spec.kind.value,
+                f"{plugin.name}/{spec.path}",
+            )
 
 
 async def boot_full_bot(
