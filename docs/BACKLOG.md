@@ -212,15 +212,8 @@ The existing hikari documentation may already be enough; the work is to
 read it and distill what's relevant here (`docs/HIKARI_MIGRATION.md` has
 the port-time notes).
 
-## Fold the `daily`/`quarterly` scheduler plugins into their owning plugins
+## ~~Fold the `daily`/`quarterly` scheduler plugins into their owning plugins~~ — DONE (2026-08-14)
 
-`plugins/daily/` and `plugins/quarterly/` are scheduler-only wrappers that
-own no data: `daily`'s `reset()` runs experience resets
-(`exp_db.reset_all_msg_cnt`, `reset_all_cdr`, `sync_with_exp_logs`) plus a
-frog sync (`frog_db.sync_with_frog_logs`), and `quarterly`'s `reset()` is
-entirely `frog_db.freeze_frogs`. The cadences should live with the work —
-move the scheduled handlers and `on_load` arming into `plugins/experience/`
-and `plugins/frogs/` and delete the two wrapper folders. Watch the one
-structural wrinkle: the scheduler keys tags by name, so the two halves of
-the midnight reset need distinct tags (e.g. `daily.exp`/`daily.frog`) or a
-shared orchestrator — pick whichever keeps the retry semantics intact.
+Moved to `docs/DONE.md`: the wrapper plugins are deleted; the `daily` reset
+lives in experience and the `daily.frog` resync + `quarterly` freeze live
+in frogs, each armed by its owning plugin's `on_load`.

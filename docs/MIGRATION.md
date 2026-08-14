@@ -79,12 +79,14 @@ production — it is the ultimate rollback.
 The migrated DB is a faithful snapshot, but the v2 boot sequence intentionally
 changes a few things on the **first** start:
 
-1. **Quarterly frog freeze.** v2's `QuarterlyPlugin.on_load` compares
-   `quarterly.last_quarterly` against the current quarter. If the value is
+1. **Quarterly frog freeze.** The frogs plugin's `on_load` arms the
+   `quarterly` cadence (the season rollover). On the first boot the
+   freeze runs from the stored last-quarter marker: if the value is
    stale (as of 2026 the production value is `2025-12-10`, i.e. several
-   quarters behind), the first boot **moves every member's `normal` frogs to
-   `frozen`** to catch up the missed quarters, then records the current
-   quarter. If you want to preserve balances instead, set the setting *after*
+   quarters behind), the first fire **moves every member's `normal`
+   frogs to `frozen`** to catch up the missed quarters, then records the
+   current quarter. If you want to preserve balances instead, set the
+   setting *after*
    migrating and *before* booting:
 
    ```bash

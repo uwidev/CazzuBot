@@ -22,13 +22,11 @@ def _names(plugins: list[Plugin]) -> list[str]:
 
 # mirrors the real dependency graph; list order simulates discovery order
 PLUGINS = [
-    _plugin("daily", "experience", "frogs"),
     _plugin("dev"),
     _plugin("experience", "levels", "ranks"),
     _plugin("frogs", "experience"),
     _plugin("levels", "ranks"),
     _plugin("poll"),
-    _plugin("quarterly", "frogs"),
     _plugin("ranks", "experience"),
 ]
 
@@ -42,9 +40,7 @@ def test_none_selects_everything_in_dependency_order() -> None:
         "levels",
         "ranks",
         "frogs",
-        "daily",
         "poll",
-        "quarterly",
     ]
 
 
@@ -91,7 +87,6 @@ def test_real_plugin_set_is_consistent() -> None:
         "board",
         "channels",
         "counter",
-        "daily",
         "dev",
         "experience",
         "frogs",
@@ -100,7 +95,6 @@ def test_real_plugin_set_is_consistent() -> None:
         "misc",
         "mod",
         "poll",
-        "quarterly",
         "ranks",
         "roles",
         "welcome",

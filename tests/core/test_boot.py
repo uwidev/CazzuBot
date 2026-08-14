@@ -225,14 +225,14 @@ async def test_data_persists_across_reopen(tmp_path: Path) -> None:
 async def test_unload_withdraws_scheduler_rows(full_bot: CazzuBot) -> None:
     """Unloading a plugin drops its task rows (projections) — the lifecycle
     replays the deferred undos, so no rows fire into "no handler" later."""
-    assert await full_bot.scheduler.get("daily")
-    assert "daily" in full_bot.scheduler.handlers
+    assert await full_bot.scheduler.get("quarterly")  # armed by frogs
+    assert "quarterly" in full_bot.scheduler.handlers
 
-    await full_bot.unload_plugin_by_name("daily")
+    await full_bot.unload_plugin_by_name("frogs")
 
-    assert await full_bot.scheduler.get("daily") == []
-    assert "daily" not in full_bot.scheduler.handlers
-    assert "daily" not in {p.name for p in full_bot.plugins}
+    assert await full_bot.scheduler.get("quarterly") == []
+    assert "quarterly" not in full_bot.scheduler.handlers
+    assert "frogs" not in {p.name for p in full_bot.plugins}
 
 
 async def test_reload_cascades_to_dependents(full_bot: CazzuBot) -> None:
@@ -241,7 +241,7 @@ async def test_reload_cascades_to_dependents(full_bot: CazzuBot) -> None:
     affected = full_bot.affected_by_unload("experience")
     assert "experience" in affected
     assert "frogs" in affected  # frogs depends on experience
-    assert "daily" in affected  # daily depends on (experience, frogs)
+    assert "levels" in affected and "ranks" in affected
 
     plugin = await full_bot.reload_plugin("experience")
 

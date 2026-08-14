@@ -1,11 +1,16 @@
-"""Daily reset — counts/cooldowns reset + row-based midnight cadence."""
+"""Experience daily reset — the exp half of the midnight cadence.
+
+The exp resets (msg counts, cooldowns, lifetime resync) now live in the
+experience plugin under tag ``daily``; the frog half (capture resync)
+lives in the frogs plugin under ``daily.frog``.
+"""
 
 from __future__ import annotations
 
 import pendulum
 
 from cazzubot.bot import CazzuBot
-from plugins.daily import CADENCE, DailyPlugin, on_daily_due, reset
+from plugins.experience import CADENCE, ExperiencePlugin, on_daily_due
 from plugins.experience import db as exp_db
 
 
@@ -19,7 +24,7 @@ async def test_daily_reset_resets_counts_and_cooldowns(
     )
     await exp_db.add_exp_log(bot.db, 1, 80, now)
 
-    await reset(bot)
+    await on_daily_due(bot, {})
 
     row = await exp_db.get_member_exp(bot.db, 1)
     assert row is not None
@@ -52,12 +57,12 @@ async def test_daily_due_resets_and_rearms(bot: CazzuBot) -> None:
 async def test_daily_on_load_arms_when_rowless(bot: CazzuBot) -> None:
     """A fresh install arms the first midnight on boot."""
     assert await bot.scheduler.get("daily") == []
-    await DailyPlugin().on_load(bot)
+    await ExperiencePlugin().on_load(bot)
     rows = await bot.scheduler.get("daily")
     assert len(rows) == 1
-    assert rows[0].run_at == CADENCE.next_run(
-        pendulum.now("UTC")
-    ).isoformat()
+    assert (
+        rows[0].run_at == CADENCE.next_run(pendulum.now("UTC")).isoformat()
+    )
 
 
 async def test_daily_on_load_leaves_existing_row(bot: CazzuBot) -> None:
@@ -68,7 +73,7 @@ async def test_daily_on_load_leaves_existing_row(bot: CazzuBot) -> None:
     """
     run_at = pendulum.now("UTC").subtract(hours=2)
     await bot.scheduler.add("daily", run_at)
-    await DailyPlugin().on_load(bot)
+    await ExperiencePlugin().on_load(bot)
     rows = await bot.scheduler.get("daily")
     assert len(rows) == 1
     assert rows[0].run_at == run_at.isoformat()  # untouched

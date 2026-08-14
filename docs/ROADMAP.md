@@ -52,8 +52,10 @@ needed to organize species art.
 - **Shop / dishes (recipes)** — deferred. The catalog schema is shaped so a
   `frog_recipe` table (inputs JSON → output species) and shop views can ride
   on top without schema churn.
-- **Fold `daily`/`quarterly` into owning plugins** — untouched; the
-  quarterly freeze wrapper stays, only its body changes.
+- **Fold `daily`/`quarterly` into owning plugins** — **done (2026-08-14)**:
+  the wrapper plugins are gone; the `daily` reset lives in experience and
+  the `daily.frog` resync + `quarterly` freeze live in frogs (see
+  `docs/PLUGINS.md` for the tag owners).
 
 ## Goals
 

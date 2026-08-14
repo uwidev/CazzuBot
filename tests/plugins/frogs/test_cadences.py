@@ -1,4 +1,9 @@
-"""Quarterly reset — frog freeze at the season rollover."""
+"""Frogs cadences — the quarterly freeze and the daily capture resync.
+
+Both cadences are owned by the frogs plugin now (tags ``quarterly`` and
+``daily.frog``); the exp half of the midnight reset lives in the
+experience plugin.
+"""
 
 from __future__ import annotations
 
@@ -7,11 +12,11 @@ import pendulum
 from cazzubot.bot import CazzuBot
 from cazzubot.models import FrogState, SpeciesKey
 from plugins.frogs import db as frog_db
-from plugins.quarterly import (
-    CADENCE,
-    QuarterlyPlugin,
+from plugins.frogs import (
+    FrogsPlugin,
+    QUARTERLY_CADENCE,
+    on_daily_frog_due,
     on_quarterly_due,
-    reset,
 )
 
 
@@ -20,7 +25,7 @@ async def test_quarterly_reset_freezes_frogs(bot: CazzuBot) -> None:
         bot.db, 1, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 3
     )
 
-    await reset(bot)
+    await on_quarterly_due(bot, {})
 
     assert (
         await frog_db.get_inventory(bot.db, 1, SpeciesKey.LEAF_FROG) == 0
@@ -39,8 +44,8 @@ async def test_quarterly_reset_is_idempotent(bot: CazzuBot) -> None:
         bot.db, 1, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 3
     )
 
-    await reset(bot)
-    await reset(bot)
+    await on_quarterly_due(bot, {})
+    await on_quarterly_due(bot, {})
 
     assert (
         await frog_db.get_inventory(bot.db, 1, SpeciesKey.LEAF_FROG) == 0
@@ -76,11 +81,12 @@ async def test_quarterly_due_freezes_and_rearms(bot: CazzuBot) -> None:
 async def test_quarterly_on_load_arms_when_rowless(bot: CazzuBot) -> None:
     """A fresh install arms the next season boundary on boot."""
     assert await bot.scheduler.get("quarterly") == []
-    await QuarterlyPlugin().on_load(bot)
+    await FrogsPlugin().on_load(bot)
     rows = await bot.scheduler.get("quarterly")
     assert len(rows) == 1
     assert (
-        rows[0].run_at == CADENCE.next_run(pendulum.now("UTC")).isoformat()
+        rows[0].run_at
+        == QUARTERLY_CADENCE.next_run(pendulum.now("UTC")).isoformat()
     )
 
 
@@ -94,7 +100,29 @@ async def test_quarterly_on_load_leaves_existing_row(
     """
     run_at = pendulum.now("UTC").subtract(hours=2)
     await bot.scheduler.add("quarterly", run_at)
-    await QuarterlyPlugin().on_load(bot)
+    await FrogsPlugin().on_load(bot)
     rows = await bot.scheduler.get("quarterly")
     assert len(rows) == 1
     assert rows[0].run_at == run_at.isoformat()  # untouched
+
+
+async def test_daily_frog_due_resyncs_and_rearms(bot: CazzuBot) -> None:
+    """The frog half of the midnight reset: captures resync from logs."""
+    now = pendulum.now("UTC")
+    await frog_db.modify_capture(bot.db, 1, modify=5)  # stale count
+    await frog_db.add_capture_log(
+        bot.db, 1, now, waited_for=1.5, species_key=SpeciesKey.LEAF_FROG
+    )
+    await bot.scheduler.add(
+        "daily.frog", pendulum.now("UTC").subtract(seconds=1)
+    )
+
+    await on_daily_frog_due(bot, {})
+
+    # the resync rebuilds capture from the log count (1 row), fixing the
+    # stale 5
+    ranked = await frog_db.lifetime_ranked(bot.db)
+    assert ranked[0][2] == 1
+    rows = await bot.scheduler.get("daily.frog")
+    assert len(rows) == 1
+    assert rows[0].run_at > pendulum.now("UTC").isoformat()

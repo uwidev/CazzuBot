@@ -535,3 +535,15 @@ out which cache actually fails to be populated in time.
 > flow, and the board weekly flow; full suite green (528 passed).
 > Caveat: `{mention}` placed *inside an embed* can never be fixed —
 > Discord only parses mentions in content/components, never embeds.
+
+## Fold the `daily`/`quarterly` scheduler plugins into their owning plugins
+
+`plugins/daily/` and `plugins/quarterly/` were scheduler-only wrappers that
+owned no data. **Done (2026-08-14):** the wrapper plugins are deleted; the
+`daily` reset (msg counts, cooldowns, lifetime resync) lives in the
+experience plugin under tag `daily`, and the frog half (capture resync)
+plus the quarterly freeze live in the frogs plugin under tags `daily.frog`
+and `quarterly` — each armed by its owning plugin's `on_load` with the
+missed-run catch-up semantics intact. The two halves of the midnight reset
+run as independent rows on the same cadence so each keeps its own retry
+semantics (the backlog's structural wrinkle, resolved with distinct tags).

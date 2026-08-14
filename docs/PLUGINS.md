@@ -80,8 +80,7 @@ the names of the plugins it needs loaded. At boot, `select_plugins`
   (topological sort), so boot no longer relies on alphabetical luck.
 
 Declared today: `experience → (levels, ranks)`, `levels → (ranks,)`,
-`ranks → (experience,)`, `frogs → (experience,)`,
-`daily → (experience, frogs)`, `quarterly → (frogs,)`.
+`ranks → (experience,)`, `frogs → (experience,)`.
 
 Sandbox mode (`uv run python main.py -d -s [PLUGIN ...]`) loads **only** the
 named plugins plus their transitive dependencies — nothing else. A bare
