@@ -204,7 +204,7 @@ cannot express, in these general categories:
 
 ## Workflow
 
-1. **Change a feature** → run `uv run pytest` (301 tests, offline, ~20s).
+1. **Change a feature** → run `uv run pytest` (offline, fast).
    Add driver coverage in `tests/integration/` for anything interactive —
    a button, modal, or command whose routing/ack/lifecycle changed.
 2. **Checks** → `uv run ruff check .` and `uv run ruff format .`

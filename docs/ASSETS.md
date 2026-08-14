@@ -1,30 +1,34 @@
-# CazzuBot — Asset Management (design)
+# CazzuBot — Asset Management
 
-> **Status:** design only, not implemented. Written from the gamification
-> planning discussion (frog species, effects, shop, combining); parked in
-> `docs/BACKLOG.md` for later review and potential implementation.
+> **Status:** implemented, static path (boot reconcile + CDN sync). The
+> dynamic admin-upload path and scheduler-driven seasonal drops stay
+> backlogged (`docs/BACKLOG.md`). This doc is the design record of what
+> shipped: the implementation is `cazzubot/assets.py` + each plugin's
+> `asset_decl`.
 
 ## Motivation
 
-The frog economy is about to grow from "catch a frog, consume for exp" into a
-content-driven gamification system: a **variety of catchable frog species**
-with **effects** (exp multipliers, temporary rank rewards, …), a **shop**, and
-**combining frogs into dishes** for consumption. Every one of those features
-needs imagery — species art, dish art, shop icons, badge/tier art — and today
-the bot has **no asset management at all**.
+The frog economy grew from "catch a frog, consume for exp" into a
+content-driven gamification system: **catchable frog species** with
+**effects** (exp multipliers, …), and every one of those features needs
+imagery — species art, badge art. Before this system, the bot had **no
+asset management at all**: imagery was hardcoded external URLs and emoji
+references in three different styles.
 
-This doc defines a core asset system that plugins opt into. It is deliberately
-generic: the frog catalog (species rows, effects, recipes, shop) is designed
-*alongside* it and references it, but is a separate concern.
+This doc defines the core asset system plugins opt into. It is deliberately
+generic: the frog catalog (species, effects) is designed *alongside* it and
+references it, but is a separate concern.
 
-## Current state (why this is needed)
+## Background — why this was needed (pre-implementation)
 
-- All runtime imagery is **hardcoded external URLs** as module-level
+The gaps below motivated the system; the asset service closed them.
+
+- All runtime imagery was **hardcoded external URLs** as module-level
   constants or inline literals: catbox.moe (`plugins/counter/cog.py:24-27`,
   `plugins/poll/cog.py:24-25`, `cazzubot/utils.py:72`), imgur
   (`plugins/frogs/cog.py:101,132`), Discord CDN emoji webp
   (`plugins/experience/cog.py:21-24`, `plugins/frogs/cog.py:29-32`).
-- Emoji references are a mix of guild-emoji mention strings
+- Emoji references were a mix of guild-emoji mention strings
   (`<:cirnoFrog:…>` in `plugins/frogs/factory.py:26-27`), unicode, and
   emoji-as-image URLs — three styles, none centrally managed.
 - The asset dirs (`emojis/`, `board/`, `download/`) are gitignored
@@ -33,13 +37,10 @@ generic: the frog catalog (species rows, effects, recipes, shop) is designed
   `download/` have no writers at all. The inktober scraper writes to
   `downloads/` (plural) — a mismatch with the `download/` dir name
   (`plugins/fun/__init__.py:159`).
-- The `Plugin` contract (`cazzubot/plugin.py`) has no asset/resource
-  mechanism — no manifest, registry, or file-registration command exists.
+- The `Plugin` contract had no asset mechanism — no manifest, registry, or
+  file-registration command existed.
 - The message template pipeline is **URL-only**: `templates.prepare`/`send`
   deal in content/embeds only, and no code path produces a `discord.File`.
-  (Attachments are schema-legal in message templates today — `maxContains: 0`
-  without `contains` is a jsonschema no-op — but nothing exercises them, and
-  `sticker_ids` are never set.)
 
 ## Goals
 
@@ -47,10 +48,12 @@ generic: the frog catalog (species rows, effects, recipes, shop) is designed
    (keyed lookup), one way to *verify* it (boot drift check) — replacing the
    scattered URL/emoji styles above.
 2. **Code/data split for gamification:** species *effects* live in code;
-   *which species exist, their art, rarity, price, availability* live in data
-   — swappable without deploys.
+   *which species exist and their art* are declared in code too (typed keys
+   — the owner's choice), while the *bytes* ship as files on disk, swappable
+   by redeploy.
 3. **Atomic content drops:** seasonal themes, event frogs, shop rotations =
-   "promote these keys" in one transaction.
+   "promote these keys" in one transaction (backlogged — needs the dynamic
+   path).
 4. **Nothing downstream changes:** delivery emits URLs, so templates, embeds,
    and the message pipeline keep working untouched.
 
@@ -67,12 +70,15 @@ generic: the frog catalog (species rows, effects, recipes, shop) is designed
 
 Two sources, same contract:
 
-- **Static (bundled):** the asset ships with the bot. Declared in plugin
-  code (a `Plugin.assets` field, or a species registration naming its art).
-  Lives in git, versioned with the code, changes via deploy.
-- **Dynamic (runtime):** an admin uploads bytes via a slash command
-  (`asset add frog.species.leaf_frog <attachment>`). Lives in the registry
-  + asset store, changes with no deploy.
+- **Static (bundled) — implemented:** the asset ships with the bot. Declared
+  in plugin code as `asset_decl = {MyAsset: "assets/file.png"}`, where
+  `MyAsset` is an enum whose members carry an `AssetSpec` (kind + path
+  relative to the plugin folder). Lives in git, versioned with the code,
+  changes via deploy.
+- **Dynamic (runtime) — deferred:** an admin uploads bytes via a slash
+  command (`asset add <key> <attachment>`). Lives in the registry + asset
+  store, changes with no deploy. Backlogged; the static path covers today's
+  needs.
 
 Both produce the same thing: an entry `key → bytes + metadata`. Plugins never
 care which source an asset came from — that's Layer 2's job.
@@ -81,18 +87,16 @@ care which source an asset came from — that's Layer 2's job.
 
 The registry is **one table — a catalog of records about assets**, not a
 storage bin. Bytes always live on disk; a row describes one asset. A row is
-created by either the static path (derived from a repo file at boot) or the
-dynamic path (created with an uploaded file), but the row is the same shape
-either way.
+created by the static path at boot (the dynamic path would create rows the
+same way — same shape either way).
 
 ```sql
 CREATE TABLE IF NOT EXISTS asset (
-	key       TEXT PRIMARY KEY,          -- namespaced: frog.species.leaf_frog
-	kind      TEXT NOT NULL,             -- species | dish | shop | badge | ...
-	sha256    TEXT NOT NULL,             -- content address of the bytes
-	path      TEXT NOT NULL,             -- file under the owning plugin's asset folder
-	url       TEXT,                      -- published Discord CDN URL (Layer 3)
-	meta      TEXT NOT NULL DEFAULT '{}' -- jsonschema-validated JSON
+	key    TEXT PRIMARY KEY,   -- derived: "FrogAsset.LEAF_FROG"
+	kind   TEXT NOT NULL,      -- AssetKind: "species" | ...
+	sha256 TEXT NOT NULL,      -- content address of the bytes
+	path   TEXT NOT NULL,      -- file under the owning plugin's folder
+	url    TEXT                -- published Discord CDN URL (Layer 3)
 )
 ```
 
@@ -104,8 +108,8 @@ CREATE TABLE IF NOT EXISTS asset (
 - **Content addressing** (sha256) is what makes everything else work:
   identical files dedupe, drift is detectable (file changed without being
   re-registered), and a new hash is a natural cache-buster.
-- `meta` (animated, rarity, credit, season, …) is jsonschema-validated — the
-  `templates.verify` philosophy, so admins can't put garbage in.
+- The design's `meta` column (jsonschema-validated annotations) was dropped
+  from the shipped schema — add it back when a consumer actually reads it.
 
 The registry is **plumbing, not a content authority** — it has no opinion
 about what frogs are. It mirrors the existing shared services:
@@ -124,10 +128,11 @@ asset host**:
 
 - A sync step compares registry hashes against what's published; only **new
   or changed** blobs (sha256 diff) get uploaded — to a private asset channel
-  — and the resulting stable CDN URL is stored in the row.
-- At runtime, `bot.assets.get(key)` returns that URL, which flows straight
-  into embeds, spawn messages, shop icons, dishes — exactly like today's
-  hardcoded URLs, just centrally managed.
+  — and the resulting stable CDN URL is stored in the row. Skipped with a
+  boot warning when no asset channel is configured (`ASSET_CHANNEL_PROD`/`DEV`).
+- At runtime, `bot.assets.get(member)` returns that URL, which flows straight
+  into embeds and spawn messages — exactly like the old hardcoded URLs, just
+  centrally managed.
 - Discord does hosting, caching, animation, and delivery for free. Single
   guild = a private channel is a fine "bucket"; uploads only happen on
   content change, so rate limits are a non-issue.
@@ -136,31 +141,31 @@ asset host**:
 
 ### Boot reconcile (static assets)
 
-1. Walk each plugin's declared assets (the plugin list is the source of what
-   exists — no central manifest).
+1. Walk each plugin's `asset_decl` enum (the plugin list is the source of
+   what exists — no central manifest).
 2. For each: read the file, compute sha256.
-3. Row missing or hash differs → update the row and queue the bytes for CDN
+3. Row missing or hash differs → upsert the row and queue the bytes for CDN
    upload (storing the returned URL).
-4. Verify every referenced key resolves. Any failure → abort boot, mirroring
+4. Missing file on disk → `AssetError` → boot abort, mirroring
    `Database.verify_schema`'s fail-fast drift check.
 
 For static assets the **file on disk is the source of truth**; the row is a
 cached index of it. Edit the art and redeploy → boot notices, re-syncs.
-Delete a row and reboot → it re-derives.
 
 ### New frog species (code path)
 
-You write the registration (effect handler + asset keys) → restart or
-`c!cog reload frogs` → boot registers the species + its assets and syncs the
-art → the spawn catalog includes it. No data migration, no new columns.
+Species are **code-defined** (`plugins/frogs/species.py`): write the species
+dataclass (key, art enum member, catch/consume effect payloads) → restart →
+boot registers the species + its assets and syncs the art → the spawn catalog
+includes it. No data migration, no new columns.
 
-### Admin upload (dynamic path)
+### Admin upload (dynamic path) — backlogged
 
 `asset add <key> <attachment>` → saves bytes into the owning plugin's
 asset folder, computes sha256, inserts/updates the row, syncs to CDN. No
 git, no deploy. Re-upload to the same key updates the row.
 
-### Seasonal drop
+### Seasonal drop — backlogged
 
 Scheduler-triggered "promote these keys" flips availability at the drop date;
 shop and recipes see the new content without a deploy. One transaction, no
@@ -170,68 +175,61 @@ partial states.
 
 - **Segregated:** each plugin declares its own assets; files live inside the
   plugin folder (`plugins/frogs/assets/leaf_frog.png`), matching PLUGINS.md's
-  "one feature = one folder". Dynamic uploads land in the same folder for
-  the plugin that owns the key's namespace (`frog.*` →
-  `plugins/frogs/assets/`). Assets version with plugin code, `c!cog reload`
-  picks up changes, plugin removal takes its assets and rows with it.
+  "one feature = one folder". Dynamic uploads would land in the same folder
+  for the plugin that owns the key. Assets version with plugin code,
+  `/cog reload` picks up changes, plugin removal takes its assets and rows
+  with it.
 - **Centralized (mechanism only):** the registry table and the CDN sync are
   shared — one schema, one private asset channel. The boot reconcile walks
   per-plugin declarations and *projects* them into the shared index; the
   registry is a projection, not the origin.
-- **Enforcement:** because keys are namespaced, the registry can enforce
-  ownership — the frogs plugin can only register `frog.*`, ranks only
-  `rank.*`. Admin uploads are above the rules.
+- **Enforcement (design):** because keys are derived from enum identity
+  (`FrogAsset.LEAF_FROG`), ownership is structural — a plugin's declaration
+  enum is all it can register. Namespaced admin keys (`frog.*`) were a
+  design idea for the deferred dynamic path, not implemented.
 
-## Relationship to the frog catalog redesign
+## How the frog gamification landed
 
-The current frog model is **columns per type** (`member_frog.normal/frozen`,
-`FrogTypeEnum` = NORMAL/FROZEN, hardcoded `_EXP_PER_FROG` in
-`plugins/frogs/logic.py:15-17`) — incompatible with "variety of frogs added
-on the fly". That schema change is the *prerequisite*; asset management is
-designed to serve it:
+The asset system was designed to serve the frog catalog redesign. That
+redesign shipped in a **code-first form** (the owner's choice — no
+`frog_species` DB table):
 
-- `frog_species` catalog table — one row per species:
-  `key, name, rarity, description, effect_key, spawn_weight, price, asset_key`
-- `member_frog_inventory(uid, species_key, qty)` — replaces the columns
-- `frog_recipe(key, inputs JSON, output_species_key)` — a dish is just a
-  species-like row whose source is crafting, not capture
-- A **shop** is catalog views over the same rows
-- "Frozen" becomes a per-season inventory *state*, not a species
-- **Effects** reuse the existing string-key → handler pattern
-  (`Plugin.scheduled`, the scheduler): an effect registry
-  (`register_effect("buff.exp", ExpBuffEffect(...))`); species rows reference
-  `effect_key`; time-boxed effects map onto `bot.scheduler.add(...)`.
+- **Species are code-defined** (`plugins/frogs/species.py`): a `Species`
+  dataclass carries `key: SpeciesKey`, `art: FrogAsset`, and the
+  catch/consume effect payloads; `roll_species(rng)` does the weighted roll.
+- **Effects** (`plugins/frogs/effects.py`): the `EffectKey` enum IS the
+  effect registry, with a per-effect payload dataclass — no string-key →
+  handler registration table, typed instead.
+- **Inventory** (`member_frog.normal/frozen` columns) became the generic
+  `bot.inventory` ledger: `frog:{species}:{state}` derived keys, where
+  `FrogState` is NORMAL/FROZEN — "frozen" is an inventory state, exactly as
+  the design intended.
+- **Art** (`FrogAsset.LEAF_FROG` → `assets/leaf_frog.png`) is the
+  `asset_decl` enum feeding the asset service.
+- Shop, recipes/dishes, and seasonal drops remain backlogged
+  (`docs/BACKLOG.md`).
 
-Asset keys follow: `frog.species.leaf_frog`, `frog.dish.stew`,
-`frog.shop.icon.leaf_frog`, `rank.badge.cirno`. (The implemented registry
-derives keys from enum identity instead — see `docs/ROADMAP.md` Phase 1;
-the dotted names here are the conceptual namespace, not literals.)
+## Open decisions
 
-## Open decisions (not blocking the doc)
+1. **Who can upload assets** (dynamic path): owner-only via admin commands
+   vs. community submissions through a moderation queue. Deferred with the
+   dynamic path.
+2. **When to build the dynamic path:** the static-only path covers today's
+   needs; build admin uploads when seasonal drops are real.
 
-1. **Catalog source:** species defined in code registrations (auto-insert
-   catalog rows) vs. Discord-added vs. both. The hybrid works for all three;
-   the schema supports each, so nothing here locks it in.
-2. **Who can upload assets:** owner-only via admin commands vs. community
-   submissions through a moderation queue (a whole feature on its own).
-3. **When to build the dynamic path:** start with static-only (Layer 1 +
-   boot reconcile), add admin uploads when seasonal drops are real.
+## Implementation status
 
-## Suggested implementation order
-
-1. `Plugin.assets` contract + `bot.assets` service (keyed lookup).
-2. Registry table + boot reconcile (static path, drift check).
-3. CDN sync to a private asset channel (URL delivery).
-4. Frog catalog rework (species/inventory/recipe tables) — depends on 1–3.
-5. Admin upload command + `meta` schema (dynamic path).
-6. Scheduler-driven promotion for seasonal drops.
+Done: `Plugin.asset_decl` contract + `bot.assets` service (keyed lookup);
+registry table + boot reconcile (static path, drift check); CDN sync to a
+private asset channel (URL delivery). Backlogged: admin upload command +
+`meta` schema (dynamic path); scheduler-driven promotion for seasonal drops;
+shop/recipes.
 
 ## Relevant existing machinery
 
-- `Plugin` contract: `cazzubot/plugin.py` (`name`, `cogs`, `schema`,
-  `scheduled`, `on_load`/`on_unload`) — assets would be a sibling field.
+- `Plugin` contract: `cazzubot/plugin.py` (`name`, `extensions`, `schema`,
+  `scheduled`, `asset_decl`, `depends_on`, `on_load`/`on_unload`).
+- Asset service: `cazzubot/assets.py` (`Assets.reconcile` / `sync_cdn` /
+  `get`, `asset_key`, `AssetSpec`, `AssetKind`).
 - Boot drift check to mirror: `Database.verify_schema` (`cazzubot/db.py`).
-- Message JSON validation to mirror for `meta`:
-  `cazzubot.templates.verify` (jsonschema).
 - Template delivery to keep untouched: `cazzubot.templates` `prepare`/`send`.
-- Settings namespace convention: `cazzubot/settings.py`.

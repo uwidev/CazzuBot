@@ -20,6 +20,7 @@ class MyFeature(Plugin):
     scheduled = {
         "mytag": my_due_handler
     }  # tag -> async handler(bot, payload)
+    asset_decl = {MyAsset: "assets/myasset.png"}  # optional enum -> file
     depends_on = ("otherplugin",)  # names this plugin needs loaded first;
     # transitively expanded — see "Dependencies and sandbox mode" below
 
@@ -103,9 +104,13 @@ Use these instead of reaching into internals:
   `bot.events.on(EventType, handler)` returns an **unsubscribe token**;
   `bot.events.off(EventType, handler)` withdraws. Defer subscriptions to the
   lifecycle so unload detaches them.
-- `bot.inventory` / `bot.member_effects` — the generic game stores (see
-  `docs/ROADMAP.md` "Data model").
-- `bot.lifecycle` — declare effect undos (see below).
+- `bot.inventory` / `bot.member_effects` — the generic game stores:
+  `(uid, item, qty)` ledgers and `(uid, key, value, expires_at)` effects
+  with lazy expiry. Frogs and exp use them directly — don't build
+  per-feature tables for these shapes.
+- `bot.lifecycle` — declare effect undos (see "Conventions" below).
+- `bot.assets` — enum-declared asset files (reconcile + CDN sync); see
+  `docs/ASSETS.md`.
 - `bot.config` — `token`, `owner_id`, `guild_id`, `debug`, `sandbox`
 - `bot.guild` — the one guild this bot serves
 
@@ -119,12 +124,11 @@ Use these instead of reaching into internals:
   `bot.lifecycle.defer(plugin_name, undo)` at the point of application —
   usually in `on_load`. `load_plugin` already defers your `scheduled` tags
   and extensions automatically; unload replays undos in reverse and never
-  touches durable data. See `docs/PLUGIN_ARCHITECTURE.md`.
-- **State-backed scheduling.** Scheduled task rows are *projections* of your
-  data or declarations, not the source of truth: unload drops them, so your
-  `on_load` must re-arm pending work from state (cadences from your cadence
-  constant, one-shots from your tables — applying overdue work immediately).
-  The mod plugin's expiry re-arm is the worked example.
+  touches durable data. **State-backed scheduling**: task rows are
+  *projections*, not the source of truth — unload drops them, so `on_load`
+  re-arms pending work from state. The full contract (withdrawal ordering,
+  the mod expiry re-arm worked example) is one file:
+  `docs/PLUGIN_ARCHITECTURE.md`.
 - **CSR boundary:** service (`logic.py`/`factory.py`) and repository (`db.py`)
   modules take `db`/`settings` + plain values (+ injected `now`) and must
   **not** `import discord` or `hikari` — framework objects cross only the
@@ -138,7 +142,7 @@ Use these instead of reaching into internals:
 - Prefix settings with the plugin name to avoid collisions in `settings`.
 - Message templates (level-up, rank-up, frog, welcome) go through
   `cazzubot.templates.verify` / `prepare` so they stay jsonschema-validated.
-- Format with `ruff format` (tabs, line-length 75) and run `ruff check`.
+- Format with `ruff format` (spaces, line-length 75) and run `ruff check`.
 
 ## Channels plugin — declarative channel manifest
 

@@ -1,9 +1,19 @@
 # CazzuBot v1 ↔ v2 database migration (PostgreSQL ↔ SQLite)
 
-The v2 rewrite (`rewrite` branch) is SQLite-only — one file at
-`data/cazzubot.db`, no PostgreSQL. This document is the ops protocol for
-switching the live production data over when you cut the rewrite branch into
-production. The per-table transform spec lives in
+> **Status: complete.** The live production cutover ran 2026-08-05 (audit
+> trail at the bottom). This doc stays as the record of the protocol and
+> as reference for the now-separate per-guild DBs. Current live databases
+> are per-guild sqlite files — `data/cazzubot-prod.db` (production) and
+> `data/cazzubot-dev.db` (development) — not the single `data/cazzubot.db`
+> this protocol produced at cutover time.
+>
+> **Related:** the frog-species v2 schema change is a separate, *pending*
+> migration — `scripts/migrate_frog_species.py` must be run while the bot
+> is stopped before booting the new frogs code (see `docs/ROADMAP.md`).
+
+The v2 rewrite (`rewrite` branch) is SQLite-only — one file, no PostgreSQL.
+This document is the ops protocol used for switching the live production
+data over. The per-table transform spec lives in
 [`scripts/migration/MAPPING.md`](../scripts/migration/MAPPING.md); the
 tools are:
 
