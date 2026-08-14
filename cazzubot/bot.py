@@ -17,6 +17,7 @@ from cazzubot.db import Database, SchemaMismatchError
 from cazzubot.errors import UserInputError
 from cazzubot.events import EventBus
 from cazzubot.inventory import Inventory
+from cazzubot.lifecycle import Lifecycle
 from cazzubot.member_effects import MemberEffects
 from cazzubot.plugin import (
     Plugin,
@@ -60,6 +61,7 @@ class CazzuBot(hikari.GatewayBot):
         self.events = EventBus()
         self.inventory = Inventory(self)
         self.member_effects = MemberEffects(self)
+        self.lifecycle = Lifecycle(self)
 
         self.plugins: list[Plugin] = []
         self._plugin_by_name: dict[str, Plugin] = {}
@@ -243,47 +245,127 @@ class CazzuBot(hikari.GatewayBot):
     async def load_plugin(
         self, plugin: Plugin, *, run_hooks: bool = True
     ) -> None:
-        """Apply a plugin's schema, extensions and scheduled handlers."""
+        """Apply a plugin's schema, extensions and scheduled handlers.
+
+        Every framework-level effect is **deferred to the lifecycle** at
+        the point of application — scheduler rows and handler
+        registrations per tag, extension unloading — so unload withdraws
+        them structurally (tasks are projections; nothing durable is
+        touched).
+        """
         await self.db.run_schema(plugin.schema)
         for tag, handler in plugin.scheduled.items():
             self.scheduler.register(tag, handler)
+            # undo: drop the tag's task rows (projections, re-armed by the
+            # plugin's on_load) and forget the handler callback
+            self.lifecycle.defer(
+                plugin.name, lambda tag=tag: self.scheduler.drop_tag(tag)
+            )
+            self.lifecycle.defer(
+                plugin.name,
+                lambda tag=tag: self._forget_scheduler_handlers(tag),
+            )
         if plugin.extensions:
-            await self.lightbulb.load_extensions(*plugin.extensions)
+            names = tuple(plugin.extensions)
+            await self.lightbulb.load_extensions(*names)
+            self.lifecycle.defer(
+                plugin.name,
+                lambda names=names: self.lightbulb.unload_extensions(
+                    *names
+                ),
+            )
         self.plugins.append(plugin)
         self._plugin_by_name[plugin.name] = plugin
         if run_hooks:
             await plugin.on_load(self)
         _log.info("loaded plugin: %s", plugin.name)
 
+    def _forget_scheduler_handlers(self, tag: str) -> None:
+        """Unregister a tag's handler callbacks (the undo of ``register``)."""
+        self.scheduler.handlers.pop(tag, None)
+        self.scheduler.policies.pop(tag, None)
+
     async def unload_plugin(self, plugin: Plugin) -> None:
-        """Remove a plugin's extensions, handlers and run its teardown hook."""
+        """Withdraw a plugin's deferred effects and remove it from runtime.
+
+        The lifecycle replays the undos in reverse (extensions, scheduler
+        handlers and rows, plus anything the plugin deferred in on_load);
+        ``on_unload`` remains for explicit teardown (channels/roles).
+        Durable data is never touched — tables and user rows survive.
+        """
+        failures = await self.lifecycle.withdraw(plugin.name)
+        for failure in failures:
+            _log.error(
+                "undo failed while withdrawing %s",
+                plugin.name,
+                exc_info=failure,
+            )
         await plugin.on_unload(self)
-        for tag in plugin.scheduled:
-            self.scheduler.handlers.pop(tag, None)
-            self.scheduler.policies.pop(tag, None)
-        if plugin.extensions:
-            await self.lightbulb.unload_extensions(*plugin.extensions)
         self.plugins.remove(plugin)
         self._plugin_by_name.pop(plugin.name, None)
         _log.info("unloaded plugin: %s", plugin.name)
 
-    async def reload_plugin(self, name: str) -> Plugin:
-        """Re-import a plugin (including its submodules) and swap in new
-        extensions."""
-        old = self._plugin_by_name.get(name)
-        if old is not None:
-            await self.unload_plugin(old)
+    def affected_by_unload(self, name: str) -> list[str]:
+        """Loaded plugin names that must go with ``name``, dependents first.
 
-        # purge the whole plugins.<name> module tree so importlib.reload
-        # actually picks up changes in cog.py / db.py / logic.py
+        The plugin plus every loaded plugin that (transitively) depends on
+        it — reloading a provider must also reload its dependents, whose
+        imports of the provider's modules would otherwise go stale. Uses
+        the bot's load order (dependencies first) to derive the unload
+        order (reverse = dependents first); cycles come along naturally
+        because their members depend on each other.
+        """
+        by_name = {p.name: p for p in self.plugins}
+        if name not in by_name:
+            return []
+        dependents: dict[str, set[str]] = {
+            p.name: set() for p in self.plugins
+        }
+        for plugin in self.plugins:
+            for dep in plugin.depends_on:
+                if dep in by_name:
+                    dependents[dep].add(plugin.name)
+        affected: set[str] = set()
+        stack = [name]
+        while stack:
+            current = stack.pop()
+            if current in affected:
+                continue
+            affected.add(current)
+            stack.extend(dependents.get(current, ()))
+        return [
+            p.name for p in reversed(self.plugins) if p.name in affected
+        ]
+
+    def _purge_modules(self, name: str) -> None:
+        """Drop a plugin's module tree so a fresh import picks up changes."""
         prefix = f"{self.plugins_dir}.{name}"
         for mod_name in list(sys.modules):
             if mod_name == prefix or mod_name.startswith(prefix + "."):
                 del sys.modules[mod_name]
 
-        plugin = load_plugin_module(prefix)
-        await self.load_plugin(plugin)
-        return plugin
+    async def reload_plugin(self, name: str) -> Plugin:
+        """Re-import a plugin and its loaded dependents, in dependency order.
+
+        Unloading a provider while its dependents stay loaded leaves stale
+        module references, so the whole affected set (the plugin plus every
+        loaded plugin that transitively depends on it) is withdrawn and
+        reloaded — dependents first out, dependencies first back in.
+        """
+        affected = self.affected_by_unload(name)
+        if not affected:
+            raise UserInputError(f"plugin {name} is not loaded")
+        for affected_name in affected:
+            await self.unload_plugin(self._plugin_by_name[affected_name])
+            self._purge_modules(affected_name)
+        reloaded: dict[str, Plugin] = {}
+        for affected_name in reversed(affected):
+            plugin = load_plugin_module(
+                f"{self.plugins_dir}.{affected_name}"
+            )
+            await self.load_plugin(plugin)
+            reloaded[affected_name] = plugin
+        return reloaded[name]
 
     async def load_plugin_by_name(self, name: str) -> Plugin:
         """Import and load a plugin that isn't currently loaded."""
@@ -292,11 +374,12 @@ class CazzuBot(hikari.GatewayBot):
         return plugin
 
     async def unload_plugin_by_name(self, name: str) -> None:
-        """Unload a loaded plugin by name."""
-        plugin = self._plugin_by_name.get(name)
-        if plugin is None:
+        """Unload a plugin (and its loaded dependents) by name."""
+        affected = self.affected_by_unload(name)
+        if not affected:
             raise UserInputError(f"plugin {name} is not loaded")
-        await self.unload_plugin(plugin)
+        for affected_name in affected:
+            await self.unload_plugin(self._plugin_by_name[affected_name])
 
     @property
     def guild(self) -> hikari.GatewayGuild | None:

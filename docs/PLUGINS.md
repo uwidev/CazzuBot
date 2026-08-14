@@ -100,6 +100,13 @@ Use these instead of reaching into internals:
 - `bot.scheduler` — delayed tasks that survive restarts:
   `await bot.scheduler.add("mytag", when, {"payload": 1})`; register the tag in
   `scheduled`. The handler re-schedules by adding a new row.
+- `bot.events` — typed domain event bus (observations between plugins):
+  `bot.events.on(EventType, handler)` returns an **unsubscribe token**;
+  `bot.events.off(EventType, handler)` withdraws. Defer subscriptions to the
+  lifecycle so unload detaches them.
+- `bot.inventory` / `bot.member_effects` — the generic game stores (see
+  `docs/ROADMAP.md` "Data model").
+- `bot.lifecycle` — declare effect undos (see below).
 - `bot.config` — `token`, `owner_id`, `guild_id`, `debug`, `sandbox`
 - `bot.guild` — the one guild this bot serves
 
@@ -108,6 +115,17 @@ Use these instead of reaching into internals:
 - One plugin = one feature. Split big features into `db.py` (queries/schema),
   `cog.py` (lightbulb extension), `logic.py` (pure logic) inside the plugin
   folder.
+- **Lifecycle — declare your undos.** Every runtime effect (scheduler rows,
+  subscriptions, messages you must later delete) should hand its inverse to
+  `bot.lifecycle.defer(plugin_name, undo)` at the point of application —
+  usually in `on_load`. `load_plugin` already defers your `scheduled` tags
+  and extensions automatically; unload replays undos in reverse and never
+  touches durable data. See `docs/PLUGIN_ARCHITECTURE.md`.
+- **State-backed scheduling.** Scheduled task rows are *projections* of your
+  data or declarations, not the source of truth: unload drops them, so your
+  `on_load` must re-arm pending work from state (cadences from your cadence
+  constant, one-shots from your tables — applying overdue work immediately).
+  The mod plugin's expiry re-arm is the worked example.
 - **CSR boundary:** service (`logic.py`/`factory.py`) and repository (`db.py`)
   modules take `db`/`settings` + plain values (+ injected `now`) and must
   **not** `import discord` or `hikari` — framework objects cross only the

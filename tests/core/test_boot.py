@@ -217,3 +217,47 @@ async def test_data_persists_across_reopen(tmp_path: Path) -> None:
         assert msg is not None and msg["content"] == "hi {name}"
     finally:
         await _shutdown(bot2)
+
+
+# -- lifecycle: task-row withdrawal + dependents-aware reload ---------------
+
+
+async def test_unload_withdraws_scheduler_rows(full_bot: CazzuBot) -> None:
+    """Unloading a plugin drops its task rows (projections) — the lifecycle
+    replays the deferred undos, so no rows fire into "no handler" later."""
+    assert await full_bot.scheduler.get("daily")
+    assert "daily" in full_bot.scheduler.handlers
+
+    await full_bot.unload_plugin_by_name("daily")
+
+    assert await full_bot.scheduler.get("daily") == []
+    assert "daily" not in full_bot.scheduler.handlers
+    assert "daily" not in {p.name for p in full_bot.plugins}
+
+
+async def test_reload_cascades_to_dependents(full_bot: CazzuBot) -> None:
+    """Reloading a provider also reloads its loaded dependents (their
+    imports of the provider's modules would otherwise go stale)."""
+    affected = full_bot.affected_by_unload("experience")
+    assert "experience" in affected
+    assert "frogs" in affected  # frogs depends on experience
+    assert "daily" in affected  # daily depends on (experience, frogs)
+
+    plugin = await full_bot.reload_plugin("experience")
+
+    assert plugin.name == "experience"
+    names = {p.name for p in full_bot.plugins}
+    for name in affected:
+        assert name in names, f"{name} missing after cascade reload"
+
+
+async def test_unload_plugin_by_name_cascades(full_bot: CazzuBot) -> None:
+    """Unloading a provider takes its loaded dependents with it."""
+    affected = full_bot.affected_by_unload("experience")
+    assert len(affected) > 1
+
+    await full_bot.unload_plugin_by_name("experience")
+
+    names = {p.name for p in full_bot.plugins}
+    for name in affected:
+        assert name not in names, f"{name} still loaded after cascade"

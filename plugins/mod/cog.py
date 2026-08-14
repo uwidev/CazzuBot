@@ -139,7 +139,7 @@ class Mute(
         duration, reason = split_duration_reason(self.raw)
         ensure_future(now, duration)
 
-        await db.add_log(
+        log_id = await db.add_log(
             bot.db,
             self.member.id,
             ModlogTypeEnum.MUTE,
@@ -154,6 +154,7 @@ class Mute(
                 {
                     "uid": self.member.id,
                     "log_type": ModlogTypeEnum.MUTE.value,
+                    "log_id": log_id,
                     # the expiry must eventually fire — a mute that never
                     # lifts is a real harm; retry until it succeeds
                     "retry": True,
@@ -228,7 +229,7 @@ class Ban(
         ensure_future(now, duration)
 
         ban_type = resolve_ban_type(duration)
-        await db.add_log(
+        log_id = await db.add_log(
             bot.db,
             self.member.id,
             ban_type,
@@ -243,6 +244,7 @@ class Ban(
                 {
                     "uid": self.member.id,
                     "log_type": ban_type.value,
+                    "log_id": log_id,
                     # the expiry must eventually fire — see the mute path
                     "retry": True,
                 },
@@ -410,6 +412,15 @@ async def on_modlog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
             )
     except hikari.NotFoundError:
         _log.info("user %s no longer around; nothing to revert", uid)
+
+    # the modlog row is the source of truth — mark it resolved so state-
+    # backed re-arming (on_load) never re-applies a completed expiry
+    log_id = payload.get("log_id")
+    if log_id is not None:
+        await db.mark_resolved(bot.db, log_id)
+    else:
+        # rows whose task predates log_id: resolve by user + type
+        await db.mark_resolved_for(bot.db, uid, log_type.value)
 
     _log.info(
         "%s's %s expired; reverting infraction actions...",

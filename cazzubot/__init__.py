@@ -8,6 +8,7 @@ from cazzubot.bot import CazzuBot
 from cazzubot.config import Config
 from cazzubot.db import Database
 from cazzubot.inventory import Inventory
+from cazzubot.lifecycle import Lifecycle
 from cazzubot.member_effects import MemberEffects
 from cazzubot.plugin import Plugin
 from cazzubot.scheduler import Scheduler
@@ -21,6 +22,7 @@ __all__ = [
     "Config",
     "Database",
     "Inventory",
+    "Lifecycle",
     "MemberEffects",
     "Plugin",
     "Scheduler",

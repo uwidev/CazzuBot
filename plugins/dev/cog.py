@@ -159,10 +159,16 @@ class PluginReload(
                 f"❌ plugin {self.plugin_name} is not loaded"
             )
             return
+        # a provider reload also reloads its loaded dependents — report the
+        # whole affected set (dependency order) so the owner sees the blast
+        affected = bot.affected_by_unload(self.plugin_name)
         await bot.reload_plugin(self.plugin_name)
-        await ctx.respond(
-            f"✅ plugin {self.plugin_name} has been reloaded"
-        )
+        if len(affected) == 1:
+            await ctx.respond(
+                f"✅ plugin {self.plugin_name} has been reloaded"
+            )
+        else:
+            await ctx.respond("✅ reloaded " + ", ".join(affected[::-1]))
 
 
 @cog.register

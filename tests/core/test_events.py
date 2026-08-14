@@ -87,3 +87,56 @@ async def test_handler_failure_is_isolated(
 async def test_no_handlers_is_a_noop() -> None:
     bus = EventBus()
     await bus.emit(_A(value=1))  # must not raise
+
+
+async def test_off_removes_only_the_matching_handler() -> None:
+    bus = EventBus()
+    seen: list[str] = []
+
+    async def keep(event: _A) -> None:
+        seen.append(f"keep:{event.value}")
+
+    async def drop(event: _A) -> None:
+        seen.append(f"drop:{event.value}")
+
+    bus.on(_A, keep)
+    bus.on(_A, drop)
+    bus.off(_A, drop)
+
+    await bus.emit(_A(value=1))
+
+    assert seen == ["keep:1"]
+
+
+async def test_on_returns_unsubscribe_token() -> None:
+    """The token is the lifecycle-friendly inverse of ``on``."""
+    bus = EventBus()
+    seen: list[str] = []
+
+    async def handler(event: _A) -> None:
+        seen.append(str(event.value))
+
+    unsubscribe = bus.on(_A, handler)
+    await bus.emit(_A(value=1))
+    assert seen == ["1"]
+
+    unsubscribe()
+    await bus.emit(_A(value=2))
+    assert seen == ["1"]  # nothing more arrived
+
+
+async def test_off_with_no_matching_handler_is_a_noop() -> None:
+    bus = EventBus()
+    seen: list[str] = []
+
+    async def handler(event: _A) -> None:
+        seen.append(str(event.value))
+
+    bus.on(_A, handler)
+
+    async def noop(_event: _B) -> None:
+        pass
+
+    bus.off(_B, noop)  # wrong type — nothing to remove
+    await bus.emit(_A(value=1))
+    assert seen == ["1"]

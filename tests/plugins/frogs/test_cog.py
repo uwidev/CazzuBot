@@ -16,6 +16,10 @@ from cazzubot.models import FrogState, SpeciesKey
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
+from plugins.frogs.events import (
+    FrogCapturedEvent,
+    FrogConsumedEvent,
+)
 from plugins.frogs.cog import Catalog, Consume, Profile, Register
 from tests.fakes import (
     FakeCache,
@@ -259,8 +263,6 @@ async def test_frog_consume_emits_consumed_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Observers (badges) see the completed consume via the event bus."""
-    from plugins.frogs.events import FrogConsumedEvent
-
     received: list[FrogConsumedEvent] = []
 
     async def on_consumed(event: FrogConsumedEvent) -> None:
@@ -353,8 +355,6 @@ async def test_frog_catch_emits_captured_event(
     seeded_bot: CazzuBot, author: FakeMember
 ) -> None:
     """Observers (badges) see the completed capture via the event bus."""
-    from plugins.frogs.events import FrogCapturedEvent
-
     received: list[FrogCapturedEvent] = []
 
     async def on_captured(event: FrogCapturedEvent) -> None:
