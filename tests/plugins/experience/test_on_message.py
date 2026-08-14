@@ -72,6 +72,22 @@ async def test_bot_author_is_ignored(
     assert await exp_db.get_member_exp(seeded_bot.db, 111) is None
 
 
+async def test_exp_multiplier_scales_award(
+    seeded_bot: CazzuBot, author: FakeMember, channel: FakeChannel
+) -> None:
+    """A member modifier (member_effect) scales the message exp award."""
+    from cazzubot import member_effects
+    from cazzubot.member_effects import MemberEffectKey
+
+    await member_effects.set(
+        seeded_bot.db, _AUTHOR_ID, MemberEffectKey.EXP_MULTIPLIER, 2.0
+    )
+    await _send(seeded_bot, author, channel, "hello")
+    row = await exp_db.get_member_exp(seeded_bot.db, _AUTHOR_ID)
+    assert row is not None
+    assert row.lifetime == _MSG_1_EXP * 2
+
+
 async def test_wrong_guild_is_ignored(
     seeded_bot: CazzuBot, channel: FakeChannel
 ) -> None:

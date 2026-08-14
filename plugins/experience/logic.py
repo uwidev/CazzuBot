@@ -15,6 +15,10 @@ import pendulum
 
 from cazzubot import levels
 from cazzubot.db import Database
+from cazzubot.member_effects import (
+    MemberEffectKey,
+    get as member_effects_get,
+)
 from cazzubot.timeparse import parse_iso8601
 from cazzubot.utils import OldNew
 
@@ -29,6 +33,7 @@ _BONUS = 20
 _UNTIL_MSG = 77
 _DECAY_FACTOR = 2
 _EXP_COOLDOWN = 15  # seconds
+
 
 def from_msg(msg: int) -> int:
     """Expected exp reward for the message at daily count ``msg``."""
@@ -79,6 +84,13 @@ async def award_exp(
     # compute gains
     msg_cnt = member_db.msg_cnt + 1
     exp_gain = from_msg(msg_cnt)
+    # a member modifier (e.g. the exp_multiplier buff) scales the award —
+    # pulled lazily here, so no sweeper is needed for expiry
+    multiplier = await member_effects_get(
+        db, uid, MemberEffectKey.EXP_MULTIPLIER, now=now
+    )
+    if multiplier is not None:
+        exp_gain = round(exp_gain * multiplier)
     year, season = now.year, (now.month - 1) // 3
 
     seasonal_old = await exp_db.seasonal_exp(db, uid, year, season)
