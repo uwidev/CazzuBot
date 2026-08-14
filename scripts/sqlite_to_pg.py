@@ -1,5 +1,7 @@
 #!/bin/env python
-"""Reverse migration: fill the v1 PostgreSQL DB from the v2 SQLite file.
+"""DEPRECATED — reverse-migrates the pre-species frog columns (``member_frog.normal/frozen``); not updated for the species rework. ``scripts/migrate_frog_species.py`` supersedes the frog part of the v2 schema.
+
+Reverse migration: fill the v1 PostgreSQL DB from the v2 SQLite file.
 
 One-way rollback helper for the v1 -> v2 cutover. The v1 PostgreSQL
 database is frozen while the v2 bot runs (it records into SQLite only), so

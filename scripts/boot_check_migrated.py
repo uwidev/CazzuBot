@@ -1,5 +1,7 @@
 #!/bin/env python
-"""Boot the real bot stack against the migrated database (no Discord).
+"""DEPRECATED — boot-checks the PG-migration output, which predates the species rework; the frog-shape check now belongs to ``scripts/migrate_frog_species.py`` (run it first) and the tests in ``tests/core/test_migrate_frog_species.py``.
+
+Boot the real bot stack against the migrated database (no Discord).
 
 Constructs ``CazzuBot`` with ``db_path=data/cazzubot-prod.db``, patches
 ``wait_until_ready`` (as ``scripts/smoke.py`` does), runs ``setup_hook`` so

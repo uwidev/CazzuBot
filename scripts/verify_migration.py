@@ -1,5 +1,7 @@
 #!/bin/env python
-"""Post-migration verification: migrated SQLite vs live PostgreSQL + bot paths.
+"""DEPRECATED — references the legacy frog columns (``member_frog.normal/frozen``, ``member_frog_log.type`` = 'normal'|'frozen'); superseded by ``scripts/migrate_frog_species.py``.
+
+Post-migration verification: migrated SQLite vs live PostgreSQL + bot paths.
 
 Compares every table's data per-uid against the live PostgreSQL source,
 exercises v2's own derivation paths (seasonal rankings, ``sync_with_exp_logs``,
