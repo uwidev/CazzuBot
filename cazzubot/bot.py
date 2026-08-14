@@ -22,6 +22,7 @@ from cazzubot.member_effects import MemberEffects
 from cazzubot.plugin import (
     Plugin,
     discover_plugins,
+    filter_enabled,
     load_plugin_module,
     select_plugins,
 )
@@ -120,7 +121,37 @@ class CazzuBot(hikari.GatewayBot):
         # discover and load plugins — two phases so any on_load hook can
         # depend on every plugin's schema/extensions being ready (no load
         # order).
-        plugins = discover_plugins(self.plugins_dir)
+        discovered = discover_plugins(self.plugins_dir)
+        # plugin enable/disable: the ``plugin.enabled.<name>`` settings key
+        # overrides the plugin's code-level ``enabled`` default. Disabled
+        # plugins (and their dependents) do not load.
+        disabled = {
+            p.name for p in discovered if not await self._plugin_enabled(p)
+        }
+        plugins = filter_enabled(discovered, disabled)
+        skipped = [p.name for p in discovered if p not in plugins]
+        if skipped:
+            _log.warning(
+                "skipping plugins: %s",
+                ", ".join(
+                    f"{name} ({'disabled' if name in disabled else 'depends on disabled plugin'})"
+                    for name in skipped
+                ),
+            )
+        if self.config.sandbox_plugins is not None:
+            refused = [
+                name
+                for name in self.config.sandbox_plugins
+                if name in {p.name for p in discovered}
+                and name not in {p.name for p in plugins}
+            ]
+            if refused:
+                _log.critical(
+                    "refusing to boot: requested plugin(s) are disabled: %s "
+                    "— enable them first (cog enable) or drop them from -s",
+                    ", ".join(refused),
+                )
+                raise SystemExit(1)
         try:
             plugins = select_plugins(plugins, self.config.sandbox_plugins)
         except UserInputError as err:
@@ -380,6 +411,59 @@ class CazzuBot(hikari.GatewayBot):
             raise UserInputError(f"plugin {name} is not loaded")
         for affected_name in affected:
             await self.unload_plugin(self._plugin_by_name[affected_name])
+
+    # -- plugin enable/disable ----------------------------------------------
+
+    async def _plugin_enabled(self, plugin: Plugin) -> bool:
+        """Effective enabled state: settings override, else code default.
+
+        The ``plugin.enabled.<name>`` settings key is written by the
+        owner's ``cog enable``/``cog disable`` commands and survives
+        restarts; absent means the plugin's own ``enabled`` class
+        attribute decides (e.g. mod ships ``enabled = False``).
+        """
+        override = await self.settings.get(f"plugin.enabled.{plugin.name}")
+        return override if override is not None else plugin.enabled
+
+    async def enable_plugin(self, name: str) -> list[str]:
+        """Enable a plugin (persisted) and load it with its dependencies.
+
+        The settings flag is set for the plugin and its whole declared
+        dependency chain, then any of them that aren't loaded are loaded
+        dependencies-first. Returns the names that were loaded.
+        """
+        plugins = select_plugins(
+            discover_plugins(self.plugins_dir), (name,)
+        )
+        loaded: list[str] = []
+        for plugin in plugins:
+            await self.settings.set(f"plugin.enabled.{plugin.name}", True)
+            if plugin.name not in self._plugin_by_name:
+                await self.load_plugin(plugin)
+                loaded.append(plugin.name)
+        return loaded
+
+    async def disable_plugin(self, name: str) -> list[str]:
+        """Disable a plugin (persisted) and unload it with its dependents.
+
+        The settings flag is set to False (survives restarts), then the
+        plugin and every loaded plugin that depends on it are unloaded.
+        Returns the unloaded names (empty when it wasn't loaded).
+        """
+        known = {p.name for p in discover_plugins(self.plugins_dir)}
+        if name not in known:
+            raise UserInputError(
+                f"unknown plugin {name} — available: "
+                + ", ".join(sorted(known))
+            )
+        await self.settings.set(f"plugin.enabled.{name}", False)
+        affected = self.affected_by_unload(name)
+        if affected:
+            for affected_name in affected:
+                await self.unload_plugin(
+                    self._plugin_by_name[affected_name]
+                )
+        return affected
 
     @property
     def guild(self) -> hikari.GatewayGuild | None:

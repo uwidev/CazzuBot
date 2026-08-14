@@ -23,6 +23,7 @@ class MyFeature(Plugin):
     asset_decl = {MyAsset: "assets/myasset.png"}  # optional enum -> file
     depends_on = ("otherplugin",)  # names this plugin needs loaded first;
     # transitively expanded — see "Dependencies and sandbox mode" below
+    enabled = False  # optional: ship disabled (mod does — see below)
 
     async def on_load(self, bot):
         """Optional startup hook (after every plugin's schema/extensions are ready)."""
@@ -87,6 +88,31 @@ Sandbox mode (`uv run python main.py -d -s [PLUGIN ...]`) loads **only** the
 named plugins plus their transitive dependencies — nothing else. A bare
 `-s` keeps the classic defaults (`poll`, `dev`). Production boots are
 unaffected; the same dependency ordering applies to the full plugin set.
+A disabled plugin requested in sandbox refuses to boot with guidance
+(enable it first with `cog enable`, or drop it from `-s`).
+
+## Enabling and disabling plugins
+
+Every plugin has an **enabled flag**: the `Plugin.enabled` class
+attribute is the code default (`True`), and the
+`plugin.enabled.<name>` settings key overrides it. A plugin that ships
+`enabled = False` (mod, today) does not load at boot unless the owner
+enables it.
+
+- **At boot**, disabled plugins are skipped — and so is everything that
+  transitively depends on one (a disabled provider would leave its
+  dependents half-wired). Skips are logged with the reason.
+- **At runtime** (owner), the `cog` group in the dev plugin manages the
+  flag and the running bot:
+  - `cog enable <name>` — persists `plugin.enabled.<name> = true` and
+    loads the plugin with its dependency chain.
+  - `cog disable <name>` — persists `false` and unloads the plugin with
+    its loaded dependents.
+  - `cog list` — every plugin with its ✅ loaded / ⛔ disabled / ⬜ not
+    loaded state.
+- The flag survives restarts. `cog load`/`cog unload` remain the
+  session-only overrides (no flag change); `cog enable`/`cog disable`
+  are the persisted switches.
 
 ## Services available on the bot
 

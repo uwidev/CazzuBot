@@ -230,6 +230,8 @@ hikari.errors.NotFoundError: Not Found 404: (10015) 'Unknown Webhook' for https:
 ## E. mod
 
 Backlog all of mod. This isn't core nor is it finalized right now and is "in progress" in terms of development.
+The mod plugin also **ships disabled** (`enabled = False` in `plugins/mod/__init__.py`) — it doesn't load
+at boot; enable it with `/cog enable mod` before working through this section.
 
 - [ ] E1. `warn` → modlog entry + notification.
 

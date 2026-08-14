@@ -1,4 +1,10 @@
-"""Mod plugin package."""
+"""Mod plugin package.
+
+Ships **disabled** (``enabled = False``): the feature is incomplete and
+other bots already handle moderation. The owner can bring it up at runtime
+with ``/cog enable mod`` (persisted) or by setting
+``plugin.enabled.mod = true``.
+"""
 
 import pendulum
 
@@ -15,6 +21,7 @@ class ModPlugin(Plugin):
     schema = db.SCHEMA
     extensions = ["plugins.mod.cog"]
     scheduled = {"modlog": on_modlog_due}
+    enabled = False
 
     @override
     async def on_load(self, bot: CazzuBot) -> None:

@@ -14,6 +14,8 @@ import lightbulb
 
 from cazzubot import levels
 from cazzubot.bot import CazzuBot
+from cazzubot.errors import UserInputError
+from cazzubot.plugin import discover_plugins
 from lightbulb.prefab import checks as prefab_checks
 
 _log = logging.getLogger(__name__)
@@ -213,6 +215,90 @@ class PluginUnload(
         await ctx.respond(
             f"✅ plugin {self.plugin_name} has been unloaded"
         )
+
+
+@cog.register
+class PluginEnable(
+    lightbulb.SlashCommand,
+    name="enable",
+    description="Enable a plugin (persisted) and load it with its dependencies.",
+    hooks=[_OWNER],
+):
+    plugin_name = lightbulb.string("plugin_name", "The plugin to enable")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        try:
+            loaded = await bot.enable_plugin(self.plugin_name)
+        except UserInputError as err:
+            await ctx.respond(f"❌ {err}")
+            return
+        if not loaded:
+            await ctx.respond(
+                f"✅ plugin {self.plugin_name} is enabled (already loaded)"
+            )
+        else:
+            await ctx.respond(
+                "✅ enabled and loaded: " + ", ".join(loaded)
+            )
+
+
+@cog.register
+class PluginDisable(
+    lightbulb.SlashCommand,
+    name="disable",
+    description="Disable a plugin (persisted) and unload it with its dependents.",
+    hooks=[_OWNER],
+):
+    plugin_name = lightbulb.string("plugin_name", "The plugin to disable")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        try:
+            unloaded = await bot.disable_plugin(self.plugin_name)
+        except UserInputError as err:
+            await ctx.respond(f"❌ {err}")
+            return
+        if not unloaded:
+            await ctx.respond(
+                f"✅ plugin {self.plugin_name} is disabled "
+                "(was not loaded)"
+            )
+        else:
+            await ctx.respond(
+                "✅ disabled and unloaded: " + ", ".join(unloaded)
+            )
+
+
+@cog.register
+class PluginList(
+    lightbulb.SlashCommand,
+    name="list",
+    description="Show every plugin with its loaded/disabled state.",
+    hooks=[_OWNER],
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        bot = _bot(ctx)
+        loaded = {p.name for p in bot.plugins}
+        disabled = {
+            p.name
+            for p in discover_plugins(bot.plugins_dir)
+            if not await bot._plugin_enabled(p)  # pyright: ignore[reportPrivateUsage]
+        }
+        lines = []
+        for plugin in sorted(
+            discover_plugins(bot.plugins_dir), key=lambda p: p.name
+        ):
+            if plugin.name in loaded:
+                lines.append(f"✅ {plugin.name}")
+            elif plugin.name in disabled:
+                lines.append(f"⛔ {plugin.name} (disabled)")
+            else:
+                lines.append(f"⬜ {plugin.name} (not loaded)")
+        await ctx.respond("\n".join(lines) or "no plugins")
 
 
 loader.command(calc)

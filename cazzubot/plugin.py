@@ -52,6 +52,10 @@ class Plugin:
             depends_on  names of plugins this one needs loaded first
                         (transitively expanded by ``select_plugins``; cycles
                         load together as one strongly-connected component)
+            enabled     code-level default for whether the plugin loads at
+                        boot; the ``plugin.enabled.<name>`` settings key
+                        overrides it (see ``filter_enabled``). False = ships
+                        disabled — the owner can still enable it at runtime
     """
 
     name: str = ""
@@ -60,6 +64,7 @@ class Plugin:
     scheduled: dict[str, TaskHandler] = {}
     asset_decl: type[Enum] | None = None
     depends_on: tuple[str, ...] = ()
+    enabled: bool = True
 
     async def on_load(self, _bot: "CazzuBot") -> None:
         """Hook called after schema + extensions are registered (before ready)."""
@@ -116,6 +121,35 @@ def discover_plugins(plugins_dir: str) -> list[Plugin]:
             _log.info("discovered plugin: %s", plugin.name)
 
     return plugins
+
+
+def filter_enabled(
+    plugins: list[Plugin], disabled: set[str]
+) -> list[Plugin]:
+    """Drop disabled plugins and everything that transitively depends on them.
+
+    ``disabled`` names come from settings (runtime overrides) plus any
+    plugin whose ``enabled`` class attribute is False (the code default).
+    A plugin loads only when it and every declared dependency is enabled —
+    a disabled provider would otherwise leave its dependents half-wired
+    (imports succeed, scheduler tags and extensions don't). Order is
+    preserved; the caller logs what was skipped.
+    """
+    if not disabled:
+        return list(plugins)
+    blocked = set(disabled)
+    # fixed point: a plugin whose dependency is blocked becomes blocked,
+    # which may block further dependents
+    changed = True
+    while changed:
+        changed = False
+        for plugin in plugins:
+            if plugin.name in blocked:
+                continue
+            if any(dep in blocked for dep in plugin.depends_on):
+                blocked.add(plugin.name)
+                changed = True
+    return [p for p in plugins if p.name not in blocked]
 
 
 def select_plugins(

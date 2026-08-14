@@ -12,6 +12,9 @@ from plugins.dev.cog import (
     CalcCum,
     CalcTo,
     Owner,
+    PluginDisable,
+    PluginEnable,
+    PluginList,
     PluginReload,
 )
 from tests.fakes import (
@@ -73,3 +76,55 @@ async def test_plugin_reload_roundtrip(
     await invoke_command(PluginReload(), ctx, plugin_name="counter")
     assert ctx.sent[-1].content == "✅ plugin counter has been reloaded"
     assert "counter" in [p.name for p in bot.plugins]
+
+
+async def test_plugin_enable_loads_and_persists(
+    bot: CazzuBot, ctx: FakeContext
+) -> None:
+    bot.plugins_dir = "plugins"  # the fixture boots an empty temp dir
+    assert "counter" not in [p.name for p in bot.plugins]
+
+    await invoke_command(PluginEnable(), ctx, plugin_name="counter")
+
+    assert ctx.sent[-1].content == "✅ enabled and loaded: counter"
+    assert "counter" in [p.name for p in bot.plugins]
+    assert await bot.settings.get("plugin.enabled.counter") is True
+
+
+async def test_plugin_enable_unknown_rejects(
+    bot: CazzuBot, ctx: FakeContext
+) -> None:
+    bot.plugins_dir = "plugins"
+    await invoke_command(PluginEnable(), ctx, plugin_name="nope")
+    content = ctx.sent[-1].content
+    assert content is not None and content.startswith("❌")
+
+
+async def test_plugin_disable_unloads_and_persists(
+    bot: CazzuBot, ctx: FakeContext
+) -> None:
+    bot.plugins_dir = "plugins"
+    await bot.load_plugin_by_name("counter")
+    assert "counter" in [p.name for p in bot.plugins]
+
+    await invoke_command(PluginDisable(), ctx, plugin_name="counter")
+
+    assert ctx.sent[-1].content == "✅ disabled and unloaded: counter"
+    assert "counter" not in [p.name for p in bot.plugins]
+    assert await bot.settings.get("plugin.enabled.counter") is False
+
+
+async def test_plugin_list_shows_states(
+    bot: CazzuBot, ctx: FakeContext
+) -> None:
+    bot.plugins_dir = "plugins"
+    await bot.load_plugin_by_name("counter")
+    await bot.disable_plugin("welcome")
+
+    await invoke_command(PluginList(), ctx)
+
+    text = ctx.sent[-1].content
+    assert text is not None
+    assert "✅ counter" in text
+    assert "⛔ welcome (disabled)" in text
+    assert "⬜ poll (not loaded)" in text

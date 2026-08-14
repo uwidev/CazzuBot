@@ -190,6 +190,14 @@ async def boot_full_bot(
     # keep the in-memory command registration, skip the REST sync
     instance.lightbulb.sync_commands = False
 
+    # the harness contract is "every plugin loaded" — force-enable the
+    # disabled-by-default mod plugin so its tests and the command-guard
+    # sweep see it (the settings schema is applied before the boot hook).
+    await instance.db.connect()
+    await instance.db.run_schema(instance.settings.schema)
+    await instance.settings.set("plugin.enabled.mod", True)
+    await instance.db.close()
+
     cache, rest = FakeCache(), FakeRest()
     guild = FakeGuild(id=2, owner_id=1)
     member = FakeMember(

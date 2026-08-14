@@ -52,6 +52,8 @@ handlers. See [docs/PLUGINS.md](docs/PLUGINS.md); read
   inventory (normal/frozen), consume frogs for exp, species/effects via
   typed keys; owns the quarterly freeze and midnight capture resync
 - **mod** — warn/mute/kick/ban with modlog + scheduled mute/tempban expiry
+  (ships disabled — incomplete; moderation handled by other bots. Enable
+  with `/cog enable mod`)
 - **poll** — app-command polls with a vote modal
 - **welcome** — onboarding/role-based welcomes with JSON message templates
 - **counter** — the baka button
@@ -60,7 +62,8 @@ handlers. See [docs/PLUGINS.md](docs/PLUGINS.md); read
 - **misc** — server utilities: guild banner, welcome screen
   (API-editable parts)
 - **fun** — ping/info/noot, echo, inktober, story compiler
-- **dev** — owner tools, plugin hotswap (`cog reload <name>`)
+- **dev** — owner tools, plugin hotswap (`cog reload`/`load`/`unload`),
+  plugin enable/disable (`cog enable`/`disable`/`list`)
 
 Shared services on `bot` (inventory, member effects, typed event bus,
 plugin lifecycle, assets) are covered in `docs/PLUGINS.md` and

@@ -72,11 +72,13 @@ async def test_boot_loads_plugins_and_commands(
             "levels",
             "ranks",
             "frogs",
-            "mod",
             "poll",
             "counter",
             "dev",
         } <= names
+        # mod ships disabled (incomplete; moderation handled elsewhere) —
+        # it must not load unless explicitly enabled
+        assert "mod" not in names
         assert instance.lightbulb.registered_commands
         # every extension registered its commands with the client
         assert instance.lightbulb._extensions  # pyright: ignore[reportPrivateUsage]
@@ -261,3 +263,153 @@ async def test_unload_plugin_by_name_cascades(full_bot: CazzuBot) -> None:
     names = {p.name for p in full_bot.plugins}
     for name in affected:
         assert name not in names, f"{name} still loaded after cascade"
+
+
+# -- plugin enable/disable ---------------------------------------------------
+
+
+async def _preset_setting(
+    instance: CazzuBot, key: str, value: object
+) -> None:
+    """Write a settings row before the boot hook runs (schema applied)."""
+    await instance.db.connect()
+    await instance.db.run_schema(instance.settings.schema)
+    await instance.settings.set(key, value)
+    await instance.db.close()
+
+
+async def test_boot_skips_setting_disabled_plugin(tmp_path: Path) -> None:
+    """A plugin disabled via settings does not load at boot."""
+    instance = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=str(tmp_path / "disabled.db"),
+        ),
+        plugins_dir="plugins",
+    )
+    await _preset_setting(instance, "plugin.enabled.counter", False)
+    await _boot(instance)
+    try:
+        names = {p.name for p in instance.plugins}
+        assert "counter" not in names
+        assert "experience" in names
+    finally:
+        await _shutdown(instance)
+
+
+async def test_boot_cascades_to_dependents_of_disabled(
+    tmp_path: Path,
+) -> None:
+    """Disabling a provider skips its dependents at boot too."""
+    instance = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=str(tmp_path / "cascade.db"),
+        ),
+        plugins_dir="plugins",
+    )
+    # ranks is a dependency of experience/levels/frogs
+    await _preset_setting(instance, "plugin.enabled.ranks", False)
+    await _boot(instance)
+    try:
+        names = {p.name for p in instance.plugins}
+        assert "ranks" not in names
+        assert "experience" not in names
+        assert "levels" not in names
+        assert "frogs" not in names
+        assert "poll" in names  # independent plugin still loads
+    finally:
+        await _shutdown(instance)
+
+
+async def test_sandbox_requesting_disabled_plugin_aborts(
+    tmp_path: Path,
+) -> None:
+    """An explicitly requested-but-disabled plugin refuses to boot."""
+    instance = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=str(tmp_path / "sandbox.db"),
+            sandbox_plugins=("counter",),
+        ),
+        plugins_dir="plugins",
+    )
+    await _preset_setting(instance, "plugin.enabled.counter", False)
+    try:
+        with pytest.raises(SystemExit) as exc:
+            await instance._on_starting(  # pyright: ignore[reportPrivateUsage]
+                hikari.StartingEvent(app=instance)
+            )
+        assert exc.value.code == 1
+    finally:
+        await _shutdown(instance)
+
+
+async def test_enable_plugin_loads_and_persists(
+    full_bot: CazzuBot,
+) -> None:
+    """Runtime enable loads the plugin and persists the flag."""
+    # mod ships disabled and is not loaded by the harness-agnostic default
+    await full_bot.disable_plugin("counter")
+    assert "counter" not in {p.name for p in full_bot.plugins}
+
+    loaded = await full_bot.enable_plugin("counter")
+
+    assert loaded == ["counter"]
+    assert "counter" in {p.name for p in full_bot.plugins}
+    assert await full_bot.settings.get("plugin.enabled.counter") is True
+
+
+async def test_disable_plugin_unloads_cascade_and_persists(
+    full_bot: CazzuBot,
+) -> None:
+    """Runtime disable unloads the plugin and its dependents, persists."""
+    unloaded = await full_bot.disable_plugin("experience")
+
+    assert "experience" in unloaded
+    assert "frogs" in unloaded  # depends on experience
+    names = {p.name for p in full_bot.plugins}
+    for name in unloaded:
+        assert name not in names
+    assert (
+        await full_bot.settings.get("plugin.enabled.experience") is False
+    )
+
+
+async def test_disabled_state_survives_restart(tmp_path: Path) -> None:
+    """A runtime disable is still honored by the next boot."""
+    path = str(tmp_path / "persist-disabled.db")
+    bot1 = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=path,
+        ),
+        plugins_dir="plugins",
+    )
+    await _boot(bot1)
+    await bot1.disable_plugin("counter")
+    await _shutdown(bot1)
+
+    bot2 = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=path,
+        ),
+        plugins_dir="plugins",
+    )
+    await _boot(bot2)
+    try:
+        assert "counter" not in {p.name for p in bot2.plugins}
+        assert "experience" in {p.name for p in bot2.plugins}
+    finally:
+        await _shutdown(bot2)

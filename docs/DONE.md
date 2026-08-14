@@ -547,3 +547,19 @@ and `quarterly` — each armed by its owning plugin's `on_load` with the
 missed-run catch-up semantics intact. The two halves of the midnight reset
 run as independent rows on the same cadence so each keeps its own retry
 semantics (the backlog's structural wrinkle, resolved with distinct tags).
+
+## Plugin enable/disable flag
+
+Plugins needed an on/off switch: disable a feature at boot (e.g. mod —
+incomplete, moderation handled by other bots) and re-enable it at runtime
+without a code change. **Done (2026-08-14):** every plugin has an enabled
+state — the `Plugin.enabled` class attribute is the code default, and the
+`plugin.enabled.<name>` settings key overrides it (persisted). At boot,
+disabled plugins are filtered out of the load set along with anything that
+transitively depends on them (`filter_enabled`, dependency-cascade via a
+fixed point over `depends_on`); a sandbox `-s` request for a disabled
+plugin refuses to boot with guidance. Owner commands in the dev plugin —
+`cog enable` / `cog disable` / `cog list` — flip the flag and
+load/unload live (dependents included, reusing the lifecycle's
+dependents-aware unload). mod ships `enabled = False`; the test harness
+force-enables it (the `full_bot` contract stays "every plugin loaded").

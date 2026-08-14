@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from cazzubot.errors import UserInputError
-from cazzubot.plugin import Plugin, discover_plugins, select_plugins
+from cazzubot.plugin import (
+    Plugin,
+    discover_plugins,
+    filter_enabled,
+    select_plugins,
+)
 
 
 def _plugin(name: str, *depends_on: str) -> Plugin:
@@ -134,3 +139,42 @@ def test_real_plugin_set_is_consistent() -> None:
         "frogs",
     ]
     assert _names(select_plugins(plugins, ("poll",))) == ["poll"]
+
+
+# -- filter_enabled ----------------------------------------------------------
+
+
+def test_filter_enabled_noop_without_disabled() -> None:
+    plugins = [_plugin("a"), _plugin("b")]
+    assert filter_enabled(plugins, set()) == plugins
+    assert filter_enabled(plugins, set()) is not plugins  # a copy
+
+
+def test_filter_enabled_drops_disabled_plugin() -> None:
+    plugins = [_plugin("a"), _plugin("b")]
+    assert _names(filter_enabled(plugins, {"a"})) == ["b"]
+
+
+def test_filter_enabled_cascades_to_dependents() -> None:
+    plugins = [
+        _plugin("a"),
+        _plugin("b", "a"),
+        _plugin("c", "b"),
+        _plugin("d"),
+    ]
+    # disabling a provider removes its whole dependent chain
+    assert _names(filter_enabled(plugins, {"a"})) == ["d"]
+    # order is preserved among the kept plugins
+    plugins = [_plugin("d"), _plugin("a"), _plugin("b", "a")]
+    assert _names(filter_enabled(plugins, {"a"})) == ["d"]
+
+
+def test_filter_enabled_cycle_removed_whole() -> None:
+    # a cycle (experience <-> ranks) is removed as a unit when either side
+    # is disabled — a half-loaded component is never the outcome
+    plugins = [
+        _plugin("experience", "ranks"),
+        _plugin("ranks", "experience"),
+    ]
+    assert filter_enabled(plugins, {"experience"}) == []
+    assert filter_enabled(plugins, {"ranks"}) == []
