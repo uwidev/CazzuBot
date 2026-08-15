@@ -27,7 +27,7 @@ No docker, no Postgres.
 ## Adding a feature (the whole point)
 
 Drop a folder into `plugins/` with a `plugin = MyPlugin()` instance — the bot
-auto-discovers it, applies its schema, registers its cogs and scheduled-task
+auto-discovers it, applies its schema, registers its extensions and scheduled-task
 handlers. See [docs/PLUGINS.md](docs/PLUGINS.md); read
 [docs/PLUGIN_ARCHITECTURE.md](docs/PLUGIN_ARCHITECTURE.md) and
 [docs/SYSTEMS.md](docs/SYSTEMS.md) for how the pieces fit together.
@@ -53,7 +53,7 @@ handlers. See [docs/PLUGINS.md](docs/PLUGINS.md); read
   typed keys; owns the quarterly freeze and midnight capture resync
 - **mod** — warn/mute/kick/ban with modlog + scheduled mute/tempban expiry
   (ships disabled — incomplete; moderation handled by other bots. Enable
-  with `/cog enable mod`)
+  with `/plugin enable mod`)
 - **poll** — app-command polls with a vote modal
 - **welcome** — onboarding/role-based welcomes with JSON message templates
 - **counter** — the baka button
@@ -62,8 +62,8 @@ handlers. See [docs/PLUGINS.md](docs/PLUGINS.md); read
 - **misc** — server utilities: guild banner, welcome screen
   (API-editable parts)
 - **fun** — ping/info/noot, echo, inktober, story compiler
-- **dev** — owner tools, plugin hotswap (`cog reload`/`load`/`unload`),
-  plugin enable/disable (`cog enable`/`disable`/`list`)
+- **dev** — owner tools, plugin hotswap (`plugin reload`/`load`/`unload`),
+  plugin enable/disable (`plugin enable`/`disable`/`list`)
 
 Shared services on `bot` (inventory, member effects, typed event bus,
 plugin lifecycle, assets) are covered in `docs/PLUGINS.md` and

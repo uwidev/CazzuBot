@@ -124,7 +124,7 @@ boot.
   species key. **No `frog_species` table** — species are defined entirely
   in code (see below).
 - `FrogTypeEnum` → `FrogState` (normal|frozen) in `cazzubot/models.py`;
-  update all usages (cog, db, factory, logic, quarterly, tests).
+  update all usages (extension, db, factory, logic, quarterly, tests).
 - New modules:
   - `species.py` — `Species` dataclass + `SPECIES` registry, **defined
     entirely in code** (no catalog rows: a DB table would create a proxy
@@ -184,7 +184,7 @@ full boot through the real schema guard).
 
 ### Phase 4 — Tests + docs
 
-- Unit/cog/driver coverage (see Testing below).
+- Unit/extension/driver coverage (see Testing below).
 - `docs/ASSETS.md` status flip to "implemented (static path)";
   `docs/BACKLOG.md` update; `docs/PLUGINS.md` (`bot.assets`/`bot.events`/
   `bot.inventory`/`bot.member_effects` under "Services available on the
@@ -284,7 +284,7 @@ class ExpPayload:
 - Effects are **decoupled from the controllers**: hooks receive the bot +
   the species' payload, so an effect can do anything — grant exp, spawn a
   cluster of frogs across channels via the scheduler, hand out roles —
-  without the cog or factory knowing about it.
+  without the extension or factory knowing about it.
 - v1 ships `exp` only. `exp_bonus` (catch; instant seasonal exp via
   `exp_db.add_exp_log(source=FROG)`) and `exp_multiplier` (catch; timed
   ×message-exp buff via `member_buff`, applied in

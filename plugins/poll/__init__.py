@@ -8,7 +8,7 @@ from . import db
 class PollPlugin(Plugin):
     name = "poll"
     schema = db.SCHEMA
-    extensions = ["plugins.poll.cog"]
+    extensions = ["plugins.poll.extension"]
 
 
 plugin = PollPlugin()

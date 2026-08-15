@@ -20,7 +20,7 @@ from plugins.frogs.events import (
     FrogCapturedEvent,
     FrogConsumedEvent,
 )
-from plugins.frogs.cog import Catalog, Consume, Profile, Register
+from plugins.frogs.extension import Catalog, Consume, Profile, Register
 from tests.fakes import (
     FakeCache,
     FakeChannel,

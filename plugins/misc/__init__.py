@@ -5,7 +5,7 @@ from cazzubot import Plugin
 
 class MiscPlugin(Plugin):
     name = "misc"
-    extensions = ["plugins.misc.cog"]
+    extensions = ["plugins.misc.extension"]
 
 
 plugin = MiscPlugin()

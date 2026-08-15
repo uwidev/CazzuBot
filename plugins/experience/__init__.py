@@ -41,7 +41,7 @@ async def on_daily_due(bot: CazzuBot, _payload: dict[str, object]) -> None:
 class ExperiencePlugin(Plugin):
     name = "experience"
     schema = db.SCHEMA
-    extensions = ["plugins.experience.cog"]
+    extensions = ["plugins.experience.extension"]
     scheduled = {DAILY_TAG: on_daily_due}
     # every awarded message presents level-ups and rank-ups, and exp top
     # queries rank roles — levels and ranks must be loaded with this

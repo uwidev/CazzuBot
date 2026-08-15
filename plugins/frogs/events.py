@@ -38,7 +38,7 @@ class FrogCapturedEvent:
 class FrogConsumedEvent:
     """A consume completed: effect ran, inventory decremented.
 
-    Sole emitter: ``plugins/frogs/cog.py`` ``Consume.invoke``, right after
+    Sole emitter: ``plugins/frogs/extension.py`` ``Consume.invoke``, right after
     the inventory decrement (post-effect, post-confirm).
     """
 

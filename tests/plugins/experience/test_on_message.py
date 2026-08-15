@@ -3,7 +3,7 @@
 
 These pin CURRENT behavior of the exp award pipeline (award, cooldown, guild/
 bot guards, cross-plugin handler wiring). The listener is invoked directly
-(``plugins.experience.cog.on_message``) with a fake ``MessageCreateEvent``
+(``plugins.experience.extension.on_message``) with a fake ``MessageCreateEvent``
 rather than via bot.dispatch: dispatch only schedules listener tasks, and
 other plugins' message listeners are out of scope here.
 """
@@ -16,7 +16,7 @@ import pendulum
 import pytest
 
 from cazzubot.bot import CazzuBot
-from plugins.experience import cog as exp_cog
+from plugins.experience import extension as exp_ext
 from plugins.experience import db as exp_db
 from tests.fakes import (
     FakeChannel,
@@ -43,7 +43,7 @@ async def _send(
         guild_id=_GUILD_ID,
         channel_id=channel.id,
     )
-    await exp_cog.on_message(FakeMessageCreateEvent(message=msg, app=bot))
+    await exp_ext.on_message(FakeMessageCreateEvent(message=msg, app=bot))
 
 
 async def test_first_message_awards_exp(
@@ -99,7 +99,7 @@ async def test_wrong_guild_is_ignored(
         guild_id=99,  # not the configured guild
         channel_id=channel.id,
     )
-    await exp_cog.on_message(
+    await exp_ext.on_message(
         FakeMessageCreateEvent(message=msg, app=seeded_bot)
     )
     assert await exp_db.get_member_exp(seeded_bot.db, 555) is None

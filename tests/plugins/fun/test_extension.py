@@ -8,7 +8,7 @@ from typing import Any, cast
 import pytest
 
 from cazzubot.bot import CazzuBot
-from plugins.fun.cog import (
+from plugins.fun.extension import (
     Echo,
     Hashiresoriyo,
     Info,

@@ -14,7 +14,7 @@ import pytest
 
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
-from plugins.mod.cog import (
+from plugins.mod.extension import (
     Ban,
     Kick,
     Mute,
@@ -267,7 +267,7 @@ async def test_mod_gate_requires_mod_perms(
     channel: FakeChannel,
     fake_guild: FakeGuild,
 ) -> None:
-    from plugins.mod.cog import _ModGateDenied, _mod_gate
+    from plugins.mod.extension import _ModGateDenied, _mod_gate
 
     with pytest.raises(_ModGateDenied):
         await cast(Any, _mod_gate)(None, ctx)  # plain member

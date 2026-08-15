@@ -16,7 +16,7 @@ import pytest
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
 from plugins.experience import db as exp_db
-from plugins.experience.cog import Card, QuietAdd, Top, TopMenu
+from plugins.experience.extension import Card, QuietAdd, Top, TopMenu
 from tests.fakes import (
     invoke_command,
     FakeChannel,

@@ -137,14 +137,14 @@ class Scrape(
 # -- plugin hotswap ---------------------------------------------------------
 
 
-cog = lightbulb.Group(
-    "cog",
+plugin_group = lightbulb.Group(
+    "plugin",
     "Plugin hotswap.",
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
 )
 
 
-@cog.register
+@plugin_group.register
 class PluginReload(
     lightbulb.SlashCommand,
     name="reload",
@@ -173,7 +173,7 @@ class PluginReload(
             await ctx.respond("✅ reloaded " + ", ".join(affected[::-1]))
 
 
-@cog.register
+@plugin_group.register
 class PluginLoad(
     lightbulb.SlashCommand,
     name="load",
@@ -194,7 +194,7 @@ class PluginLoad(
         await ctx.respond(f"✅ plugin {self.plugin_name} has been loaded")
 
 
-@cog.register
+@plugin_group.register
 class PluginUnload(
     lightbulb.SlashCommand,
     name="unload",
@@ -217,7 +217,7 @@ class PluginUnload(
         )
 
 
-@cog.register
+@plugin_group.register
 class PluginEnable(
     lightbulb.SlashCommand,
     name="enable",
@@ -244,7 +244,7 @@ class PluginEnable(
             )
 
 
-@cog.register
+@plugin_group.register
 class PluginDisable(
     lightbulb.SlashCommand,
     name="disable",
@@ -272,7 +272,7 @@ class PluginDisable(
             )
 
 
-@cog.register
+@plugin_group.register
 class PluginList(
     lightbulb.SlashCommand,
     name="list",
@@ -302,4 +302,4 @@ class PluginList(
 
 
 loader.command(calc)
-loader.command(cog)
+loader.command(plugin_group)

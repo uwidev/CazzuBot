@@ -6,7 +6,7 @@ listener MUST be registered through :func:`guild_listener` — it drops
 events from the other guild (and DMs) before the handler runs, so a
 development-mode run can never act on the production guild.
 
-Usage in a plugin cog::
+Usage in a plugin extension::
 
     from cazzubot.listeners import guild_listener
 

@@ -72,7 +72,7 @@ infrastructure shapes don't force awkward workarounds on their consumers
 (isolation/atomicity/modularity kept, no needless indirection). The event
 system is the annotated reference case: `cazzubot/events.py` states who
 calls `on`/`emit`, `plugins/frogs/events.py` names the sole emitter of
-each event, and the emit call sites in `factory.py`/`cog.py` state the
+each event, and the emit call sites in `factory.py`/`extension.py` state the
 same. Extend that pattern to the rest of the codebase (scheduler
 handlers, service entry points, listeners, template formatters).
 

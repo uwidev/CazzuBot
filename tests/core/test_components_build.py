@@ -19,9 +19,9 @@ import pendulum
 
 from cazzubot import utils
 from cazzubot.models import SpeciesKey
-from plugins.experience.cog import TopMenu
+from plugins.experience.extension import TopMenu
 from plugins.frogs import factory
-from plugins.poll.cog import PollModal
+from plugins.poll.extension import PollModal
 from tests.fakes import FakeChannel, FakeContext, FakeGuild, FakeMember
 
 _GUILD = FakeGuild(id=2)

@@ -148,7 +148,7 @@ class CazzuBot(hikari.GatewayBot):
             if refused:
                 _log.critical(
                     "refusing to boot: requested plugin(s) are disabled: %s "
-                    "— enable them first (cog enable) or drop them from -s",
+                    "— enable them first (plugin enable) or drop them from -s",
                     ", ".join(refused),
                 )
                 raise SystemExit(1)
@@ -418,7 +418,7 @@ class CazzuBot(hikari.GatewayBot):
         """Effective enabled state: settings override, else code default.
 
         The ``plugin.enabled.<name>`` settings key is written by the
-        owner's ``cog enable``/``cog disable`` commands and survives
+        owner's ``plugin enable``/``plugin disable`` commands and survives
         restarts; absent means the plugin's own ``enabled`` class
         attribute decides (e.g. mod ships ``enabled = False``).
         """

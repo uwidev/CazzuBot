@@ -8,13 +8,13 @@ import pendulum
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
-from plugins.counter.cog import (
+from plugins.counter.extension import (
     NO_BAKAS_TEXT,
     _handle_baka,
     on_counter_expire,
     on_interaction,
 )
-from plugins.counter.cog import Create
+from plugins.counter.extension import Create
 from plugins.counter import db as counter_db
 from tests.fakes import (
     rest_of,

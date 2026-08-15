@@ -2,7 +2,7 @@
 
 Mirrors ``plugins/ranks/logic.py``: service functions take ``db`` + plain
 values + injected ``now`` and return plain results, so they are unit-testable
-without discord fakes. The cog (controller) translates discord objects into
+without discord fakes. The extension (controller) translates discord objects into
 plain values, calls this layer, and handles presentation.
 """
 

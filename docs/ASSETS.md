@@ -24,10 +24,10 @@ references it, but is a separate concern.
 The gaps below motivated the system; the asset service closed them.
 
 - All runtime imagery was **hardcoded external URLs** as module-level
-  constants or inline literals: catbox.moe (`plugins/counter/cog.py:24-27`,
-  `plugins/poll/cog.py:24-25`, `cazzubot/utils.py:72`), imgur
-  (`plugins/frogs/cog.py:101,132`), Discord CDN emoji webp
-  (`plugins/experience/cog.py:21-24`, `plugins/frogs/cog.py:29-32`).
+  constants or inline literals: catbox.moe (`plugins/counter/extension.py:24-27`,
+  `plugins/poll/extension.py:24-25`, `cazzubot/utils.py:72`), imgur
+  (`plugins/frogs/extension.py:101,132`), Discord CDN emoji webp
+  (`plugins/experience/extension.py:21-24`, `plugins/frogs/extension.py:29-32`).
 - Emoji references were a mix of guild-emoji mention strings
   (`<:cirnoFrog:…>` in `plugins/frogs/factory.py:26-27`), unicode, and
   emoji-as-image URLs — three styles, none centrally managed.
@@ -177,7 +177,7 @@ partial states.
   plugin folder (`plugins/frogs/assets/leaf_frog.png`), matching PLUGINS.md's
   "one feature = one folder". Dynamic uploads would land in the same folder
   for the plugin that owns the key. Assets version with plugin code,
-  `/cog reload` picks up changes, plugin removal takes its assets and rows
+  `/plugin reload` picks up changes, plugin removal takes its assets and rows
   with it.
 - **Centralized (mechanism only):** the registry table and the CDN sync are
   shared — one schema, one private asset channel. The boot reconcile walks

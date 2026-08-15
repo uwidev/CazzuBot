@@ -13,7 +13,7 @@ from typing import Any, cast
 import pytest
 
 from cazzubot.bot import CazzuBot
-from plugins.poll.cog import (
+from plugins.poll.extension import (
     AutoPopulate,
     Close,
     Open,
@@ -166,7 +166,7 @@ async def test_poll_vote_button_ignored_for_other_guild(
     """A vote-button press in the OTHER guild never opens the modal."""
     from types import SimpleNamespace
 
-    from plugins.poll.cog import on_interaction
+    from plugins.poll.extension import on_interaction
 
     pid = await _poll_with_items(bot)
     interaction = FakeComponentInteraction(
@@ -238,7 +238,7 @@ async def test_poll_send_open_flag_opens_poll(
     bot: CazzuBot, ctx: FakeContext
 ) -> None:
     """send with open=True opens the poll (open footer icon) first."""
-    from plugins.poll.cog import EMOJI_OPEN
+    from plugins.poll.extension import EMOJI_OPEN
 
     pid = await _poll_with_items(bot)
 

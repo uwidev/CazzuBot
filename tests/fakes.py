@@ -9,7 +9,7 @@ role ids + permissions, rest-client spies for mutations, cache-backed
 lookups, and a lightbulb-style command context whose ``respond`` records
 sends.
 
-Anything a ported cog calls that we forgot to fake raises ``AttributeError``
+Anything a ported extension calls that we forgot to fake raises ``AttributeError``
 loudly at the test — a feature, not a bug: the traceback names the exact
 attribute to add.
 

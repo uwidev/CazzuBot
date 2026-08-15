@@ -16,7 +16,7 @@ Effects are fully decoupled from the species and the controllers:
   test).
 - Hooks receive the **bot** plus the payload, so an effect can do
   anything — grant exp, schedule a cluster of frogs across channels, hand
-  out roles — without the cog or factory knowing about it.
+  out roles — without the extension or factory knowing about it.
 
 No hikari imports: ``bot`` is only a parameter (TYPE_CHECKING-annotated);
 effects reach services through it.

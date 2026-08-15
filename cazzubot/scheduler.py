@@ -15,7 +15,8 @@ on handler failure they are kept and re-armed per their tag's ``TaskPolicy``
 also reserved (the retry counter). ``TaskPolicy.stale_after`` is the
 missed-run rule for rows that came due while the bot was down.
 
-Replaces v1's per-cog ``@tasks.loop(seconds=1)`` polling of the same table.
+Replaces v1's per-plugin ``@tasks.loop(seconds=1)`` polling of the same
+table.
 """
 
 import asyncio

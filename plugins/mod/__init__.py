@@ -2,7 +2,7 @@
 
 Ships **disabled** (``enabled = False``): the feature is incomplete and
 other bots already handle moderation. The owner can bring it up at runtime
-with ``/cog enable mod`` (persisted) or by setting
+with ``/plugin enable mod`` (persisted) or by setting
 ``plugin.enabled.mod = true``.
 """
 
@@ -13,13 +13,13 @@ from cazzubot.bot import CazzuBot
 from typing_extensions import override
 
 from . import db
-from .cog import on_modlog_due
+from .extension import on_modlog_due
 
 
 class ModPlugin(Plugin):
     name = "mod"
     schema = db.SCHEMA
-    extensions = ["plugins.mod.cog"]
+    extensions = ["plugins.mod.extension"]
     scheduled = {"modlog": on_modlog_due}
     enabled = False
 

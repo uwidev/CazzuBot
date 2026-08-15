@@ -1,5 +1,5 @@
 # pyright: reportArgumentType=false
-"""Misc plugin — command tests: banner + welcome screen through the cog."""
+"""Misc plugin — command tests: banner + welcome screen through the extension."""
 
 from __future__ import annotations
 
@@ -52,13 +52,13 @@ async def test_banner_sets_guild_banner(
     channel,
     monkeypatch,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
-    monkeypatch.setattr(misc_cog, "_download", _fake_download)
+    monkeypatch.setattr(misc_ext, "_download", _fake_download)
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     image = FakeAttachment(filename="pic.png", media_type="image/png")
 
-    await invoke_command(misc_cog.Banner(), ctx, image=image)
+    await invoke_command(misc_ext.Banner(), ctx, image=image)
 
     assert len(rest_of(seeded_bot).guild_edits) == 1
     gid, kwargs = rest_of(seeded_bot).guild_edits[0]
@@ -77,13 +77,13 @@ async def test_banner_reports_missing_permission(
     channel,
     monkeypatch,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
-    monkeypatch.setattr(misc_cog, "_download", _fake_download)
+    monkeypatch.setattr(misc_ext, "_download", _fake_download)
     monkeypatch.setattr(rest_of(seeded_bot), "edit_guild", _deny)
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
 
-    await invoke_command(misc_cog.Banner(), ctx, image=FakeAttachment())
+    await invoke_command(misc_ext.Banner(), ctx, image=FakeAttachment())
 
     assert "MANAGE_GUILD" in (ctx.sent[-1].content or "")
 
@@ -96,9 +96,9 @@ async def test_banner_from_message_link(
     monkeypatch,
 ) -> None:
     """msg uses the first image attachment on that message."""
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
-    monkeypatch.setattr(misc_cog, "_download", _fake_download)
+    monkeypatch.setattr(misc_ext, "_download", _fake_download)
     rest = rest_of(seeded_bot)
     rest.messages[(99, 1)] = FakeMessage(
         id=1,
@@ -113,7 +113,7 @@ async def test_banner_from_message_link(
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     await invoke_command(
-        misc_cog.Banner(),
+        misc_ext.Banner(),
         ctx,
         msg="https://discord.com/channels/2/99/1",
     )
@@ -130,7 +130,7 @@ async def test_banner_message_has_no_images(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     rest = rest_of(seeded_bot)
     rest.messages[(99, 1)] = FakeMessage(
@@ -139,7 +139,7 @@ async def test_banner_message_has_no_images(
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     await invoke_command(
-        misc_cog.Banner(),
+        misc_ext.Banner(),
         ctx,
         msg="https://discord.com/channels/2/99/1",
     )
@@ -153,11 +153,11 @@ async def test_banner_message_missing(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     await invoke_command(
-        misc_cog.Banner(),
+        misc_ext.Banner(),
         ctx,
         msg="https://discord.com/channels/2/99/1",
     )
@@ -172,9 +172,9 @@ async def test_banner_msg_wins_over_image(
     channel,
     monkeypatch,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
-    monkeypatch.setattr(misc_cog, "_download", _fake_download)
+    monkeypatch.setattr(misc_ext, "_download", _fake_download)
     rest = rest_of(seeded_bot)
     rest.messages[(99, 1)] = FakeMessage(
         id=1,
@@ -188,7 +188,7 @@ async def test_banner_msg_wins_over_image(
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     await invoke_command(
-        misc_cog.Banner(),
+        misc_ext.Banner(),
         ctx,
         msg="https://discord.com/channels/2/99/1",
         image=FakeAttachment(filename="other.png"),
@@ -205,10 +205,10 @@ async def test_banner_requires_image_or_msg(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(misc_cog.Banner(), ctx)
+    await invoke_command(misc_ext.Banner(), ctx)
 
     assert "Provide an image or a msg" in (ctx.sent[-1].content or "")
 
@@ -219,11 +219,11 @@ async def test_welcome_edits_screen(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     await invoke_command(
-        misc_cog.Welcome(),
+        misc_ext.Welcome(),
         ctx,
         enabled=True,
         description="Welcome to Club Cirno!",
@@ -248,10 +248,10 @@ async def test_welcome_enabled_only(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(misc_cog.Welcome(), ctx, enabled=False)
+    await invoke_command(misc_ext.Welcome(), ctx, enabled=False)
 
     assert rest_of(seeded_bot).welcome_screen_edits == [
         (
@@ -271,11 +271,11 @@ async def test_welcome_sets_featured_channel(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     await invoke_command(
-        misc_cog.Welcome(),
+        misc_ext.Welcome(),
         ctx,
         enabled=True,
         channel=FakeChannel(id=77, name="rules"),
@@ -296,7 +296,7 @@ async def test_welcome_missing_screen_reports(
     channel,
     monkeypatch,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     def _not_found(*_args, **_kwargs):
         raise hikari.NotFoundError(
@@ -308,7 +308,7 @@ async def test_welcome_missing_screen_reports(
     )
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
 
-    await invoke_command(misc_cog.Welcome(), ctx, enabled=True)
+    await invoke_command(misc_ext.Welcome(), ctx, enabled=True)
 
     assert "no welcome screen set up" in (ctx.sent[-1].content or "")
 
@@ -322,10 +322,10 @@ async def test_week_current_default(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(misc_cog.Week(), ctx)
+    await invoke_command(misc_ext.Week(), ctx)
 
     flushed = ctx.sent[-1].content or ""
     assert "It's " in flushed
@@ -338,10 +338,10 @@ async def test_week_monday_start(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(misc_cog.Week(), ctx, start="monday")
+    await invoke_command(misc_ext.Week(), ctx, start="monday")
 
     assert "weeks start monday" in (ctx.sent[-1].content or "")
 
@@ -353,11 +353,11 @@ async def test_week_message_link(
     channel,
 ) -> None:
     """id 1 → 2015-01-01 (Thursday) → Sunday-start week 52 of 2014."""
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     await invoke_command(
-        misc_cog.Week(),
+        misc_ext.Week(),
         ctx,
         msg="https://discord.com/channels/2/99/1",
     )
@@ -375,12 +375,12 @@ async def test_week_large_message_link(
     channel,
 ) -> None:
     """Full-size snowflakes work through a message link (no API calls)."""
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     mid = 1535535252141768744
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     await invoke_command(
-        misc_cog.Week(),
+        misc_ext.Week(),
         ctx,
         msg=f"https://discord.com/channels/2/99/{mid}",
     )
@@ -397,10 +397,10 @@ async def test_week_invalid_message_link(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(misc_cog.Week(), ctx, msg="1535535252141768744")
+    await invoke_command(misc_ext.Week(), ctx, msg="1535535252141768744")
 
     flushed = ctx.sent[-1].content or ""
     assert "msg must be a Discord message link" in flushed
@@ -412,10 +412,10 @@ async def test_week_invalid_start(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.misc import cog as misc_cog
+    from plugins.misc import extension as misc_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(misc_cog.Week(), ctx, start="friday")
+    await invoke_command(misc_ext.Week(), ctx, start="friday")
 
     assert "start must be 'sunday' or 'monday'" in (
         ctx.sent[-1].content or ""

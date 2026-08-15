@@ -13,7 +13,7 @@ from cazzubot import Plugin
 
 class MyFeature(Plugin):
     name = "myfeature"  # unique id (defaults to folder name)
-    extensions = ["plugins.myfeature.cog"]  # lightbulb extension module(s)
+    extensions = ["plugins.myfeature.extension"]  # lightbulb module(s)
     schema = [  # DDL, idempotent, runs at boot
         "CREATE TABLE IF NOT EXISTS myfeature (key TEXT PRIMARY KEY, value TEXT)",
     ]
@@ -35,7 +35,7 @@ class MyFeature(Plugin):
 plugin = MyFeature()
 ```
 
-Commands live in a lightbulb extension module (`plugins/myfeature/cog.py`)
+Commands live in a lightbulb extension module (`plugins/myfeature/extension.py`)
 with a module-level `loader = lightbulb.Loader()`; class-based commands are
 registered with `@loader.command`, listeners with `@loader.listener`, and
 the group with `loader.command(my_group)`:
@@ -59,7 +59,7 @@ loader.command(hello)
 ```
 
 The bot is reachable from commands as `ctx.client.app` (the `CazzuBot`) and
-from listeners as `event.app`. Restart (or `/cog reload myfeature` if dev
+from listeners as `event.app`. Restart (or `/plugin reload myfeature` if dev
 is loaded) — done.
 
 For very small features, a single module `plugins/myfeature.py` with the same
@@ -89,7 +89,7 @@ named plugins plus their transitive dependencies — nothing else. A bare
 `-s` keeps the classic defaults (`poll`, `dev`). Production boots are
 unaffected; the same dependency ordering applies to the full plugin set.
 A disabled plugin requested in sandbox refuses to boot with guidance
-(enable it first with `cog enable`, or drop it from `-s`).
+(enable it first with `plugin enable`, or drop it from `-s`).
 
 ## Enabling and disabling plugins
 
@@ -102,16 +102,16 @@ enables it.
 - **At boot**, disabled plugins are skipped — and so is everything that
   transitively depends on one (a disabled provider would leave its
   dependents half-wired). Skips are logged with the reason.
-- **At runtime** (owner), the `cog` group in the dev plugin manages the
+- **At runtime** (owner), the `plugin` group in the dev plugin manages the
   flag and the running bot:
-  - `cog enable <name>` — persists `plugin.enabled.<name> = true` and
+  - `plugin enable <name>` — persists `plugin.enabled.<name> = true` and
     loads the plugin with its dependency chain.
-  - `cog disable <name>` — persists `false` and unloads the plugin with
+  - `plugin disable <name>` — persists `false` and unloads the plugin with
     its loaded dependents.
-  - `cog list` — every plugin with its ✅ loaded / ⛔ disabled / ⬜ not
+  - `plugin list` — every plugin with its ✅ loaded / ⛔ disabled / ⬜ not
     loaded state.
-- The flag survives restarts. `cog load`/`cog unload` remain the
-  session-only overrides (no flag change); `cog enable`/`cog disable`
+- The flag survives restarts. `plugin load`/`plugin unload` remain the
+  session-only overrides (no flag change); `plugin enable`/`plugin disable`
   are the persisted switches.
 
 ## Services available on the bot
@@ -143,7 +143,7 @@ Use these instead of reaching into internals:
 ## Conventions
 
 - One plugin = one feature. Split big features into `db.py` (queries/schema),
-  `cog.py` (lightbulb extension), `logic.py` (pure logic) inside the plugin
+  `extension.py` (lightbulb extension), `logic.py` (pure logic) inside the plugin
   folder.
 - **Lifecycle — declare your undos.** Every runtime effect (scheduler rows,
   subscriptions, messages you must later delete) should hand its inverse to

@@ -5,7 +5,7 @@ from cazzubot import Plugin
 
 class FunPlugin(Plugin):
     name = "fun"
-    extensions = ["plugins.fun.cog"]
+    extensions = ["plugins.fun.extension"]
 
 
 plugin = FunPlugin()

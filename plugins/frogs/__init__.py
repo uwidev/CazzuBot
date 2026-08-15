@@ -74,7 +74,7 @@ async def _arm_if_rowless(bot: CazzuBot, tag: str, cadence: At) -> None:
 class FrogsPlugin(Plugin):
     name = "frogs"
     schema = db.SCHEMA
-    extensions = ["plugins.frogs.cog"]
+    extensions = ["plugins.frogs.extension"]
     scheduled = {
         "frog": factory.on_frog_due,
         DAILY_FROG_TAG: on_daily_frog_due,

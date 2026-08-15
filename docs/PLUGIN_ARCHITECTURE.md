@@ -106,7 +106,7 @@ weekly cadence, and the counter footer resets on the next interaction.
 Unloading or reloading a provider also withdraws its **loaded dependents**
 (transitively, SCC-aware), because their imports of the provider's modules
 would otherwise go stale: unload dependents-first (reverse topological
-order, purging module trees), reload dependencies-first. `cog reload`
+order, purging module trees), reload dependencies-first. `plugin reload`
 reports the full affected set.
 
 ### 2.5 Events

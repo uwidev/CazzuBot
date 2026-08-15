@@ -52,7 +52,7 @@ plugins/                    one self-contained package per feature
 ## The plugin contract (this is the whole point)
 
 A feature is **one folder**. To add a feature, drop this in `plugins/myfeature/__init__.py`
-and restart — the loader finds it, runs its schema, registers its cogs, done:
+and restart — the loader finds it, runs its schema, registers its extensions, done:
 
 ```python
 from cazzubot import Plugin
@@ -60,7 +60,7 @@ from cazzubot import Plugin
 
 class MyFeature(Plugin):
     name = "myfeature"
-    extensions = ["plugins.myfeature.cog"]  # lightbulb loader modules
+    extensions = ["plugins.myfeature.extension"]  # lightbulb loader modules
     schema = ["CREATE TABLE IF NOT EXISTS myfeature (…)"]
     scheduled = {"mytag": my_handler}  # tag -> async handler(bot, payload)
     asset_decl = {MyAsset: "path"}     # optional enum -> file declarations
@@ -76,7 +76,7 @@ plugin = MyFeature()
 No central registration, no `db.init()`, no codec setup, no imports to add anywhere. Plugins
 reach shared services through the bot: `bot.db`, `bot.settings`, `bot.scheduler`,
 `bot.assets`, `bot.events`, `bot.inventory`, `bot.member_effects`, `bot.lifecycle`,
-`bot.config`. Their cogs get `bot` injected at load. Loading is two-phase (schemas +
+`bot.config`. Their extensions get `bot` injected at load. Loading is two-phase (schemas +
 extensions first, then `on_load`), so plugins have no load-order dependencies;
 `verify_schema` aborts boot if the DB schema drifts from the Python DDL.
 
@@ -94,7 +94,7 @@ The generic game stores and glue live on `bot` so features don't re-implement th
   obvious.
 - **`bot.lifecycle`** — plugins defer reversible operations (undo callables); `withdraw`
   replays them in reverse with failure isolation, so unloading/reloading a plugin is
-  safe. `cog reload` unloads dependents first (reverse-topological, SCC-aware).
+  safe. `plugin reload` unloads dependents first (reverse-topological, SCC-aware).
 - **`bot.assets`** — enum-declared files (`asset_decl`) reconciled to disk and synced to
   the CDN channel. See `docs/ASSETS.md`.
 

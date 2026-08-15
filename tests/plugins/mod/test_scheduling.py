@@ -14,7 +14,7 @@ import pendulum
 from cazzubot import CazzuBot
 from cazzubot.models import ModlogStatusEnum, ModlogTypeEnum
 from plugins.mod import db as mod_db
-from plugins.mod.cog import on_modlog_due
+from plugins.mod.extension import on_modlog_due
 from tests.fakes import FakeMember, FakeRole, rest_of
 
 _MUTE_ROLE_ID = 4444

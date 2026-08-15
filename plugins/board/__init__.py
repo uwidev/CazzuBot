@@ -55,7 +55,7 @@ async def on_board_weekly_due(
 class BoardPlugin(Plugin):
     name = "board"
     schema = db.SCHEMA
-    extensions = ["plugins.board.cog"]
+    extensions = ["plugins.board.extension"]
     scheduled = {
         "board_weekly": on_board_weekly_due,
         "board_weekly_close": on_board_weekly_close,

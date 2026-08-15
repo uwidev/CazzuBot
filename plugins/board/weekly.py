@@ -30,7 +30,7 @@ from plugins.board import db as board_db
 from plugins.board.logic import MAX_IMAGES, build_grid, scrape_week
 from plugins.misc.logic import prepare_banner
 from plugins.poll import db as poll_db
-from plugins.poll.cog import build_send_payload, set_poll_open
+from plugins.poll.extension import build_send_payload, set_poll_open
 
 _log = logging.getLogger(__name__)
 

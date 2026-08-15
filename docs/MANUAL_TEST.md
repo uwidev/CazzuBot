@@ -97,7 +97,7 @@ whatever below the test item — raw, no template.
 
 - [x] B1. Full slash tree present: groups `exp` (+`quiet`), `frog`, `rank`,
       `level`, `mod` (+`set`), `poll`, `welcome`, `counter`, `story`,
-      `calc`, `cog`; standalone commands (`ping`, `info`, `noot`, `echo`,
+      `calc`, `plugin`; standalone commands (`ping`, `info`, `noot`, `echo`,
       `hashiresoriyo`, `register_inktober`, `scrape_inktober`, `owner`,
       `archive_emojis`, `scrape`); correct names/descriptions/option types.
 
@@ -141,7 +141,7 @@ whatever below the test item — raw, no template.
   File "/mnt/hdd/proj/high/in/CazzuBot/.venv/lib/python3.14/site-packages/linkd/utils.py", line 101, in maybe_await
     return await item
            ^^^^^^^^^^
-  File "/mnt/hdd/proj/high/in/CazzuBot/plugins/levels/cog.py", line 78, in invoke
+  File "/mnt/hdd/proj/high/in/CazzuBot/plugins/levels/extension.py", line 78, in invoke
     await templates.send(ctx, msg_json)
   File "/mnt/hdd/proj/high/in/CazzuBot/cazzubot/templates.py", line 199, in send
     return await destination.send(
@@ -231,7 +231,7 @@ hikari.errors.NotFoundError: Not Found 404: (10015) 'Unknown Webhook' for https:
 
 Backlog all of mod. This isn't core nor is it finalized right now and is "in progress" in terms of development.
 The mod plugin also **ships disabled** (`enabled = False` in `plugins/mod/__init__.py`) — it doesn't load
-at boot; enable it with `/cog enable mod` before working through this section.
+at boot; enable it with `/plugin enable mod` before working through this section.
 
 - [ ] E1. `warn` → modlog entry + notification.
 
@@ -312,9 +312,9 @@ at boot; enable it with `/cog enable mod` before working through this section.
 
 - [ ] K2. `archive_emojis` + `scrape` write files to `archives/` / `emojis/`.
 
-- [ ] K3. **`cog reload frogs` while running** → new code live, no
-      double-registered commands; `cog unload` removes the group from the
-      tree; `cog load` brings it back.
+- [ ] K3. **`plugin reload frogs` while running** → new code live, no
+      double-registered commands; `plugin unload` removes the group from the
+      tree; `plugin load` brings it back.
 
 ## L. window / feedback
 

@@ -5,7 +5,7 @@ from cazzubot import Plugin
 
 class DevPlugin(Plugin):
     name = "dev"
-    extensions = ["plugins.dev.cog"]
+    extensions = ["plugins.dev.extension"]
 
 
 plugin = DevPlugin()

@@ -4,7 +4,7 @@ The ``SPECIES`` registry is the single source of truth: names, rarity,
 weights and art all live here (no catalog table — a DB row would create a
 proxy interface for tuning and balancing, which is exactly the friction we
 want to avoid). Tuning a species = editing this file and restarting
-(``c!cog reload frogs`` picks it up too).
+(``/plugin reload frogs`` picks it up too).
 
 Keys and references are **typed, never strings**: ``SpeciesKey`` is the
 enum of valid species (the LSP completes it; a typo cannot compile), and

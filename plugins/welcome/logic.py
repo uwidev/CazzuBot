@@ -1,6 +1,6 @@
 """Welcome service layer — pure welcome decisions, no discord objects.
 
-The controller (cog) reads settings, resolves the channel/role and performs
+The controller (extension) reads settings, resolves the channel/role and performs
 the side effects; whether a member update should trigger a welcome is a pure
 function of plain values.
 """

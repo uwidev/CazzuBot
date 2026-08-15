@@ -8,7 +8,7 @@ from lightbulb.prefab.checks import NotOwner, owner_only
 
 from cazzubot import levels
 from cazzubot.bot import CazzuBot
-from plugins.dev.cog import (
+from plugins.dev.extension import (
     CalcCum,
     CalcTo,
     Owner,

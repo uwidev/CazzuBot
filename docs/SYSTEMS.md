@@ -46,7 +46,7 @@ flowchart LR
   due it reverts the action and marks the `modlog` row resolved
   (state-backed scheduling — the task is a projection of the modlog).
   **`mod` ships disabled** (`enabled = False`) — it doesn't load at boot
-  until the owner enables it (`cog enable mod`); the chart shows its
+  until the owner enables it (`plugin enable mod`); the chart shows its
   wiring for when it's up.
 - **Under everything:** `bot.lifecycle` defers/withdraws each plugin's
   runtime effects on load/unload (dashed edges to the plugins that

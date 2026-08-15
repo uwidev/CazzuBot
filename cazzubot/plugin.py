@@ -7,7 +7,7 @@ defines exactly one ``Plugin`` subclass instance as ``plugin``::
 
         class MyFeature(Plugin):
                 name = "myfeature"
-                extensions = ["plugins.myfeature.cog"]
+                extensions = ["plugins.myfeature.extension"]
                 schema = ["CREATE TABLE IF NOT EXISTS myfeature (...)"]
                 scheduled = {"mytag": my_handler}
 

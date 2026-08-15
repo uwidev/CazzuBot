@@ -1,5 +1,5 @@
 # pyright: reportArgumentType=false
-"""Board plugin — command tests: scrape + post through the real cog."""
+"""Board plugin — command tests: scrape + post through the real extension."""
 
 from __future__ import annotations
 
@@ -156,15 +156,15 @@ async def test_scrape_saves_rows(
     channel,
     monkeypatch,
 ) -> None:
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
-    monkeypatch.setattr(board_cog, "_download_url", _fake_download_url)
+    monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
     rest = rest_of(seeded_bot)
     now = pendulum.now("UTC")
     _seed_messages(rest, author, now)
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(board_cog.Scrape(), ctx)
+    await invoke_command(board_ext.Scrape(), ctx)
 
     start = utils.week_start(now, start="sunday").subtract(days=7)
     end = start.add(days=7)
@@ -201,17 +201,17 @@ async def test_scrape_dedupes_on_second_run(
     channel,
     monkeypatch,
 ) -> None:
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
-    monkeypatch.setattr(board_cog, "_download_url", _fake_download_url)
+    monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
     rest = rest_of(seeded_bot)
     now = pendulum.now("UTC")
     _seed_messages(rest, author, now)
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
 
-    await invoke_command(board_cog.Scrape(), ctx)
+    await invoke_command(board_ext.Scrape(), ctx)
     ctx.sent.clear()
-    await invoke_command(board_cog.Scrape(), ctx)
+    await invoke_command(board_ext.Scrape(), ctx)
 
     flushed = ctx.sent[-1].content or ""
     assert "Scraped 0 new image(s)" in flushed
@@ -226,9 +226,9 @@ async def test_scrape_same_image_new_message_is_duplicate(
     monkeypatch,
 ) -> None:
     """The same image re-posted in another message takes one grid slot."""
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
-    monkeypatch.setattr(board_cog, "_download_url", _fake_download_url)
+    monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
     rest = rest_of(seeded_bot)
     now = pendulum.now("UTC")
     _seed_messages(rest, author, now)
@@ -244,7 +244,7 @@ async def test_scrape_same_image_new_message_is_duplicate(
     )
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(board_cog.Scrape(), ctx)
+    await invoke_command(board_ext.Scrape(), ctx)
 
     flushed = ctx.sent[-1].content or ""
     assert "Scraped 3 new image(s)" in flushed
@@ -259,9 +259,9 @@ async def test_scrape_week_argument_targets_that_week(
     monkeypatch,
 ) -> None:
     """An explicit week scrapes that week, not the default (last week)."""
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
-    monkeypatch.setattr(board_cog, "_download_url", _fake_download_url)
+    monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
     rest = rest_of(seeded_bot)
     now = pendulum.now("UTC")
     # seed the CURRENT week; the default scrape would look at last week
@@ -269,7 +269,7 @@ async def test_scrape_week_argument_targets_that_week(
     current_week = utils.week_start(now, start="sunday").isocalendar()[1]
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(board_cog.Scrape(), ctx, week=current_week)
+    await invoke_command(board_ext.Scrape(), ctx, week=current_week)
 
     start = utils.week_start(now, start="sunday")
     rows = await db.get_week_images(
@@ -287,11 +287,11 @@ async def test_scrape_invalid_week_rejected(
     channel,
 ) -> None:
     """Weeks outside 1-53 (or that don't exist) raise UserInputError."""
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     with pytest.raises(UserInputError):
-        await invoke_command(board_cog.Scrape(), ctx, week=99)
+        await invoke_command(board_ext.Scrape(), ctx, week=99)
 
 
 async def test_post_uploads_grid_with_links(
@@ -301,18 +301,18 @@ async def test_post_uploads_grid_with_links(
     channel,
     monkeypatch,
 ) -> None:
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
-    monkeypatch.setattr(board_cog, "_download_url", _fake_download_url)
+    monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
     rest = rest_of(seeded_bot)
     now = pendulum.now("UTC")
     _seed_messages(rest, author, now)
     await invoke_command(
-        board_cog.Scrape(), _ctx(seeded_bot, author, channel, fake_guild)
+        board_ext.Scrape(), _ctx(seeded_bot, author, channel, fake_guild)
     )
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(board_cog.Post(), ctx)
+    await invoke_command(board_ext.Post(), ctx)
 
     sent = ctx.sent[-1]
     week_no = utils.week_number(
@@ -337,18 +337,18 @@ async def test_post_custom_grid_args(
     monkeypatch,
 ) -> None:
     """columns/cell_size flow through to the stitched grid geometry."""
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
-    monkeypatch.setattr(board_cog, "_download_url", _fake_download_url)
+    monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
     rest = rest_of(seeded_bot)
     now = pendulum.now("UTC")
     _seed_messages(rest, author, now)
     await invoke_command(
-        board_cog.Scrape(), _ctx(seeded_bot, author, channel, fake_guild)
+        board_ext.Scrape(), _ctx(seeded_bot, author, channel, fake_guild)
     )
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(board_cog.Post(), ctx, columns=2, cell_size=100)
+    await invoke_command(board_ext.Post(), ctx, columns=2, cell_size=100)
 
     sent = ctx.sent[-1]
     # geometry flows through to the stitched grid (header shows no dims)
@@ -366,14 +366,14 @@ async def test_post_prunes_dead_rows(
     monkeypatch,
 ) -> None:
     """Rows whose image no longer downloads are deleted, not stitched."""
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
-    monkeypatch.setattr(board_cog, "_download_url", _fake_download_url)
+    monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
     rest = rest_of(seeded_bot)
     now = pendulum.now("UTC")
     _seed_messages(rest, author, now)
     await invoke_command(
-        board_cog.Scrape(), _ctx(seeded_bot, author, channel, fake_guild)
+        board_ext.Scrape(), _ctx(seeded_bot, author, channel, fake_guild)
     )
     start = utils.week_start(now, start="sunday").subtract(days=7)
     await db.add_image(
@@ -385,7 +385,7 @@ async def test_post_prunes_dead_rows(
     )
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(board_cog.Post(), ctx)
+    await invoke_command(board_ext.Post(), ctx)
 
     end = start.add(days=7)
     rows = await db.get_week_images(
@@ -406,9 +406,9 @@ async def test_post_week_argument(
     monkeypatch,
 ) -> None:
     """An explicit week posts that week instead of the most recent."""
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
-    monkeypatch.setattr(board_cog, "_download_url", _fake_download_url)
+    monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
     rest = rest_of(seeded_bot)
     now = pendulum.now("UTC")
     # scrape the CURRENT week (explicitly); post defaults to most recent,
@@ -416,13 +416,13 @@ async def test_post_week_argument(
     _seed_messages(rest, author, now, week=0)
     current_week = utils.week_start(now, start="sunday").isocalendar()[1]
     await invoke_command(
-        board_cog.Scrape(),
+        board_ext.Scrape(),
         _ctx(seeded_bot, author, channel, fake_guild),
         week=current_week,
     )
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(board_cog.Post(), ctx, week=current_week)
+    await invoke_command(board_ext.Post(), ctx, week=current_week)
 
     assert (ctx.sent[-1].content or "").startswith(
         f"Week {current_week} — 3 image(s)"
@@ -435,11 +435,11 @@ async def test_post_invalid_week_rejected(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     with pytest.raises(UserInputError):
-        await invoke_command(board_cog.Post(), ctx, week=99)
+        await invoke_command(board_ext.Post(), ctx, week=99)
 
 
 async def test_post_truncates_links_over_budget(
@@ -450,9 +450,9 @@ async def test_post_truncates_links_over_budget(
     monkeypatch,
 ) -> None:
     """50 links overflow the content limit — tail links are dropped."""
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
-    monkeypatch.setattr(board_cog, "_download_url", _fake_download_url)
+    monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
     start = utils.week_start(pendulum.now("UTC")).subtract(days=7)
     for i in range(50):
         await db.add_image(
@@ -464,7 +464,7 @@ async def test_post_truncates_links_over_budget(
         )
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(board_cog.Post(), ctx, columns=5, cell_size=64)
+    await invoke_command(board_ext.Post(), ctx, columns=5, cell_size=64)
 
     content = ctx.sent[-1].content
     assert content is not None
@@ -478,10 +478,10 @@ async def test_post_without_scrape_errors(
     author: FakeMember,
     channel,
 ) -> None:
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(board_cog.Post(), ctx)
+    await invoke_command(board_ext.Post(), ctx)
     assert "Nothing scraped yet" in (ctx.sent[-1].content or "")
 
 
@@ -497,15 +497,15 @@ async def test_scrape_defaults_to_invoking_channel(
     channel_arg,
 ) -> None:
     """channel=None and channel=99 behave identically (same channel)."""
-    from plugins.board import cog as board_cog
+    from plugins.board import extension as board_ext
 
-    monkeypatch.setattr(board_cog, "_download_url", _fake_download_url)
+    monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
     rest = rest_of(seeded_bot)
     now = pendulum.now("UTC")
     _seed_messages(rest, author, now)
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(board_cog.Scrape(), ctx, channel=channel_arg)
+    await invoke_command(board_ext.Scrape(), ctx, channel=channel_arg)
 
     assert "Scraped 3 new image(s)" in (ctx.sent[-1].content or "")
 

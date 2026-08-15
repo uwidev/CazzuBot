@@ -39,7 +39,7 @@ def _payloads(client: hikari.api.RESTClient) -> list[tuple[str, object]]:
     in create_message) — create_modal_response consumes them via the same
     build()[0] path, which needs a real interaction to exercise live.
     """
-    from plugins.experience.cog import TopMenu
+    from plugins.experience.extension import TopMenu
     from plugins.frogs import factory
 
     confirm = utils.ConfirmMenu(author_id=1)

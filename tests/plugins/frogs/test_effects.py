@@ -15,7 +15,7 @@ from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.assets import FrogAsset
-from plugins.frogs.cog import Consume
+from plugins.frogs.extension import Consume
 from plugins.frogs.effects import EffectKey, ExpPayload
 from plugins.frogs.species import SPECIES, Species
 from tests.fakes import (

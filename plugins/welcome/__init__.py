@@ -5,7 +5,7 @@ from cazzubot import Plugin
 
 class WelcomePlugin(Plugin):
     name = "welcome"
-    extensions = ["plugins.welcome.cog"]
+    extensions = ["plugins.welcome.extension"]
 
 
 plugin = WelcomePlugin()

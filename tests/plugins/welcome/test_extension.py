@@ -12,8 +12,8 @@ import pytest
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
 from cazzubot.models import WelcomeModeEnum
-from plugins.welcome import cog as welcome_cog
-from plugins.welcome.cog import (
+from plugins.welcome import extension as welcome_ext
+from plugins.welcome.extension import (
     Demo,
     Raw,
     SetChannel,
@@ -158,7 +158,7 @@ async def test_last_welcomed_guard_prevents_double(
     after = _member(fake_guild, 424242, pending=False)
 
     monkeypatch.setattr(
-        welcome_cog, "last_welcomed_id", None
+        welcome_ext, "last_welcomed_id", None
     )  # fresh state
     await _fire(seeded_bot, before, after, fake_cache)
     await _fire(seeded_bot, before, after, fake_cache)  # same id again

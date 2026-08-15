@@ -21,16 +21,16 @@ from cazzubot.bot import CazzuBot
 from lightbulb.commands.commands import CommandBase
 from lightbulb.commands.execution import ExecutionHook
 from lightbulb.commands.groups import Group, SubGroup
-from plugins.board.cog import board as board_group
-from plugins.counter.cog import counter as counter_group
-from plugins.dev.cog import calc as calc_group
-from plugins.dev.cog import cog as cog_group
-from plugins.fun.cog import story as story_group
-from plugins.levels.cog import level as level_group
-from plugins.misc.cog import misc as misc_group
-from plugins.poll.cog import poll as poll_group
-from plugins.ranks.cog import rank as rank_group
-from plugins.welcome.cog import welcome as welcome_group
+from plugins.board.extension import board as board_group
+from plugins.counter.extension import counter as counter_group
+from plugins.dev.extension import calc as calc_group
+from plugins.dev.extension import plugin_group
+from plugins.fun.extension import story as story_group
+from plugins.levels.extension import level as level_group
+from plugins.misc.extension import misc as misc_group
+from plugins.poll.extension import poll as poll_group
+from plugins.ranks.extension import rank as rank_group
+from plugins.welcome.extension import welcome as welcome_group
 
 ADMIN = hikari.Permissions.ADMINISTRATOR
 
@@ -47,7 +47,7 @@ HIDDEN_GROUPS: dict[tuple[str, ...], Group] = {
     ("story",): story_group,
     # dev plugin (owner tooling, no enclosing group)
     ("calc",): calc_group,
-    ("cog",): cog_group,
+    ("plugin",): plugin_group,
 }
 
 # Top-level leaf commands that must be invisible to non-admins.
