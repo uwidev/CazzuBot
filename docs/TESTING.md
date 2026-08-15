@@ -9,16 +9,16 @@ deciding whether a feature needs live verification.
 Testing is layered by how much of the real framework runs, trading speed
 and determinism against fidelity:
 
-| Layer | Runs | Proves | Cost |
-|---|---|---|---|
-| 1. Unit tests | Pure logic + plugins with typed fakes | The logic is correct | milliseconds |
-| 2. Offline interaction driver | Real bot, real lightbulb routing, fake REST | The feature works when a user touches it | seconds |
-| 3. Manual / live | Real bot, real Discord (development guild) | Discord accepts it, real timing/events hold | minutes, human |
+| Layer                         | Runs                                        | Proves                                      | Cost           |
+| ----------------------------- | ------------------------------------------- | ------------------------------------------- | -------------- |
+| 1. Unit tests                 | Pure logic + plugins with typed fakes       | The logic is correct                        | milliseconds   |
+| 2. Offline interaction driver | Real bot, real lightbulb routing, fake REST | The feature works when a user touches it    | seconds        |
+| 3. Manual / live              | Real bot, real Discord (development guild)  | Discord accepts it, real timing/events hold | minutes, human |
 
 Rule of thumb: a change belongs in the highest layer that can express it.
 Only what layer 2 cannot express falls through to layer 3.
 
----
+______________________________________________________________________
 
 ## Layer 1 — unit tests
 
@@ -57,8 +57,7 @@ The idea: **run the bot's real event pipeline, minus the network.** A
 "press" is a synthetic gateway interaction (a JSON payload shaped exactly
 like Discord's `INTERACTION_CREATE`) fed through hikari's **own**
 deserializer (`bot.event_factory.deserialize_interaction_create_event`),
-then dispatched through the real event manager (`bot.event_manager.dispatch
-(event, return_tasks=True)`), which awaits every listener. A button press
+then dispatched through the real event manager (`bot.event_manager.dispatch (event, return_tasks=True)`), which awaits every listener. A button press
 therefore exercises the same code path a real Discord click takes:
 
 ```
@@ -134,8 +133,7 @@ silently:
   (a `DEFERRED_*` where an immediate response was expected) is a plain
   assertion on the recorded type.
 
-These rules are pinned by their own tests (`tests/integration/
-test_driver_harness.py`).
+These rules are pinned by their own tests (`tests/integration/ test_driver_harness.py`).
 
 ### What layer 2 proves
 
@@ -179,40 +177,40 @@ cannot express, in these general categories:
 
 ## Automation boundaries — general catalog
 
-| Capability | Automated? | How |
-|---|---|---|
-| Logic: parsing, validation, math, db, templates | Yes | unit tests |
-| Command semantics (handler body) | Yes | unit tests |
-| Framework routing: slash → handler, button → menu, modal → submit | Yes | driver |
-| Option conversion, defaults, resolved objects | Yes | driver |
-| Checks & gates (owner/admin/debug) | Yes | driver |
-| Error translation to ephemeral replies | Yes | driver |
-| Interaction lifecycle: ack budget, response types, edit/delete targets | Yes | driver + fake rules |
-| Wrong-user rejection, menu/modals timeouts | Yes | driver |
-| Restart persistence (buttons survive a reboot) | Yes | driver (same DB, second boot) |
-| In-process concurrency (atomic increments) | Yes | driver |
-| Scheduled-task flows, missed-run force checks | Yes | unit + driver |
-| CLI domain logic (roles/channels export/diff/plan) | Yes | unit tests (pure planners) |
-| Payload acceptance by Discord | **No** | manual/live |
-| Gateway behavior (reconnect, event ordering) | **No** | manual/live |
-| Portal config, intents, command-tree sync | **No** | manual/live (one-time) |
-| Rate limits, real timing | **No** | manual/live |
-| Two-real-user races | **No** | manual/live (two accounts) |
-| Real event fidelity | **No** | manual/live |
-| CLI live verbs against real Discord | **No** | manual/live (development guild, temp manifests) |
-| Production guild behavior | **No** | never automated; per-turn permission |
+| Capability                                                             | Automated? | How                                             |
+| ---------------------------------------------------------------------- | ---------- | ----------------------------------------------- |
+| Logic: parsing, validation, math, db, templates                        | Yes        | unit tests                                      |
+| Command semantics (handler body)                                       | Yes        | unit tests                                      |
+| Framework routing: slash → handler, button → menu, modal → submit      | Yes        | driver                                          |
+| Option conversion, defaults, resolved objects                          | Yes        | driver                                          |
+| Checks & gates (owner/admin/debug)                                     | Yes        | driver                                          |
+| Error translation to ephemeral replies                                 | Yes        | driver                                          |
+| Interaction lifecycle: ack budget, response types, edit/delete targets | Yes        | driver + fake rules                             |
+| Wrong-user rejection, menu/modals timeouts                             | Yes        | driver                                          |
+| Restart persistence (buttons survive a reboot)                         | Yes        | driver (same DB, second boot)                   |
+| In-process concurrency (atomic increments)                             | Yes        | driver                                          |
+| Scheduled-task flows, missed-run force checks                          | Yes        | unit + driver                                   |
+| CLI domain logic (roles/channels export/diff/plan)                     | Yes        | unit tests (pure planners)                      |
+| Payload acceptance by Discord                                          | **No**     | manual/live                                     |
+| Gateway behavior (reconnect, event ordering)                           | **No**     | manual/live                                     |
+| Portal config, intents, command-tree sync                              | **No**     | manual/live (one-time)                          |
+| Rate limits, real timing                                               | **No**     | manual/live                                     |
+| Two-real-user races                                                    | **No**     | manual/live (two accounts)                      |
+| Real event fidelity                                                    | **No**     | manual/live                                     |
+| CLI live verbs against real Discord                                    | **No**     | manual/live (development guild, temp manifests) |
+| Production guild behavior                                              | **No**     | never automated; per-turn permission            |
 
 ## Workflow
 
 1. **Change a feature** → run `uv run pytest` (offline, fast).
    Add driver coverage in `tests/integration/` for anything interactive —
    a button, modal, or command whose routing/ack/lifecycle changed.
-2. **Checks** → `uv run ruff check .` and `uv run ruff format .`
+1. **Checks** → `uv run ruff check .` and `uv run ruff format .`
    (line-length 75, double quotes); basedpyright in the editor.
-3. **Interactive changes** → before merging, either the driver test proves
+1. **Interactive changes** → before merging, either the driver test proves
    the flow end-to-end, or the scenario is added to `docs/MANUAL_TEST.md`
    for a live pass against the development guild.
-4. **Live pass** → work through the checklist items the change touches;
+1. **Live pass** → work through the checklist items the change touches;
    paste failures raw under the item. CLI verbs always use temp
    `--file` paths so production manifests are never clobbered.
 

@@ -29,9 +29,10 @@ gateway events for message-content triggers), and a
 ### Vanity collectables (owned)
 
 Pins/frames/titles as **inventory items** — the generic `inventory` store
-+ typed keys + assets for art + a display/equip mechanism. **Owned**
-(countable, tradeable later). The earned-vs-owned split is the design
-principle: achievements record, inventory owns.
+
+- typed keys + assets for art + a display/equip mechanism. **Owned**
+  (countable, tradeable later). The earned-vs-owned split is the design
+  principle: achievements record, inventory owns.
 
 ### Classes / activity tracks / professions
 
@@ -138,8 +139,7 @@ proper flow later. Backlog this."
 
 ## Board plugin — weekly image scrape + numbered grid
 
-**Core DONE (2026-08-09):** `plugins/board/` — `/board scrape [channel]
-[week]` collects a week's image attachments (static only — animated
+**Core DONE (2026-08-09):** `plugins/board/` — `/board scrape [channel] [week]` collects a week's image attachments (static only — animated
 uploads are skipped by frame count; content-hash dedup within the week)
 into a `board` table row per image (`ts` ISO-8601 UTC, `image_url` CDN
 url, `msg_url` message link, `sha256`), defaulting to last week (this
@@ -148,8 +148,7 @@ week's rows into a numbered grid (the `stich.py` script, absorbed as
 `plugins/board/stitcher.py`; defaults 9 cols / 768px cells, adjustable),
 pruning rows whose image no longer downloads (message deleted), and posts
 the grid with per-image message links in an embed. `plugins/misc/` holds
-the server utilities split out of the original plan: `/misc banner
-[image] [msg]` (16:9 guild banner, or from the first image attachment of
+the server utilities split out of the original plan: `/misc banner [image] [msg]` (16:9 guild banner, or from the first image attachment of
 a message link), `/misc welcome` (API-editable parts — the welcome-screen
 *background image* is client-side only and cannot be set via the API),
 and `/misc week [start] [msg]` (current week with Sunday/Monday start, or

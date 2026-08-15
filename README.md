@@ -71,15 +71,15 @@ plugin lifecycle, assets) are covered in `docs/PLUGINS.md` and
 
 ## Docs index
 
-| Doc | What it's for |
-| --- | --- |
-| `docs/ARCHITECTURE.md` | overall design, core services, plugin loader |
-| `docs/PLUGINS.md` | adding a plugin: structure, conventions, dependencies |
-| `docs/PLUGIN_ARCHITECTURE.md` | plugin lifecycle contract, state-backed scheduling, event bus |
-| `docs/SYSTEMS.md` | system map (mermaid) of plugins and shared services |
-| `docs/TESTING.md` | layered test approach, what needs live verification |
-| `docs/MIGRATION.md` | v1 → v2 data migration |
-| `docs/ROADMAP.md` | implementation phases (0–3 done) |
-| `docs/BACKLOG.md` / `docs/DONE.md` | planned vs. shipped ideas |
-| `docs/ASSETS.md` | asset pipeline (species art, CDN sync) |
-| `docs/MANUAL_TEST.md` | manual verification checklist |
+| Doc                                | What it's for                                                 |
+| ---------------------------------- | ------------------------------------------------------------- |
+| `docs/ARCHITECTURE.md`             | overall design, core services, plugin loader                  |
+| `docs/PLUGINS.md`                  | adding a plugin: structure, conventions, dependencies         |
+| `docs/PLUGIN_ARCHITECTURE.md`      | plugin lifecycle contract, state-backed scheduling, event bus |
+| `docs/SYSTEMS.md`                  | system map (mermaid) of plugins and shared services           |
+| `docs/TESTING.md`                  | layered test approach, what needs live verification           |
+| `docs/MIGRATION.md`                | v1 → v2 data migration                                        |
+| `docs/ROADMAP.md`                  | implementation phases (0–3 done)                              |
+| `docs/BACKLOG.md` / `docs/DONE.md` | planned vs. shipped ideas                                     |
+| `docs/ASSETS.md`                   | asset pipeline (species art, CDN sync)                        |
+| `docs/MANUAL_TEST.md`              | manual verification checklist                                 |

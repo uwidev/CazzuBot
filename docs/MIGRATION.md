@@ -17,12 +17,12 @@ data over. The per-table transform spec lives in
 [`scripts/migration/MAPPING.md`](../scripts/migration/MAPPING.md); the
 tools are:
 
-| Tool | Purpose |
-|---|---|
-| `scripts/migrate_pg_to_sqlite.py` | Reads the live PostgreSQL **read-only**, writes a fresh SQLite DB |
-| `scripts/verify_migration.py` | Full per-uid parity check of the migrated DB against the live PostgreSQL |
-| `scripts/boot_check_migrated.py` | Boots the v2 stack against the swapped-in DB (no Discord connection) and asserts the expected first-boot effects |
-| `scripts/sqlite_to_pg.py` | Reverse direction: refills the frozen v1 PostgreSQL from the SQLite file at rollback time (exp, frog, counter tables) |
+| Tool                              | Purpose                                                                                                               |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `scripts/migrate_pg_to_sqlite.py` | Reads the live PostgreSQL **read-only**, writes a fresh SQLite DB                                                     |
+| `scripts/verify_migration.py`     | Full per-uid parity check of the migrated DB against the live PostgreSQL                                              |
+| `scripts/boot_check_migrated.py`  | Boots the v2 stack against the swapped-in DB (no Discord connection) and asserts the expected first-boot effects      |
+| `scripts/sqlite_to_pg.py`         | Reverse direction: refills the frozen v1 PostgreSQL from the SQLite file at rollback time (exp, frog, counter tables) |
 
 All four are one-off operational scripts — they are not part of the bot
 runtime. The only extra dependency (`asyncpg`) comes from the `migration`
@@ -31,8 +31,10 @@ dependency group, activated per invocation with `--group migration`.
 ## Prerequisites
 
 - You are on the `rewrite` branch (the scripts live there).
+
 - PostgreSQL is reachable from the machine running the migration.
   Defaults: `192.168.1.3:5432`, database `main`, user `cazzubot`, **no SSL**.
+
 - Credentials go in the environment — never on the command line:
 
   ```bash
@@ -117,12 +119,12 @@ changes a few things on the **first** start:
    EOF
    ```
 
-2. **Frog spawn tasks.** Pending `frog` spawn tasks are not migrated (v1's
+1. **Frog spawn tasks.** Pending `frog` spawn tasks are not migrated (v1's
    `task` rows are dropped); v2's frog plugin re-queues them from the
    `frog_spawn` table at boot. Expect 4 `frog`-tagged rows in `tasks` after
    the first boot.
 
-3. **Daily reset.** Does *not* force on boot as long as `daily.last_daily` is
+1. **Daily reset.** Does *not* force on boot as long as `daily.last_daily` is
    newer than 24 h (the migrated value is the day the snapshot was taken).
 
 ## What the migration does (summary)

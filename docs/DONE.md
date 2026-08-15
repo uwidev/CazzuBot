@@ -6,9 +6,10 @@ recording how it was resolved (a few record a **Decided against** outcome
 instead — reviewed and rejected, with the reasoning kept). Open items live
 in `docs/BACKLOG.md`.
 
----
+______________________________________________________________________
 
 ## Schema verification and row casting for monolithic pluigins
+
 I think currently the code only looks for a db module for plugins and uses that to verify the schema and to cast rows into the dataclass. If a module isn't structured as CSR, this feature might not function.
 
 If a plugin isn't CSR, it should hopefully still try to look at __init__.py for defined dataclass and like for schema verificaiton and row casting.
@@ -94,20 +95,20 @@ is the boundary discipline at the service layer.
      event-bus subscriber — see the core event bus item).
      > **Done** — `plugins/experience/logic.py`: `award_exp(db, *, uid, now)`;
      > cog is a thin controller (characterized by `test_on_message.py`).
-  2. `mod` mute/unmute/ban command bodies.
+  1. `mod` mute/unmute/ban command bodies.
      > **Done** — `plugins/mod/logic.py`: `split_duration_reason`,
      > `ensure_future`, `resolve_ban_type`; commands are thin controllers.
-  3. `welcome` `on_member_update` body.
+  1. `welcome` `on_member_update` body.
      > **Done** — `plugins/welcome/logic.py`: `should_welcome` over plain
      > values (deterministic `monitor in gained` vs the old `set.pop()`).
-  4. `frogs` capture/consume math; scheduler handlers (`on_frog_due`,
+  1. `frogs` capture/consume math; scheduler handlers (`on_frog_due`,
      `on_modlog_due`, `on_counter_expire`) split into pure S + thin C shim
      (the `(bot, payload)` plugin contract itself stays).
      > **Done (consume)** — `plugins/frogs/logic.py`: `exp_per_frog`,
      > `consume_total_exp`, `ensure_consume_amount` (spawn math was already
      > pure in `factory.py`). The scheduler handlers + capture view stay
      > controller-shaped by design (scheduling + discord side effects).
-  5. Template formatters take plain values / `cazzubot.models` instead of
+  1. Template formatters take plain values / `cazzubot.models` instead of
      `Member`.
 - **Enforcement:** an AST-level pytest that walks the plugin tree and asserts
   service modules (`logic.py`/`factory.py`) never `import discord` — fails with
@@ -125,7 +126,7 @@ is the boundary discipline at the service layer.
   below), cuts the fake-discord surface down to the controller slice, and
   keeps the LSP a collaborator — no `Any` discord internals in service code.
 
----
+______________________________________________________________________
 
 Context: these came out of the architecture discussion about three-tier
 layering, plugin-to-plugin coupling (direct import vs data contract vs event
@@ -134,9 +135,10 @@ bus), and the levels kernel naming collision (`cazzubot/levels.py` vs
 parked during the reaction→button conversion (2026) to keep that change
 focused.
 
----
+______________________________________________________________________
 
 ## Counter DB rework
+
 A single reaction on the counter should store the following:
 
 mid,user,timestamp
@@ -164,6 +166,7 @@ We can also get the total count for the counter just by a sum call on the mid.
 > by design.
 
 ## Fix mod duration parsing (single-token footgun)
+
 > **Done** — `split_duration_reason` takes the first parseable leading
 > prefix, extended greedily over duration-like tokens, so multi-word
 > phrasing (`ban @x 2 hours bad`) no longer silently becomes a no-expiry
@@ -182,6 +185,7 @@ try progressively longer prefixes until `normalize_time_str` succeeds
 text to single-token durations.
 
 ## Levels/ranks presentation split
+
 > **Done** — `handle_level_up`/`handle_ranks` split into pure decisions
 > (`levels.logic.decide_level_up`, `ranks.logic.plan_rank_changes` over
 > plain role ids) + thin presenters (`plugins/levels/presenter.py`,
@@ -202,6 +206,7 @@ exists. Safety net already in place: `tests/plugins/ranks/test_presentation.py`.
 Allowlisted in `tests/core/test_csr_boundary.py`.
 
 ## Template formatters take `Member`
+
 > **Done** — formatters now take `cazzubot.models.MemberSnapshot` (plain
 > values: id/display_name/mention/avatar_url), built at the controller edge
 > with `utils.member_snapshot`. `templates.verify(..., member=)` call sites
@@ -226,15 +231,15 @@ Non-blocking findings from the pre-commit review of the typing refactor
    inktober channel that previously worked now gets "Inktober needs a
    server channel". Include `discord.Thread` or narrow to
    `discord.abc.Messageable` instead.
-2. Silent no-ops when `ctx.guild is None` — `unmute`/`unban`
+1. Silent no-ops when `ctx.guild is None` — `unmute`/`unban`
    (`plugins/mod/__init__.py`) and `rank_clean` (`plugins/ranks/cog.py`)
    now `return` without feedback (previously a loud AttributeError). Send
    a short error message for friendliness.
-3. `story_write` dropped its `ctx.message is not None` guard
+1. `story_write` dropped its `ctx.message is not None` guard
    (`plugins/fun/__init__.py`) — safe in practice (interaction is None ⟺
    prefix command ⟹ message exists) but worth a comment or keeping the
    guard.
-4. Redundant `content if content is not None else MISSING` in
+1. Redundant `content if content is not None else MISSING` in
    `plugins/frogs/factory.py` — discord.py treats `None` content as "not
    provided"; the dance is harmless but noisy, simplify to `content=content`.
 
@@ -249,6 +254,7 @@ Non-blocking findings from the pre-commit review of the typing refactor
 > remains. basedpyright clean, `0 errors, 0 warnings`.
 
 ## LSP Hints for Data
+
 Have the LSP do as much hinting as we can for data so development is as seamless and frictionless as possible. No trying to guess what an object has, the LSP should be able to trivially determine what it is.
 
 This is especially important for information retrieved from the database. It should cast into some type that can be trivially understood.
@@ -263,6 +269,7 @@ This is especially important for information retrieved from the database. It sho
 > mapping point.
 
 ## Have actual and proper unit testing
+
 All we have is the smoke.py and functest.py. They are unmanagable as they are monoliths. We need someway to have unit tests more isolated and per-feature rather than a single script.
 
 > **Done** — pytest 9 + pytest-asyncio added to the `dev` group with
@@ -284,6 +291,7 @@ All we have is the smoke.py and functest.py. They are unmanagable as they are mo
 > basedpyright clean on `tests/`.
 
 ## Welcome role-mode determinism
+
 The old `on_member_update` ROLE-mode check used `set.pop()` on the gained-role
 set — order-dependent when several roles are gained in one update, so whether
 the monitored role triggered a welcome was hash-order-dependent. The extracted
@@ -403,8 +411,10 @@ chaotic flavor:
 Owner's goal: write a "command" that runs at intervals — a chain of
 application commands (or functions marked public) piped together, e.g.:
 
-    at the start of every sunday
-    board scrape && board post | poll register && poll send
+```
+at the start of every sunday
+board scrape && board post | poll register && poll send
+```
 
 where `board post` outputs the image count and `poll register`'s pid is
 auto-populated with it. Feasibility assessed (2026-08-09): very doable —
@@ -423,8 +433,7 @@ Design:
   the previous output (that's the `|`), e.g. `n: "$prev.count"`. Runs as
   its own task so the scheduler loop never blocks (pattern: poll modal
   attach wait).
-- **Definitions** — JSON first: `{steps: [{command, args}, ...], channel,
-  schedule}` (validated, testable); a shell-like `&&`/`|` DSL parser is a
+- **Definitions** — JSON first: `{steps: [{command, args}, ...], channel, schedule}` (validated, testable); a shell-like `&&`/`|` DSL parser is a
   possible later nicety that compiles to the same JSON.
 - **`pipelines` table + cadence** — name, schedule, definition, enabled;
   the schedule spec family (`At` — absolute calendar declarations — and
@@ -492,8 +501,7 @@ share. Keep `GUILD_ID` working as the escape hatch for any other guild.
 > hardcoded-id escape hatch. `Config.load(bot=…, guild=…)` stores the
 > chosen side as `Config.guild_kind` (the canonical "which guild am I on"
 > reference). Terminology: the second guild is now the **development**
-> guild; "sandbox" means only the `-s` plugin-allowlist mode. `scripts/
-> probe_channels.py` follows the new flags; the legacy PG migration
+> guild; "sandbox" means only the `-s` plugin-allowlist mode. `scripts/ probe_channels.py` follows the new flags; the legacy PG migration
 > scripts still read `GUILD_ID` env directly (follow-up).
 
 ## Welcome "Unknown User" mention — users-cache race

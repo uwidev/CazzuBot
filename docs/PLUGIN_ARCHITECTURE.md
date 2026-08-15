@@ -30,7 +30,7 @@ Two mechanisms deliver the guarantees:
    paper assumes each inverse is correct (level-1 trust) and *proves the
    compositional guarantee*: complete, order-correct teardown no matter how
    components interleave.
-2. **Reactive coeffects** — a component declares a set of keys it needs; the
+1. **Reactive coeffects** — a component declares a set of keys it needs; the
    runtime classifies every state change as *activating* (spec now
    satisfied → fire the component), *deactivating* (spec no longer
    satisfied → recover its effects), or *neutral*. Dependents activate after
@@ -38,11 +38,11 @@ Two mechanisms deliver the guarantees:
 
 Three trust levels worth naming:
 
-| Level | What the runtime knows | Residual trust |
-|---|---|---|
-| 0 | Nothing — unload means "call the hook, hope it cleans up" | The author wrote teardown *at all*, covering *everything*, in the right order |
-| 1 (the paper) | The exact list of effects, applied in order; unload replays undos in reverse | Only that *each* inverse is correct |
-| 2 (beyond the paper) | The inverse itself, because the creating API returned it | Nothing, for that effect |
+| Level                | What the runtime knows                                                       | Residual trust                                                                |
+| -------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| 0                    | Nothing — unload means "call the hook, hope it cleans up"                    | The author wrote teardown *at all*, covering *everything*, in the right order |
+| 1 (the paper)        | The exact list of effects, applied in order; unload replays undos in reverse | Only that *each* inverse is correct                                           |
+| 2 (beyond the paper) | The inverse itself, because the creating API returned it                     | Nothing, for that effect                                                      |
 
 Honest limits: the runtime cannot verify `undo∘apply = id` in general;
 irreversible external effects need author-written *compensations*; the
@@ -111,8 +111,7 @@ reports the full affected set.
 
 ### 2.5 Events
 
-`bot.events.on()` returns an **unsubscribe token**; `off(event_type,
-handler)` removes a registration. Bus subscriptions are deferred effects —
+`bot.events.on()` returns an **unsubscribe token**; `off(event_type, handler)` removes a registration. Bus subscriptions are deferred effects —
 a plugin hands the token to the lifecycle so unload withdraws its interest.
 This is the reactive-coeffect idea in miniature: an observer declares
 interest in a context change and is detached when deactivated.
@@ -120,8 +119,8 @@ interest in a context change and is detached when deactivated.
 ### 2.6 Deliberate non-goals
 
 - **No provisions/requires key registry** — plugin-granularity `depends_on`
-  + boot-time topological ordering is enough for a single-guild bot that
-  restarts deliberately.
+  - boot-time topological ordering is enough for a single-guild bot that
+    restarts deliberately.
 - **No runtime dependency satisfaction re-evaluation** — the event bus is
   the reactive seam; plugins don't hot-swap providers mid-session.
 - **No table-dropping unload** — durable data is never composition state.
@@ -138,10 +137,10 @@ unsubscribe token. The lifecycle consumes either kind.
 
 ## 4. Mapping the paper onto CazzuBot
 
-| Paper concept | CazzuBot | Status |
-|---|---|---|
-| Coeffect declaration (what a component reads) | `depends_on`, `asset_decl`, typed `SpeciesKey`/`FrogAsset` | Static, boot-time — deliberate |
-| Revertible effects (undo co-located with apply) | `bot.lifecycle.defer`/`withdraw` | Implemented |
-| Reactive coeffects (notification on context change) | `bot.events` + unsubscribe tokens | Partial by design |
-| Witnessed inverse per application | Scheduler row ids, event tokens | Where platforms allow |
-| Dependents-before-withdrawal ordering | `affected_by_unload` cascade | Implemented |
+| Paper concept                                       | CazzuBot                                                   | Status                         |
+| --------------------------------------------------- | ---------------------------------------------------------- | ------------------------------ |
+| Coeffect declaration (what a component reads)       | `depends_on`, `asset_decl`, typed `SpeciesKey`/`FrogAsset` | Static, boot-time — deliberate |
+| Revertible effects (undo co-located with apply)     | `bot.lifecycle.defer`/`withdraw`                           | Implemented                    |
+| Reactive coeffects (notification on context change) | `bot.events` + unsubscribe tokens                          | Partial by design              |
+| Witnessed inverse per application                   | Scheduler row ids, event tokens                            | Where platforms allow          |
+| Dependents-before-withdrawal ordering               | `affected_by_unload` cascade                               | Implemented                    |

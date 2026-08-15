@@ -47,14 +47,14 @@ The gaps below motivated the system; the asset service closed them.
 1. One way to *get* an asset (declaration), one way to *reference* it
    (keyed lookup), one way to *verify* it (boot drift check) — replacing the
    scattered URL/emoji styles above.
-2. **Code/data split for gamification:** species *effects* live in code;
+1. **Code/data split for gamification:** species *effects* live in code;
    *which species exist and their art* are declared in code too (typed keys
    — the owner's choice), while the *bytes* ship as files on disk, swappable
    by redeploy.
-3. **Atomic content drops:** seasonal themes, event frogs, shop rotations =
+1. **Atomic content drops:** seasonal themes, event frogs, shop rotations =
    "promote these keys" in one transaction (backlogged — needs the dynamic
    path).
-4. **Nothing downstream changes:** delivery emits URLs, so templates, embeds,
+1. **Nothing downstream changes:** delivery emits URLs, so templates, embeds,
    and the message pipeline keep working untouched.
 
 ## Non-goals
@@ -114,11 +114,11 @@ CREATE TABLE IF NOT EXISTS asset (
 The registry is **plumbing, not a content authority** — it has no opinion
 about what frogs are. It mirrors the existing shared services:
 
-| Shared infrastructure | All plugins use it | Content stays per-plugin |
-|---|---|---|
-| `bot.db` | one sqlite file | each plugin owns its own tables |
-| `bot.settings` | one JSON store | keys are namespaced: `frog.enabled` |
-| `bot.assets` | one registry + one CDN sync | each plugin owns its own keys + files |
+| Shared infrastructure | All plugins use it          | Content stays per-plugin              |
+| --------------------- | --------------------------- | ------------------------------------- |
+| `bot.db`              | one sqlite file             | each plugin owns its own tables       |
+| `bot.settings`        | one JSON store              | keys are namespaced: `frog.enabled`   |
+| `bot.assets`          | one registry + one CDN sync | each plugin owns its own keys + files |
 
 ### Layer 3 — Delivery: how bytes reach Discord
 
@@ -143,10 +143,10 @@ asset host**:
 
 1. Walk each plugin's `asset_decl` enum (the plugin list is the source of
    what exists — no central manifest).
-2. For each: read the file, compute sha256.
-3. Row missing or hash differs → upsert the row and queue the bytes for CDN
+1. For each: read the file, compute sha256.
+1. Row missing or hash differs → upsert the row and queue the bytes for CDN
    upload (storing the returned URL).
-4. Missing file on disk → `AssetError` → boot abort, mirroring
+1. Missing file on disk → `AssetError` → boot abort, mirroring
    `Database.verify_schema`'s fail-fast drift check.
 
 For static assets the **file on disk is the source of truth**; the row is a
@@ -214,7 +214,7 @@ redesign shipped in a **code-first form** (the owner's choice — no
 1. **Who can upload assets** (dynamic path): owner-only via admin commands
    vs. community submissions through a moderation queue. Deferred with the
    dynamic path.
-2. **When to build the dynamic path:** the static-only path covers today's
+1. **When to build the dynamic path:** the static-only path covers today's
    needs; build admin uploads when seasonal drops are real.
 
 ## Implementation status

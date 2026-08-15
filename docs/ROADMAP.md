@@ -61,13 +61,13 @@ needed to organize species art.
 
 1. A catalog of catchable frog species — each with a key, name, rarity,
    description, art, spawn weight, catch effect, and consume effect.
-2. A real inventory: per member, per species, per state (normal/frozen).
-3. Effects live in code (a registry); *which species exist, their art,
+1. A real inventory: per member, per species, per state (normal/frozen).
+1. Effects live in code (a registry); *which species exist, their art,
    rarity, weights* live in catalog rows — swappable without deploys.
-4. One way to get an asset (declaration), one way to reference it (keyed
+1. One way to get an asset (declaration), one way to reference it (keyed
    lookup), one way to verify it (boot drift check) — per `docs/ASSETS.md`.
-5. Migration path for the existing normal/frozen frogs (dev + prod DBs).
-6. Nothing downstream changes: delivery stays URL-based, so templates and
+1. Migration path for the existing normal/frozen frogs (dev + prod DBs).
+1. Nothing downstream changes: delivery stays URL-based, so templates and
    embeds keep working untouched.
 
 ## Non-goals (this iteration)
@@ -81,6 +81,7 @@ needed to organize species art.
 ## Phases
 
 ### Phase 0 — Decisions
+
 Settle the open decisions (below): species set + effects, art assets, asset
 channel ids, whether frozen stays an inventory state.
 
@@ -135,9 +136,9 @@ boot.
     species' `art` is a `FrogAsset` member (`plugins/frogs/assets.py`) —
     the declaration IS the reference, so art cannot be misspelled.
   - `effects.py` — `EffectKey` enum (each member's value IS its handler)
-    + per-effect `*Payload` dataclasses + `Effect` protocol; service
-    layer (no hikari — `bot` is only a parameter), so the CSR boundary
-    test stays green.
+    - per-effect `*Payload` dataclasses + `Effect` protocol; service
+      layer (no hikari — `bot` is only a parameter), so the CSR boundary
+      test stays green.
 - Capture flow: roll the species at spawn time (the visible frog **is** the
   species — message shows its art/name); carry the species in the button
   custom_id (`frog:catch:{cid}:{species_key}`, boot sweep matches the
@@ -313,16 +314,16 @@ class ExpPayload:
 
 ## Phase 0 — Decisions (resolved 2026-08-14)
 
-| Decision | Resolution |
-|---|---|
-| Iteration scope | As scoped above — shop/recipes, the core event bus, and admin upload all deferred |
-| Effects list | Typed payload-driven registry (`EffectKey` enum → handler, per-effect payload dataclasses on the species); v1 ships **`exp` only** (`ExpPayload` with per-species values + `frozen_exp`). `exp_bonus`/`exp_multiplier` stay unimplemented until a species needs them |
-| Species source | **Fully in code** — the `SPECIES` registry in `plugins/frogs/species.py` is the single source of truth; **no `frog_species` table** (changed from the earlier "code-registered seeds" choice at the owner's request, 2026-08-14: DB rows would create a proxy interface for tuning and balancing — friction to avoid. Tuning = editing `species.py`) |
-| Asset depth | **Static-only** — `Plugin.assets` declarations + registry + boot reconcile + CDN sync; no `/asset add` |
-| Starter species | **Two** — `leaf_frog` (common, default, exp 10 / frozen 3, art = cirnoFrog emoji) and `classy_frog` (exp 20 / frozen 6 — double normal, art = emoji `1425312054528708639`, downloaded into `plugins/frogs/assets/`) |
-| Art assets | **Placeholder files first** — real art dropped in later re-syncs at boot |
-| Frozen | **Stays** an inventory state (`normal\|frozen` in `frog_inventory`); quarterly freeze flips states per species |
-| Asset channels | Owner creates a private channel per guild; ids → `ASSET_CHANNEL_PROD`/`ASSET_CHANNEL_DEV` in `.env` (pending — boot warns + skips CDN sync until set) |
+| Decision        | Resolution                                                                                                                                                                                                                                                                                                                                           |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Iteration scope | As scoped above — shop/recipes, the core event bus, and admin upload all deferred                                                                                                                                                                                                                                                                    |
+| Effects list    | Typed payload-driven registry (`EffectKey` enum → handler, per-effect payload dataclasses on the species); v1 ships **`exp` only** (`ExpPayload` with per-species values + `frozen_exp`). `exp_bonus`/`exp_multiplier` stay unimplemented until a species needs them                                                                                 |
+| Species source  | **Fully in code** — the `SPECIES` registry in `plugins/frogs/species.py` is the single source of truth; **no `frog_species` table** (changed from the earlier "code-registered seeds" choice at the owner's request, 2026-08-14: DB rows would create a proxy interface for tuning and balancing — friction to avoid. Tuning = editing `species.py`) |
+| Asset depth     | **Static-only** — `Plugin.assets` declarations + registry + boot reconcile + CDN sync; no `/asset add`                                                                                                                                                                                                                                               |
+| Starter species | **Two** — `leaf_frog` (common, default, exp 10 / frozen 3, art = cirnoFrog emoji) and `classy_frog` (exp 20 / frozen 6 — double normal, art = emoji `1425312054528708639`, downloaded into `plugins/frogs/assets/`)                                                                                                                                  |
+| Art assets      | **Placeholder files first** — real art dropped in later re-syncs at boot                                                                                                                                                                                                                                                                             |
+| Frozen          | **Stays** an inventory state (`normal\|frozen` in `frog_inventory`); quarterly freeze flips states per species                                                                                                                                                                                                                                       |
+| Asset channels  | Owner creates a private channel per guild; ids → `ASSET_CHANNEL_PROD`/`ASSET_CHANNEL_DEV` in `.env` (pending — boot warns + skips CDN sync until set)                                                                                                                                                                                                |
 
 Still open (non-blocking, code-adjustable later): spawn weights + rarity —
 both species default to common / weight 1 (a 50/50 roll) until the owner

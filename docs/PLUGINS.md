@@ -67,8 +67,7 @@ For very small features, a single module `plugins/myfeature.py` with the same
 
 ## Dependencies and sandbox mode
 
-A plugin that reaches into another plugin's modules (a `from plugins.x import
-...` anywhere in its tree) declares that with `depends_on = ("x", ...)` —
+A plugin that reaches into another plugin's modules (a `from plugins.x import ...` anywhere in its tree) declares that with `depends_on = ("x", ...)` —
 the names of the plugins it needs loaded. At boot, `select_plugins`
 (`cazzubot/plugin.py`) resolves the selection:
 
@@ -217,8 +216,7 @@ Old Name->New Name      rename a channel (rewritten to just the new name
 - Engine (pure, offline-tested): `cazzubot.channels.parser`,
   `cazzubot.channels.export`, `cazzubot.channels.plan`. Executor (live):
   `cazzubot.channels.executor`.
-- Admin CLI — `uv run cazzubot-cli channels <verb>` (or `uv run python -m
-  cazzubot.cli channels <verb>`): `export` / `diff` / `check` /
+- Admin CLI — `uv run cazzubot-cli channels <verb>` (or `uv run python -m cazzubot.cli channels <verb>`): `export` / `diff` / `check` /
   `apply [--yes] [--delete]` / `restore <snapshot>`, all with a
   `--scope-below <Category>` flag that limits management to one category
   and everything after it in the manifest — groups above are reported as
@@ -272,8 +270,7 @@ Role Name : token …     tokens: hoist | mentionable | #rrggbb |
   `cazzubot.roles.export` (snapshot → manifest), `cazzubot.roles.plan`
   (diff → Plan). Executor (live): `cazzubot.roles.executor`.
 - Admin CLI — single entry, one domain per feature:
-  `uv run cazzubot-cli <domain> <verb>` (or `uv run python -m
-  cazzubot.cli <domain> <verb>`). Domains: `roles` (`export` / `diff` /
+  `uv run cazzubot-cli <domain> <verb>` (or `uv run python -m cazzubot.cli <domain> <verb>`). Domains: `roles` (`export` / `diff` /
   `check` / `apply [--yes] [--delete]` / `restore <snapshot>`),
   `snapshot fetch` (live guild → `data/roles_export.json`), `manifest`
   (`render` offline JSON → manifest, `lint` parse check — no discord

@@ -3,9 +3,9 @@
 A ground-up rewrite of the bot on the `rewrite` branch. Goals, in the user's words:
 
 1. **Trivially add new features** — zero friction, no touching shared files.
-2. **SQLite instead of PostgreSQL** — one file, no docker, no asyncpg, no codecs.
-3. **hikari 2.5 + hikari-lightbulb 3.2** (was discord.py 2.7.1).
-4. **Single server** — one guild, no `gid` plumbing anywhere.
+1. **SQLite instead of PostgreSQL** — one file, no docker, no asyncpg, no codecs.
+1. **hikari 2.5 + hikari-lightbulb 3.2** (was discord.py 2.7.1).
+1. **Single server** — one guild, no `gid` plumbing anywhere.
 
 ## What was wrong with v1 (the friction)
 
