@@ -10,7 +10,10 @@ and code references assets by member only (``bot.assets.get(member)``).
 Because the declaration enum IS the reference set, "referenced but
 undeclared" cannot be spelled: an asset's existence is a type-level
 guarantee, and reconcile only verifies the real runtime facts (the file
-exists on disk; its content hash matches).
+exists on disk; its content hash matches). The registry is a **projection
+of the declarations**: rows whose key is no longer declared are pruned
+(their CDN message deleted), and every published URL is re-verified on
+boot — a deleted CDN message re-queues its row for re-publish.
 
 Failure policy mirrors ``Database.verify_schema``: a missing declared file
 aborts boot (the caller decides how to fail). ``sync_cdn`` is skipped with
@@ -21,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -108,6 +112,9 @@ class Assets:
         self.bot = bot
         self.config = config
         self.plugins_dir = Path(plugins_dir)
+        # CDN message URLs queued for deletion by the last reconcile's
+        # prune — the sync performs the REST deletes (REST is up by then).
+        self._pending_message_deletes: list[str] = []
         self.bot.subscribe(hikari.StartedEvent, self.sync_cdn)
 
     @property
@@ -117,7 +124,7 @@ class Assets:
     # -- boot reconcile -----------------------------------------------------
 
     async def reconcile(self) -> None:
-        """Hash declared assets, upsert registry rows, abort on drift.
+        """Hash declared assets, upsert registry rows, prune the stale.
 
         Walks every plugin's ``asset_decl`` enum — the members ARE the
         declarations, so the registry can only contain spelled references.
@@ -125,7 +132,14 @@ class Assets:
         missing, its hash (and URL) refreshed when the file changed. A
         missing file raises :class:`AssetError` — the caller decides how
         to fail (boot abort, mirroring ``Database.verify_schema``).
+
+        The registry is a **projection of the declarations**: after the
+        walk, rows whose key no loaded plugin declares are stale (an
+        asset definition deleted from code) and are pruned — their row is
+        dropped and their published CDN message (if any) is queued for
+        deletion on the next ``sync_cdn``.
         """
+        declared: set[str] = set()
         for plugin in self.bot.plugins:
             decl = plugin.asset_decl
             if decl is None:
@@ -133,6 +147,7 @@ class Assets:
             for asset in decl:
                 spec = asset.value
                 key = asset_key(asset)
+                declared.add(key)
                 path = self.plugins_dir / plugin.name / spec.path
                 if not path.is_file():
                     raise AssetError(
@@ -163,16 +178,49 @@ class Assets:
                         key,
                     )
                     _log.info("asset %s changed; re-queuing CDN sync", key)
+        await self._prune_undeclared(declared)
+
+    async def _prune_undeclared(self, declared: set[str]) -> None:
+        """Drop registry rows for assets no longer declared (if any).
+
+        A key that no loaded plugin declares anymore is stale — the
+        definition was deleted from code, so the row (and its published
+        CDN message, queued via :attr:`_pending_message_deletes`) must
+        go. Re-declaring the asset re-registers and re-publishes it on
+        the next boot: the prune is fully idempotent.
+        """
+        rows = await self.bot.db.fetchall("SELECT key, url FROM asset")
+        for row in rows:
+            if row["key"] in declared:
+                continue
+            if row["url"]:
+                self._pending_message_deletes.append(row["url"])
+            await self.bot.db.execute(
+                "DELETE FROM asset WHERE key = ?", row["key"]
+            )
+            _log.info("pruned undeclared asset %s", row["key"])
 
     # -- CDN sync -----------------------------------------------------------
 
     async def sync_cdn(self, _event: hikari.StartedEvent) -> None:
-        """Upload new/changed blobs to the asset channel, store the URLs.
+        """Publish, verify and prune the asset channel.
 
-        Only rows with a NULL ``url`` (new or hash-changed) upload — the
-        sha256 diff keeps re-uploads to content changes only. Skipped with
-        a boot warning when no asset channel is configured (the bot keeps
-        running; ``get`` returns None for unpublished assets).
+        Runs on every boot (the ``StartedEvent`` ready gate). Three
+        passes:
+
+        1. **Verify** — every published row's CDN message is fetched; a
+           deleted message (accidental or otherwise) resets the row's
+           ``url`` so it re-publishes below. The registry never serves a
+           dead URL.
+        2. **Cleanup** — CDN messages queued by the last reconcile's
+           prune (assets deleted from code) are deleted best-effort.
+        3. **Upload** — only rows with a NULL ``url`` (new or
+           hash-changed or just re-verified-dead) upload; the sha256
+           diff keeps re-uploads to content changes only.
+
+        Skipped with a boot warning when no asset channel is configured
+        (the bot keeps running; ``get`` returns None for unpublished
+        assets).
         """
         channel_id = self.config.asset_channel_id
         if channel_id is None:
@@ -181,6 +229,8 @@ class Assets:
                 "skipping CDN sync"
             )
             return
+        await self._verify_published(channel_id)
+        await self._delete_orphaned_messages(channel_id)
         rows = await self.bot.db.fetchall(
             "SELECT * FROM asset WHERE url IS NULL"
         )
@@ -203,6 +253,67 @@ class Assets:
                 "UPDATE asset SET url = ? WHERE key = ?", url, row["key"]
             )
             _log.info("asset %s published (%s)", row["key"], url)
+
+    async def _verify_published(self, channel_id: int) -> None:
+        """Re-check published URLs — a deleted CDN message re-queues the row.
+
+        A Discord CDN URL embeds its message id, so liveness is one
+        ``fetch_message`` per published asset. Only a definitive
+        ``NotFoundError`` (the message is gone) resets the row; any other
+        failure (permissions, transient) logs and leaves the URL alone —
+        a hiccup must not cause a re-upload storm.
+        """
+        rows = await self.bot.db.fetchall(
+            "SELECT key, url FROM asset WHERE url IS NOT NULL"
+        )
+        for row in rows:
+            message_id = _message_id(row["url"])
+            if message_id is None:
+                _log.warning(
+                    "asset %s has an unparseable URL: %s",
+                    row["key"],
+                    row["url"],
+                )
+                continue
+            try:
+                await self.bot.rest.fetch_message(channel_id, message_id)
+            except hikari.NotFoundError:
+                _log.info(
+                    "asset %s CDN message gone; re-queuing publish",
+                    row["key"],
+                )
+                await self.bot.db.execute(
+                    "UPDATE asset SET url = NULL WHERE key = ?", row["key"]
+                )
+            except Exception:
+                _log.exception(
+                    "failed to verify asset %s publication", row["key"]
+                )
+
+    async def _delete_orphaned_messages(self, channel_id: int) -> None:
+        """Best-effort deletion of CDN messages for pruned assets.
+
+        Consumes and clears :attr:`_pending_message_deletes` (queued by
+        reconcile's prune). A message that is already gone is fine; other
+        failures are logged and the cleanup is retried next boot (the
+        prune re-queues the URL then).
+        """
+        pending, self._pending_message_deletes = (
+            self._pending_message_deletes,
+            [],
+        )
+        for url in pending:
+            message_id = _message_id(url)
+            if message_id is None:
+                continue
+            try:
+                await self.bot.rest.delete_message(channel_id, message_id)
+            except hikari.NotFoundError:
+                pass  # already gone
+            except Exception:
+                _log.exception(
+                    "failed to delete orphaned asset message %s", url
+                )
 
     # -- runtime lookup -----------------------------------------------------
 
@@ -230,3 +341,17 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1 << 16), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+_ATTACHMENT_URL = re.compile(r"/attachments/\d+/(\d+)/")
+
+
+def _message_id(url: str) -> int | None:
+    """The Discord message id embedded in a CDN attachment URL.
+
+    CDN URLs look like ``…/attachments/<channel>/<message>/<file>``; the
+    message id is how the sync finds (and deletes) the published message.
+    Returns None when the URL isn't a recognizable attachment URL.
+    """
+    match = _ATTACHMENT_URL.search(url)
+    return int(match.group(1)) if match else None

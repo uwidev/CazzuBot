@@ -148,9 +148,24 @@ asset host**:
    upload (storing the returned URL).
 1. Missing file on disk → `AssetError` → boot abort, mirroring
    `Database.verify_schema`'s fail-fast drift check.
+1. **Prune** — a row whose key no plugin declares anymore (the definition
+   was deleted from code) is dropped; its published CDN message is queued
+   for deletion on the next sync.
 
 For static assets the **file on disk is the source of truth**; the row is a
 cached index of it. Edit the art and redeploy → boot notices, re-syncs.
+Delete the definition → boot prunes the row and deletes the CDN message.
+
+### CDN sync (every boot, after start)
+
+1. **Verify** — every published row's CDN message is fetched; a deleted
+   message (accidental or not) resets the row's `url` so it re-publishes.
+   The registry never serves a dead URL.
+1. **Cleanup** — the messages queued by reconcile's prune are deleted
+   (best-effort; already-gone is fine).
+1. **Upload** — rows with `url IS NULL` (new, hash-changed, or just
+   re-verified-dead) publish; the sha256 diff keeps re-uploads to content
+   changes only.
 
 ### New frog species (code path)
 
