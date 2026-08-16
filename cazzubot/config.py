@@ -52,6 +52,11 @@ def parse_side(value: str) -> str:
     )
 
 
+def _pick(side: str, prod: str, dev: str) -> str:
+    """The production or development variant of a thing, by guild side."""
+    return prod if side == "production" else dev
+
+
 @dataclass(frozen=True)
 class Config:
     """Everything the bot needs to boot.
@@ -101,28 +106,18 @@ class Config:
 
         bot_side = parse_side(bot)
         guild_side = parse_side(guild)
-        token = os.getenv(
-            "TOKEN" if bot_side == "production" else "TOKEN_DEV"
-        )
+        token = os.getenv(_pick(bot_side, "TOKEN", "TOKEN_DEV"))
         owner_id = os.getenv("OWNER_ID")
-        guild_var = (
-            GUILD_ID_PROD if guild_side == "production" else GUILD_ID_DEV
-        )
+        guild_var = _pick(guild_side, GUILD_ID_PROD, GUILD_ID_DEV)
         guild_id = os.getenv(guild_var)
         # one database per guild side (DB_PATH_* env overrides the default)
-        db_var = (
-            DB_PATH_PROD if guild_side == "production" else DB_PATH_DEV
-        )
-        default_db = (
-            DB_PATH_DEFAULT_PROD
-            if guild_side == "production"
-            else DB_PATH_DEFAULT_DEV
+        db_var = _pick(guild_side, DB_PATH_PROD, DB_PATH_DEV)
+        default_db = _pick(
+            guild_side, DB_PATH_DEFAULT_PROD, DB_PATH_DEFAULT_DEV
         )
         # the asset channel follows the guild side too (optional)
-        asset_var = (
-            ASSET_CHANNEL_PROD
-            if guild_side == "production"
-            else ASSET_CHANNEL_DEV
+        asset_var = _pick(
+            guild_side, ASSET_CHANNEL_PROD, ASSET_CHANNEL_DEV
         )
         asset_channel = os.getenv(asset_var)
 

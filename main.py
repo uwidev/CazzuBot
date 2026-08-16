@@ -1,4 +1,4 @@
-#!/bin/env python
+#!/usr/bin/env python
 """Run the bot.
 
 Usage: CazzuBot [-h] [-d] [-b SIDE] [-g SIDE] [-s [PLUGIN ...]]
@@ -15,6 +15,7 @@ import argparse
 import logging
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from typing_extensions import override
@@ -107,7 +108,7 @@ def main() -> None:
 
 
 def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
-    """Write INFO to console and DEBUG to a rotating-ish log file."""
+    """Write INFO to console and DEBUG to a log file (truncated each boot)."""
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
 
@@ -145,5 +146,8 @@ def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    subprocess.run("cls" if os.name == "nt" else "clear", shell=True)
+    # clear the terminal only when it's an interactive tty (never from
+    # piped/CI/systemd invocations)
+    if sys.stdout.isatty():
+        subprocess.run(["cls" if os.name == "nt" else "clear"])
     main()

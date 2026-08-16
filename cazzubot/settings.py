@@ -30,12 +30,10 @@ SCHEMA = _SCHEMA
 class Settings:
     """Key-value access layered on the ``settings`` table."""
 
+    schema = _SCHEMA
+
     def __init__(self, db: Database) -> None:
         self.db = db
-
-    @property
-    def schema(self) -> list[str]:
-        return _SCHEMA
 
     async def get(self, key: str, default: Any = None) -> Any:
         row = await self.db.fetchone(

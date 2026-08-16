@@ -124,12 +124,10 @@ class MemberEffects:
     hold the bot rather than a Database.
     """
 
+    schema = _SCHEMA
+
     def __init__(self, bot: "CazzuBot") -> None:
         self.bot = bot
-
-    @property
-    def schema(self) -> list[str]:
-        return _SCHEMA
 
     async def set(
         self,

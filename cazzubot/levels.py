@@ -25,6 +25,9 @@ _X_SCALE = 100
 _Y_SCALE = 450
 
 _levels_exp_memo: dict[int, float] = {0: 0}
+# parallel to the memo: _levels_exp_values[i] == _levels_exp_memo[i], kept
+# sorted so level_from_exp can binary-search without rebuilding the dict
+_levels_exp_values: list[float] = [0.0]
 
 
 class BoundingType(Enum):
@@ -40,9 +43,11 @@ def exp_to_level_cum(n: int) -> float:
     if n in _levels_exp_memo:
         return _levels_exp_memo[n]
 
-    last_key = list(_levels_exp_memo)[-1] or 1
-    for i in range(last_key, n + 1):
-        _levels_exp_memo[i] = exp_for_level(i) + _levels_exp_memo[i - 1]
+    last_key = max(_levels_exp_memo)
+    for i in range(last_key + 1, n + 1):
+        value = exp_for_level(i) + _levels_exp_memo[i - 1]
+        _levels_exp_memo[i] = value
+        _levels_exp_values.append(value)
     return _levels_exp_memo[n]
 
 
@@ -52,11 +57,11 @@ def level_from_exp(exp: int) -> int:
         return 0
 
     while True:
-        res = _bin_up(list(_levels_exp_memo.values()), exp)
+        res = _bin_up(_levels_exp_values, exp)
         if res != -1:
             return res
 
-        last_level = _get_last_memo()[0] or 1
+        last_level = max(_levels_exp_memo) or 1
         _log.info("Doubling memoized levels to %s", last_level * 2)
         exp_to_level_cum(last_level * 2)
 
@@ -87,10 +92,6 @@ def _combined(x: float) -> float:
     upper = _bound_by(x, BoundingType.UPPER)
     lower = _bound_by(x, BoundingType.LOWER)
     return (upper - lower) * _base(x) + lower
-
-
-def _get_last_memo() -> tuple[int, float]:
-    return list(_levels_exp_memo.items())[-1]
 
 
 def _bin_up(arr: list[float], target: int) -> int:

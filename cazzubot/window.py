@@ -55,6 +55,11 @@ class Sendable(Protocol):
     ) -> Any: ...
 
 
+def _error_line(exc: BaseException) -> str:
+    """The one-line error summary the window shows for a failure."""
+    return f"{type(exc).__name__}: {exc}"
+
+
 class CommandWindow:
     """Buffered level-tagged reporting for one command invocation."""
 
@@ -65,7 +70,9 @@ class CommandWindow:
     # -- levels -----------------------------------------------------------
 
     def debug(self, msg: object) -> None:
-        self._lines.append(str(msg))
+        # debug and info are the same plain line; the level is kept for
+        # call-site intent (matches the docstring's level table)
+        self.info(msg)
 
     def info(self, msg: object) -> None:
         self._lines.append(str(msg))
@@ -103,7 +110,8 @@ class CommandWindow:
         tb: TracebackType | None,
     ) -> bool:
         if exc_type is not None:
-            self.error(f"{exc_type.__name__}: {exc}")
+            # the CM protocol guarantees exc is non-None with exc_type
+            self.error(_error_line(cast(BaseException, exc)))
         try:
             await self.flush()
         except Exception:
@@ -137,7 +145,7 @@ def windowed(func: F) -> F:
         try:
             result = await func(self, ctx, *args, **kwargs)
         except BaseException as exc:
-            window.error(f"{type(exc).__name__}: {exc}")
+            window.error(_error_line(exc))
             raise
         finally:
             try:

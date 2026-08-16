@@ -56,10 +56,6 @@ class InvalidTimeError(Exception):
     """Raised when a string cannot be parsed as a time."""
 
 
-class NotFutureError(Exception):
-    """Raised when a parsed time is not in the future."""
-
-
 def normalize_time_str(arg: str) -> pendulum.DateTime:
     """Parse natural language into a UTC DateTime.
 
@@ -100,8 +96,9 @@ def parse_iso8601(raw: str) -> pendulum.DateTime:
     return cast(pendulum.DateTime, pendulum.parse(raw))
 
 
-def is_future(past: pendulum.DateTime, future: pendulum.DateTime) -> bool:
-    return past < future
+def is_future(now: pendulum.DateTime, target: pendulum.DateTime) -> bool:
+    """True when ``target`` is still ahead of ``now``."""
+    return now < target
 
 
 def _spaces_out_shorthands(arg: str) -> str:

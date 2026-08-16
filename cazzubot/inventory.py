@@ -93,6 +93,18 @@ async def get(db: Database, uid: int, item: InventoryKey) -> int:
     return int(val or 0)
 
 
+def _prefix_where(
+    uid: int, prefix: str | None
+) -> tuple[str, tuple[object, ...]]:
+    """The shared ``WHERE uid = ? [AND item LIKE ?]`` fragment."""
+    where = "uid = ?"
+    args: tuple[object, ...] = (uid,)
+    if prefix is not None:
+        where += " AND item LIKE ?"
+        args += (prefix + "%",)
+    return where, args
+
+
 async def rows(
     db: Database, uid: int, *, prefix: str | None = None
 ) -> list[tuple[str, int]]:
@@ -103,13 +115,10 @@ async def rows(
     are parsed back to typed identities by the caller (once, at the read
     boundary).
     """
-    where = "uid = ? AND qty > 0"
-    args: tuple[object, ...] = (uid,)
-    if prefix is not None:
-        where += " AND item LIKE ?"
-        args += (prefix + "%",)
+    where, args = _prefix_where(uid, prefix)
     rows_ = await db.fetchall(
-        f"SELECT item, qty FROM inventory WHERE {where} ORDER BY item",
+        f"SELECT item, qty FROM inventory WHERE {where} AND qty > 0 "
+        "ORDER BY item",
         *args,
     )
     return [(row["item"], row["qty"]) for row in rows_]
@@ -119,11 +128,7 @@ async def total(
     db: Database, uid: int, *, prefix: str | None = None
 ) -> int:
     """Every item a member holds in ``prefix`` (all items when None)."""
-    where = "uid = ?"
-    args: tuple[object, ...] = (uid,)
-    if prefix is not None:
-        where += " AND item LIKE ?"
-        args += (prefix + "%",)
+    where, args = _prefix_where(uid, prefix)
     val = await db.fetchval(
         f"SELECT COALESCE(SUM(qty), 0) FROM inventory WHERE {where}",
         *args,
@@ -171,12 +176,10 @@ class Inventory:
     hold the bot rather than a Database.
     """
 
+    schema = _SCHEMA
+
     def __init__(self, bot: "CazzuBot") -> None:
         self.bot = bot
-
-    @property
-    def schema(self) -> list[str]:
-        return _SCHEMA
 
     async def add(self, uid: int, item: InventoryKey, amount: int) -> None:
         return await add(self.bot.db, uid, item, amount)

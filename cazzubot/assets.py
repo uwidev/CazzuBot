@@ -117,9 +117,7 @@ class Assets:
         self._pending_message_deletes: list[str] = []
         self.bot.subscribe(hikari.StartedEvent, self.sync_cdn)
 
-    @property
-    def schema(self) -> list[str]:
-        return _SCHEMA
+    schema = _SCHEMA
 
     # -- boot reconcile -----------------------------------------------------
 
