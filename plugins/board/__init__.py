@@ -11,8 +11,6 @@ manually for testing.
 
 import logging
 
-import pendulum
-
 from cazzubot import Plugin
 from cazzubot.bot import CazzuBot
 from cazzubot.scheduler import At
@@ -45,11 +43,7 @@ async def on_board_weekly_due(
         result.scraped,
         result.poll_id,
     )
-    # re-arm: drop stale rows, schedule the next Sunday
-    await bot.scheduler.drop_tag("board_weekly")
-    await bot.scheduler.add(
-        "board_weekly", CADENCE.next_run(pendulum.now("UTC")), {"retry": True}
-    )
+    await bot.scheduler.arm("board_weekly", CADENCE)
 
 
 class BoardPlugin(Plugin):
@@ -60,25 +54,14 @@ class BoardPlugin(Plugin):
         "board_weekly": on_board_weekly_due,
         "board_weekly_close": on_board_weekly_close,
     }
-    # the weekly flow registers polls and sends the poll message
-    depends_on = ("poll",)
+    # the weekly flow registers polls and sends the poll message, and
+    # renders the banner via plugins.misc.logic — both must be loaded
+    depends_on = ("poll", "misc")
 
     @override
     async def on_load(self, bot: CazzuBot) -> None:
-        """Arm the Sunday cadence — but never clobber an existing row.
-
-        A row left from a previous run is either future (already armed)
-        or overdue (bot was down over Sunday — the scheduler fires it on
-        boot and the flow runs then). Only a rowless install needs a
-        fresh arm.
-        """
-        if not await bot.scheduler.get("board_weekly"):
-            await bot.scheduler.drop_tag("board_weekly")
-            await bot.scheduler.add(
-                "board_weekly",
-                CADENCE.next_run(pendulum.now("UTC")),
-                {"retry": True},
-            )
+        """Arm the Sunday cadence — never clobber an existing row."""
+        await bot.scheduler.arm_if_rowless("board_weekly", CADENCE)
 
 
 plugin = BoardPlugin()

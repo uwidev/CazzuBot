@@ -9,6 +9,7 @@ from typing import Any, NamedTuple, TypeVar, cast
 import hikari
 import lightbulb
 import pendulum
+from lightbulb.prefab import checks as prefab_checks
 
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
@@ -25,6 +26,18 @@ INITIAL_RESPONSE_IDENTIFIER = _lb_constants.INITIAL_RESPONSE_IDENTIFIER
 _log = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+def bot_from(ctx: lightbulb.Context) -> CazzuBot:
+    """The ``CazzuBot`` behind a lightbulb context (``ctx.client.app``)."""
+    return cast(CazzuBot, ctx.client.app)
+
+
+# the shared permission hooks — one source for the ADMINISTRATOR constant
+OWNER_ONLY = prefab_checks.owner_only
+ADMIN_ONLY = prefab_checks.has_permissions(
+    hikari.Permissions.ADMINISTRATOR
+)
 
 
 class OldNew(NamedTuple):

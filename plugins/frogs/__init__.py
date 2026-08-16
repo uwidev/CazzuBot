@@ -1,18 +1,12 @@
 """Frogs plugin package."""
 
-import logging
-
-import pendulum
-
 from cazzubot import Plugin
 from cazzubot.bot import CazzuBot
 from cazzubot.scheduler import At
 from typing_extensions import override
 
-from . import db, factory, species as species
+from . import db, factory
 from .assets import FrogAsset
-
-_log = logging.getLogger(__name__)
 
 # the season rollover: first instant of Jan/Apr/Jul/Oct — freezes every
 # normal stack into frozen (the quarterly soft reset)
@@ -35,7 +29,7 @@ async def on_daily_frog_due(
     keeps its own retry semantics.
     """
     await db.sync_with_frog_logs(bot.db)
-    await _rearm(bot, DAILY_FROG_TAG, DAILY_CADENCE)
+    await bot.scheduler.arm(DAILY_FROG_TAG, DAILY_CADENCE)
 
 
 async def on_quarterly_due(
@@ -48,27 +42,7 @@ async def on_quarterly_due(
     live while the freeze runs, so a failed freeze is retried.
     """
     await db.freeze_frogs(bot.db)
-    await _rearm(bot, QUARTERLY_TAG, QUARTERLY_CADENCE)
-
-
-async def _rearm(bot: CazzuBot, tag: str, cadence: At) -> None:
-    """Drop the tag's stale rows and schedule the next occurrence."""
-    await bot.scheduler.drop_tag(tag)
-    await bot.scheduler.add(
-        tag, cadence.next_run(pendulum.now("UTC")), {"retry": True}
-    )
-
-
-async def _arm_if_rowless(bot: CazzuBot, tag: str, cadence: At) -> None:
-    """Arm a cadence on load — but never clobber an existing row.
-
-    A row left from a previous run is either future (already armed) or
-    overdue (bot was down over the boundary — the scheduler fires it on
-    boot and the work runs then). Only a rowless install needs a fresh
-    arm.
-    """
-    if not await bot.scheduler.get(tag):
-        await _rearm(bot, tag, cadence)
+    await bot.scheduler.arm(QUARTERLY_TAG, QUARTERLY_CADENCE)
 
 
 class FrogsPlugin(Plugin):
@@ -91,8 +65,10 @@ class FrogsPlugin(Plugin):
         # clean up frog messages left dangling by a previous process
         await factory.cleanup_dangling_frogs(bot)
         # arm the cadences this plugin owns (capture resync, season freeze)
-        await _arm_if_rowless(bot, DAILY_FROG_TAG, DAILY_CADENCE)
-        await _arm_if_rowless(bot, QUARTERLY_TAG, QUARTERLY_CADENCE)
+        await bot.scheduler.arm_if_rowless(DAILY_FROG_TAG, DAILY_CADENCE)
+        await bot.scheduler.arm_if_rowless(
+            QUARTERLY_TAG, QUARTERLY_CADENCE
+        )
 
 
 plugin = FrogsPlugin()

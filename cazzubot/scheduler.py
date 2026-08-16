@@ -26,7 +26,7 @@ import random
 import re
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, override
+from typing import TYPE_CHECKING, Any, Protocol, override
 
 import aiosqlite
 import hikari
@@ -76,14 +76,16 @@ _DAYS_IN_MONTH = {
 _MONTH_SCAN = 100
 
 
-def _as_weekday_list(weekday: int | tuple[int, ...]) -> tuple[int, ...]:
-    """Normalize a single weekday or a tuple into a tuple."""
-    return (weekday,) if isinstance(weekday, int) else weekday
+def _as_tuple(value: int | tuple[int, ...]) -> tuple[int, ...]:
+    """Normalize a single value or a tuple into a tuple."""
+    return (value,) if isinstance(value, int) else value
 
 
-def _as_day_list(day: int | tuple[int, ...]) -> tuple[int, ...]:
-    """Normalize a single day or a tuple into a tuple."""
-    return (day,) if isinstance(day, int) else day
+def _chaotic_rng(jitter: float, seed: int | None) -> random.Random:
+    """Validate ``jitter`` and build the seeded RNG (shared by the chaos pair)."""
+    if not 0 <= jitter <= 1:
+        raise ValueError(f"jitter must be between 0 and 1, got {jitter}")
+    return random.Random(seed)
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +117,8 @@ class At:
     weekday: int | tuple[int, ...] | None = None
     day: int | tuple[int, ...] | None = None
     months: tuple[int, ...] | None = None
+    _hour: int = field(init=False, repr=False, compare=False)
+    _minute: int = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         match = re.fullmatch(r"(\d{2}):(\d{2})", self.time)
@@ -125,10 +129,12 @@ class At:
         hour, minute = int(match.group(1)), int(match.group(2))
         if hour > 23 or minute > 59:
             raise ValueError(f"cadence time out of range: {self.time!r}")
+        object.__setattr__(self, "_hour", hour)
+        object.__setattr__(self, "_minute", minute)
         if self.weekday is not None:
             if isinstance(self.weekday, tuple) and not self.weekday:
                 raise ValueError("cadence weekday must not be empty")
-            for w in _as_weekday_list(self.weekday):
+            for w in _as_tuple(self.weekday):
                 if not 0 <= w <= 6:
                     raise ValueError(
                         f"cadence weekday must be 0-6, got {self.weekday}"
@@ -136,7 +142,7 @@ class At:
         if self.day is not None:
             if isinstance(self.day, tuple) and not self.day:
                 raise ValueError("cadence day must not be empty")
-            for d in _as_day_list(self.day):
+            for d in _as_tuple(self.day):
                 if not 1 <= abs(d) <= 31:
                     raise ValueError(
                         f"cadence day must be 1-31 or -31…-1, got {self.day}"
@@ -155,7 +161,7 @@ class At:
                     raise ValueError(
                         f"cadence month must be 1-12, got {month}"
                     )
-            days = _as_day_list(self.day)
+            days = _as_tuple(self.day)
             if all(
                 all(_DAYS_IN_MONTH[m] < abs(d) for d in days)
                 for m in self.months
@@ -165,9 +171,7 @@ class At:
                 )
 
     def _clock(self) -> tuple[int, int]:
-        match = re.fullmatch(r"(\d{2}):(\d{2})", self.time)
-        assert match is not None  # validated in __post_init__
-        return int(match.group(1)), int(match.group(2))
+        return self._hour, self._minute
 
     def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
         """The next occurrence of this cadence, strictly after ``now``."""
@@ -221,7 +225,7 @@ class At:
         hour, minute = self._clock()
         base = now.start_of("day")
         upcoming: list[pendulum.DateTime] = []
-        for w in _as_weekday_list(weekdays):
+        for w in _as_tuple(weekdays):
             candidate = base.add(days=(w - now.weekday()) % 7).replace(
                 hour=hour, minute=minute
             )
@@ -237,7 +241,7 @@ class At:
         hour, minute = self._clock()
         base = now.start_of("day")
         past: list[pendulum.DateTime] = []
-        for w in _as_weekday_list(weekdays):
+        for w in _as_tuple(weekdays):
             candidate = base.subtract(
                 days=(now.weekday() - w) % 7
             ).replace(hour=hour, minute=minute)
@@ -307,7 +311,7 @@ class At:
         if months is not None and month.month not in months:
             return []
         occurrences: list[pendulum.DateTime] = []
-        for d in _as_day_list(day):
+        for d in _as_tuple(day):
             target = month.days_in_month + d + 1 if d < 0 else d
             try:
                 occurrences.append(
@@ -339,11 +343,9 @@ class AtChaotic(At):
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        if not 0 <= self.jitter <= 1:
-            raise ValueError(
-                f"jitter must be between 0 and 1, got {self.jitter}"
-            )
-        object.__setattr__(self, "_rng", random.Random(self.seed))
+        object.__setattr__(
+            self, "_rng", _chaotic_rng(self.jitter, self.seed)
+        )
 
     @override
     def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
@@ -431,11 +433,9 @@ class InChaotic(In):
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        if not 0 <= self.jitter <= 1:
-            raise ValueError(
-                f"jitter must be between 0 and 1, got {self.jitter}"
-            )
-        object.__setattr__(self, "_rng", random.Random(self.seed))
+        object.__setattr__(
+            self, "_rng", _chaotic_rng(self.jitter, self.seed)
+        )
 
     @override
     def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
@@ -480,6 +480,12 @@ class TaskPolicy:
         return self.backoff[min(attempt, len(self.backoff) - 1)]
 
 
+class Cadence(Protocol):
+    """Anything with a ``next_run`` — the schedule declarations above."""
+
+    def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime: ...
+
+
 class Scheduler:
     """Owns the task table and dispatches due tasks once per second."""
 
@@ -497,9 +503,7 @@ class Scheduler:
         self._running: dict[int, asyncio.Task[Any]] = {}
         self.bot.subscribe(hikari.StartedEvent, self._on_started)
 
-    @property
-    def schema(self) -> list[str]:
-        return _SCHEMA
+    schema = _SCHEMA
 
     async def start(self) -> None:
         if self._task is not None:
@@ -635,6 +639,29 @@ class Scheduler:
             run_at.isoformat(),
             task_id,
         )
+
+    async def arm(self, tag: str, cadence: Cadence) -> None:
+        """Drop ``tag``'s stale rows and schedule its next occurrence.
+
+        The cadence re-arm contract: the fired row is replaced by the
+        next occurrence, retry-enabled (``retry: True``) so a failed
+        handler bumps the row instead of silently dropping the schedule.
+        """
+        await self.drop_tag(tag)
+        await self.add(
+            tag, cadence.next_run(pendulum.now("UTC")), {"retry": True}
+        )
+
+    async def arm_if_rowless(self, tag: str, cadence: Cadence) -> None:
+        """Like :meth:`arm`, but never clobbers an existing row.
+
+        A row left from a previous run is either future (already armed)
+        or overdue (the bot was down over the boundary — the scheduler
+        fires it on boot and the work runs then). Only a rowless install
+        needs a fresh arm.
+        """
+        if not await self.get(tag):
+            await self.arm(tag, cadence)
 
     # -- loop -------------------------------------------------------------
 

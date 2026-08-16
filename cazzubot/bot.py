@@ -126,7 +126,7 @@ class CazzuBot(hikari.GatewayBot):
         # overrides the plugin's code-level ``enabled`` default. Disabled
         # plugins (and their dependents) do not load.
         disabled = {
-            p.name for p in discovered if not await self._plugin_enabled(p)
+            p.name for p in discovered if not await self.plugin_enabled(p)
         }
         plugins = filter_enabled(discovered, disabled)
         skipped = [p.name for p in discovered if p not in plugins]
@@ -285,8 +285,12 @@ class CazzuBot(hikari.GatewayBot):
         touched).
         """
         await self.db.run_schema(plugin.schema)
-        for tag, handler in plugin.scheduled.items():
-            self.scheduler.register(tag, handler)
+        for tag, entry in plugin.scheduled.items():
+            # a scheduled entry is a bare handler or (handler, policy)
+            handler, policy = (
+                entry if isinstance(entry, tuple) else (entry, None)
+            )
+            self.scheduler.register(tag, handler, policy)
             # undo: drop the tag's task rows (projections, re-armed by the
             # plugin's on_load) and forget the handler callback
             self.lifecycle.defer(
@@ -414,7 +418,7 @@ class CazzuBot(hikari.GatewayBot):
 
     # -- plugin enable/disable ----------------------------------------------
 
-    async def _plugin_enabled(self, plugin: Plugin) -> bool:
+    async def plugin_enabled(self, plugin: Plugin) -> bool:
         """Effective enabled state: settings override, else code default.
 
         The ``plugin.enabled.<name>`` settings key is written by the

@@ -7,26 +7,18 @@ no guild table to initialize).
 
 import logging
 from pathlib import Path
-from typing import cast
 
 import hikari
 import lightbulb
 
-from cazzubot import levels
+from cazzubot import levels, utils
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
 from cazzubot.plugin import discover_plugins
-from lightbulb.prefab import checks as prefab_checks
 
 _log = logging.getLogger(__name__)
 
 loader = lightbulb.Loader()
-
-_OWNER = prefab_checks.owner_only
-
-
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
 
 
 def _plugin_names(bot: CazzuBot) -> list[str]:
@@ -51,7 +43,7 @@ class Owner(
     name="owner",
     description="The bot owner check.",
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
@@ -71,7 +63,7 @@ class CalcTo(
     lightbulb.SlashCommand,
     name="to",
     description="Exp required to get from level n-1 to n.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     n = lightbulb.integer("n", "The level")
 
@@ -85,7 +77,7 @@ class CalcCum(
     lightbulb.SlashCommand,
     name="cum",
     description="Cumulative exp from level 0 to n.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     n = lightbulb.integer("n", "The level")
 
@@ -100,11 +92,11 @@ class ArchiveEmojis(
     name="archive_emojis",
     description="Save this guild's emojis to archives/{guild_id}/.",
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
             await ctx.respond("Not in a guild.")
@@ -120,11 +112,11 @@ class Scrape(
     name="scrape",
     description="Download every guild emoji into emojis/.",
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
             await ctx.respond("Not in a guild.")
@@ -149,13 +141,13 @@ class PluginReload(
     lightbulb.SlashCommand,
     name="reload",
     description="Reload a loaded plugin.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     plugin_name = lightbulb.string("plugin_name", "The plugin to reload")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         if self.plugin_name not in _plugin_names(bot):
             await ctx.respond(
                 f"❌ plugin {self.plugin_name} is not loaded"
@@ -178,13 +170,13 @@ class PluginLoad(
     lightbulb.SlashCommand,
     name="load",
     description="Load a not-yet-loaded plugin.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     plugin_name = lightbulb.string("plugin_name", "The plugin to load")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         if self.plugin_name in _plugin_names(bot):
             await ctx.respond(
                 f"❌ plugin {self.plugin_name} is already loaded"
@@ -199,13 +191,13 @@ class PluginUnload(
     lightbulb.SlashCommand,
     name="unload",
     description="Unload a loaded plugin.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     plugin_name = lightbulb.string("plugin_name", "The plugin to unload")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         if self.plugin_name not in _plugin_names(bot):
             await ctx.respond(
                 f"❌ plugin {self.plugin_name} is not loaded"
@@ -222,13 +214,13 @@ class PluginEnable(
     lightbulb.SlashCommand,
     name="enable",
     description="Enable a plugin (persisted) and load it with its dependencies.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     plugin_name = lightbulb.string("plugin_name", "The plugin to enable")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         try:
             loaded = await bot.enable_plugin(self.plugin_name)
         except UserInputError as err:
@@ -249,13 +241,13 @@ class PluginDisable(
     lightbulb.SlashCommand,
     name="disable",
     description="Disable a plugin (persisted) and unload it with its dependents.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     plugin_name = lightbulb.string("plugin_name", "The plugin to disable")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         try:
             unloaded = await bot.disable_plugin(self.plugin_name)
         except UserInputError as err:
@@ -277,21 +269,18 @@ class PluginList(
     lightbulb.SlashCommand,
     name="list",
     description="Show every plugin with its loaded/disabled state.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         loaded = {p.name for p in bot.plugins}
+        plugins = discover_plugins(bot.plugins_dir)
         disabled = {
-            p.name
-            for p in discover_plugins(bot.plugins_dir)
-            if not await bot._plugin_enabled(p)  # pyright: ignore[reportPrivateUsage]
+            p.name for p in plugins if not await bot.plugin_enabled(p)
         }
         lines = []
-        for plugin in sorted(
-            discover_plugins(bot.plugins_dir), key=lambda p: p.name
-        ):
+        for plugin in sorted(plugins, key=lambda p: p.name):
             if plugin.name in loaded:
                 lines.append(f"✅ {plugin.name}")
             elif plugin.name in disabled:

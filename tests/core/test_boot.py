@@ -7,7 +7,9 @@ directly (``_on_starting`` / ``_on_stopping``) — no Discord connection.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import hikari
 import pendulum
@@ -15,6 +17,8 @@ import pytest
 
 from cazzubot import CazzuBot, Config
 from cazzubot.models import FrogState, SpeciesKey
+from cazzubot.plugin import Plugin
+from cazzubot.scheduler import TaskPolicy
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 
@@ -110,6 +114,45 @@ async def test_sandbox_boot_loads_only_requested_plugins(
         }
     finally:
         await _shutdown(instance)
+
+
+async def test_scheduled_entry_carries_policy(
+    bot: CazzuBot,
+) -> None:
+    """A ``(handler, TaskPolicy)`` scheduled entry wires the policy in.
+
+    ``Plugin.scheduled`` values may be a bare handler (default policy) or
+    a (handler, policy) pair; loading must land the policy in
+    ``scheduler.policies`` and unloading must withdraw it with the rest
+    of the plugin's deferred effects.
+    """
+    policy = TaskPolicy(stale_after=timedelta(hours=1))
+
+    async def handler(_bot: CazzuBot, _payload: dict[str, Any]) -> None:
+        return None
+
+    class WithPolicy(Plugin):
+        name = "withpolicy"
+        scheduled = {"wp": (handler, policy)}
+
+    class Plain(Plugin):
+        name = "plain"
+        scheduled = {"pl": handler}
+
+    await bot.load_plugin(WithPolicy(), run_hooks=False)
+    await bot.load_plugin(Plain(), run_hooks=False)
+    try:
+        assert bot.scheduler.handlers["wp"] is handler
+        assert bot.scheduler.policies["wp"] is policy
+        # a bare entry registers under the default policy, not a custom one
+        assert bot.scheduler.handlers["pl"] is handler
+        assert "pl" not in bot.scheduler.policies
+    finally:
+        await bot.unload_plugin_by_name("withpolicy")
+        await bot.unload_plugin_by_name("plain")
+    # unload withdraws the policy with the handler
+    assert "wp" not in bot.scheduler.policies
+    assert "pl" not in bot.scheduler.handlers
 
 
 async def test_sandbox_boot_unknown_plugin_aborts(tmp_path: Path) -> None:

@@ -1,17 +1,11 @@
 """Experience plugin package."""
 
-import logging
-
-import pendulum
-
 from cazzubot import Plugin
 from cazzubot.bot import CazzuBot
 from cazzubot.scheduler import At
 from typing_extensions import override
 
 from . import db
-
-_log = logging.getLogger(__name__)
 
 # the exp half of the midnight reset: msg counts back to 1, cooldowns
 # cleared, lifetime resynced from the logs (the frog half — capture
@@ -32,10 +26,7 @@ async def on_daily_due(bot: CazzuBot, _payload: dict[str, object]) -> None:
     await db.reset_all_msg_cnt(bot.db)
     await db.reset_all_cdr(bot.db)
     await db.sync_with_exp_logs(bot.db)
-    await bot.scheduler.drop_tag(DAILY_TAG)
-    await bot.scheduler.add(
-        DAILY_TAG, CADENCE.next_run(pendulum.now("UTC")), {"retry": True}
-    )
+    await bot.scheduler.arm(DAILY_TAG, CADENCE)
 
 
 class ExperiencePlugin(Plugin):
@@ -49,20 +40,8 @@ class ExperiencePlugin(Plugin):
 
     @override
     async def on_load(self, bot: CazzuBot) -> None:
-        """Arm the midnight cadence — but never clobber an existing row.
-
-        A row left from a previous run is either future (already armed)
-        or overdue (bot was down at midnight — the scheduler fires it on
-        boot and the reset runs then). Only a rowless install needs a
-        fresh arm.
-        """
-        if not await bot.scheduler.get(DAILY_TAG):
-            await bot.scheduler.drop_tag(DAILY_TAG)
-            await bot.scheduler.add(
-                DAILY_TAG,
-                CADENCE.next_run(pendulum.now("UTC")),
-                {"retry": True},
-            )
+        """Arm the midnight cadence — never clobber an existing row."""
+        await bot.scheduler.arm_if_rowless(DAILY_TAG, CADENCE)
 
 
 plugin = ExperiencePlugin()

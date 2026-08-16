@@ -23,17 +23,25 @@ import pkgutil
 from collections.abc import Awaitable, Callable
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 if TYPE_CHECKING:
     from cazzubot.bot import CazzuBot
 
 from cazzubot.errors import UserInputError
+from cazzubot.scheduler import TaskPolicy
 
 _log = logging.getLogger(__name__)
 
 # A scheduled-task handler: called when a task row with the matching tag is due.
-TaskHandler = Callable[["CazzuBot", dict[str, Any]], Awaitable[None]]
+TaskHandler: TypeAlias = Callable[
+    ["CazzuBot", dict[str, Any]], Awaitable[None]
+]
+
+# A Plugin.scheduled value: a bare handler, or (handler, policy) for
+# per-tag retry/stale configuration (see scheduler.TaskPolicy — max
+# attempts, backoff, stale-after). The bare form runs under the defaults.
+ScheduledEntry: TypeAlias = TaskHandler | tuple[TaskHandler, TaskPolicy]
 
 
 class Plugin:
@@ -45,7 +53,9 @@ class Plugin:
             extensions  import paths of lightbulb extension modules (each
                         defines a module-level ``lightbulb.Loader``)
             schema      list of DDL statements (idempotent)
-            scheduled   tag -> handler(bot, payload) for the central scheduler
+            scheduled   tag -> handler(bot, payload) for the central
+                        scheduler, or tag -> (handler, TaskPolicy) to set
+                        the tag's retry/stale configuration
             asset_decl  the plugin's asset declaration enum — each member's
                         value is an ``AssetSpec`` and the member IS the
                         reference; reconciled into the registry at boot
@@ -61,7 +71,7 @@ class Plugin:
     name: str = ""
     extensions: list[str] = []
     schema: list[str] = []
-    scheduled: dict[str, TaskHandler] = {}
+    scheduled: dict[str, ScheduledEntry] = {}
     asset_decl: type[Enum] | None = None
     depends_on: tuple[str, ...] = ()
     enabled: bool = True
