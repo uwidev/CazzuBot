@@ -20,6 +20,9 @@ from typing import Any
 from cazzubot.manifest.plan import (
     RenameOp,
     UpdateOp,
+    plan_is_clean,
+    plan_needs_apply,
+    plan_summary,
     rename_hints,
     render_hints,
     render_rename_blocks,
@@ -107,44 +110,17 @@ class Plan:
         return sorted(set(blockers))
 
     def is_clean(self) -> bool:
-        return not (
-            self.creates
-            or self.updates
-            or self.deletes
-            or self.renames
-            or self.rename_conflicts
-            or self.cleanup_renames
-            or self.needs_reorder
-        )
+        """True when the plan requires no changes to the guild."""
+        return plan_is_clean(self)
 
     @property
     def needs_apply(self) -> bool:
         """Anything that requires mutating the guild (excludes manifest
         cleanup — stale rename lines are fixed by the file rewrite)."""
-        return bool(
-            self.creates
-            or self.updates
-            or self.deletes
-            or self.renames
-            or self.rename_conflicts
-            or self.needs_reorder
-        )
+        return plan_needs_apply(self)
 
     def summary(self) -> str:
-        bits = [
-            f"create {len(self.creates)}",
-            f"update {len(self.updates)}",
-            f"rename {len(self.renames)}",
-            "reorder" if self.needs_reorder else "order ok",
-            f"delete {len(self.deletes)}",
-        ]
-        if self.cleanup_renames:
-            bits.append(f"cleanup {len(self.cleanup_renames)}")
-        if self.rename_conflicts:
-            bits.append(f"{len(self.rename_conflicts)} rename conflicts")
-        if self.out_of_reach:
-            bits.append(f"{len(self.out_of_reach)} out of reach")
-        return " · ".join(bits)
+        return plan_summary(self)
 
     def render(self) -> str:
         """Human-readable diff for the terminal / boot log."""
@@ -213,7 +189,7 @@ def build_plan(
     live = {r["name"]: r for r in snapshot if r["name"] != EVERYONE}
     by_id = {int(r["id"]): r for r in live.values()}
     top_id = int(bot_top_role_id) if bot_top_role_id is not None else None
-    top_index = _index_of(by_id.get(top_id)) if top_id in by_id else None
+    top_index = by_id[top_id]["position"] if top_id in by_id else None
 
     # every role at or above the bot's highest role — none of these can be
     # edited; their very presence blocks any reorder permutation that would
@@ -315,7 +291,10 @@ def build_plan(
     if delete:
         for name in strays:
             rid = int(live[name]["id"])
-            deletes.append(DeleteOp(name, rid, _count(member_counts, rid)))
+            count = (
+                None if member_counts is None else member_counts.get(rid)
+            )
+            deletes.append(DeleteOp(name, rid, count))
 
     return Plan(
         creates=creates,
@@ -365,10 +344,6 @@ def _ordered(
     ]
 
 
-def _index_of(role: RoleSnapshot | None) -> int | None:
-    return role["position"] if role is not None else None
-
-
 def _target_order(
     manifest: Manifest,
     current_order: list[str],
@@ -386,14 +361,6 @@ def _target_order(
         else []
     )
     return listed + unlisted
-
-
-def _count(
-    member_counts: Mapping[int, int] | None, rid: int
-) -> int | None:
-    if member_counts is None:
-        return None
-    return member_counts.get(rid)
 
 
 def _attr_changes(

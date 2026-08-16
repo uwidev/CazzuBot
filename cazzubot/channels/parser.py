@@ -23,6 +23,7 @@ from cazzubot.channels.snapshot import (
     KINDS,
     SLOWMODE_KINDS,
     VOICE_KINDS,
+    representable_name,
 )
 from cazzubot.manifest.lines import (
     Issue,
@@ -109,27 +110,6 @@ class Manifest:
         )
 
 
-def _name_roundtrips(name: str) -> bool:
-    """True when a channel name round-trips through the line format.
-
-    Mirrors the executor's representability rules: names the parser
-    would re-read differently (``->`` rename syntax, `` : `` token
-    separator, trailing `` :``, ``[``-prefixed header syntax,
-    ``#``-prefixed comment syntax, padded or whitespace-only names) are
-    rejected so an applied rename can never leave the manifest
-    unparseable.
-    """
-    return bool(
-        name.strip()
-        and name == name.strip()
-        and "->" not in name
-        and " : " not in name
-        and not name.endswith(" :")
-        and not name.startswith("[")
-        and not name.startswith("#")
-    )
-
-
 def parse(text: str) -> Manifest:
     """Parse manifest text, raising :class:`ManifestError` on any problem."""
     issues: list[Issue] = []
@@ -192,15 +172,9 @@ def parse(text: str) -> Manifest:
             continue
         name, renamed_from = parsed
         if renamed_from is not None:
-            if "->" in name:
-                issues.append(
-                    Issue(
-                        line_no,
-                        f"rename target {name!r} contains '->' — renames can't chain",
-                    )
-                )
-                continue
-            if not _name_roundtrips(name):
+            # ('->'-in-target is rejected by the shared parse_rename; the
+            # target must still round-trip through the channel format)
+            if not representable_name(name):
                 issues.append(
                     Issue(
                         line_no,
@@ -218,7 +192,8 @@ def parse(text: str) -> Manifest:
                     f"{name!r} looks like a category header — declare it as a [header] line instead of a channel line",
                 )
             )
-        if not _name_roundtrips(name):
+        if renamed_from is None and not representable_name(name):
+            # (rename targets already passed the same check above)
             issues.append(
                 Issue(
                     line_no,

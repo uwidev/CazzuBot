@@ -14,7 +14,8 @@ import pendulum
 
 from cazzubot.config import Config
 
-DEFAULT_BACKUP_DIR = Path("data/roles_backups")
+# roles-specific default (channels declares its own CHANNELS_BACKUP_DIR)
+DEFAULT_ROLES_BACKUP_DIR = Path("data/roles_backups")
 
 # live command handler: (rest client, config, parsed args) -> exit code
 LiveHandler: TypeAlias = Callable[

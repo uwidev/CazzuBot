@@ -43,3 +43,26 @@ class ChannelSnapshot(TypedDict):
     region: NotRequired[str | None]
     quality: NotRequired[str | None]
     unsupported: NotRequired[bool]
+
+
+def representable_name(name: str) -> bool:
+    """True when a channel name round-trips through the line format.
+
+    The one representability rule, shared by the parser (rejects names
+    it would re-read differently) and the executor (marks live channels
+    the engine can't address): names containing ``->`` (rename syntax)
+    or `` : `` (token separator), names ending with `` :`` (the parser's
+    trailing-separator branch), names with leading/trailing whitespace,
+    names starting with ``[`` (header syntax) or ``#`` (comment syntax),
+    and whitespace-only names can't be written unambiguously.
+    """
+    return bool(
+        name.strip()
+        and name == name.strip()
+        and "->" not in name
+        and " : " not in name
+        and not name.endswith(" :")
+        and not name.startswith("[")
+        and not name.startswith("#")
+        and not name.isspace()
+    )

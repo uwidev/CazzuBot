@@ -14,7 +14,7 @@ import hikari
 
 from cazzubot.cli.core import (
     Command,
-    DEFAULT_BACKUP_DIR,
+    DEFAULT_ROLES_BACKUP_DIR,
     Domain,
     EXPORT_PRESETS,
     require_guild,
@@ -119,7 +119,7 @@ def _reorder_guard(plan: Plan) -> str | None:
 
 _DOMAIN = ManifestDomain(
     name="roles",
-    backup_dir=DEFAULT_BACKUP_DIR,
+    backup_dir=DEFAULT_ROLES_BACKUP_DIR,
     snapshot=executor.snapshot_guild,
     render=lambda snap, source, exported: render_manifest(
         snap, presets=EXPORT_PRESETS, source=source, exported=exported

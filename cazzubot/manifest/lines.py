@@ -135,6 +135,14 @@ def parse_rename(
             )
         )
         return None
+    if "->" in new:
+        issues.append(
+            Issue(
+                line_no,
+                f"rename target {new!r} contains '->' — renames can't chain",
+            )
+        )
+        return None
     if old == new:
         issues.append(
             Issue(

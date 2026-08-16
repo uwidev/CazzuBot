@@ -182,8 +182,8 @@ def _perm_tokens(
     tokens: list[str] = []
     missing = perms - base
     extra = base - perms
-    if base & perms or not perms - base:
-        # preset matches at least partially — use it plus the diff
+    if perms & base or perms <= base:
+        # preset overlaps or is a superset — use it plus the diff
         tokens.append(f"preset:{name}")
         tokens.extend(f"+{f}" for f in sorted(missing))
         tokens.extend(f"-{f}" for f in sorted(extra))

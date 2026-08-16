@@ -197,6 +197,13 @@ def test_rename_chain_is_error() -> None:
     assert any("rename chain" in i.message for i in exc.value.issues)
 
 
+def test_rename_target_with_arrow_is_error() -> None:
+    # A->B->C would re-parse as a fresh rename after a rewrite
+    with pytest.raises(ManifestError) as exc:
+        parse("[x]\nA->B->C\n")
+    assert any("can't chain" in i.message for i in exc.value.issues)
+
+
 def test_duplicate_rename_source_is_error() -> None:
     # A->B and A->C would fight for the same live role
     with pytest.raises(ManifestError) as exc:

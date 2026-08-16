@@ -68,14 +68,14 @@ def test_unsupported_kind_rendered_as_is() -> None:
 
 
 def test_unrepresentable_names_kept_as_is() -> None:
-    from cazzubot.channels.executor import _representable_name
+    from cazzubot.channels.snapshot import representable_name
 
-    assert _representable_name("normal-name")
-    assert not _representable_name("a->b")
-    assert not _representable_name("has : space")
-    assert not _representable_name("ends :")
-    assert not _representable_name(" padded")
-    assert not _representable_name("[bracketed]")
-    assert not _representable_name("[unclosed")
-    assert not _representable_name("#commenty")
-    assert not _representable_name("   ")
+    assert representable_name("normal-name")
+    assert not representable_name("a->b")
+    assert not representable_name("has : space")
+    assert not representable_name("ends :")
+    assert not representable_name(" padded")
+    assert not representable_name("[bracketed]")
+    assert not representable_name("[unclosed")
+    assert not representable_name("#commenty")
+    assert not representable_name("   ")

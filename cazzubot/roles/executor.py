@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Any, cast
 
 import hikari
@@ -20,7 +19,6 @@ from cazzubot.manifest.executor import (
     REORDER_ATTEMPTS,
     REORDER_SETTLE,
     ApplyResult,
-    backup_path as _backup_path,
 )
 from cazzubot.roles.parser import (
     CANONICAL_FLAGS,
@@ -107,11 +105,6 @@ async def bot_top_role_id(
     if not candidates:
         return None
     return int(max(candidates, key=lambda r: r.position).id)
-
-
-def backup_path(base: Path) -> Path:
-    """``<base>/roles-YYYYMMDD-HHMMSS.json`` in UTC."""
-    return _backup_path(base, "roles")
 
 
 # -- applying ----------------------------------------------------------------

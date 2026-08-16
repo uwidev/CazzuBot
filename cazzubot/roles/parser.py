@@ -216,20 +216,28 @@ def parse(text: str) -> Manifest:
     roles: list[RoleSpec] = []
     seen_titles: dict[str, int] = {}
 
+    def commit_preset() -> None:
+        """Commit an in-progress preset section (duplicates are reported)."""
+        nonlocal preset, preset_flags
+        if preset is None:
+            return
+        if preset.name in presets:
+            issues.append(
+                Issue(preset.line, f"duplicate preset {preset.name!r}")
+            )
+        else:
+            presets[preset.name] = PresetSpec(
+                name=preset.name,
+                line=preset.line,
+                flags=frozenset(preset_flags),
+            )
+        preset = None
+        preset_flags = []
+
     def close_sections() -> None:
         """Finalize any in-progress preset/group before a new header."""
-        nonlocal preset, preset_flags, group, roles
-        if preset is not None:
-            if preset.name in presets:
-                issues.append(
-                    Issue(preset.line, f"duplicate preset {preset.name!r}")
-                )
-            else:
-                presets[preset.name] = PresetSpec(
-                    name=preset.name,
-                    line=preset.line,
-                    flags=frozenset(preset_flags),
-                )
+        nonlocal group, roles
+        commit_preset()
         commit_group(
             group,
             roles,
@@ -239,27 +247,8 @@ def parse(text: str) -> Manifest:
             group_word="group",
             items_field="roles",
         )
-        preset = None
-        preset_flags = []
         group = None
         roles = []
-
-    def close_preset() -> None:
-        """Commit an open preset section (a blank line ends it)."""
-        nonlocal preset, preset_flags
-        if preset is not None:
-            if preset.name in presets:
-                issues.append(
-                    Issue(preset.line, f"duplicate preset {preset.name!r}")
-                )
-            else:
-                presets[preset.name] = PresetSpec(
-                    name=preset.name,
-                    line=preset.line,
-                    flags=frozenset(preset_flags),
-                )
-            preset = None
-            preset_flags = []
 
     for line_no, raw in enumerate(text.splitlines(), start=1):
         stripped = raw.strip()
@@ -267,7 +256,7 @@ def parse(text: str) -> Manifest:
             # a blank line ends an in-progress preset section, so role
             # lines may follow presets without a [Group] header
             if preset is not None:
-                close_preset()
+                commit_preset()
             continue
         if stripped.startswith("#"):
             continue

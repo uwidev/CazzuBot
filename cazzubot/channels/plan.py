@@ -37,6 +37,9 @@ from cazzubot.channels.snapshot import (
 from cazzubot.manifest.plan import (
     RenameOp,
     UpdateOp,
+    plan_is_clean,
+    plan_needs_apply,
+    plan_summary,
     rename_hints,
     render_hints,
     render_rename_blocks,
@@ -98,49 +101,17 @@ class Plan:
         return self.layout != self.target
 
     def is_clean(self) -> bool:
-        return not (
-            self.creates
-            or self.updates
-            or self.deletes
-            or self.renames
-            or self.rename_conflicts
-            or self.cleanup_renames
-            or self.needs_reorder
-            or self.type_changes
-        )
+        """True when the plan requires no changes to the guild."""
+        return plan_is_clean(self)
 
     @property
     def needs_apply(self) -> bool:
         """Anything that requires mutating the guild (excludes manifest
         cleanup — stale rename lines are fixed by the file rewrite)."""
-        return bool(
-            self.creates
-            or self.updates
-            or self.deletes
-            or self.renames
-            or self.rename_conflicts
-            or self.needs_reorder
-        )
+        return plan_needs_apply(self)
 
     def summary(self) -> str:
-        bits = [
-            f"create {len(self.creates)}",
-            f"update {len(self.updates)}",
-            f"rename {len(self.renames)}",
-            "reorder" if self.needs_reorder else "order ok",
-            f"delete {len(self.deletes)}",
-        ]
-        if self.cleanup_renames:
-            bits.append(f"cleanup {len(self.cleanup_renames)}")
-        if self.rename_conflicts:
-            bits.append(f"{len(self.rename_conflicts)} rename conflicts")
-        if self.type_changes:
-            bits.append(
-                f"{len(self.type_changes)} unsupported type changes"
-            )
-        if self.out_of_scope:
-            bits.append(f"{len(self.out_of_scope)} out of scope")
-        return " · ".join(bits)
+        return plan_summary(self)
 
     def render(self) -> str:
         """Human-readable diff for the terminal / boot log."""
@@ -221,7 +192,7 @@ def build_plan(
     ``scope_below`` limits management to the manifest group with that
     title and everything after it; groups above are out of scope.
     """
-    titles = list(manifest.titles())
+    titles = manifest.titles()  # tuple: indexable, ordered
     boundary = 0
     if scope_below is not None:
         try:
@@ -436,9 +407,17 @@ def build_plan(
         # a stray category may be deleted only while empty — deleting a
         # category with children would cascade-delete them
         child_cats = {ch["category"] for ch in snapshot}
+        # ids come from the supported entries themselves, like stray_ids
+        stray_cat_ids = {
+            ch["name"]: int(ch["id"])
+            for ch in snapshot
+            if in_scope(ch)
+            and ch["name"] in set(stray_categories)
+            and not ch.get("unsupported")
+        }
         for name in stray_categories:
             if name not in child_cats:
-                deletes.append(DeleteOp(name, int(live[name]["id"])))
+                deletes.append(DeleteOp(name, stray_cat_ids[name]))
 
     return Plan(
         creates=creates,
@@ -484,9 +463,9 @@ def _attr_changes(
     spec: ChannelSpec, ch: ChannelSnapshot
 ) -> dict[str, tuple[Any, Any]]:
     changes: dict[str, tuple[Any, Any]] = {}
-    if spec.kind in ("text", "announcement", "forum", "voice", "stage"):
-        if ch["nsfw"] != spec.nsfw:
-            changes["nsfw"] = (ch["nsfw"], spec.nsfw)
+    # only non-category specs reach here (categories are the title branch)
+    if ch["nsfw"] != spec.nsfw:
+        changes["nsfw"] = (ch["nsfw"], spec.nsfw)
     if spec.kind in SLOWMODE_KINDS:
         if ch["slowmode"] != spec.slowmode:
             changes["slowmode"] = (ch["slowmode"], spec.slowmode)

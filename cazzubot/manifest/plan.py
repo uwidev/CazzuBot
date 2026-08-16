@@ -103,3 +103,62 @@ def render_hints(out: list[str], hints: Sequence[tuple[str, str]]) -> None:
         out.append("did you mean rename (instead of delete+create)?")
         for old, new in hints:
             out.append(f"  ? {old} -> {new}")
+
+
+# -- plan status -------------------------------------------------------------
+#
+# Both domain Plans share the same status semantics; these duck-typed
+# helpers read the fields off either Plan (``getattr`` defaults cover the
+# channels-only type_changes/out_of_scope and roles-only out_of_reach).
+
+
+def plan_is_clean(plan: Any) -> bool:
+    """True when the plan requires no changes to the guild."""
+    return not (
+        plan.creates
+        or plan.updates
+        or plan.deletes
+        or plan.renames
+        or plan.rename_conflicts
+        or plan.cleanup_renames
+        or plan.needs_reorder
+        or getattr(plan, "type_changes", ())
+    )
+
+
+def plan_needs_apply(plan: Any) -> bool:
+    """True when applying would mutate the guild (excludes manifest
+    cleanup — stale rename lines are fixed by the file rewrite)."""
+    return bool(
+        plan.creates
+        or plan.updates
+        or plan.deletes
+        or plan.renames
+        or plan.rename_conflicts
+        or plan.needs_reorder
+    )
+
+
+def plan_summary(plan: Any) -> str:
+    """One-line drift summary for CLI output."""
+    bits = [
+        f"create {len(plan.creates)}",
+        f"update {len(plan.updates)}",
+        f"rename {len(plan.renames)}",
+        "reorder" if plan.needs_reorder else "order ok",
+        f"delete {len(plan.deletes)}",
+    ]
+    if plan.cleanup_renames:
+        bits.append(f"cleanup {len(plan.cleanup_renames)}")
+    if plan.rename_conflicts:
+        bits.append(f"{len(plan.rename_conflicts)} rename conflicts")
+    type_changes = getattr(plan, "type_changes", ())
+    if type_changes:
+        bits.append(f"{len(type_changes)} unsupported type changes")
+    out_of_reach = getattr(plan, "out_of_reach", ())
+    if out_of_reach:
+        bits.append(f"{len(out_of_reach)} out of reach")
+    out_of_scope = getattr(plan, "out_of_scope", ())
+    if out_of_scope:
+        bits.append(f"{len(out_of_scope)} out of scope")
+    return " · ".join(bits)

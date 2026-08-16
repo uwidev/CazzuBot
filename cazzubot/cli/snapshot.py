@@ -7,13 +7,13 @@ verb and for ``roles restore`` backups.
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
 import hikari
 
 from cazzubot.cli.core import Command, Domain, require_guild
 from cazzubot.config import Config
+from cazzubot.manifest.executor import save_snapshot
 from cazzubot.roles import executor
 
 SNAPSHOT_PATH = Path("data/roles_export.json")
@@ -29,11 +29,7 @@ async def cmd_fetch(
     if guild is None:
         return 1
     data = await executor.snapshot_guild(client, config.guild_id)
-    SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SNAPSHOT_PATH.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    save_snapshot(SNAPSHOT_PATH, data)
     print(f"{guild.name} — {len(data)} roles -> {SNAPSHOT_PATH}")
     for role in data:
         color = role["color"] or "none"

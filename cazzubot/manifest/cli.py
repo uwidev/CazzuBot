@@ -15,7 +15,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import hikari
 
@@ -27,8 +27,6 @@ from cazzubot.manifest.executor import (
     save_snapshot,
 )
 from cazzubot.manifest.lines import ManifestError, rewrite_renames
-
-PlanT = TypeVar("PlanT")
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,17 +103,10 @@ async def run_apply(
     domain: ManifestDomain,
 ) -> int:
     """Reconcile the guild to the file, with backup + confirmation."""
-    try:
-        manifest_text = args.file.read_text(encoding="utf-8")
-    except OSError as err:
-        print(f"error: cannot read {args.file}: {err}", file=sys.stderr)
+    loaded = load_manifest_text(args.file, domain.parse)
+    if loaded is None:
         return 1
-    try:
-        manifest = domain.parse(manifest_text)
-    except ManifestError as err:
-        for issue in err.issues:
-            print(f"{args.file}:{issue}", file=sys.stderr)
-        return 1
+    manifest_text, manifest = loaded
     plan = await domain.plan_from(
         client, config, manifest, args, delete=args.delete
     )
@@ -200,12 +191,10 @@ async def run_apply(
         print(current_plan.render(), file=sys.stderr)
         all_errors.append("apply did not fully converge")
 
-    for err in all_errors:
-        print(f"✖ {err}", file=sys.stderr)
-    if all_errors:
-        return 1
-    print("done")
-    return 0
+    exit_code = _report_errors(all_errors)
+    if not all_errors:
+        print("done")
+    return exit_code
 
 
 async def run_restore(
@@ -254,12 +243,10 @@ async def run_restore(
     result = await domain.apply(
         client, config.guild_id, plan, delete=False
     )
-    for err in result.errors:
-        print(f"✖ {err}", file=sys.stderr)
-    if result.errors:
-        return 1
-    print("done")
-    return 0
+    exit_code = _report_errors(result.errors)
+    if not result.errors:
+        print("done")
+    return exit_code
 
 
 # -- helpers -----------------------------------------------------------------
@@ -283,17 +270,36 @@ async def _plan(
 
 def load_manifest(path: Path, parse: Callable[[str], Any]) -> Any | None:
     """Read + parse the manifest; print issues and return None on failure."""
+    loaded = load_manifest_text(path, parse)
+    return None if loaded is None else loaded[1]
+
+
+def load_manifest_text(
+    path: Path, parse: Callable[[str], Any]
+) -> tuple[str, Any] | None:
+    """Like :func:`load_manifest`, but also returns the raw text.
+
+    The text is needed by verbs that rewrite the manifest in place
+    (``run_apply`` feeds it back through ``rewrite_renames``).
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as err:
         print(f"error: cannot read {path}: {err}", file=sys.stderr)
         return None
     try:
-        return parse(text)
+        return text, parse(text)
     except ManifestError as err:
         for issue in err.issues:
             print(f"{path}:{issue}", file=sys.stderr)
         return None
+
+
+def _report_errors(errors: list[str]) -> int:
+    """Print each error to stderr and return the process exit code."""
+    for err in errors:
+        print(f"✖ {err}", file=sys.stderr)
+    return 1 if errors else 0
 
 
 def _atomic_write(path: Path, text: str) -> None:

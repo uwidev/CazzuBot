@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any, cast
 
 import hikari
@@ -33,12 +32,12 @@ from cazzubot.channels.snapshot import (
     ChannelSnapshot,
     SLOWMODE_KINDS,
     VOICE_KINDS,
+    representable_name,
 )
 from cazzubot.manifest.executor import (
     REORDER_ATTEMPTS,
     REORDER_SETTLE,
     ApplyResult,
-    backup_path as _backup_path,
 )
 
 # manifest kind -> Discord channel type id (the raw API value)
@@ -108,7 +107,7 @@ def snapshot_channels(channels: Sequence[Any]) -> list[ChannelSnapshot]:
         if (
             unsupported
             or ch.name in seen
-            or not _representable_name(ch.name)
+            or not representable_name(ch.name)
             or (ch.parent_id is not None and ch.parent_id in dup_cat_ids)
         ):
             snap["unsupported"] = True
@@ -169,30 +168,6 @@ def _snapshot_channel(
         raw = str(vqm.value) if vqm is not None else None
         snap["quality"] = {"1": "auto", "2": "1080"}.get(raw or "", raw)
     return snap
-
-
-def _representable_name(name: str) -> bool:
-    """True when a channel name round-trips through the manifest format.
-
-    Mirrors the parser's line grammar: names containing ``->`` (rename
-    syntax) or `` : `` (token separator), names ending with `` :`` (the
-    parser's trailing-separator branch), names with leading/trailing
-    whitespace, names starting with ``[`` (header syntax) or ``#``
-    (comment syntax), and whitespace-only names can't be written
-    unambiguously — the engine marks them unsupported instead.
-    """
-    if not name or name != name.strip():
-        return False
-    if "->" in name or " : " in name or name.endswith(" :"):
-        return False
-    if name[0] in "[#" or name.isspace():
-        return False
-    return True
-
-
-def backup_path(base: Path) -> Path:
-    """``<base>/channels-YYYYMMDD-HHMMSS.json`` in UTC."""
-    return _backup_path(base, "channels")
 
 
 # -- applying ----------------------------------------------------------------

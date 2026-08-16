@@ -32,7 +32,6 @@ _SECTION: dict[str, int] = {
 # discord.py exposes the server-side video quality int; the manifest uses
 # the UI labels (Discord's Overview picker). The API only accepts 1 (auto)
 # and 2 (1080p) — 720p was removed server-side.
-QUALITY_LABELS: dict[int, str] = {1: "auto", 2: "1080"}
 QUALITY_VALUES: dict[str, int] = {"auto": 1, "1080": 2}
 
 # voice-channel defaults — attrs at their default are omitted from the
@@ -166,15 +165,3 @@ def _tokens(ch: ChannelSnapshot) -> str:
         if quality and quality != "auto":
             tokens.append(f"quality:{quality}")
     return f" : {' '.join(tokens)}" if tokens else ""
-
-
-def quality_label(value: int | None) -> str | None:
-    """Server video_quality_mode int → manifest label (None if unset)."""
-    if value is None:
-        return None
-    return QUALITY_LABELS.get(value)
-
-
-def quality_value(label: str) -> int:
-    """Manifest label → server video_quality_mode int."""
-    return QUALITY_VALUES[label]
