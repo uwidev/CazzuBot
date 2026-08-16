@@ -9,29 +9,16 @@ message link in its week — the link carries the message id, so the week
 comes from snowflake decoding with no API calls.
 """
 
-import logging
-from typing import cast
-
 import hikari
 import lightbulb
 import pendulum
-from lightbulb.prefab import checks as prefab_checks
 
 from cazzubot import utils
-from cazzubot.bot import CazzuBot
 from cazzubot.window import window_error, window_success
 
 from .logic import parse_message_link, prepare_banner, snowflake_time
 
-_log = logging.getLogger(__name__)
-
 loader = lightbulb.Loader()
-
-_OWNER = prefab_checks.owner_only
-
-
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
 
 
 async def _download(attachment: hikari.Attachment) -> bytes:
@@ -51,7 +38,7 @@ class Banner(
     lightbulb.SlashCommand,
     name="banner",
     description="Set the server banner (16:9 crop of the image).",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     image = lightbulb.attachment(
         "image", "The image to use as the server banner", default=None
@@ -64,7 +51,7 @@ class Banner(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         if self.msg is not None:
             link = parse_message_link(self.msg)
             if link is None:
@@ -126,7 +113,7 @@ class Welcome(
     lightbulb.SlashCommand,
     name="welcome",
     description="Set the welcome screen (community guilds).",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     enabled = lightbulb.boolean(
         "enabled", "Whether the welcome screen is shown"
@@ -146,7 +133,7 @@ class Welcome(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         description: hikari.UndefinedOr[str] = hikari.UNDEFINED
         if self.description is not None:
             description = self.description
@@ -195,7 +182,7 @@ class Week(
     lightbulb.SlashCommand,
     name="week",
     description="Show the current week of the year, or a message's week.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     start = lightbulb.string(
         "start",
@@ -214,10 +201,8 @@ class Week(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        start = (self.start or "sunday").lower()
-        if start not in ("sunday", "monday"):
-            await window_error(ctx, "start must be 'sunday' or 'monday'.")
-            return
+        # choices-validated by the option: always "sunday" or "monday"
+        start = self.start
         if self.msg is not None:
             link = parse_message_link(self.msg)
             if link is None:

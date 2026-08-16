@@ -21,7 +21,6 @@ from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
 from cazzubot.models import MemberSnapshot, WelcomeModeEnum
 from cazzubot.window import window_success
-from lightbulb.prefab import checks as prefab_checks
 
 from .logic import should_welcome
 
@@ -29,7 +28,6 @@ _log = logging.getLogger(__name__)
 
 loader = lightbulb.Loader()
 
-_ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
 
 welcome = lightbulb.Group(
     "welcome",
@@ -39,10 +37,6 @@ welcome = lightbulb.Group(
 welcome_set = welcome.subgroup("set", "Set welcome settings.")
 
 last_welcomed_id: int | None = None
-
-
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
 
 
 def formatter(s: str, *, member: MemberSnapshot) -> str:
@@ -121,7 +115,7 @@ class SetEnabled(
     lightbulb.SlashCommand,
     name="enabled",
     description="Enable or disable welcome messages.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     enabled = lightbulb.boolean(
         "enabled", "Whether welcome messages are on"
@@ -129,7 +123,7 @@ class SetEnabled(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         await bot.settings.set("welcome.enabled", self.enabled)
         await window_success(
             ctx,
@@ -144,13 +138,13 @@ class SetRole(
     lightbulb.SlashCommand,
     name="role",
     description="Set the default role given after welcome.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     role = lightbulb.role("role", "The default role")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         await bot.settings.set("welcome.default_rid", self.role.id)
         await window_success(ctx, f"Default role set to {self.role}")
 
@@ -160,7 +154,7 @@ class SetChannel(
     lightbulb.SlashCommand,
     name="channel",
     description="Set the welcome channel.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     channel = lightbulb.channel(
         "channel",
@@ -170,7 +164,7 @@ class SetChannel(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         await bot.settings.set("welcome.cid", self.channel.id)
         await window_success(ctx, f"Welcome channel set to {self.channel}")
 
@@ -180,7 +174,7 @@ class SetMessage(
     lightbulb.SlashCommand,
     name="message",
     description="Set the welcome message JSON (embed-capable).",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     message = lightbulb.string("message", "The welcome message JSON")
 
@@ -191,7 +185,7 @@ class SetMessage(
         Use https://message.style/ or discohook.org to build one; placeholders
         {avatar} {name} {mention} {id} are supported.
         """
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         decoded = templates.verify(
             self.message,
             formatter,
@@ -206,7 +200,7 @@ class SetMode(
     lightbulb.SlashCommand,
     name="mode",
     description="Set the welcome trigger mode.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     mode = lightbulb.string(
         "mode",
@@ -219,7 +213,7 @@ class SetMode(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         try:
             mode_enum = WelcomeModeEnum(self.mode.lower())
         except ValueError:
@@ -235,13 +229,13 @@ class SetMonitor(
     lightbulb.SlashCommand,
     name="monitor",
     description="Set the role whose gain triggers the welcome.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     role = lightbulb.role("role", "The monitored role")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         await bot.settings.set("welcome.monitor_rid", self.role.id)
         await window_success(ctx, f"Monitored role set to {self.role}")
 
@@ -251,11 +245,11 @@ class Demo(
     lightbulb.SlashCommand,
     name="demo",
     description="Preview the welcome message with you as the new user.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         msg_json = await bot.settings.get("welcome.message")
         if not msg_json:
             await ctx.respond("No welcome message has been set.")
@@ -273,11 +267,11 @@ class Raw(
     lightbulb.SlashCommand,
     name="raw",
     description="Dump the raw stored welcome message JSON.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         msg_json = await bot.settings.get("welcome.message")
         await ctx.respond(f"```{json.dumps(msg_json, indent=2)}```")
 

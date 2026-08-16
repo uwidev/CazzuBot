@@ -60,14 +60,6 @@ class PollResult:
     count: int
 
 
-@dataclass(slots=True)
-class PollRow:
-    """Narrow rows used for view re-attachment (``id`` + ``mid``)."""
-
-    id: int
-    mid: int | None
-
-
 async def add_poll(
     db: Database, title: str, description: str, max_vote: int
 ) -> int | None:
@@ -100,7 +92,9 @@ async def set_open(db: Database, pid: int, val: bool) -> None:
     )
 
 
-async def set_description(db: Database, pid: int, description: str) -> None:
+async def set_description(
+    db: Database, pid: int, description: str
+) -> None:
     await db.execute(
         "UPDATE poll SET description = ? WHERE id = ?", description, pid
     )

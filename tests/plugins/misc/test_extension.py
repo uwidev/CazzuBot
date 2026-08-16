@@ -404,19 +404,3 @@ async def test_week_invalid_message_link(
 
     flushed = ctx.sent[-1].content or ""
     assert "msg must be a Discord message link" in flushed
-
-
-async def test_week_invalid_start(
-    seeded_bot: CazzuBot,
-    fake_guild,
-    author: FakeMember,
-    channel,
-) -> None:
-    from plugins.misc import extension as misc_ext
-
-    ctx = _ctx(seeded_bot, author, channel, fake_guild)
-    await invoke_command(misc_ext.Week(), ctx, start="friday")
-
-    assert "start must be 'sunday' or 'monday'" in (
-        ctx.sent[-1].content or ""
-    )

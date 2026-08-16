@@ -6,12 +6,13 @@ because it is pure discord side effects.
 """
 
 import logging
-from typing import Any, cast
+from typing import Any
 
 import hikari
 import lightbulb
 import pendulum
 
+from cazzubot import utils
 from cazzubot.bot import CazzuBot
 from cazzubot.models import ModlogTypeEnum
 from cazzubot.window import window_error, window_info, window_success
@@ -61,10 +62,6 @@ async def _on_mod_error(
     return False
 
 
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
-
-
 @loader.command()
 class ModCheck(
     lightbulb.SlashCommand,
@@ -89,7 +86,7 @@ class Warn(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         await db.add_log(
             bot.db,
             self.member.id,
@@ -116,7 +113,7 @@ class Mute(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         mute_id = await db.get_mute_role(bot.settings)
         if not mute_id:
             await ctx.respond(
@@ -178,7 +175,7 @@ class Kick(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
             await window_error(ctx, "Run kick in the server, not DMs.")
@@ -218,7 +215,7 @@ class Ban(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
             await window_error(ctx, "Run ban in the server, not DMs.")
@@ -281,7 +278,7 @@ class Unmute(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         guild = bot.guild
         mute_id = await db.get_mute_role(bot.settings)
         if guild is None:
@@ -312,7 +309,7 @@ class Unban(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
             await window_error(ctx, "Run unban in the server, not DMs.")
@@ -338,7 +335,7 @@ class SetMute(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         await db.set_mute_role(bot.settings, self.role.id)
         await window_success(ctx, f"Mute role set to {self.role}")
 
@@ -365,7 +362,7 @@ class Slowmode(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         target_id = (
             self.channel.id if self.channel is not None else ctx.channel_id
         )

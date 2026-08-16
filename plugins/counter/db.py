@@ -7,8 +7,6 @@ row. The count is *derived* — ``COUNT(*)`` over the events — never stored.
 ``updated_at``) for presses backfilled from the pre-history aggregate count.
 """
 
-from typing import Any
-
 import aiosqlite
 
 from cazzubot.db import Database
@@ -99,17 +97,6 @@ async def count_by_id(db: Database, counter_id: int) -> int:
     )
 
 
-async def count_by_mid(db: Database, mid: int) -> int | None:
-    """Event-derived total for a message; ``None`` if it is no counter."""
-    row = await db.fetchone(
-        "SELECT COUNT(e.id) FROM counter c"
-        + " LEFT JOIN counter_event e ON e.counter_id = c.id"
-        + " WHERE c.mid = ?",
-        mid,
-    )
-    return int(row[0]) if row is not None else None
-
-
 async def recent_names(
     db: Database, counter_id: int, since: str
 ) -> list[str]:
@@ -126,9 +113,3 @@ async def recent_names(
         since,
     )
     return [r["name"] for r in rows if r["name"]]
-
-
-async def all(db: Database) -> list[dict[str, Any]]:
-    """Every counter as (``id``, ``mid``) dicts, oldest first."""
-    rows = await db.fetchall("SELECT id, mid FROM counter ORDER BY id")
-    return [{"id": int(r["id"]), "mid": int(r["mid"])} for r in rows]

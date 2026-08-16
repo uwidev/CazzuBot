@@ -4,8 +4,6 @@ Comma-separated vote strings are parsed and checked against the poll's rules
 (max votes, item range) without touching discord.
 """
 
-from __future__ import annotations
-
 from .db import PollResult
 
 # the results block appended to a poll's description when it closes;

@@ -10,7 +10,8 @@ numbered grid, and posts the grid with per-image message links in the
 message content (text renders above the attachment). The weekly
 automation (``board_weekly`` scheduler tag, see ``weekly.py``) runs the
 scrape → poll → grid flow every Sunday 00:00 UTC; ``/board weekly``
-triggers it manually for testing. The winner banner is still backlogged.
+triggers it manually for testing. A winner banner (voted best image) is
+announced by the weekly flow when the poll closes.
 """
 
 import logging
@@ -34,11 +35,6 @@ _log = logging.getLogger(__name__)
 
 loader = lightbulb.Loader()
 
-_OWNER = prefab_checks.owner_only
-
-
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
 
 
 async def _download_url(url: str) -> bytes:
@@ -58,7 +54,7 @@ class Scrape(
     lightbulb.SlashCommand,
     name="scrape",
     description="Scrape this week's image attachments from a channel.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     channel = lightbulb.channel(
         "channel",
@@ -76,14 +72,14 @@ class Scrape(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         now = pendulum.now("UTC")
         if self.week is None:
             start = utils.week_start(now).subtract(days=7)  # last week
         else:
             start = utils.week_start_of(now.year, self.week)
         end = start.add(days=7)
-        week_no = start.isocalendar()[1]
+        week_no = utils.week_number(start)[0]
         cid = (
             self.channel.id if self.channel is not None else ctx.channel_id
         )
@@ -124,7 +120,7 @@ class Post(
     lightbulb.SlashCommand,
     name="post",
     description="Stitch the scraped week into a numbered grid and post it.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     columns = lightbulb.integer(
         "columns",
@@ -150,7 +146,7 @@ class Post(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         now = pendulum.now("UTC")
         if self.week is None:
             latest = await db.latest_ts(bot.db)
@@ -218,11 +214,11 @@ class Weekly(
     lightbulb.SlashCommand,
     name="weekly",
     description="Run the weekly board scrape + poll flow now (testing).",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         async with command_window(ctx) as window:
             window.info("Running weekly board flow...")
             await window.flush()  # ack before the long scrape

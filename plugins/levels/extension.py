@@ -5,14 +5,11 @@ Lightbulb extension module: a module-level ``lightbulb.Loader`` holding the
 """
 
 import json
-from typing import cast
 
 import hikari
 import lightbulb
 
 from cazzubot import templates, utils
-from cazzubot.bot import CazzuBot
-from lightbulb.prefab import checks as prefab_checks
 
 from cazzubot.window import window_success
 
@@ -27,24 +24,18 @@ level = lightbulb.Group(
 )
 
 
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
-
-
 @level.register
 class Set(
     lightbulb.SlashCommand,
     name="set",
     description="Set the level-up message JSON.",
-    hooks=[
-        prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
-    ],
+    hooks=[utils.ADMIN_ONLY],
 ):
     message = lightbulb.string("message", "The level-up message JSON")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         member = ctx.member or ctx.user
         decoded = templates.verify(
             self.message,
@@ -60,13 +51,11 @@ class Demo(
     lightbulb.SlashCommand,
     name="demo",
     description="Preview the level-up message as yourself.",
-    hooks=[
-        prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
-    ],
+    hooks=[utils.ADMIN_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         member = ctx.member or ctx.user
         msg_json = await bot.settings.get(MESSAGE_KEY)
         if not msg_json:
@@ -87,13 +76,11 @@ class Raw(
     lightbulb.SlashCommand,
     name="raw",
     description="Dump the raw stored level-up message JSON.",
-    hooks=[
-        prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
-    ],
+    hooks=[utils.ADMIN_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         msg_json = await bot.settings.get(MESSAGE_KEY)
         await ctx.respond(f"```{json.dumps(msg_json, indent=2)}```")
 

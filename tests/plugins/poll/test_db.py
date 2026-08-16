@@ -6,7 +6,6 @@ from cazzubot.bot import CazzuBot
 from plugins.poll.db import (
     Poll,
     PollResult,
-    PollRow,
     add_items_dummy,
     add_poll,
     add_votes,
@@ -39,6 +38,6 @@ async def test_poll_roundtrip_and_typed_rows(bot: CazzuBot) -> None:
     assert all(isinstance(r, PollResult) and r.count == 1 for r in results)
 
     rows = await bot.db.fetch_models(
-        PollRow, "SELECT id, mid FROM poll WHERE mid IS NOT NULL"
+        Poll, "SELECT * FROM poll WHERE mid IS NOT NULL"
     )
     assert rows == []

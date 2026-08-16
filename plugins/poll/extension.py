@@ -20,7 +20,6 @@ from cazzubot.bot import CazzuBot
 from cazzubot.db import Database
 from cazzubot.listeners import guild_listener
 from lightbulb.components import modals
-from lightbulb.prefab import checks as prefab_checks
 
 from . import db
 from .logic import (
@@ -35,7 +34,6 @@ loader = lightbulb.Loader()
 EMOJI_CLOSED = "https://files.catbox.moe/b67ajq.webp"
 EMOJI_OPEN = "https://files.catbox.moe/xd4h7v.webp"
 
-_OWNER = prefab_checks.owner_only
 
 poll = lightbulb.Group(
     "poll",
@@ -43,10 +41,6 @@ poll = lightbulb.Group(
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
 )
 poll_item = poll.subgroup("item", "Poll item management.")
-
-
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
 
 
 def build_send_payload(
@@ -132,7 +126,7 @@ class Register(
     lightbulb.SlashCommand,
     name="register",
     description="Register a poll and get its ID.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     title = lightbulb.string("title", "The poll title")
     desc = lightbulb.string("desc", "The poll description", default=None)
@@ -142,7 +136,7 @@ class Register(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         pid = await db.add_poll(
             bot.db, self.title, self.desc or "", self.max_vote
         )
@@ -157,7 +151,7 @@ class AutoPopulate(
     lightbulb.SlashCommand,
     name="auto_populate",
     description="Generate N empty items to vote on.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     pid = lightbulb.integer("pid", "Poll to generate items on")
     n = lightbulb.integer(
@@ -166,13 +160,8 @@ class AutoPopulate(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
-        if not 1 <= self.n <= 50:
-            await ctx.respond(
-                "n must be between 1 and 50.",
-                flags=hikari.MessageFlag.EPHEMERAL,
-            )
-            return
+        bot = utils.bot_from(ctx)
+        # n is choices/bounds-validated by the option (1-50)
         await db.add_items_dummy(bot.db, self.pid, self.n)
         await ctx.respond(
             "👍 Items have been added.",
@@ -185,7 +174,7 @@ class Send(
     lightbulb.SlashCommand,
     name="send",
     description="Send the message containing the poll and its vote button.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     poll_id = lightbulb.integer("poll_id", "ID associated with the poll")
     open = lightbulb.boolean(
@@ -195,7 +184,7 @@ class Send(
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         """Send the poll message with its vote button."""
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         poll_row = await db.get_poll(bot.db, self.poll_id)
         if not poll_row:
             await ctx.respond(
@@ -216,22 +205,18 @@ class Send(
             # open + strip any stale results, exactly like /poll open
             await db.set_open(bot.db, self.poll_id, True)
             await _sync_results(bot.db, self.poll_id, open=True)
+            # re-fetch: the description changed (stale results stripped)
             poll_row = await db.get_poll(bot.db, self.poll_id)
-            if poll_row is None:
-                await ctx.respond(
-                    f"❌ Poll ID#{self.poll_id} does not exist!",
-                    flags=hikari.MessageFlag.EPHEMERAL,
-                )
-                return
+        assert (
+            poll_row is not None
+        )  # verified above; nothing deletes polls
 
         embed, row = build_send_payload(poll_row)
         response_id = await ctx.respond(embed=embed, component=row)
         # respond() returns lightbulb's initial-response sentinel, not the
         # message id — fetch the real message id for the poll row
         message = await ctx.fetch_response(response_id)
-        await db.set_mid(
-            bot.db, self.poll_id, message.id, ctx.channel_id
-        )
+        await db.set_mid(bot.db, self.poll_id, message.id, ctx.channel_id)
 
 
 @poll.register
@@ -239,7 +224,7 @@ class Open(
     lightbulb.SlashCommand,
     name="open",
     description="Open or close voting on a poll (syncs its vote button).",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     poll_id = lightbulb.integer("poll_id", "Poll ID to toggle")
     open = lightbulb.boolean(
@@ -248,7 +233,7 @@ class Open(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         err = await set_poll_open(bot, self.poll_id, open=self.open)
         if err:
             await ctx.respond(err, flags=hikari.MessageFlag.EPHEMERAL)
@@ -265,13 +250,13 @@ class Close(
     lightbulb.SlashCommand,
     name="close",
     description="Close voting on a poll and remove its vote button.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     poll_id = lightbulb.integer("poll_id", "Poll ID to close")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         err = await set_poll_open(bot, self.poll_id, open=False)
         if err:
             await ctx.respond(err, flags=hikari.MessageFlag.EPHEMERAL)
@@ -287,13 +272,13 @@ class Stats(
     lightbulb.SlashCommand,
     name="stats",
     description="Show the current results from a poll.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     poll_id = lightbulb.integer("poll_id", "ID associated with the poll")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         votes = await db.get_results(bot.db, self.poll_id)
         if not votes:
             await ctx.respond(

@@ -6,7 +6,6 @@ compilation).
 """
 
 import asyncio
-import logging
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -15,23 +14,15 @@ from typing import Any, cast
 import hikari
 import lightbulb
 
+from cazzubot import utils
 from cazzubot.bot import CazzuBot
 from cazzubot.listeners import guild_listener
 from cazzubot.window import window_error, window_success
-from lightbulb.prefab import checks as prefab_checks
-
-_log = logging.getLogger(__name__)
 
 loader = lightbulb.Loader()
 
-_OWNER = prefab_checks.owner_only
-_ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
 
 submission_keyword = re.compile(r"inktober\s+day\s+\d\d?")
-
-
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
 
 
 # -- general commands -------------------------------------------------------
@@ -88,7 +79,7 @@ class Ping(
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         latency = max(bot.heartbeat_latency, 0.0)
         await ctx.respond(f":ping_pong: Pong! {latency * 1000:.2f}ms")
 
@@ -130,7 +121,7 @@ class RegisterInktober(
     name="register_inktober",
     description="Set the channel to watch for inktober submissions.",
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     channel = lightbulb.channel(
         "channel",
@@ -141,7 +132,7 @@ class RegisterInktober(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         target_id = (
             self.channel.id if self.channel is not None else ctx.channel_id
         )
@@ -157,7 +148,7 @@ class ScrapeInktober(
     name="scrape_inktober",
     description="Download inktober submissions from a channel into downloads/.",
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     channel = lightbulb.channel(
         "channel",
@@ -168,11 +159,10 @@ class ScrapeInktober(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         target_id = (
             self.channel.id if self.channel is not None else ctx.channel_id
         )
-        day = None
         saved = 0
         await ctx.respond("Scraping inktober submissions...")
         messages = cast(Any, bot.rest.fetch_messages(target_id))
@@ -212,12 +202,12 @@ class StoryCompile(
     lightbulb.SlashCommand,
     name="compile",
     description="Save all messages in this channel to a .txt file with stats.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         """Save all messages in this channel to a .txt file with stats."""
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         channel = bot.cache.get_guild_channel(ctx.channel_id)
         if channel is None or not hasattr(channel, "name"):
             await ctx.respond("Stories need a text channel.")
@@ -272,7 +262,7 @@ class StoryWrite(
     lightbulb.SlashCommand,
     name="write",
     description="Write out a compiled story from story/.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     file_name = lightbulb.string("file_name", "The story file name")
 

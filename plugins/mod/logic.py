@@ -6,8 +6,6 @@ roles, schedule expiries, window feedback); the *decisions* — duration
 parsing, future validation, ban-vs-tempban — live here.
 """
 
-from __future__ import annotations
-
 import re
 
 import pendulum

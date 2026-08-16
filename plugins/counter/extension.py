@@ -10,7 +10,6 @@ optional ``counter_id`` to re-create a counter whose message was deleted —
 the events (and the count) carry over.
 """
 
-import logging
 from typing import Any, cast
 
 import hikari
@@ -21,15 +20,11 @@ from cazzubot import utils
 from cazzubot.bot import CazzuBot
 from cazzubot.listeners import guild_listener
 from cazzubot.errors import UserInputError
-from lightbulb.prefab import checks as prefab_checks
 
 from . import db
 
-_log = logging.getLogger(__name__)
-
 loader = lightbulb.Loader()
 
-_ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
 
 FROG = "https://files.catbox.moe/qo7bkv.gif"
 POGFROG = "https://files.catbox.moe/k5qvvd.gif"
@@ -44,10 +39,6 @@ CUSTOM_ID = "counter:baka"
 RECENT_WINDOW_HOURS = 2
 
 
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
-
-
 counter = lightbulb.Group(
     "counter",
     "Baka counter management.",
@@ -55,12 +46,25 @@ counter = lightbulb.Group(
 )
 
 
+def _counter_embed(
+    count: int, *, thumbnail: str, footer_text: str, footer_icon: str
+) -> hikari.Embed:
+    """The baka counter embed — shared by create and every press."""
+    embed = utils.prepare_embed(
+        "Number of times people have touched the baka button",
+        f"> {count}",
+    )
+    embed.set_thumbnail(thumbnail)
+    embed.set_footer(text=footer_text, icon=footer_icon)
+    return embed
+
+
 @counter.register
 class Create(
     lightbulb.SlashCommand,
     name="create",
     description="Create the baka counter message in this channel.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     counter_id = lightbulb.integer(
         "counter_id",
@@ -70,7 +74,7 @@ class Create(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         count = 0
         if self.counter_id is not None:
             if await db.by_id(bot.db, self.counter_id) is None:
@@ -79,12 +83,12 @@ class Create(
                 )
             count = await db.count_by_id(bot.db, self.counter_id)
 
-        embed = utils.prepare_embed(
-            "Number of times people have touched the baka button",
-            f"> {count}",
+        embed = _counter_embed(
+            count,
+            thumbnail=BORED,
+            footer_text=NO_BAKAS_TEXT,
+            footer_icon=FROG,
         )
-        embed.set_thumbnail(BORED)
-        embed.set_footer(text=NO_BAKAS_TEXT, icon=FROG)
         row = hikari.impl.MessageActionRowBuilder().add_interactive_button(
             hikari.ButtonStyle.PRIMARY,
             CUSTOM_ID,
@@ -129,36 +133,36 @@ async def _handle_baka(bot: CazzuBot, interaction: Any) -> None:
 
     user = interaction.user
     display_name = user.display_name
-    now = pendulum.now("UTC").to_iso8601_string()
+    now = pendulum.now("UTC")
     await db.record_event(
         bot.db,
         counter["id"],
         user.id,
         display_name if isinstance(display_name, str) else user.username,
-        now,
+        now.to_iso8601_string(),
     )
 
     count_new = await db.count_by_id(bot.db, counter["id"])
     names = await db.recent_names(
         bot.db,
         counter["id"],
-        pendulum.now("UTC")
-        .subtract(hours=RECENT_WINDOW_HOURS)
-        .to_iso8601_string(),
+        now.subtract(hours=RECENT_WINDOW_HOURS).to_iso8601_string(),
     )
 
-    embed = utils.prepare_embed(
-        "Number of times people have touched the baka button",
-        f"> {count_new}",
-    )
-    embed.set_thumbnail(BAKAPPLE)
     if names:
-        embed.set_footer(
-            text=f"{', '.join(names)} had recently done a baka!",
-            icon=POGFROG,
+        embed = _counter_embed(
+            count_new,
+            thumbnail=BAKAPPLE,
+            footer_text=f"{', '.join(names)} had recently done a baka!",
+            footer_icon=POGFROG,
         )
     else:
-        embed.set_footer(text=NO_BAKAS_TEXT, icon=FROG)
+        embed = _counter_embed(
+            count_new,
+            thumbnail=BAKAPPLE,
+            footer_text=NO_BAKAS_TEXT,
+            footer_icon=FROG,
+        )
 
     await interaction.create_initial_response(
         hikari.ResponseType.MESSAGE_UPDATE, embed=embed
@@ -188,10 +192,7 @@ async def on_counter_expire(
     """
     cid, mid = payload["cid"], payload["mid"]
 
-    channel = bot.cache.get_guild_channel(cid)
-    if channel is None:
-        return
-    if channel.guild_id != bot.config.guild_id:
+    if not utils.channel_in_guild(bot, cid):
         # a row armed while the bot served the other guild — never touch
         # its message under this guild mode
         return

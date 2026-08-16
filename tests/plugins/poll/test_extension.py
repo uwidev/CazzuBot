@@ -379,13 +379,9 @@ async def test_poll_stats_formats_results(
     assert "No votes have been cast yet." in (ctx.sent[-1].content or "")
 
 
-async def test_auto_populate_bounds(
-    bot: CazzuBot, ctx: FakeContext
-) -> None:
+async def test_auto_populate(bot: CazzuBot, ctx: FakeContext) -> None:
+    """n is bounds-validated by the option; the happy path just inserts."""
     pid = await _poll_with_items(bot, n_items=0)
 
     await invoke_command(AutoPopulate(), ctx, pid=pid, n=2)
     assert "👍 Items have been added." in (ctx.sent[-1].content or "")
-
-    await invoke_command(AutoPopulate(), ctx, pid=pid, n=0)
-    assert "n must be between 1 and 50." in (ctx.sent[-1].content or "")
