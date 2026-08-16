@@ -115,11 +115,7 @@ class ExpEffect:
                 "exp effect requires ExpPayload, got "
                 f"{type(payload).__name__}"
             )
-        exp_per = (
-            payload.frozen_exp
-            if state is FrogState.FROZEN
-            else payload.exp
-        )
+        exp_per = payload.per_frog(state)
         await exp_db.add_exp_log(
             bot.db,
             uid,
@@ -146,10 +142,20 @@ class ExpPayload:
 
     ``exp`` is the value per frog in the normal state, ``frozen_exp`` the
     value when consumed frozen (the default species preserves the legacy
-    10/3).
+    10/3). The per-frog value for a state is the single source of the
+    consume-exp math (``per_frog``/``total``) — used by the effect hook,
+    the confirmation math in the extension, and the catalog.
     """
 
     key = EffectKey.EXP
 
     exp: int
     frozen_exp: int
+
+    def per_frog(self, state: FrogState) -> int:
+        """Exp granted per frog consumed in ``state``."""
+        return self.frozen_exp if state is FrogState.FROZEN else self.exp
+
+    def total(self, state: FrogState, amount: int) -> int:
+        """Total exp for consuming ``amount`` frogs in ``state``."""
+        return self.per_frog(state) * amount

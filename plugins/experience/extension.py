@@ -15,7 +15,6 @@ from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
 from cazzubot.listeners import guild_listener
 from cazzubot.utils import INITIAL_RESPONSE_IDENTIFIER
-from lightbulb.prefab import checks as prefab_checks
 
 from cazzubot.window import command_window, window_success, window_warn
 
@@ -36,16 +35,10 @@ exp = lightbulb.Group(
     "exp", "Experience, the membership card and leaderboards."
 )
 
-_OWNER = prefab_checks.owner_only
-_ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
 
 # serialize exp updates per user so concurrent messages can't race the
 # msg_cnt/lifetime read-modify-write (single process, so module state is fine)
 _exp_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
-
-
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
 
 
 # -- message exp pipeline --------------------------------------------------
@@ -102,11 +95,11 @@ class Card(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         target = self.user or ctx.member or ctx.user
         now = pendulum.now("UTC")
         rows = await exp_db.seasonal_ranked(
-            bot.db, now.year, (now.month - 1) // 3
+            bot.db, now.year, utils.month2season(now.month)
         )
         await ctx.respond(
             embed=await _prepare_personal_summary(bot, ctx, target, rows)
@@ -123,7 +116,7 @@ class Lifetime(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         target = self.user or ctx.member or ctx.user
         rows = await exp_db.lifetime_ranked(bot.db)
         await ctx.respond(
@@ -153,26 +146,22 @@ class Top(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         now = pendulum.now("UTC")
         year = self.year or now.year
-        season = self.season or (now.month - 1) // 3 + 1
+        season = self.season or utils.month2season(now.month) + 1
         page = self.page or 1
 
-        if not 1 <= season <= 4:
-            raise UserInputError(
-                f"Season {season} is not a valid number (1-4)"
-            )
+        # season/page are already bounds-validated by the options; only the
+        # year's upper bound is live (no max_value on the option)
         if not 2023 <= year <= now.year:
             raise UserInputError(
                 f"Year {year} is not a valid year, or is too early."
             )
-        if page <= 0:
-            raise UserInputError(f"Page {page} must be greater than 0.")
 
         date = pendulum.datetime(year, ((season - 1) * 3) + 1, 1)
         rows = await exp_db.seasonal_ranked(
-            bot.db, date.year, (date.month - 1) // 3
+            bot.db, date.year, utils.month2season(date.month)
         )
 
         menu = TopMenu(bot, ctx, date, rows, page=page)
@@ -194,11 +183,11 @@ class Resync(
     lightbulb.SlashCommand,
     name="resync",
     description="Rebuild every member's lifetime exp from the exp logs.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         if not await utils.author_confirm(ctx):
             return
         async with command_window(ctx) as window:
@@ -221,7 +210,7 @@ class Quiet(
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         quiets: list[int] = await bot.settings.get("level.quiet", []) or []
         await ctx.respond(str(quiets))
 
@@ -231,7 +220,7 @@ class QuietAdd(
     lightbulb.SlashCommand,
     name="add",
     description="Suppress level-up messages in a channel.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     channel = lightbulb.channel(
         "channel",
@@ -241,7 +230,7 @@ class QuietAdd(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         quiets: list[int] = await bot.settings.get("level.quiet", []) or []
         if self.channel.id in quiets:
             await window_warn(ctx, "Channel already in the quiet list")
@@ -258,7 +247,7 @@ class QuietDel(
     lightbulb.SlashCommand,
     name="del",
     description="Un-suppress level-up messages in a channel.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     channel = lightbulb.channel(
         "channel",
@@ -268,7 +257,7 @@ class QuietDel(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         quiets: list[int] = await bot.settings.get("level.quiet", []) or []
         if self.channel.id not in quiets:
             await window_warn(ctx, "Channel was never in the quiet list")
@@ -295,9 +284,16 @@ async def _prepare_personal_summary(
     lifetime: bool = False,
 ) -> hikari.Embed:
     """The "Club Membership Card" embed."""
-    uid = user.id
-    uids = [r[1] for r in rows]
-    if uid not in uids:
+    board = await leaderboard.focus_board(
+        bot,
+        rows,
+        user.id,
+        headers=["Rank", "Exp", "Lv", "User"],
+        align=["<", ">", ">", ">"],
+        max_padding=[0, 0, 0, 16],
+        level_of=levels.level_from_exp,
+    )
+    if board is None:
         embed = hikari.Embed(
             description=f"{user.display_name} has no experience yet.",
             color=_COLOR,
@@ -308,31 +304,10 @@ async def _prepare_personal_summary(
         )
         embed.set_thumbnail(str(user.display_avatar_url))
         return embed
-
-    uid_index = uids.index(uid)
-    subset, subset_i = leaderboard.create_focus_subset(rows, uid_index)
-
-    ranks = [r[0] for r in subset]
-    exps = [r[2] for r in subset]
-    lvls = [levels.level_from_exp(e) for e in exps]
-    names: list[str] = []
-    for uid_ in [r[1] for r in subset]:
-        found = await utils.find_user(bot, uid_)
-        names.append(utils.found_name(found, uid_))
-
-    window = list(zip(ranks, exps, lvls, names))
-    headers = ["Rank", "Exp", "Lv", "User"]
-    align = ["<", ">", ">", ">"]
-    max_padding = [0, 0, 0, 16]
-
-    scoreboard = leaderboard.format(
-        window, headers, align=align, max_padding=max_padding
-    )
-    col_widths = leaderboard.calc_max_col_width(
-        window, headers, max_padding
-    )
-    leaderboard.highlight_row(scoreboard, subset_i, col_widths)
-    scoreboard_s = "\n".join(scoreboard)
+    scoreboard_s = board.text
+    lvl = board.level
+    exp = board.value
+    rank = board.rank
 
     # member stats
     from cazzubot.models import WindowEnum
@@ -340,7 +315,7 @@ async def _prepare_personal_summary(
 
     rid = await of_member(
         bot.db,
-        uid,
+        user.id,
         mode=WindowEnum.LIFETIME if lifetime else WindowEnum.SEASONAL,
     )
     role = None
@@ -348,16 +323,12 @@ async def _prepare_personal_summary(
     if rid is not None and guild is not None:
         role = bot.cache.get_role(rid)
 
-    lvl = lvls[subset_i]
-    exp = exps[subset_i]
-    rank = ranks[subset_i]
-
     if lifetime:
         total = await exp_db.total_members(bot.db)
     else:
         now = pendulum.now("UTC")
         total = await exp_db.seasonal_total_members(
-            bot.db, now.year, (now.month - 1) // 3
+            bot.db, now.year, utils.month2season(now.month)
         )
 
     percentile = utils.calc_percentile(rank, total)
@@ -385,7 +356,7 @@ async def _top_embed(
     page: int,
 ) -> hikari.Embed:
     """The leaderboard pager embed (pageable via TopMenu)."""
-    bot = _bot(ctx)
+    bot = utils.bot_from(ctx)
     embed = hikari.Embed(color=_COLOR)
     embed.set_author(
         name="Club Cirno Leaderboards", icon=_SCOREBOARD_STAMP
@@ -403,31 +374,25 @@ async def _top_embed(
         uids = [r[1] for r in subset]
         exps = [r[2] for r in subset]
         lvls = [levels.level_from_exp(e) for e in exps]
-        names: list[str] = []
-        for id_ in uids:
-            user = await utils.find_user(bot, id_)
-            names.append(utils.found_name(user, id_))
+        names = await leaderboard.resolve_names(bot, uids)
 
         window = list(zip(ranks, exps, lvls, names))
         headers = ["Rank", "Exp", "Lv", "User"]
         align = ["<", ">", ">", ">"]
         max_padding = [0, 0, 0, 16]
-        scoreboard = leaderboard.format(
-            window, headers, align=align, max_padding=max_padding
-        )
         author_id = (ctx.member or ctx.user).id
-        if author_id in uids:
-            col_widths = leaderboard.calc_max_col_width(
-                window, headers, max_padding
-            )
-            leaderboard.highlight_row(
-                scoreboard, uids.index(author_id), col_widths
-            )
+        scoreboard = leaderboard.format(
+            window,
+            headers,
+            align=align,
+            max_padding=max_padding,
+            highlight=uids.index(author_id) if author_id in uids else None,
+        )
         scoreboard_s = "\n".join(scoreboard)
 
     embed.description = f"""
 		Year: **`{date.year}`**
-		Season: **`{(date.month - 1) // 3 + 1}`**
+		Season: **`{utils.month2season(date.month) + 1}`**
 		Page: **`{page}`**
 		```py\n{scoreboard_s}```"""
     return embed
@@ -490,7 +455,9 @@ class TopMenu(lightbulb.components.Menu):
             return
         self.date = self.date.add(months=months)
         self.rows = await exp_db.seasonal_ranked(
-            self.bot.db, self.date.year, (self.date.month - 1) // 3
+            self.bot.db,
+            self.date.year,
+            utils.month2season(self.date.month),
         )
         self.page = 1
         await self._edit(mctx)

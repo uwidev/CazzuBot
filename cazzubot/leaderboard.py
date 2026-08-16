@@ -1,46 +1,13 @@
 """Text leaderboard rendering (port of v1's ``src/leaderboard.py``)."""
 
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
-import hikari
+from cazzubot import utils
 
-from cazzubot import levels
-
-
-async def format_leaderboard_embed(
-    rows: Sequence[tuple[int, int, int]],
-    names: Sequence[str],
-    *,
-    uid: int | None = None,
-) -> hikari.Embed:
-    """Render ``(rank, uid, exp)`` rows into the standard leaderboard embed.
-
-    Columns: Rank / Exp / Lv / User. ``names`` must be user-resolved display
-    names in the same order. Highlights the user's row with ``@``.
-    """
-    ranks = [r[0] for r in rows]
-    uids = [r[1] for r in rows]
-    exps = [r[2] for r in rows]
-    lvls = [levels.level_from_exp(e) for e in exps]
-
-    window = list(zip(ranks, exps, lvls, names))
-    headers = ["Rank", "Exp", "Lv", "User"]
-    align = ["<", ">", ">", ">"]
-    max_padding = [0, 0, 0, 16]
-
-    scoreboard, col_widths = _format(
-        window, headers, align=align, max_padding=max_padding
-    )
-
-    if uid is not None and uid in uids:
-        highlight_row(scoreboard, uids.index(uid), col_widths)
-
-    embed = hikari.Embed(
-        description=f"```py\n{chr(10).join(scoreboard)}```",
-        color=hikari.Color.from_hex_code("#a2dcf7"),
-    )
-    return embed
+if TYPE_CHECKING:
+    from cazzubot.bot import CazzuBot
 
 
 def format(
@@ -51,9 +18,15 @@ def format(
     fill: str = ".",
     spacing: int = 2,
     max_padding: list[int] | None = None,
+    highlight: int | None = None,
 ) -> list[str]:
-    """Render row-major data as a text scoreboard (header first, then rows)."""
-    lines, _ = _format(
+    """Render row-major data as a text scoreboard (header first, then rows).
+
+    ``highlight`` marks the indexed row with ``@`` in its first column (see
+    :func:`highlight_row`) in the same pass — no need to re-derive column
+    widths at the call site.
+    """
+    lines, widths = _format(
         entries,
         headers,
         align=align,
@@ -61,6 +34,8 @@ def format(
         spacing=spacing,
         max_padding=max_padding,
     )
+    if highlight is not None:
+        highlight_row(lines, highlight, widths)
     return lines
 
 
@@ -83,7 +58,7 @@ def _format(
     rows_s: list[str] = []
     for row_i, row in enumerate(entries):
         row_fill = "" if row_i % 2 else fill
-        row_s = f"{(' ' if row_i % 2 else fill) * spacing}".join(
+        row_s = f"{row_fill * spacing}".join(
             (
                 f"{val:{row_fill}{align[col]}{padding[col]}{'' if isinstance(val, str) else ','}}"
                 for col, val in enumerate(row)
@@ -166,3 +141,75 @@ def create_focus_subset(
 
     window = rows[lower : upper + 1]
     return window, focus_index - lower
+
+
+async def resolve_names(bot: "CazzuBot", uids: Sequence[int]) -> list[str]:
+    """Display names for uids, in order (raw id when unknown/partial)."""
+    names: list[str] = []
+    for uid in uids:
+        found = await utils.find_user(bot, uid)
+        names.append(utils.found_name(found, uid))
+    return names
+
+
+@dataclass(frozen=True, slots=True)
+class FocusBoard:
+    """The highlighted personal scoreboard around one member's row."""
+
+    text: str
+    subset: list[tuple[int, int, int]]
+    subset_i: int
+    rank: int
+    value: int
+    level: int | None = None
+
+
+async def focus_board(
+    bot: "CazzuBot",
+    rows: Sequence[tuple[int, int, int]],
+    focus_uid: int,
+    *,
+    headers: list[str],
+    align: list[str],
+    max_padding: list[int],
+    level_of: Callable[[int], int] | None = None,
+) -> FocusBoard | None:
+    """The highlighted scoreboard around ``focus_uid``'s row; None when absent.
+
+    Shared by the exp and frogs personal cards: focus-subset the ranked
+    rows, resolve names, render with :func:`format` (highlighting the
+    focus row) and expose the focus row's rank/value(/level) for the
+    surrounding stats. ``level_of`` renders an extra Level column (exp
+    cards); frogs' count card passes none.
+    """
+    uids = [r[1] for r in rows]
+    if focus_uid not in uids:
+        return None
+    subset, subset_i = create_focus_subset(
+        list(rows), uids.index(focus_uid)
+    )
+    ranks = [r[0] for r in subset]
+    values = [r[2] for r in subset]
+    lvls = [level_of(v) for v in values] if level_of else None
+    names = await resolve_names(bot, [r[1] for r in subset])
+    if lvls is not None:
+        window = list(zip(ranks, values, lvls, names))
+    else:
+        window = list(zip(ranks, values, names))
+    text = "\n".join(
+        format(
+            window,
+            headers,
+            align=align,
+            max_padding=max_padding,
+            highlight=subset_i,
+        )
+    )
+    return FocusBoard(
+        text=text,
+        subset=subset,
+        subset_i=subset_i,
+        rank=ranks[subset_i],
+        value=values[subset_i],
+        level=lvls[subset_i] if lvls else None,
+    )

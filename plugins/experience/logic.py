@@ -8,7 +8,6 @@ plain values, calls this layer, and handles presentation.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 import pendulum
@@ -20,11 +19,9 @@ from cazzubot.member_effects import (
     get as member_effects_get,
 )
 from cazzubot.timeparse import parse_iso8601
-from cazzubot.utils import OldNew
+from cazzubot.utils import OldNew, month2season
 
 from . import db as exp_db
-
-_log = logging.getLogger(__name__)
 
 # -- experience rates (hard-coded; restart the bot to change) --------------
 
@@ -73,9 +70,7 @@ async def award_exp(
             db, uid, cdr=now.subtract(hours=1).isoformat()
         )
         member_db = await exp_db.get_member_exp(db, uid)
-    if member_db is None:
-        _log.error("member exp row missing after insert for uid %s", uid)
-        return None
+        assert member_db is not None  # the insert just created the row
 
     cdr = member_db.cdr
     if cdr and now < parse_iso8601(cdr):
@@ -91,7 +86,7 @@ async def award_exp(
     )
     if multiplier is not None:
         exp_gain = round(exp_gain * multiplier)
-    year, season = now.year, (now.month - 1) // 3
+    year, season = now.year, month2season(now.month)
 
     seasonal_old = await exp_db.seasonal_exp(db, uid, year, season)
     seasonal_new = seasonal_old + exp_gain

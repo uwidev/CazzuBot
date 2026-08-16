@@ -32,7 +32,9 @@ async def present_level_up(
 ) -> None:
     """Send the level-up message when a member levels up (unless ranked up)."""
     if level.new <= level.old:
-        return  # hot path: every awarded message flows through here
+        # hot path: every awarded message flows through here — the rule
+        # itself is decided in logic.decide_level_up (kept in sync)
+        return
     quiets: list[int] = await bot.settings.get("level.quiet", []) or []
     ranked_up = await is_ranked_up(bot.db, level)
     action = decide_level_up(
@@ -59,11 +61,9 @@ async def present_level_up(
         level_old=level.old,
         level_new=level.new,
     )
-    channel = utils.text_channel(
-        bot, message.channel_id if message.guild_id is not None else None
+    await templates.send_to_channel(
+        bot,
+        message.channel_id if message.guild_id is not None else None,
+        msg_json,
+        delete_after=delete_after,
     )
-    if channel is None:
-        return
-    sent = await templates.send(channel, msg_json)
-    if delete_after:
-        utils.schedule_delete(bot, channel.id, sent.id, delete_after)

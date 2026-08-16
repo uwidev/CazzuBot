@@ -7,22 +7,18 @@ import pytest
 from cazzubot.errors import UserInputError
 from cazzubot.models import FrogState
 from plugins.frogs.effects import ExpPayload
-from plugins.frogs.logic import (
-    consume_total_exp,
-    ensure_consume_amount,
-    exp_per_frog,
-)
+from plugins.frogs.logic import ensure_consume_amount
 
 
 def test_exp_per_frog() -> None:
     leaf = ExpPayload(exp=10, frozen_exp=3)
-    assert exp_per_frog(leaf, FrogState.NORMAL) == 10
-    assert exp_per_frog(leaf, FrogState.FROZEN) == 3
+    assert leaf.per_frog(FrogState.NORMAL) == 10
+    assert leaf.per_frog(FrogState.FROZEN) == 3
 
     classy = ExpPayload(exp=20, frozen_exp=6)
-    assert exp_per_frog(classy, FrogState.NORMAL) == 20
-    assert exp_per_frog(classy, FrogState.FROZEN) == 6
-    assert consume_total_exp(classy, FrogState.FROZEN, 2) == 12
+    assert classy.per_frog(FrogState.NORMAL) == 20
+    assert classy.per_frog(FrogState.FROZEN) == 6
+    assert classy.total(FrogState.FROZEN, 2) == 12
 
 
 def test_ensure_consume_amount() -> None:

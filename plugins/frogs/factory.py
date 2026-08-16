@@ -222,7 +222,7 @@ class FrogCatchMenu(lightbulb.components.Menu):
                 self.bot.db, uid
             )
             seasonal = await frog_db.seasonal_captures(
-                self.bot.db, uid, now.year, (now.month - 1) // 3
+                self.bot.db, uid, now.year, utils.month2season(now.month)
             )
             utils.deep_map(
                 msg_json,
@@ -235,21 +235,9 @@ class FrogCatchMenu(lightbulb.components.Menu):
                 species=species.name,
                 species_art=(await self.bot.assets.get(species.art) or ""),
             )
-            content, embed, embeds = templates.prepare(msg_json)
+            payload = templates.build_payload(msg_json)
             sent = await self.bot.rest.create_message(
-                mctx.channel_id,
-                content=content
-                if content is not None
-                else hikari.UNDEFINED,
-                embed=(
-                    templates.embed_from_raw(embed)
-                    if embed is not None
-                    else hikari.UNDEFINED
-                ),
-                embeds=(
-                    [templates.embed_from_raw(e) for e in embeds]
-                    or hikari.UNDEFINED
-                ),
+                mctx.channel_id, **payload
             )
             utils.schedule_delete(
                 self.bot, mctx.channel_id, int(sent.id), 7

@@ -5,7 +5,6 @@ Single-guild port of v1's ``ext/experience.py`` + ``src/db/member_exp.py`` +
 seasonal totals are summed from the log; lifetime is precomputed on the member.
 """
 
-import logging
 from dataclasses import dataclass
 
 import pendulum
@@ -13,8 +12,6 @@ import pendulum
 from cazzubot.db import Database
 from cazzubot.models import MemberExpLogSourceEnum
 from cazzubot.utils import rank_rows, season_bounds
-
-_log = logging.getLogger(__name__)
 
 SCHEMA = [
     """
@@ -201,4 +198,3 @@ async def sync_with_exp_logs(db: Database) -> None:
 		)
 		"""
     )
-

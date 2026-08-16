@@ -9,7 +9,6 @@ counter, and ``member_frog_log.type`` stores the species key. The species
 *definitions* themselves live in code (``species.py`` — no catalog table).
 """
 
-import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,8 +21,6 @@ from cazzubot.settings import Settings
 from cazzubot.utils import rank_rows, season_bounds
 
 from .species import SPECIES
-
-_log = logging.getLogger(__name__)
 
 SCHEMA = [
     """

@@ -117,9 +117,6 @@ async def _notify_rank_up(
         level_old=plan.level_old,
         level_new=plan.level_new,
     )
-    channel = utils.text_channel(bot, channel_id)
-    if channel is None:
-        return
-    sent = await templates.send(channel, msg_json)
-    if delete_after:
-        utils.schedule_delete(bot, channel.id, sent.id, delete_after)
+    await templates.send_to_channel(
+        bot, channel_id, msg_json, delete_after=delete_after
+    )

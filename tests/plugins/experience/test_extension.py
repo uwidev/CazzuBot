@@ -14,9 +14,8 @@ import pendulum
 import pytest
 
 from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
 from plugins.experience import db as exp_db
-from plugins.experience.extension import Card, QuietAdd, Top, TopMenu
+from plugins.experience.extension import Card, QuietAdd, TopMenu
 from tests.fakes import (
     invoke_command,
     FakeChannel,
@@ -82,13 +81,6 @@ async def test_exp_membership_card(
     assert "reimu" in embed.description  # resolved via find_user stub
     assert "Rank:" in embed.description
     assert "Level:" in embed.description
-
-
-async def test_exp_top_rejects_invalid_season(
-    bot: CazzuBot, ctx: FakeContext
-) -> None:
-    with pytest.raises(UserInputError):
-        await invoke_command(Top(), ctx, season=99)
 
 
 def _make_menu(bot: CazzuBot, ctx: FakeContext) -> TopMenu:

@@ -216,7 +216,8 @@ async def test_level_up_sends_formatted_message(
     )
     scheduled: list[tuple[int, int, float]] = []
     monkeypatch.setattr(
-        "cazzubot.utils.schedule_delete",
+        # templates binds schedule_delete at import, so patch it there
+        "cazzubot.templates.schedule_delete",
         lambda _bot, cid, mid, delay: scheduled.append((cid, mid, delay)),
     )
     await present_level_up(

@@ -20,6 +20,7 @@ from hikari.undefined import UNDEFINED
 from jsonschema import ValidationError, validate
 
 from cazzubot.errors import UserInputError
+from cazzubot.utils import deep_map, schedule_delete, text_channel
 
 _log = logging.getLogger(__name__)
 
@@ -106,8 +107,6 @@ def verify(
     message = cast(dict[str, Any], decoded)
 
     demo: dict[str, Any] = copy.deepcopy(message)
-    from cazzubot.utils import deep_map
-
     deep_map(demo, formatter, **kwargs)
     try:
         validate(demo, MESSAGE_SCHEMA)
@@ -183,6 +182,20 @@ def embed_from_raw(raw: dict[str, Any]) -> hikari.Embed:
     return embed
 
 
+def build_payload(message: dict[str, Any]) -> dict[str, Any]:
+    """The send payload for a prepared template (UNDEFINED for unset keys).
+
+    Shared by :func:`send` (context/channel targets) and the frogs factory,
+    which must send via ``rest.create_message`` directly.
+    """
+    content, embed, embeds = prepare(message)
+    return dict(
+        content=content if content is not None else UNDEFINED,
+        embed=embed_from_raw(embed) if embed is not None else UNDEFINED,
+        embeds=[embed_from_raw(e) for e in embeds] or UNDEFINED,
+    )
+
+
 async def send(
     destination: Any,
     message: dict[str, Any],
@@ -201,12 +214,7 @@ async def send(
     ``true`` → everything, ``false`` → nothing. Caller-supplied mention
     kwargs win over the template default.
     """
-    content, embed, embeds = prepare(message)
-    payload = dict(
-        content=content if content is not None else UNDEFINED,
-        embed=embed_from_raw(embed) if embed is not None else UNDEFINED,
-        embeds=[embed_from_raw(e) for e in embeds] or UNDEFINED,
-    )
+    payload = build_payload(message)
     for key, value in _mention_kwargs(
         message.get("allowed_mentions")
     ).items():
@@ -215,6 +223,29 @@ async def send(
         # hikari channels have ``send``; lightbulb contexts have ``respond``
         return await destination.respond(**payload, **kwargs)
     return await destination.send(**payload, **kwargs)
+
+
+async def send_to_channel(
+    bot: Any,
+    channel_id: int | None,
+    message: dict[str, Any],
+    *,
+    delete_after: float = 0,
+) -> bool:
+    """Send a template to a guild channel; ``False`` when it can't send.
+
+    The shared "send and optionally clean up" tail of the level-up /
+    rank-up presenters: resolve the cached channel, deliver, and schedule
+    the deletion. ``bot`` is only used for the channel cache and the
+    delete timer — the destination itself stays framework-agnostic.
+    """
+    channel = text_channel(bot, channel_id)
+    if channel is None:
+        return False
+    sent = await send(channel, message)
+    if delete_after:
+        schedule_delete(bot, channel.id, sent.id, delete_after)
+    return True
 
 
 def _mention_kwargs(allowed: bool | None) -> dict[str, bool]:

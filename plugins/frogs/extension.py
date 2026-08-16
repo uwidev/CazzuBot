@@ -15,17 +15,12 @@ from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
 from cazzubot.models import FrogState, SpeciesKey
 from cazzubot.window import command_window, window_success
-from lightbulb.prefab import checks as prefab_checks
 
 from . import db as frog_db
 from . import factory
 from .effects import ExpPayload
 from .events import FrogConsumedEvent
-from .logic import (
-    consume_total_exp,
-    ensure_consume_amount,
-    exp_per_frog,
-)
+from .logic import ensure_consume_amount
 from .species import DEFAULT_SPECIES_KEY, SPECIES, by_key
 
 loader = lightbulb.Loader()
@@ -46,13 +41,6 @@ _STATE_CHOICES = [
 ]
 
 frog = lightbulb.Group("frog", "Frog species economy.")
-
-_OWNER = prefab_checks.owner_only
-_ADMIN = prefab_checks.has_permissions(hikari.Permissions.ADMINISTRATOR)
-
-
-def _bot(ctx: lightbulb.Context) -> CazzuBot:
-    return cast(CazzuBot, ctx.client.app)
 
 
 def _species_option(
@@ -83,11 +71,11 @@ class Profile(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         target = self.member or ctx.member or ctx.user
         now = pendulum.now("UTC")
         rows = await frog_db.seasonal_ranked(
-            bot.db, now.year, (now.month - 1) // 3
+            bot.db, now.year, utils.month2season(now.month)
         )
         if not rows:
             await ctx.respond(
@@ -128,18 +116,21 @@ class Consume(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         uid = (ctx.member or ctx.user).id
+        species_key = _species_key(self.species)
+        if (
+            species_key is None
+        ):  # unreachable: the option always carries a value
+            raise UserInputError(f"Unknown frog species: {self.species}")
+        species = by_key(species_key)
+        assert species is not None  # every SpeciesKey member is in SPECIES
         try:
-            species_key = SpeciesKey(self.species)
+            state = FrogState(self.state)
         except ValueError as err:
             raise UserInputError(
-                f"Unknown frog species: {self.species}"
+                f"Unknown frog state: {self.state}"
             ) from err
-        species = by_key(species_key)
-        if species is None:
-            raise UserInputError(f"Unknown frog species: {self.species}")
-        state = FrogState(self.state)
         balance = await frog_db.get_inventory(
             bot.db, uid, species.key, state
         )
@@ -150,17 +141,15 @@ class Consume(
         from plugins.experience.db import seasonal_exp
 
         exp_old = await seasonal_exp(
-            bot.db, uid, now.year, (now.month - 1) // 3
+            bot.db, uid, now.year, utils.month2season(now.month)
         )
 
         # the confirmation shows exp math only for the exp effect; other
         # payloads describe themselves generically
         consume_effect = species.consume_effect
         if isinstance(consume_effect, ExpPayload):
-            exp_per = exp_per_frog(consume_effect, state)
-            total_exp = consume_total_exp(
-                consume_effect, state, self.amount
-            )
+            exp_per = consume_effect.per_frog(state)
+            total_exp = consume_effect.total(state, self.amount)
             effect_desc = (
                 f"These frogs grant `{exp_per}` exp per frog, for a "
                 f"total of **`{total_exp}`**.\n\n"
@@ -198,7 +187,6 @@ class Consume(
         )
         ensure_consume_amount(self.amount, balance_now)
 
-        now = pendulum.now("UTC")
         # the consume effect runs first (grants exp etc.), then the
         # inventory decrements — a failed effect never eats frogs. The
         # enum member's value IS the handler — no lookup, and a key
@@ -248,12 +236,18 @@ class Catalog(
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         if not SPECIES:
             await ctx.respond("The frog catalog is empty.")
             return
         embed = hikari.Embed(title="Frog Species Catalog", color=_COLOR)
+        # thumbnail: the first species with published art wins the slot
+        thumbnail_art: str | None = None
         for species in SPECIES:
+            if thumbnail_art is None:
+                thumbnail_art = await bot.assets.get(species.art)
+                if thumbnail_art is not None:
+                    embed.set_thumbnail(thumbnail_art)
             value = f"{species.description}\nRarity: {species.rarity}"
             consume_effect = species.consume_effect
             if isinstance(consume_effect, ExpPayload):
@@ -266,10 +260,6 @@ class Catalog(
             embed.add_field(
                 name=f"{species.name} (`{species.key.value}`)", value=value
             )
-            if embed.thumbnail is None:
-                art = await bot.assets.get(species.art)
-                if art is not None:
-                    embed.set_thumbnail(art)
         await ctx.respond(embed=embed)
 
 
@@ -283,7 +273,7 @@ class Lifetime(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         target = self.user or ctx.member or ctx.user
         rows = await frog_db.lifetime_ranked(bot.db)
         if not rows:
@@ -306,7 +296,7 @@ class Register(
     lightbulb.SlashCommand,
     name="register",
     description="Register this channel as a frog spawn channel.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     interval = lightbulb.string(
         "interval", "Time between spawns (natural duration)"
@@ -333,7 +323,7 @@ class Register(
         disappearing. Fuzzy is a decimal percent, the randomness of spawning
         intervals.
         """
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         cid = (
             self.channel.id if self.channel is not None else ctx.channel_id
         )
@@ -378,11 +368,11 @@ class Clear(
     lightbulb.SlashCommand,
     name="clear",
     description="Remove all frog settings and stop frog spawning.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         await frog_db.clear_spawns(bot.db)
         await bot.scheduler.drop_tag("frog")
         await window_success(ctx, "Cleared all frog spawn channels")
@@ -396,13 +386,13 @@ class SetMessage(
     lightbulb.SlashCommand,
     name="message",
     description="Set the capture message JSON.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     message = lightbulb.string("message", "The capture message JSON")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         decoded = templates.verify(
             self.message,
             factory.formatter,
@@ -417,13 +407,13 @@ class SetEnabled(
     lightbulb.SlashCommand,
     name="enabled",
     description="Enable/disable frog spawns (re-queues or clears spawn tasks).",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     val = lightbulb.boolean("val", "Whether frog spawning is enabled")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         await frog_db.set_enabled(bot.settings, self.val)
         await factory.reset_frog_tasks(bot)
         await window_success(
@@ -439,11 +429,11 @@ class Demo(
     lightbulb.SlashCommand,
     name="demo",
     description="Preview the capture message as yourself.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         msg_json = await frog_db.get_message(bot.settings)
         if not msg_json:
             await ctx.respond("No capture message has been set.")
@@ -461,13 +451,26 @@ class Raw(
     lightbulb.SlashCommand,
     name="raw",
     description="Dump the raw stored capture message JSON.",
-    hooks=[_ADMIN],
+    hooks=[utils.ADMIN_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         msg_json = await frog_db.get_message(bot.settings)
         await ctx.respond(f"```{json.dumps(msg_json, indent=2)}```")
+
+
+async def _spawn_and_wait(
+    bot: CazzuBot, ctx: lightbulb.Context, species_value: str | None
+) -> None:
+    """Force-post a frog with its capture button (shared by spawn/fake)."""
+    await factory.spawn_and_wait(
+        bot,
+        30,
+        ctx,
+        cid=ctx.channel_id,
+        species_key=_species_key(species_value),
+    )
 
 
 @frog.register
@@ -475,7 +478,7 @@ class Spawn(
     lightbulb.SlashCommand,
     name="spawn",
     description="Force-spawn a frog in this channel.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     species = _species_option(
         "species", "The species to spawn (default: rolled)"
@@ -483,15 +486,8 @@ class Spawn(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
         # the frog message is the success signal — no separate confirmation
-        await factory.spawn_and_wait(
-            bot,
-            30,
-            ctx,
-            cid=ctx.channel_id,
-            species_key=_species_key(self.species),
-        )
+        await _spawn_and_wait(utils.bot_from(ctx), ctx, self.species)
 
 
 @frog.register
@@ -499,7 +495,7 @@ class Fake(
     lightbulb.SlashCommand,
     name="fake",
     description="Post a fake frog with its capture button.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     species = _species_option(
         "species", "The species to fake (default: rolled)"
@@ -507,14 +503,7 @@ class Fake(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
-        await factory.spawn_and_wait(
-            bot,
-            30,
-            ctx,
-            cid=ctx.channel_id,
-            species_key=_species_key(self.species),
-        )
+        await _spawn_and_wait(utils.bot_from(ctx), ctx, self.species)
 
 
 @frog.register
@@ -522,11 +511,11 @@ class Resync(
     lightbulb.SlashCommand,
     name="resync",
     description="Rebuild lifetime capture counts from the frog logs.",
-    hooks=[_OWNER],
+    hooks=[utils.OWNER_ONLY],
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        bot = _bot(ctx)
+        bot = utils.bot_from(ctx)
         if not await utils.author_confirm(ctx):
             return
         async with command_window(ctx) as window:
@@ -548,48 +537,34 @@ async def _prepare_personal_summary(
     lifetime: bool = False,
 ) -> hikari.Embed:
     """The "Frog Capture Permit" embed."""
-    uid = user.id
-    uids = [r[1] for r in rows]
-    uid_index = uids.index(uid)
-    subset, subset_i = leaderboard.create_focus_subset(rows, uid_index)
-
-    ranks = [r[0] for r in subset]
-    frog_cnt = [r[2] for r in subset]
-    names: list[str] = []
-    for uid_ in [r[1] for r in subset]:
-        member = await utils.find_user(bot, uid_)
-        names.append(utils.found_name(member, uid_))
-
-    window = list(zip(ranks, frog_cnt, names))
-    headers = ["Rank", "Frogs", "User"]
-    align = ["<", ">", ">"]
-    max_padding = [0, 0, 16]
-
-    scoreboard = leaderboard.format(
-        window, headers, align=align, max_padding=max_padding
+    board = await leaderboard.focus_board(
+        bot,
+        rows,
+        user.id,
+        headers=["Rank", "Frogs", "User"],
+        align=["<", ">", ">"],
+        max_padding=[0, 0, 16],
     )
-    col_widths = leaderboard.calc_max_col_width(
-        window, headers, max_padding
-    )
-    leaderboard.highlight_row(scoreboard, subset_i, col_widths)
-    scoreboard_s = "\n".join(scoreboard)
+    # the callers (Profile/Lifetime) verified membership first
+    assert board is not None
+    scoreboard_s = board.text
+    user_frog_cnt = board.value
+    rank = board.rank
 
-    user_frog_cnt = frog_cnt[subset_i]
-    inv = await frog_db.inventory_rows(bot.db, uid)
+    inv = await frog_db.inventory_rows(bot.db, user.id)
     inv_lines = []
     for species_key, state, qty in inv:
         species = by_key(species_key)
         label = species.name if species is not None else species_key.value
         inv_lines.append(f"{label} ({state.value}): **`{qty}`**")
     inv_text = "\n".join(inv_lines) if inv_lines else "No frogs yet."
-    rank = ranks[subset_i]
 
     now = pendulum.now("UTC")
     if lifetime:
         total = await frog_db.total_members(bot.db)
     else:
         total = await frog_db.seasonal_total_members(
-            bot.db, now.year, (now.month - 1) // 3
+            bot.db, now.year, utils.month2season(now.month)
         )
 
     percentile = utils.calc_percentile(rank, total)

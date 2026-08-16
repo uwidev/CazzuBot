@@ -5,7 +5,6 @@ Single-guild port of v1's ``ext/rank.py`` + ``src/rank.py`` +
 generic settings store under ``rank.{mode}.`` keys.
 """
 
-import logging
 from dataclasses import dataclass
 
 import pendulum
@@ -15,8 +14,7 @@ from typing import Any
 from cazzubot.db import Database
 from cazzubot.models import WindowEnum
 from cazzubot.settings import Settings
-
-_log = logging.getLogger(__name__)
+from cazzubot.utils import month2season
 
 SCHEMA = [
     """
@@ -75,16 +73,12 @@ async def get(
     )
 
 
-async def delete(db: Database, arg: int, mode: WindowEnum) -> None:
-    """Delete a threshold by role id or by threshold level."""
+async def delete(db: Database, rid: int, mode: WindowEnum) -> None:
+    """Delete the threshold row for a role id."""
     await db.execute(
-        """
-		DELETE FROM rank_threshold
-		WHERE mode = ? AND (rid = ? OR threshold = ?)
-		""",
+        "DELETE FROM rank_threshold WHERE mode = ? AND rid = ?",
         mode.value,
-        arg,
-        arg,
+        rid,
     )
 
 
@@ -119,14 +113,14 @@ async def of_member(
     if mode is WindowEnum.SEASONAL:
         from plugins.experience.db import seasonal_exp
 
-        level = await seasonal_exp(db, uid, now.year, (now.month - 1) // 3)
-    else:
-        level = int(
-            await db.fetchval(
-                "SELECT lifetime FROM member_exp WHERE uid = ?", uid
-            )
-            or 0
+        level = await seasonal_exp(
+            db, uid, now.year, month2season(now.month)
         )
+    else:
+        from plugins.experience.db import get_member_exp
+
+        member = await get_member_exp(db, uid)
+        level = member.lifetime if member is not None else 0
 
     return calc_min_rank(thresholds, level)[0]
 
