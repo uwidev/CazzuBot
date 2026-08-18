@@ -34,8 +34,11 @@ class Hashiresoriyo(
     name="hashiresoriyo",
     description="Gives you a jolly Saber.",
 ):
+    """Give the invoker a jolly Saber."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Respond with the jolly Saber link."""
         await ctx.respond("https://www.youtube.com/watch?v=dQ_d_VKrFgM")
 
 
@@ -45,10 +48,13 @@ class Info(
     name="info",
     description="Basic user information.",
 ):
+    """Show basic user information."""
+
     member = lightbulb.user("member", "The member to show", default=None)
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Show the target's join date and role count."""
         target = self.member or ctx.member or ctx.user
         if not hasattr(target, "role_ids"):  # guild member only
             await ctx.respond("That user is not in this server.")
@@ -66,8 +72,11 @@ class Noot(
     name="noot",
     description="Noot noot!",
 ):
+    """Noot noot!"""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Respond ``NOOT NOOT``."""
         await ctx.respond("NOOT NOOT")
 
 
@@ -77,8 +86,11 @@ class Ping(
     name="ping",
     description="Ping the bot.",
 ):
+    """Ping the bot."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Respond with the current heartbeat latency."""
         bot = utils.bot_from(ctx)
         latency = max(bot.heartbeat_latency, 0.0)
         await ctx.respond(f":ping_pong: Pong! {latency * 1000:.2f}ms")
@@ -90,10 +102,13 @@ class Echo(
     name="echo",
     description="Echo your text back.",
 ):
+    """Echo the invoker's text back."""
+
     content = lightbulb.string("content", "The text to echo")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Respond with the echoed content."""
         await ctx.respond(self.content)
 
 
@@ -123,6 +138,8 @@ class RegisterInktober(
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Set the channel to watch for inktober submissions."""
+
     channel = lightbulb.channel(
         "channel",
         "The channel to watch (default: this channel)",
@@ -132,6 +149,7 @@ class RegisterInktober(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the inktober watching channel."""
         bot = utils.bot_from(ctx)
         target_id = (
             self.channel.id if self.channel is not None else ctx.channel_id
@@ -150,6 +168,8 @@ class ScrapeInktober(
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
     hooks=[utils.OWNER_ONLY],
 ):
+    """Download inktober submissions into ``downloads/``."""
+
     channel = lightbulb.channel(
         "channel",
         "The channel to scrape (default: this channel)",
@@ -159,6 +179,7 @@ class ScrapeInktober(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Scrape and save matching inktober submissions."""
         bot = utils.bot_from(ctx)
         target_id = (
             self.channel.id if self.channel is not None else ctx.channel_id
@@ -204,6 +225,8 @@ class StoryCompile(
     description="Save all messages in this channel to a .txt file with stats.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Save all messages in this channel to a .txt file with stats."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         """Save all messages in this channel to a .txt file with stats."""
@@ -264,6 +287,8 @@ class StoryWrite(
     description="Write out a compiled story from story/.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Write out a compiled story from ``story/``."""
+
     file_name = lightbulb.string("file_name", "The story file name")
 
     @lightbulb.invoke

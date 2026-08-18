@@ -85,6 +85,7 @@ class Table(NamedTuple):
 
 
 async def main() -> int:
+    """Migrate the SQLite database into PostgreSQL (CLI entry)."""
     load_dotenv()
     args = parse_args()
     logging.basicConfig(
@@ -481,6 +482,7 @@ def ts(value: Any) -> Any:
 def exp_row(
     r: tuple[Any, ...], _archive: dict[int, int]
 ) -> tuple[Any, ...]:
+    """Map a SQLite member-exp row to the v1 column order."""
     uid, lifetime, msg_cnt, cdr = r
     return (uid, lifetime, msg_cnt, ts(cdr))
 
@@ -488,6 +490,7 @@ def exp_row(
 def exp_log_row(
     r: tuple[Any, ...], _archive: dict[int, int]
 ) -> tuple[Any, ...]:
+    """Map a SQLite exp-log row to the v1 column order."""
     uid, exp, at, source = r
     return (uid, exp, ts(at), source)
 
@@ -495,6 +498,7 @@ def exp_log_row(
 def frog_row(
     r: tuple[Any, ...], archive: dict[int, int]
 ) -> tuple[Any, ...]:
+    """Map a SQLite frog row to v1 order (restoring the retired column)."""
     uid, normal, frozen, capture = r
     # restore the retired pre-split column from the forward archive
     return (uid, archive.get(uid, 0), frozen, capture, normal)
@@ -503,6 +507,7 @@ def frog_row(
 def frog_log_row(
     r: tuple[Any, ...], _archive: dict[int, int]
 ) -> tuple[Any, ...]:
+    """Map a SQLite frog-log row to the v1 column order."""
     uid, log_type, at, waited_for = r
     # v1 column order is (gid, uid, at, type, waited_for)
     return (uid, ts(at), log_type, waited_for)
@@ -511,6 +516,7 @@ def frog_log_row(
 def spawn_row(
     r: tuple[Any, ...], _archive: dict[int, int]
 ) -> tuple[Any, ...]:
+    """Map a SQLite frog-spawn row to the v1 column order."""
     cid, interval, persist, fuzzy = r
     return (cid, interval, persist, float(fuzzy))
 
@@ -518,6 +524,7 @@ def spawn_row(
 def counter_row(
     r: tuple[Any, ...], _archive: dict[int, int]
 ) -> tuple[Any, ...]:
+    """Map a SQLite counter row to the v1 column order."""
     mid, count = r
     return (mid, count)
 
@@ -636,6 +643,7 @@ def chunks(seq: list[int], size: int) -> Iterator[list[int]]:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse the migration's CLI arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--host", default=os.getenv("PGHOST", "192.168.1.3")

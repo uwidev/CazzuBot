@@ -22,6 +22,7 @@ loader = lightbulb.Loader()
 
 
 def _plugin_names(bot: CazzuBot) -> list[str]:
+    """Loaded plugin names, in order."""
     return [p.name for p in bot.plugins]
 
 
@@ -45,8 +46,11 @@ class Owner(
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
     hooks=[utils.OWNER_ONLY],
 ):
+    """Report whether the invoker is the bot owner."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Log and confirm the invoker is the owner."""
         _log.info("%s is the bot owner.", ctx.member or ctx.user)
         await ctx.respond(f"You are {(ctx.member or ctx.user).mention}!")
 
@@ -65,10 +69,13 @@ class CalcTo(
     description="Exp required to get from level n-1 to n.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Show the exp required to reach level ``n``."""
+
     n = lightbulb.integer("n", "The level")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Respond with the per-level exp cost."""
         await ctx.respond(f"{levels.exp_for_level(self.n):.2f}")
 
 
@@ -79,10 +86,13 @@ class CalcCum(
     description="Cumulative exp from level 0 to n.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Show the cumulative exp through level ``n``."""
+
     n = lightbulb.integer("n", "The level")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Respond with the cumulative exp total."""
         await ctx.respond(f"{levels.exp_to_level_cum(self.n):.2f}")
 
 
@@ -94,8 +104,11 @@ class ArchiveEmojis(
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
     hooks=[utils.OWNER_ONLY],
 ):
+    """Save the guild's emojis to ``archives/{guild_id}/``."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Download every guild emoji into the archives folder."""
         bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
@@ -114,8 +127,11 @@ class Scrape(
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
     hooks=[utils.OWNER_ONLY],
 ):
+    """Download every guild emoji into ``emojis/``."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Download each guild emoji id-suffixed into ``emojis/``."""
         bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
@@ -143,10 +159,13 @@ class PluginReload(
     description="Reload a loaded plugin.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Reload a loaded plugin (and its loaded dependents)."""
+
     plugin_name = lightbulb.string("plugin_name", "The plugin to reload")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Reload the named plugin and report what was reloaded."""
         bot = utils.bot_from(ctx)
         if self.plugin_name not in _plugin_names(bot):
             await ctx.respond(
@@ -172,10 +191,13 @@ class PluginLoad(
     description="Load a not-yet-loaded plugin.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Load a not-yet-loaded plugin."""
+
     plugin_name = lightbulb.string("plugin_name", "The plugin to load")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Load the named plugin."""
         bot = utils.bot_from(ctx)
         if self.plugin_name in _plugin_names(bot):
             await ctx.respond(
@@ -193,10 +215,13 @@ class PluginUnload(
     description="Unload a loaded plugin.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Unload a loaded plugin (and its loaded dependents)."""
+
     plugin_name = lightbulb.string("plugin_name", "The plugin to unload")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Unload the named plugin."""
         bot = utils.bot_from(ctx)
         if self.plugin_name not in _plugin_names(bot):
             await ctx.respond(
@@ -216,10 +241,13 @@ class PluginEnable(
     description="Enable a plugin (persisted) and load it with its dependencies.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Enable a plugin (persisted) and load it with its dependencies."""
+
     plugin_name = lightbulb.string("plugin_name", "The plugin to enable")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Enable and load the named plugin."""
         bot = utils.bot_from(ctx)
         try:
             loaded = await bot.enable_plugin(self.plugin_name)
@@ -243,10 +271,13 @@ class PluginDisable(
     description="Disable a plugin (persisted) and unload it with its dependents.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Disable a plugin (persisted) and unload it with its dependents."""
+
     plugin_name = lightbulb.string("plugin_name", "The plugin to disable")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Disable and unload the named plugin."""
         bot = utils.bot_from(ctx)
         try:
             unloaded = await bot.disable_plugin(self.plugin_name)
@@ -271,8 +302,11 @@ class PluginList(
     description="Show every plugin with its loaded/disabled state.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """List every plugin with its loaded/disabled state."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Show the per-plugin loaded/disabled status."""
         bot = utils.bot_from(ctx)
         loaded = {p.name for p in bot.plugins}
         plugins = discover_plugins(bot.plugins_dir)

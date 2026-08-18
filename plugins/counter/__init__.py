@@ -7,6 +7,8 @@ from .extension import on_counter_expire
 
 
 class CounterPlugin(Plugin):
+    """The counter (\"baka button\") plugin."""
+
     name = "counter"
     schema = db.SCHEMA
     extensions = ["plugins.counter.extension"]

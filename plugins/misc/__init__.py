@@ -4,6 +4,8 @@ from cazzubot import Plugin
 
 
 class MiscPlugin(Plugin):
+    """Small server utility command plugin."""
+
     name = "misc"
     extensions = ["plugins.misc.extension"]
 

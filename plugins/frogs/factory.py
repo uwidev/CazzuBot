@@ -149,6 +149,7 @@ class FrogCatchMenu(lightbulb.components.Menu):
     def __init__(
         self, bot: CazzuBot, cid: int, species_key: SpeciesKey
     ) -> None:
+        """Build the capture button and remember the catch target."""
         super().__init__()
         self.bot = bot
         self.captured = False
@@ -165,6 +166,7 @@ class FrogCatchMenu(lightbulb.components.Menu):
         )
 
     async def catch(self, mctx: lightbulb.components.MenuContext) -> None:
+        """Handle a capture click — the first click wins."""
         if self.captured:
             await mctx.respond(
                 "This frog was already caught.",

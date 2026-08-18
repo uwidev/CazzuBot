@@ -6,6 +6,8 @@ from . import db
 
 
 class RanksPlugin(Plugin):
+    """Ranks plugin — threshold roles, seasonal and lifetime."""
+
     name = "ranks"
     schema = db.SCHEMA
     extensions = ["plugins.ranks.extension"]

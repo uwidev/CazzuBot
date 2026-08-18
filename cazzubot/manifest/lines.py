@@ -35,6 +35,7 @@ class ManifestError(ValueError):
     """Raised when a manifest has any parse problems (all collected)."""
 
     def __init__(self, issues: list[Issue]) -> None:
+        """Remember the collected ``issues``."""
         super().__init__(f"{len(issues)} manifest error(s)")
         self.issues = issues
 

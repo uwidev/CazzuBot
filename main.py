@@ -39,12 +39,14 @@ class _ColourFormatter(logging.Formatter):
 
     @override
     def format(self, record: logging.LogRecord) -> str:
+        """Render the record with an ANSI-coloured level name."""
         colour = self._colours.get(record.levelno, "")
         record.levelname = f"{colour}{record.levelname:<8}\x1b[0m"
         return super().format(record)
 
 
 def main() -> None:
+    """Parse CLI args, load config, set up logging, and run the bot."""
     parser = argparse.ArgumentParser(prog="CazzuBot")
     parser.add_argument("-d", "--debug", action="store_true")
     parser.add_argument(

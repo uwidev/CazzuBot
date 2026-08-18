@@ -102,4 +102,5 @@ def is_future(now: pendulum.DateTime, target: pendulum.DateTime) -> bool:
 
 
 def _spaces_out_shorthands(arg: str) -> str:
+    """Insert spaces around glued duration shorthands like ``4d2h``."""
     return _any_shorthand_time.sub(r" \1 ", arg)

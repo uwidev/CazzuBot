@@ -26,11 +26,13 @@ _log = logging.getLogger("migrate_poll_cid")
 
 
 def _has_cid(conn: sqlite3.Connection) -> bool:
+    """True when the ``poll`` table already has a ``cid`` column."""
     rows = conn.execute("PRAGMA table_info(poll)").fetchall()
     return any(row[1] == "cid" for row in rows)
 
 
 def main() -> int:
+    """Add the poll ``cid`` column (CLI entry)."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--db", default="data/cazzubot-prod.db", help="sqlite database file"

@@ -69,8 +69,11 @@ class ModCheck(
     description="Check if you have moderator permissions.",
     hooks=[_mod_gate],
 ):
+    """Check whether the invoker has moderator permissions."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Confirm the invoker has moderator permissions."""
         await ctx.respond("You have moderator permissions!")
 
 
@@ -81,11 +84,14 @@ class Warn(
     description="Warn the member, writing a modlog entry.",
     hooks=[_mod_gate],
 ):
+    """Warn the member, writing a modlog entry."""
+
     member = lightbulb.user("member", "The member to warn")
     reason = lightbulb.string("reason", "The reason")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Write a WARN modlog entry for the member."""
         bot = utils.bot_from(ctx)
         await db.add_log(
             bot.db,
@@ -104,6 +110,8 @@ class Mute(
     description="Mute the user until the given time (relative or absolute, UTC).",
     hooks=[_mod_gate],
 ):
+    """Mute the member until the given time (or forever)."""
+
     member = lightbulb.user("member", "The member to mute")
     raw = lightbulb.string(
         "raw",
@@ -113,6 +121,7 @@ class Mute(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Apply the mute role and arm the mute expiry task."""
         bot = utils.bot_from(ctx)
         mute_id = await db.get_mute_role(bot.settings)
         if not mute_id:
@@ -170,11 +179,14 @@ class Kick(
     description="Kick a member, writing a modlog entry.",
     hooks=[_mod_gate],
 ):
+    """Kick a member, writing a modlog entry."""
+
     member = lightbulb.user("member", "The member to kick")
     reason = lightbulb.string("reason", "The reason", default=None)
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Log the kick and kick the member."""
         bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
@@ -206,6 +218,8 @@ class Ban(
     description="Ban the user until the given time; without one, forever.",
     hooks=[_mod_gate],
 ):
+    """Ban the member until the given time (or forever)."""
+
     member = lightbulb.user("member", "The member to ban")
     raw = lightbulb.string(
         "raw",
@@ -215,6 +229,7 @@ class Ban(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Apply the ban and arm the temp-ban expiry task."""
         bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
@@ -274,10 +289,13 @@ class Unmute(
     description="Remove the mute role and any pending mute expiry.",
     hooks=[_mod_gate],
 ):
+    """Remove the mute role and any pending mute expiry."""
+
     member = lightbulb.user("member", "The member to unmute")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Remove the mute role and drop pending mute tasks."""
         bot = utils.bot_from(ctx)
         guild = bot.guild
         mute_id = await db.get_mute_role(bot.settings)
@@ -305,10 +323,13 @@ class Unban(
     description="Unban a user and drop any pending tempban expiry.",
     hooks=[_mod_gate],
 ):
+    """Unban a user and drop any pending temp-ban expiry."""
+
     user = lightbulb.user("user", "The user to unban")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Unban the user and drop pending temp-ban tasks."""
         bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
@@ -331,10 +352,13 @@ class SetMute(
     description="Set the mute role.",
     hooks=[_mod_gate],
 ):
+    """Set the mute role."""
+
     role = lightbulb.role("role", "The mute role")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the mute role id."""
         bot = utils.bot_from(ctx)
         await db.set_mute_role(bot.settings, self.role.id)
         await window_success(ctx, f"Mute role set to {self.role}")
@@ -350,6 +374,8 @@ class Slowmode(
     description="Set a channel's slowmode delay.",
     hooks=[_mod_gate],
 ):
+    """Set a channel's slowmode delay."""
+
     cooldown = lightbulb.integer(
         "cooldown", "Seconds between messages (0 = off)", default=0
     )
@@ -362,6 +388,7 @@ class Slowmode(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Apply the slowmode delay to the channel."""
         bot = utils.bot_from(ctx)
         target_id = (
             self.channel.id if self.channel is not None else ctx.channel_id

@@ -12,6 +12,11 @@ RESULTS_MARKER = "\n\n**Results**"
 
 
 def parse_votes(raw_input: str) -> list[int]:
+    """Split a comma string into int votes, validating the numeric input.
+
+    Raises ``TypeError`` for non-numeric tokens and ``ValueError`` when
+    nothing was entered.
+    """
     votes = [v.strip() for v in raw_input.split(",") if v]
     not_numbers = [
         v
@@ -28,6 +33,7 @@ def parse_votes(raw_input: str) -> list[int]:
 def validate_votes(
     votes: list[int], *, upper: int, max_vote: int
 ) -> list[str]:
+    """Check votes against the option range and count; return error strings."""
     errors: list[str] = []
     out_of_range = [v for v in votes if v not in range(1, upper + 1)]
     if out_of_range:

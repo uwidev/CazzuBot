@@ -57,6 +57,7 @@ CONVERTIBLE = frozenset({"text", "announcement"})
 
 
 def bucket_of(kind: str) -> str:
+    """The bucket a channel ``kind`` sorts into: category/voice/text."""
     if kind == "category":
         return BUCKET_CATEGORY
     if kind in ("voice", "stage"):
@@ -66,12 +67,16 @@ def bucket_of(kind: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class CreateOp:
+    """Plan op: create one channel with its parent ``category``."""
+
     spec: ChannelSpec
     category: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class DeleteOp:
+    """Plan op: delete the channel identified by ``name`` and ``id``."""
+
     name: str
     id: int
 
@@ -98,6 +103,7 @@ class Plan:
 
     @property
     def needs_reorder(self) -> bool:
+        """True when the desired layout differs from the current one."""
         return self.layout != self.target
 
     def is_clean(self) -> bool:
@@ -111,6 +117,7 @@ class Plan:
         return plan_needs_apply(self)
 
     def summary(self) -> str:
+        """A one-line human-readable summary of the plan."""
         return plan_summary(self)
 
     def render(self) -> str:

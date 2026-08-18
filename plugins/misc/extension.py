@@ -40,6 +40,8 @@ class Banner(
     description="Set the server banner (16:9 crop of the image).",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Set the server banner from an uploaded image or a message link."""
+
     image = lightbulb.attachment(
         "image", "The image to use as the server banner", default=None
     )
@@ -51,6 +53,7 @@ class Banner(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Download the chosen image and apply it as the guild banner."""
         bot = utils.bot_from(ctx)
         if self.msg is not None:
             link = parse_message_link(self.msg)
@@ -115,6 +118,8 @@ class Welcome(
     description="Set the welcome screen (community guilds).",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Set the welcome screen's editable parts."""
+
     enabled = lightbulb.boolean(
         "enabled", "Whether the welcome screen is shown"
     )
@@ -133,6 +138,7 @@ class Welcome(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Apply the configured welcome-screen settings."""
         bot = utils.bot_from(ctx)
         description: hikari.UndefinedOr[str] = hikari.UNDEFINED
         if self.description is not None:
@@ -184,6 +190,8 @@ class Week(
     description="Show the current week of the year, or a message's week.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Report the current week of the year, or a message's week."""
+
     start = lightbulb.string(
         "start",
         "What day the week starts on (default: sunday)",
@@ -201,6 +209,7 @@ class Week(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Show the week for now, or for a linked message."""
         # choices-validated by the option: always "sunday" or "monday"
         start = self.start
         if self.msg is not None:

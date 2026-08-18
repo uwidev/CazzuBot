@@ -20,11 +20,15 @@ class MemberSnapshot:
 
 
 class WindowEnum(Enum):
+    """The leaderboard time window: seasonal or lifetime."""
+
     SEASONAL = "seasonal"
     LIFETIME = "lifetime"
 
 
 class MemberExpLogSourceEnum(Enum):
+    """The source of an exp-log entry: message earned or frog awarded."""
+
     MESSAGE = "message"
     FROG = "frog"
 
@@ -48,11 +52,15 @@ class SpeciesKey(Enum):
 
 
 class WelcomeModeEnum(Enum):
+    """Welcome handling mode: pending approval or auto role grant."""
+
     PENDING = "pending"
     ROLE = "role"
 
 
 class ModlogTypeEnum(Enum):
+    """The moderation action a modlog entry records."""
+
     WARN = "warn"
     MUTE = "mute"
     KICK = "kick"
@@ -61,6 +69,8 @@ class ModlogTypeEnum(Enum):
 
 
 class ModlogStatusEnum(Enum):
+    """Lifecycle state of a modlog entry."""
+
     ACTIVE = "active"
     PARDONED = "pardoned"
     DELETED = "deleted"

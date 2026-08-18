@@ -102,6 +102,12 @@ class Config:
         guild: str = "develop",
         sandbox: tuple[str, ...] | None = None,
     ) -> "Config":
+        """Load the bot configuration from environment variables.
+
+        The ``bot``/``guild`` sides pick which token, guild, database file,
+        and asset channel are used; ``debug``/``sandbox`` gate their special
+        modes. Raises ``RuntimeError`` when a required setting is missing.
+        """
         load_dotenv()
 
         bot_side = parse_side(bot)

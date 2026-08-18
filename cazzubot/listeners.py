@@ -54,6 +54,8 @@ def guild_listener(
     guild (events from the other guild and DMs are dropped first)."""
 
     def decorate(fn: GuildListener[EventT]) -> GuildListener[EventT]:
+        """Attach the guild-gated listener under ``event_type``."""
+
         @loader.listener(event_type)
         async def gated(event: EventT) -> None:
             bot = cast(CazzuBot, event.app)

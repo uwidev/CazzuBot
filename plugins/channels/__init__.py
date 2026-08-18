@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 
 
 class ChannelsPlugin(ManifestDriftPlugin):
+    """Channels plugin — warn-only boot drift check for the channels manifest."""
+
     name = "channels"
     domain = "channels"
     default_path = "channels.manifest"

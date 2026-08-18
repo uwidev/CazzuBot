@@ -60,6 +60,7 @@ def _payloads(client: hikari.api.RESTClient) -> list[tuple[str, object]]:
 
 
 async def main() -> None:
+    """Smoke-test the bot's components against the real API (CLI)."""
     app = hikari.RESTApp()
     await app.start()
     try:

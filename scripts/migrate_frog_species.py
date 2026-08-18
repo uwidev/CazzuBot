@@ -175,6 +175,7 @@ def migrate(conn: sqlite3.Connection) -> MigrationPlan:
 
 
 def main() -> int:
+    """Migrate frog species columns (CLI entry)."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--db",

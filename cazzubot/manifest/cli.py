@@ -317,6 +317,8 @@ def _atomic_write(path: Path, text: str) -> None:
 
 
 def add_file_args(default: Path) -> Callable[[argparse.ArgumentParser], None]:
+    """Build the ``--file`` argument group bound to ``default``."""
+
     def _add(parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--file",
@@ -329,6 +331,7 @@ def add_file_args(default: Path) -> Callable[[argparse.ArgumentParser], None]:
 
 
 def add_diff_args(parser: argparse.ArgumentParser) -> None:
+    """Add the diff preview's ``--delete`` flag."""
     parser.add_argument(
         "--delete",
         action="store_true",
@@ -337,6 +340,7 @@ def add_diff_args(parser: argparse.ArgumentParser) -> None:
 
 
 def add_apply_args(parser: argparse.ArgumentParser) -> None:
+    """Add the apply command's ``--yes``/``--delete`` flags."""
     parser.add_argument(
         "--yes", action="store_true", help="skip the confirmation prompt"
     )
@@ -348,6 +352,7 @@ def add_apply_args(parser: argparse.ArgumentParser) -> None:
 
 
 def add_restore_args(parser: argparse.ArgumentParser) -> None:
+    """Add the restore command's ``snapshot`` path and ``--yes`` flag."""
     parser.add_argument("snapshot", type=Path)
     parser.add_argument(
         "--yes", action="store_true", help="skip the confirmation prompt"

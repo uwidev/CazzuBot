@@ -39,6 +39,7 @@ EPOCH = "1970-01-01T00:00:00+00:00"
 
 
 def main() -> int:
+    """Migrate counter-event rows (CLI entry)."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--db", default="data/cazzubot-prod.db", help="sqlite database file"

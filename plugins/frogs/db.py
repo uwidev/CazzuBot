@@ -73,18 +73,22 @@ class Spawn:
 
 
 async def get_message(settings: Settings) -> dict[str, Any] | None:
+    """The frog spawn/capture message template, or None."""
     return await settings.get(MESSAGE_KEY)
 
 
 async def set_message(settings: Settings, message: dict[str, Any]) -> None:
+    """Persist the frog message template."""
     await settings.set(MESSAGE_KEY, message)
 
 
 async def get_enabled(settings: Settings) -> bool:
+    """Whether frogs are enabled."""
     return bool(await settings.get(ENABLED_KEY, False))
 
 
 async def set_enabled(settings: Settings, val: bool) -> None:
+    """Persist whether frogs are enabled."""
     await settings.set(ENABLED_KEY, val)
 
 
@@ -107,6 +111,7 @@ class FrogItem:
 
     @property
     def key(self) -> str:
+        """The derived inventory storage string for this frog stack."""
         return f"frog:{self.species.value}:{self.state.value}"
 
     @classmethod
@@ -157,6 +162,7 @@ async def total_inventory(db: Database, uid: int) -> int:
 
 
 async def modify_capture(db: Database, uid: int, modify: int) -> None:
+    """Add (or subtract) a member's lifetime capture counter."""
     await db.execute(
         """
 		INSERT INTO member_frog (uid, capture)
@@ -221,6 +227,7 @@ async def add_capture_log(
     waited_for: float,
     species_key: SpeciesKey,
 ) -> None:
+    """Log one capture with the species and wait time."""
     await db.execute(
         """
 		INSERT INTO member_frog_log (uid, type, at, waited_for)
@@ -255,6 +262,7 @@ async def seasonal_ranked(
 async def seasonal_captures(
     db: Database, uid: int, year: int, season: int
 ) -> int:
+    """A member's captures within a single season."""
     start, end = season_bounds(year, season)
     val = await db.fetchval(
         """
@@ -272,6 +280,7 @@ async def seasonal_captures(
 async def seasonal_total_members(
     db: Database, year: int, season: int
 ) -> int:
+    """How many distinct members captured frogs in a season."""
     start, end = season_bounds(year, season)
     val = await db.fetchval(
         """
@@ -286,6 +295,7 @@ async def seasonal_total_members(
 
 
 async def total_members(db: Database) -> int:
+    """How many members have a capture-counter row."""
     val = await db.fetchval("SELECT COUNT(*) FROM member_frog")
     return int(val or 0)
 
@@ -296,6 +306,7 @@ async def total_members(db: Database) -> int:
 async def upsert_spawn(
     db: Database, cid: int, interval: int, persist: int, fuzzy: float
 ) -> None:
+    """Upsert a channel's spawn cadence config."""
     await db.execute(
         """
 		INSERT INTO frog_spawn (cid, interval, persist, fuzzy)
@@ -313,10 +324,12 @@ async def upsert_spawn(
 
 
 async def clear_spawns(db: Database) -> None:
+    """Delete every spawn cadence config."""
     await db.execute("DELETE FROM frog_spawn")
 
 
 async def get_spawns(db: Database) -> list[Spawn]:
+    """All spawn cadence configs."""
     return await db.fetch_models(
         Spawn, "SELECT cid, interval, persist, fuzzy FROM frog_spawn"
     )

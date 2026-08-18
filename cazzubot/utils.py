@@ -323,6 +323,7 @@ class ConfirmMenu(lightbulb.components.Menu):
         *,
         delete_after: bool = True,
     ) -> None:
+        """Build the Yes/No buttons keyed to the invoking ``author_id``."""
         super().__init__()
         self.author_id = author_id
         self.delete_after = delete_after
@@ -337,6 +338,7 @@ class ConfirmMenu(lightbulb.components.Menu):
     async def _finish(
         self, mctx: lightbulb.components.MenuContext, value: bool
     ) -> None:
+        """Record the answer, enforce the author, and clean up the prompt."""
         if mctx.interaction.user.id != self.author_id:
             await mctx.respond(
                 "This prompt is not for you.",
@@ -365,9 +367,11 @@ class ConfirmMenu(lightbulb.components.Menu):
         mctx.stop_interacting()
 
     async def _yes(self, mctx: lightbulb.components.MenuContext) -> None:
+        """Author clicked Yes → finish with ``True``."""
         await self._finish(mctx, True)
 
     async def _no(self, mctx: lightbulb.components.MenuContext) -> None:
+        """Author clicked No → finish with ``False``."""
         await self._finish(mctx, False)
 
 

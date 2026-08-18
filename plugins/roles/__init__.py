@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 
 
 class RolesPlugin(ManifestDriftPlugin):
+    """Roles plugin — warn-only boot drift check for the roles manifest."""
+
     name = "roles"
     domain = "roles"
     default_path = "roles.manifest"

@@ -17,6 +17,7 @@ _SIDES = ("production", "p", "develop", "d")
 
 
 async def main() -> None:
+    """Probe the guild's channels against the manifest (CLI entry)."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--bot",

@@ -54,7 +54,9 @@ class InventoryKey(Protocol):
     """
 
     @property
-    def key(self) -> str: ...
+    def key(self) -> str:
+        """The derived storage string for this item."""
+        ...
 
 
 async def add(
@@ -179,21 +181,27 @@ class Inventory:
     schema = _SCHEMA
 
     def __init__(self, bot: "CazzuBot") -> None:
+        """Bind the service to ``bot`` (operations run on ``bot.db``)."""
         self.bot = bot
 
     async def add(self, uid: int, item: InventoryKey, amount: int) -> None:
+        """Add (or subtract) ``amount`` from a member's ``item`` stack."""
         return await add(self.bot.db, uid, item, amount)
 
     async def get(self, uid: int, item: InventoryKey) -> int:
+        """A member's stack of ``item`` (0 when absent)."""
         return await get(self.bot.db, uid, item)
 
     async def rows(
         self, uid: int, *, prefix: str | None = None
     ) -> list[tuple[str, int]]:
+        """A member's non-empty stacks, optionally filtered by ``prefix``."""
         return await rows(self.bot.db, uid, prefix=prefix)
 
     async def total(self, uid: int, *, prefix: str | None = None) -> int:
+        """Total quantity a member holds, optionally within ``prefix``."""
         return await total(self.bot.db, uid, prefix=prefix)
 
     async def move_all(self, src: InventoryKey, dst: InventoryKey) -> None:
+        """Fold every member's ``src`` stack into ``dst``."""
         return await move_all(self.bot.db, src, dst)

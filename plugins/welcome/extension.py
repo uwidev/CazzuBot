@@ -99,6 +99,7 @@ async def _send_welcome(
     member: hikari.Member,
     msg_json: dict[str, Any] | None,
 ) -> None:
+    """Send the welcome template to ``channel`` (no-op when unset)."""
     if not msg_json:
         return
     utils.deep_map(
@@ -117,12 +118,15 @@ class SetEnabled(
     description="Enable or disable welcome messages.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Enable or disable welcome messages."""
+
     enabled = lightbulb.boolean(
         "enabled", "Whether welcome messages are on"
     )
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the welcome enabled flag."""
         bot = utils.bot_from(ctx)
         await bot.settings.set("welcome.enabled", self.enabled)
         await window_success(
@@ -140,10 +144,13 @@ class SetRole(
     description="Set the default role given after welcome.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Set the default role given after welcome."""
+
     role = lightbulb.role("role", "The default role")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the default role id."""
         bot = utils.bot_from(ctx)
         await bot.settings.set("welcome.default_rid", self.role.id)
         await window_success(ctx, f"Default role set to {self.role}")
@@ -156,6 +163,8 @@ class SetChannel(
     description="Set the welcome channel.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Set the welcome channel."""
+
     channel = lightbulb.channel(
         "channel",
         "The welcome channel",
@@ -164,6 +173,7 @@ class SetChannel(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the welcome channel id."""
         bot = utils.bot_from(ctx)
         await bot.settings.set("welcome.cid", self.channel.id)
         await window_success(ctx, f"Welcome channel set to {self.channel}")
@@ -176,6 +186,8 @@ class SetMessage(
     description="Set the welcome message JSON (embed-capable).",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Set the welcome message JSON (embed-capable)."""
+
     message = lightbulb.string("message", "The welcome message JSON")
 
     @lightbulb.invoke
@@ -202,6 +214,8 @@ class SetMode(
     description="Set the welcome trigger mode.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Set the welcome trigger mode."""
+
     mode = lightbulb.string(
         "mode",
         "pending = onboarding flag clears; role = gains the monitored role",
@@ -213,6 +227,7 @@ class SetMode(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the welcome trigger mode."""
         bot = utils.bot_from(ctx)
         try:
             mode_enum = WelcomeModeEnum(self.mode.lower())
@@ -231,10 +246,13 @@ class SetMonitor(
     description="Set the role whose gain triggers the welcome.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Set the role whose gain triggers the welcome."""
+
     role = lightbulb.role("role", "The monitored role")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the monitored role id."""
         bot = utils.bot_from(ctx)
         await bot.settings.set("welcome.monitor_rid", self.role.id)
         await window_success(ctx, f"Monitored role set to {self.role}")
@@ -247,8 +265,11 @@ class Demo(
     description="Preview the welcome message with you as the new user.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Preview the welcome message with the invoker as the new user."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the stored welcome message as a preview."""
         bot = utils.bot_from(ctx)
         msg_json = await bot.settings.get("welcome.message")
         if not msg_json:
@@ -269,8 +290,11 @@ class Raw(
     description="Dump the raw stored welcome message JSON.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Dump the raw stored welcome message JSON."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Echo the stored welcome message JSON verbatim."""
         bot = utils.bot_from(ctx)
         msg_json = await bot.settings.get("welcome.message")
         await ctx.respond(f"```{json.dumps(msg_json, indent=2)}```")

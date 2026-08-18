@@ -52,7 +52,9 @@ class Sendable(Protocol):
         content: str | None = None,
         *,
         flags: int = 0,
-    ) -> Any: ...
+    ) -> Any:
+        """Send ``content`` as an interaction response; ``flags`` apply to it."""
+        ...
 
 
 def _error_line(exc: BaseException) -> str:
@@ -64,26 +66,32 @@ class CommandWindow:
     """Buffered level-tagged reporting for one command invocation."""
 
     def __init__(self, ctx: Sendable) -> None:
+        """Start a window that flushes to ``ctx``."""
         self._ctx = ctx
         self._lines: list[str] = []
 
     # -- levels -----------------------------------------------------------
 
     def debug(self, msg: object) -> None:
+        """Buffer a debug line (same rendering as :meth:`info`)."""
         # debug and info are the same plain line; the level is kept for
         # call-site intent (matches the docstring's level table)
         self.info(msg)
 
     def info(self, msg: object) -> None:
+        """Buffer a plain line."""
         self._lines.append(str(msg))
 
     def success(self, msg: object) -> None:
+        """Buffer a ✓-prefixed line."""
         self._lines.append(f"{_SUCCESS} {msg}")
 
     def warn(self, msg: object) -> None:
+        """Buffer a ⚠-prefixed line."""
         self._lines.append(f"{_WARN} {msg}")
 
     def error(self, msg: object) -> None:
+        """Buffer a ✖-prefixed line."""
         self._lines.append(f"{_ERROR} {msg}")
 
     # -- delivery ----------------------------------------------------------
@@ -101,6 +109,7 @@ class CommandWindow:
     # -- context manager ---------------------------------------------------
 
     async def __aenter__(self) -> "CommandWindow":
+        """Return ``self`` (the window is the context-manager value)."""
         return self
 
     async def __aexit__(
@@ -109,6 +118,7 @@ class CommandWindow:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> bool:
+        """Flush the window; on exception, add an error line first."""
         if exc_type is not None:
             # the CM protocol guarantees exc is non-None with exc_type
             self.error(_error_line(cast(BaseException, exc)))
@@ -158,22 +168,27 @@ def windowed(func: F) -> F:
 
 
 async def _one_off(ctx: Sendable, level: str, msg: object) -> None:
+    """Flush a single message at ``level`` via a scratch window."""
     window = CommandWindow(ctx)
     getattr(window, level)(msg)
     await window.flush()
 
 
 async def window_info(ctx: Sendable, msg: object) -> None:
+    """Send a one-off info message."""
     await _one_off(ctx, "info", msg)
 
 
 async def window_success(ctx: Sendable, msg: object) -> None:
+    """Send a one-off success message."""
     await _one_off(ctx, "success", msg)
 
 
 async def window_warn(ctx: Sendable, msg: object) -> None:
+    """Send a one-off warning message."""
     await _one_off(ctx, "warn", msg)
 
 
 async def window_error(ctx: Sendable, msg: object) -> None:
+    """Send a one-off error message."""
     await _one_off(ctx, "error", msg)

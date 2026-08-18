@@ -42,6 +42,8 @@ class Add(
     description="Add a rank role at a level threshold.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Add a rank role at a level threshold."""
+
     level = lightbulb.integer(
         "level", "The level threshold", min_value=1, max_value=999
     )
@@ -50,6 +52,7 @@ class Add(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the rank threshold."""
         bot = utils.bot_from(ctx)
         await ranks_db.add(
             bot.db, self.role.id, self.level, mode=WindowEnum(self.mode)
@@ -66,11 +69,14 @@ class Remove(
     description="Remove a rank role.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Remove a rank role."""
+
     role = lightbulb.role("role", "The rank role")
     mode = _mode_option()
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Drop the role's rank threshold."""
         bot = utils.bot_from(ctx)
         await ranks_db.delete(bot.db, self.role.id, WindowEnum(self.mode))
         await window_success(ctx, f"Removed {self.role}")
@@ -83,8 +89,11 @@ class Clean(
     description="Remove ranks whose roles no longer exist in the guild.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Remove ranks whose roles no longer exist in the guild."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Drop thresholds for roles missing from the guild."""
         bot = utils.bot_from(ctx)
         guild = bot.guild
         if guild is None:
@@ -110,10 +119,13 @@ class Clear(
     description="Drop all rank thresholds for a window.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Drop all rank thresholds for a window."""
+
     mode = _mode_option()
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Clear the window's rank thresholds."""
         bot = utils.bot_from(ctx)
         await ranks_db.drop(bot.db, WindowEnum(self.mode))
         await window_success(ctx, "Cleared rank thresholds")
@@ -129,11 +141,14 @@ class SetEnabled(
     description="Enable or disable rank-up messages for a window.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Enable or disable rank-up messages for a window."""
+
     val = lightbulb.boolean("val", "Whether rank messages are enabled")
     mode = _mode_option()
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the rank message enabled flag."""
         bot = utils.bot_from(ctx)
         await ranks_db.set_enabled(
             bot.settings, self.val, WindowEnum(self.mode)
@@ -153,11 +168,14 @@ class SetKeepOld(
     description="Keep old rank roles after a reset for a window.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Keep old rank roles after a reset for a window."""
+
     val = lightbulb.boolean("val", "Whether to keep old rank roles")
     mode = _mode_option()
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the keep-old setting."""
         bot = utils.bot_from(ctx)
         await ranks_db.set_keep_old(
             bot.settings, self.val, WindowEnum(self.mode)
@@ -172,6 +190,8 @@ class SetMessage(
     description="Set the rank-up message JSON.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Set the rank-up message JSON."""
+
     message = lightbulb.string("message", "The rank-up message JSON")
     mode = _mode_option()
 
@@ -197,10 +217,13 @@ class Demo(
     description="Preview the rank-up message.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Preview the rank-up message."""
+
     mode = _mode_option()
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the stored rank-up message as a preview."""
         bot = utils.bot_from(ctx)
         msg_json = await ranks_db.get_message(
             bot.settings, WindowEnum(self.mode)
@@ -223,10 +246,13 @@ class Raw(
     description="Dump the raw stored rank-up message JSON.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Dump the raw stored rank-up message JSON."""
+
     mode = _mode_option()
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Echo the stored rank-up message JSON verbatim."""
         bot = utils.bot_from(ctx)
         msg_json = await ranks_db.get_message(
             bot.settings, WindowEnum(self.mode)

@@ -84,6 +84,7 @@ class Manifest:
     groups: tuple[GroupSpec, ...] = ()
 
     def channel_names(self) -> tuple[str, ...]:
+        """All channel names across every group, in order."""
         return tuple(
             ch.name for group in self.groups for ch in group.channels
         )
@@ -98,6 +99,7 @@ class Manifest:
         return tuple(names)
 
     def titles(self) -> tuple[str | None, ...]:
+        """Each group's title (None for uncategorized groups)."""
         return tuple(group.title for group in self.groups)
 
     def renames(self) -> tuple[tuple[int, str, str], ...]:

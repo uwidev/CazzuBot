@@ -47,6 +47,8 @@ async def on_board_weekly_due(
 
 
 class BoardPlugin(Plugin):
+    """Board plugin — weekly image scrape → numbered grid."""
+
     name = "board"
     schema = db.SCHEMA
     extensions = ["plugins.board.extension"]

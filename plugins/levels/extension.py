@@ -31,10 +31,13 @@ class Set(
     description="Set the level-up message JSON.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Set the level-up message JSON."""
+
     message = lightbulb.string("message", "The level-up message JSON")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Validate and persist the level-up message JSON."""
         bot = utils.bot_from(ctx)
         member = ctx.member or ctx.user
         decoded = templates.verify(
@@ -53,8 +56,11 @@ class Demo(
     description="Preview the level-up message as yourself.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Preview the level-up message as the invoker."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the stored message template as a preview."""
         bot = utils.bot_from(ctx)
         member = ctx.member or ctx.user
         msg_json = await bot.settings.get(MESSAGE_KEY)
@@ -78,8 +84,11 @@ class Raw(
     description="Dump the raw stored level-up message JSON.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Dump the raw stored level-up message JSON."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Echo the stored message JSON verbatim."""
         bot = utils.bot_from(ctx)
         msg_json = await bot.settings.get(MESSAGE_KEY)
         await ctx.respond(f"```{json.dumps(msg_json, indent=2)}```")

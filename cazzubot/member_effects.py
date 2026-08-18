@@ -127,6 +127,7 @@ class MemberEffects:
     schema = _SCHEMA
 
     def __init__(self, bot: "CazzuBot") -> None:
+        """Bind the service to ``bot``."""
         self.bot = bot
 
     async def set(
@@ -137,6 +138,7 @@ class MemberEffects:
         *,
         expires_at: pendulum.DateTime | None = None,
     ) -> None:
+        """Set a modifier (``expires_at=None`` makes it permanent)."""
         return await set(
             self.bot.db, uid, key, value, expires_at=expires_at
         )
@@ -148,7 +150,9 @@ class MemberEffects:
         *,
         now: pendulum.DateTime | None = None,
     ) -> float | None:
+        """A member's modifier value, or None when absent or expired."""
         return await get(self.bot.db, uid, key, now=now)
 
     async def clear(self, uid: int, key: MemberEffectKey) -> None:
+        """Remove a modifier explicitly."""
         return await clear(self.bot.db, uid, key)

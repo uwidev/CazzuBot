@@ -36,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the parser with one subparser per domain and verb."""
     parser = argparse.ArgumentParser(
         prog="cazzubot-cli",
         description="Single entry for CazzuBot admin tooling.",

@@ -70,7 +70,9 @@ class Effect(Protocol):
         uid: int,
         species_key: SpeciesKey,
         now: pendulum.DateTime,
-    ) -> None: ...
+    ) -> None:
+        """Handle the effect's catch side (protocol contract; no-op by default)."""
+        ...
 
     async def consume(
         self,
@@ -82,7 +84,9 @@ class Effect(Protocol):
         amount: int,
         state: FrogState,
         now: pendulum.DateTime,
-    ) -> None: ...
+    ) -> None:
+        """Handle the effect's consume side (a protocol contract; no-op by default)."""
+        ...
 
 
 class ExpEffect:
@@ -97,6 +101,7 @@ class ExpEffect:
         species_key: SpeciesKey,
         now: pendulum.DateTime,
     ) -> None:
+        """No catch behavior — exp is granted on consume only."""
         return None  # no catch behavior
 
     async def consume(
@@ -110,6 +115,7 @@ class ExpEffect:
         state: FrogState,
         now: pendulum.DateTime,
     ) -> None:
+        """Grant seasonal exp for ``amount`` frogs consumed in ``state``."""
         if not isinstance(payload, ExpPayload):
             raise TypeError(
                 "exp effect requires ExpPayload, got "

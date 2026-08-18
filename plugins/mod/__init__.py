@@ -17,6 +17,8 @@ from .extension import on_modlog_due
 
 
 class ModPlugin(Plugin):
+    """Mod plugin — moderation actions and modlog (ships disabled)."""
+
     name = "mod"
     schema = db.SCHEMA
     extensions = ["plugins.mod.extension"]

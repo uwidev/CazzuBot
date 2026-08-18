@@ -47,6 +47,7 @@ async def add(
     *,
     mode: WindowEnum = WindowEnum.SEASONAL,
 ) -> None:
+    """Upsert a rank threshold for a role id in a window."""
     await db.execute(
         """
 		INSERT OR REPLACE INTO rank_threshold (rid, threshold, mode)
@@ -61,6 +62,7 @@ async def add(
 async def get(
     db: Database, *, mode: WindowEnum = WindowEnum.SEASONAL
 ) -> list[RankThreshold]:
+    """Thresholds for a window, lowest first."""
     return await db.fetch_models(
         RankThreshold,
         """
@@ -83,6 +85,7 @@ async def delete(db: Database, rid: int, mode: WindowEnum) -> None:
 
 
 async def batch_delete(db: Database, rids: list[int]) -> None:
+    """Delete the threshold rows for ``rids``."""
     if not rids:
         return
     placeholders = ",".join("?" * len(rids))
@@ -93,6 +96,7 @@ async def batch_delete(db: Database, rids: list[int]) -> None:
 
 
 async def drop(db: Database, mode: WindowEnum) -> None:
+    """Delete every threshold row for a window."""
     await db.execute(
         "DELETE FROM rank_threshold WHERE mode = ?", mode.value
     )
@@ -143,6 +147,7 @@ def calc_min_rank(
 async def get_message(
     settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
 ) -> dict[str, Any] | None:
+    """The rank-up message template for a window, or None."""
     return await settings.get(_key(mode, "message"))
 
 
@@ -151,12 +156,14 @@ async def set_message(
     message: dict[str, Any],
     mode: WindowEnum = WindowEnum.SEASONAL,
 ) -> None:
+    """Persist the rank-up message template for a window."""
     await settings.set(_key(mode, "message"), message)
 
 
 async def get_enabled(
     settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
 ) -> bool:
+    """Whether ranks are enabled for a window."""
     return bool(await settings.get(_key(mode, "enabled"), False))
 
 
@@ -165,12 +172,14 @@ async def set_enabled(
     val: bool,
     mode: WindowEnum = WindowEnum.SEASONAL,
 ) -> None:
+    """Persist whether ranks are enabled for a window."""
     await settings.set(_key(mode, "enabled"), val)
 
 
 async def get_keep_old(
     settings: Settings, mode: WindowEnum = WindowEnum.SEASONAL
 ) -> bool:
+    """Whether old (lower) roles are kept on rank-up for a window."""
     return bool(await settings.get(_key(mode, "keep_old"), True))
 
 
@@ -179,8 +188,10 @@ async def set_keep_old(
     val: bool,
     mode: WindowEnum = WindowEnum.SEASONAL,
 ) -> None:
+    """Persist the keep-old setting for a window."""
     await settings.set(_key(mode, "keep_old"), val)
 
 
 def _key(mode: WindowEnum, field: str) -> str:
+    """The settings key for ``field`` of a window's rank config."""
     return f"rank.{mode.value}.{field}"

@@ -40,12 +40,16 @@ EVERYONE = "@everyone"
 
 @dataclass(frozen=True, slots=True)
 class CreateOp:
+    """Plan op: create one role with its ``spec`` and ``permissions``."""
+
     spec: RoleSpec
     permissions: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
 class DeleteOp:
+    """Plan op: delete the role by ``name`` and ``id``."""
+
     name: str
     id: int
     member_count: int | None = None
@@ -72,6 +76,7 @@ class Plan:
 
     @property
     def needs_reorder(self) -> bool:
+        """True when the target sidebar order differs from the current one."""
         return self.target_order != self.current_order
 
     @property
@@ -120,6 +125,7 @@ class Plan:
         return plan_needs_apply(self)
 
     def summary(self) -> str:
+        """A one-line human-readable summary of the plan."""
         return plan_summary(self)
 
     def render(self) -> str:

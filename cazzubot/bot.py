@@ -45,6 +45,7 @@ class CazzuBot(hikari.GatewayBot):
         *,
         plugins_dir: str = "plugins",
     ) -> None:
+        """Build the bot and all its shared services from ``config``."""
         intents = (
             hikari.Intents.ALL_UNPRIVILEGED
             | hikari.Intents.MESSAGE_CONTENT
@@ -108,6 +109,7 @@ class CazzuBot(hikari.GatewayBot):
     # -- bot lifecycle -----------------------------------------------------
 
     async def _on_starting(self, _event: hikari.StartingEvent) -> None:
+        """Connect the db, run schemas, load plugins, start services."""
         _log.info("connecting to database...")
         await self.db.connect()
 
@@ -207,6 +209,7 @@ class CazzuBot(hikari.GatewayBot):
             raise SystemExit(1) from err
 
     async def _on_started(self, _event: hikari.StartedEvent) -> None:
+        """Log login details; warn if the configured guild is missing."""
         me = self.get_me()
         if me is not None:
             _log.info("logged in as %s (%s)", me, me.id)
@@ -217,6 +220,7 @@ class CazzuBot(hikari.GatewayBot):
             asyncio.create_task(self._warn_if_guild_missing())
 
     async def _warn_if_guild_missing(self) -> None:
+        """Warn (once) if the configured guild never landed in the cache."""
         await asyncio.sleep(2)
         if self.guild is None:
             _log.warning(
@@ -232,6 +236,7 @@ class CazzuBot(hikari.GatewayBot):
             _log.info("configured guild %s available", event.guild_id)
 
     async def _on_stopping(self, _event: hikari.StoppingEvent) -> None:
+        """Stop services, unload every plugin, close the database."""
         await self.scheduler.stop()
         for plugin in list(self.plugins):
             await self.unload_plugin(plugin)

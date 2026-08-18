@@ -30,6 +30,8 @@ async def on_daily_due(bot: CazzuBot, _payload: dict[str, object]) -> None:
 
 
 class ExperiencePlugin(Plugin):
+    """Experience plugin — message exp pipeline and membership card."""
+
     name = "experience"
     schema = db.SCHEMA
     extensions = ["plugins.experience.extension"]

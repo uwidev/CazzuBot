@@ -28,6 +28,10 @@ class Database:
     """Owns the sqlite connection and provides query helpers."""
 
     def __init__(self, path: str) -> None:
+        """Hold the database ``path``; the connection opens in :meth:`connect`.
+
+        Also owns the asyncio lock that serializes explicit transactions.
+        """
         self.path = path
         self._conn: aiosqlite.Connection | None = None
         self._tx_lock = asyncio.Lock()
@@ -50,12 +54,18 @@ class Database:
         _log.info("database opened at %s", self.path)
 
     async def close(self) -> None:
+        """Close the connection (no-op if never opened)."""
         if self._conn is not None:
             await self._conn.close()
             self._conn = None
 
     @property
     def conn(self) -> aiosqlite.Connection:
+        """The live connection used by the query helpers.
+
+        Raises:
+            RuntimeError: if the database is not connected.
+        """
         if self._conn is None:
             raise RuntimeError("database is not connected")
         return self._conn
@@ -77,6 +87,7 @@ class Database:
         return cur.rowcount
 
     async def fetchone(self, sql: str, *args: Any) -> aiosqlite.Row | None:
+        """Run a statement and return the first row, or ``None``."""
         cur = await self.conn.execute(sql, args)
         try:
             return await cur.fetchone()
@@ -84,6 +95,7 @@ class Database:
             await cur.close()
 
     async def fetchall(self, sql: str, *args: Any) -> list[aiosqlite.Row]:
+        """Run a statement and return all rows as a list."""
         cur = await self.conn.execute(sql, args)
         try:
             return list(await cur.fetchall())
@@ -91,6 +103,7 @@ class Database:
             await cur.close()
 
     async def fetchval(self, sql: str, *args: Any) -> Any:
+        """Run a statement and return the first column of the first row, or ``None``."""
         row = await self.fetchone(sql, *args)
         return row[0] if row else None
 

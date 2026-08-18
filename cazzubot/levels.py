@@ -31,6 +31,8 @@ _levels_exp_values: list[float] = [0.0]
 
 
 class BoundingType(Enum):
+    """Which asymptotic envelope bounds the level curve: upper or lower."""
+
     UPPER = auto()
     LOWER = auto()
 
@@ -72,23 +74,27 @@ def exp_for_level(n: int) -> float:
 
 
 def _base(x: float) -> float:
+    """The cosine wave offset at ``x``, in [0, 1]."""
     m = 1 - SKEW
     return 0.5 * (1 + cos(pi * (-CYCLES * x**m % 1)))
 
 
 def _bound(x: float, x_0: float, y_inf: float, y_rate: float) -> float:
+    """Asymptotic envelope approaching ``y_inf`` as ``x`` grows."""
     return (y_inf - x_0) * (
         1 - (1 / ((y_inf - x_0) * x + 1)) ** y_rate
     ) + x_0
 
 
 def _bound_by(x: float, mode: BoundingType) -> float:
+    """The envelope for ``mode`` at ``x``."""
     if mode == BoundingType.UPPER:
         return _bound(x, _UP_X_INIT, _UP_Y_LIM, _UP_Y_APPROACH)
     return _bound(x, _LOW_X_INIT, _LOW_Y_LIM, _LOW_Y_APPROACH)
 
 
 def _combined(x: float) -> float:
+    """Wave-modulated value bounded between the two envelopes."""
     upper = _bound_by(x, BoundingType.UPPER)
     lower = _bound_by(x, BoundingType.LOWER)
     return (upper - lower) * _base(x) + lower

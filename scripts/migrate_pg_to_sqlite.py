@@ -91,14 +91,17 @@ def to_flag(value: Any) -> int:
 
 
 def exp_row(r: dict[str, Any]) -> tuple[Any, ...]:
+    """Project a PG exp-log row into a SQLite tuple."""
     return (r["uid"], r["exp"], iso(r["at"]) or SENTINEL_AT, r["source"])
 
 
 def exp_stats_row(r: dict[str, Any]) -> tuple[Any, ...]:
+    """Project a PG member-exp row into a SQLite tuple."""
     return (r["uid"], r["lifetime"], r["msg_cnt"], iso(r["cdr"]))
 
 
 def frog_row(r: dict[str, Any]) -> tuple[Any, ...]:
+    """Project a PG member-frog row into a SQLite tuple."""
     return (
         r["uid"],
         to0(r["normal"]),
@@ -108,6 +111,7 @@ def frog_row(r: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def frog_log_row(r: dict[str, Any]) -> tuple[Any, ...]:
+    """Project a PG frog-log row into a SQLite tuple."""
     return (
         r["uid"],
         r["type"],
@@ -117,14 +121,17 @@ def frog_log_row(r: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def spawn_row(r: dict[str, Any]) -> tuple[Any, ...]:
+    """Project a PG frog-spawn row into a SQLite tuple."""
     return (r["cid"], r["interval"], r["persist"], r["fuzzy"])
 
 
 def threshold_row(r: dict[str, Any]) -> tuple[Any, ...]:
+    """Project a PG rank-threshold row into a SQLite tuple."""
     return (r["rid"], to0(r["threshold"]), r["mode"])
 
 
 def modlog_row(r: dict[str, Any]) -> tuple[Any, ...]:
+    """Project a PG modlog row into a SQLite tuple."""
     return (
         r["case_id"],
         r["uid"],
@@ -137,6 +144,7 @@ def modlog_row(r: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def poll_row(r: dict[str, Any]) -> tuple[Any, ...]:
+    """Project a PG poll row into a SQLite tuple."""
     return (
         r["id"],
         r["title"],
@@ -506,6 +514,7 @@ def verify_sqlite(sqlite: sqlite3.Connection, _gid: int) -> list[str]:
 
 
 async def main() -> int:
+    """Migrate the PostgreSQL database into SQLite (CLI entry)."""
     load_dotenv()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(

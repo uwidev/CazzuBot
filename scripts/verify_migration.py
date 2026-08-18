@@ -44,6 +44,7 @@ FAILS: list[str] = []
 
 
 def check(cond: bool, label: str, detail: str = "") -> None:
+    """Print a pass/fail check line; failures collect in ``FAILS``."""
     status = "ok  " if cond else "FAIL"
     if not cond:
         FAILS.append(label)
@@ -334,6 +335,7 @@ async def resync_no_drift(path: Path) -> None:
 
 
 async def settings_check(path: Path) -> None:
+    """Verify settings round-trip through v2 ``Settings``."""
     print("== settings round-trip through v2 Settings ==")
     db = Database(str(path))
     await db.connect()
@@ -375,6 +377,7 @@ async def settings_check(path: Path) -> None:
 
 
 def poll_integrity(path: Path) -> None:
+    """Verify poll integrity after item-id renumbering."""
     print("== poll integrity after item-id renumbering ==")
     conn = sqlite3.connect(path)
     votes_orphan_poll = conn.execute(
@@ -418,6 +421,7 @@ def poll_integrity(path: Path) -> None:
 
 
 async def main() -> int:
+    """Verify a completed migration end-to-end (CLI entry)."""
     load_dotenv()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(

@@ -33,15 +33,18 @@ class Settings:
     schema = _SCHEMA
 
     def __init__(self, db: Database) -> None:
+        """Bind the key-value store to ``db``."""
         self.db = db
 
     async def get(self, key: str, default: Any = None) -> Any:
+        """The JSON value for ``key``, or ``default`` when unset."""
         row = await self.db.fetchone(
             "SELECT value FROM settings WHERE key = ?", key
         )
         return load_json(row["value"], default) if row else default
 
     async def set(self, key: str, value: Any) -> None:
+        """Persist ``key`` -> JSON-serialized ``value`` (upsert)."""
         await self.db.execute(
             """
 			INSERT INTO settings (key, value) VALUES (?, ?)
@@ -52,8 +55,10 @@ class Settings:
         )
 
     async def delete(self, key: str) -> None:
+        """Remove ``key``."""
         await self.db.execute("DELETE FROM settings WHERE key = ?", key)
 
     async def all(self) -> dict[str, Any]:
+        """Every key-value pair as a dict."""
         rows = await self.db.fetchall("SELECT key, value FROM settings")
         return {r["key"]: load_json(r["value"]) for r in rows}

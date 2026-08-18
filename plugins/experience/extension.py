@@ -91,10 +91,13 @@ class Card(
     name="card",
     description="Show this season's experience and membership card.",
 ):
+    """Show this season's experience and membership card."""
+
     user = lightbulb.user("user", "The member to show", default=None)
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the seasonal membership card embed."""
         bot = utils.bot_from(ctx)
         target = self.user or ctx.member or ctx.user
         now = pendulum.now("UTC")
@@ -112,10 +115,13 @@ class Lifetime(
     name="lifetime",
     description="Lifetime experience variant of the membership card.",
 ):
+    """Show lifetime experience as a membership card."""
+
     user = lightbulb.user("user", "The member to show", default=None)
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the lifetime membership card embed."""
         bot = utils.bot_from(ctx)
         target = self.user or ctx.member or ctx.user
         rows = await exp_db.lifetime_ranked(bot.db)
@@ -132,6 +138,8 @@ class Top(
     name="top",
     description="Display the seasonal experience leaderboard (button-paged).",
 ):
+    """Display the seasonal experience leaderboard (button-paged)."""
+
     year = lightbulb.integer(
         "year", "The year", default=None, min_value=2023
     )
@@ -146,6 +154,7 @@ class Top(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the paged leaderboard and attach the pager menu."""
         bot = utils.bot_from(ctx)
         now = pendulum.now("UTC")
         year = self.year or now.year
@@ -185,8 +194,11 @@ class Resync(
     description="Rebuild every member's lifetime exp from the exp logs.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Rebuild every member's lifetime exp from the exp logs."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Confirm, then rebuild lifetime exp from the logs."""
         bot = utils.bot_from(ctx)
         if not await utils.author_confirm(ctx):
             return
@@ -208,8 +220,11 @@ class Quiet(
     name="list",
     description="List channels where level-up messages are suppressed.",
 ):
+    """List channels where level-up messages are suppressed."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Echo the current quiet list."""
         bot = utils.bot_from(ctx)
         quiets: list[int] = await bot.settings.get("level.quiet", []) or []
         await ctx.respond(str(quiets))
@@ -222,6 +237,8 @@ class QuietAdd(
     description="Suppress level-up messages in a channel.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Suppress level-up messages in a channel."""
+
     channel = lightbulb.channel(
         "channel",
         "The channel to quiet",
@@ -230,6 +247,7 @@ class QuietAdd(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Add a channel to the quiet list."""
         bot = utils.bot_from(ctx)
         quiets: list[int] = await bot.settings.get("level.quiet", []) or []
         if self.channel.id in quiets:
@@ -249,6 +267,8 @@ class QuietDel(
     description="Un-suppress level-up messages in a channel.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Un-suppress level-up messages in a channel."""
+
     channel = lightbulb.channel(
         "channel",
         "The channel to un-quiet",
@@ -257,6 +277,7 @@ class QuietDel(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Remove a channel from the quiet list."""
         bot = utils.bot_from(ctx)
         quiets: list[int] = await bot.settings.get("level.quiet", []) or []
         if self.channel.id not in quiets:
@@ -409,6 +430,7 @@ class TopMenu(lightbulb.components.Menu):
         rows: list[tuple[int, int, int]],
         page: int = 1,
     ) -> None:
+        """Build the pager buttons and remember the board's state."""
         super().__init__()
         self.bot = bot
         self.ctx = ctx
@@ -430,12 +452,14 @@ class TopMenu(lightbulb.components.Menu):
         )
 
     async def _edit(self, mctx: lightbulb.components.MenuContext) -> None:
+        """Re-render the embed at the current page (atomic ack+edit)."""
         embed = await _top_embed(self.ctx, self.date, self.rows, self.page)
         # respond(edit=True) is the atomic ack+edit: lightbulb menu clicks
         # arrive un-acked, and edit_response on the un-acked interaction 404s
         await mctx.respond(edit=True, embed=embed)
 
     async def _deny(self, mctx: lightbulb.components.MenuContext) -> None:
+        """Reply that the leaderboard is not the clicker's to page."""
         await mctx.respond(
             "This leaderboard is not yours to page.",
             flags=hikari.MessageFlag.EPHEMERAL,

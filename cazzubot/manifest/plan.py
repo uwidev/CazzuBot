@@ -21,6 +21,8 @@ RENAME_HINT_RATIO = 0.8
 
 @dataclass(frozen=True, slots=True)
 class UpdateOp:
+    """Plan op: update an item's fields, each an (old, new) value pair."""
+
     name: str
     id: int
     changes: dict[str, tuple[Any, Any]] = field(default_factory=dict)

@@ -67,10 +67,13 @@ class Profile(
     name="profile",
     description="Show this user's current frog profile.",
 ):
+    """Show a user's current frog profile."""
+
     member = lightbulb.user("member", "The member to show", default=None)
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the seasonal frog profile embed."""
         bot = utils.bot_from(ctx)
         target = self.member or ctx.member or ctx.user
         now = pendulum.now("UTC")
@@ -98,6 +101,8 @@ class Consume(
     name="consume",
     description="Consume frogs for seasonal experience.",
 ):
+    """Consume frogs for seasonal experience."""
+
     amount = lightbulb.integer(
         "amount", "How many frogs to consume", default=1, min_value=1
     )
@@ -116,6 +121,7 @@ class Consume(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Confirm and consume the selected frogs, granting their exp."""
         bot = utils.bot_from(ctx)
         uid = (ctx.member or ctx.user).id
         species_key = _species_key(self.species)
@@ -234,8 +240,11 @@ class Catalog(
     name="catalog",
     description="Browse the catchable frog species.",
 ):
+    """Browse the catchable frog species."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the species catalog embed."""
         bot = utils.bot_from(ctx)
         if not SPECIES:
             await ctx.respond("The frog catalog is empty.")
@@ -269,10 +278,13 @@ class Lifetime(
     name="lifetime",
     description="Lifetime frog profile variant.",
 ):
+    """Lifetime frog profile variant."""
+
     user = lightbulb.user("user", "The member to show", default=None)
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the lifetime frog profile embed."""
         bot = utils.bot_from(ctx)
         target = self.user or ctx.member or ctx.user
         rows = await frog_db.lifetime_ranked(bot.db)
@@ -298,6 +310,8 @@ class Register(
     description="Register this channel as a frog spawn channel.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Register this channel as a frog spawn channel."""
+
     interval = lightbulb.string(
         "interval", "Time between spawns (natural duration)"
     )
@@ -370,8 +384,11 @@ class Clear(
     description="Remove all frog settings and stop frog spawning.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Remove all frog settings and stop frog spawning."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Clear spawn configs and drop the spawn tasks."""
         bot = utils.bot_from(ctx)
         await frog_db.clear_spawns(bot.db)
         await bot.scheduler.drop_tag("frog")
@@ -388,10 +405,13 @@ class SetMessage(
     description="Set the capture message JSON.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Set the capture message JSON."""
+
     message = lightbulb.string("message", "The capture message JSON")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Validate and persist the capture message JSON."""
         bot = utils.bot_from(ctx)
         decoded = templates.verify(
             self.message,
@@ -409,10 +429,13 @@ class SetEnabled(
     description="Enable/disable frog spawns (re-queues or clears spawn tasks).",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Enable or disable frog spawns."""
+
     val = lightbulb.boolean("val", "Whether frog spawning is enabled")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Persist the flag and re-queue or clear the spawn tasks."""
         bot = utils.bot_from(ctx)
         await frog_db.set_enabled(bot.settings, self.val)
         await factory.reset_frog_tasks(bot)
@@ -431,8 +454,11 @@ class Demo(
     description="Preview the capture message as yourself.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Preview the capture message as the invoker."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the stored capture message as a preview."""
         bot = utils.bot_from(ctx)
         msg_json = await frog_db.get_message(bot.settings)
         if not msg_json:
@@ -453,8 +479,11 @@ class Raw(
     description="Dump the raw stored capture message JSON.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Dump the raw stored capture message JSON."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Echo the stored capture message JSON verbatim."""
         bot = utils.bot_from(ctx)
         msg_json = await frog_db.get_message(bot.settings)
         await ctx.respond(f"```{json.dumps(msg_json, indent=2)}```")
@@ -480,12 +509,15 @@ class Spawn(
     description="Force-spawn a frog in this channel.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Force-spawn a frog in this channel."""
+
     species = _species_option(
         "species", "The species to spawn (default: rolled)"
     )
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Post a spawned frog with its capture button."""
         # the frog message is the success signal — no separate confirmation
         await _spawn_and_wait(utils.bot_from(ctx), ctx, self.species)
 
@@ -497,12 +529,15 @@ class Fake(
     description="Post a fake frog with its capture button.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Post a fake frog with its capture button."""
+
     species = _species_option(
         "species", "The species to fake (default: rolled)"
     )
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Post a fake frog with its capture button."""
         await _spawn_and_wait(utils.bot_from(ctx), ctx, self.species)
 
 
@@ -513,8 +548,11 @@ class Resync(
     description="Rebuild lifetime capture counts from the frog logs.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Rebuild lifetime capture counts from the frog logs."""
+
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Confirm, then rebuild lifetime captures from the logs."""
         bot = utils.bot_from(ctx)
         if not await utils.author_confirm(ctx):
             return

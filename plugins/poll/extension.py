@@ -128,6 +128,8 @@ class Register(
     description="Register a poll and get its ID.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Register a poll and get its ID."""
+
     title = lightbulb.string("title", "The poll title")
     desc = lightbulb.string("desc", "The poll description", default=None)
     max_vote = lightbulb.integer(
@@ -136,6 +138,7 @@ class Register(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Insert the poll and report its new id."""
         bot = utils.bot_from(ctx)
         pid = await db.add_poll(
             bot.db, self.title, self.desc or "", self.max_vote
@@ -153,6 +156,8 @@ class AutoPopulate(
     description="Generate N empty items to vote on.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Generate ``n`` empty vote items on a poll."""
+
     pid = lightbulb.integer("pid", "Poll to generate items on")
     n = lightbulb.integer(
         "n", "Generate N items", min_value=1, max_value=50
@@ -160,6 +165,7 @@ class AutoPopulate(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Insert the placeholder vote items."""
         bot = utils.bot_from(ctx)
         # n is choices/bounds-validated by the option (1-50)
         await db.add_items_dummy(bot.db, self.pid, self.n)
@@ -176,6 +182,8 @@ class Send(
     description="Send the message containing the poll and its vote button.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Send the message containing the poll and its vote button."""
+
     poll_id = lightbulb.integer("poll_id", "ID associated with the poll")
     open = lightbulb.boolean(
         "open", "Open the poll when sent (default: no)", default=False
@@ -226,6 +234,8 @@ class Open(
     description="Open or close voting on a poll (syncs its vote button).",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Open or close voting on a poll (syncs its vote button)."""
+
     poll_id = lightbulb.integer("poll_id", "Poll ID to toggle")
     open = lightbulb.boolean(
         "open", "Open (default) or close", default=True
@@ -233,6 +243,7 @@ class Open(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Toggle the poll open and sync its message."""
         bot = utils.bot_from(ctx)
         err = await set_poll_open(bot, self.poll_id, open=self.open)
         if err:
@@ -252,10 +263,13 @@ class Close(
     description="Close voting on a poll and remove its vote button.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Close voting on a poll and remove its vote button."""
+
     poll_id = lightbulb.integer("poll_id", "Poll ID to close")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Close the poll and remove its vote button."""
         bot = utils.bot_from(ctx)
         err = await set_poll_open(bot, self.poll_id, open=False)
         if err:
@@ -274,10 +288,13 @@ class Stats(
     description="Show the current results from a poll.",
     hooks=[utils.OWNER_ONLY],
 ):
+    """Show the current results of a poll."""
+
     poll_id = lightbulb.integer("poll_id", "ID associated with the poll")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render the poll's vote counts table."""
         bot = utils.bot_from(ctx)
         votes = await db.get_results(bot.db, self.poll_id)
         if not votes:
@@ -365,6 +382,7 @@ class PollModal(modals.Modal):
         poll_row: db.Poll,
         items: list[int],
     ) -> None:
+        """Build the vote input and record the poll's vote rules."""
         super().__init__()
         self.bot = bot
         self.poll = poll_row
@@ -388,6 +406,7 @@ class PollModal(modals.Modal):
 
     @override
     async def on_submit(self, ctx: modals.ModalContext) -> None:
+        """Parse and record the submitted votes."""
         raw = ctx.value_for(self.vote_input) or ""
         try:
             pid = self.poll.id

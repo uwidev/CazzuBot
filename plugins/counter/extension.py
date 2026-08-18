@@ -66,6 +66,8 @@ class Create(
     description="Create the baka counter message in this channel.",
     hooks=[utils.ADMIN_ONLY],
 ):
+    """Create the baka counter message in this channel."""
+
     counter_id = lightbulb.integer(
         "counter_id",
         "Re-create a deleted counter by its id (keeps the count)",
@@ -74,6 +76,7 @@ class Create(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Run the create command: re-create a counter or start a new one."""
         bot = utils.bot_from(ctx)
         count = 0
         if self.counter_id is not None:

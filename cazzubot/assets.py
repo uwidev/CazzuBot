@@ -109,6 +109,11 @@ class Assets:
     def __init__(
         self, bot: "CazzuBot", config: Config, plugins_dir: str
     ) -> None:
+        """Bind the bot service and set the plugin assets root.
+
+        Subscribes ``self.sync_cdn`` to the ``StartedEvent`` ready gate so
+        CDN publishing runs only once REST is up.
+        """
         self.bot = bot
         self.config = config
         self.plugins_dir = Path(plugins_dir)

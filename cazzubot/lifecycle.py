@@ -43,6 +43,7 @@ class Lifecycle:
     """
 
     def __init__(self, bot: "CazzuBot") -> None:
+        """Start with an empty per-plugin undo stack."""
         self.bot = bot
         self._undo: dict[str, list[Undo]] = {}
 

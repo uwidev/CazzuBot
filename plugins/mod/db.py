@@ -101,8 +101,10 @@ async def mark_resolved_for(db: Database, uid: int, log_type: str) -> None:
 
 
 async def get_mute_role(settings: Settings) -> int | None:
+    """The configured mute role id, or None when unset."""
     return await settings.get(MUTE_ROLE_KEY)
 
 
 async def set_mute_role(settings: Settings, rid: int) -> None:
+    """Persist the configured mute role id."""
     await settings.set(MUTE_ROLE_KEY, rid)

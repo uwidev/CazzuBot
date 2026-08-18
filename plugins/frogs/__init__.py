@@ -46,6 +46,8 @@ async def on_quarterly_due(
 
 
 class FrogsPlugin(Plugin):
+    """Frogs plugin — spawn, capture and consume frogs via inventory."""
+
     name = "frogs"
     schema = db.SCHEMA
     extensions = ["plugins.frogs.extension"]

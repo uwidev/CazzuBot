@@ -289,6 +289,7 @@ def _scc(
     counter = 0
 
     def visit(node: str) -> None:
+        """Depth-first visit adding ``node``'s component to ``components``."""
         nonlocal counter
         index[node] = lowlink[node] = counter
         counter += 1

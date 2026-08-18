@@ -46,6 +46,7 @@ class MemberExp:
 
 
 async def get_member_exp(db: Database, uid: int) -> MemberExp | None:
+    """A member's ``member_exp`` row, or None."""
     return await db.fetch_model(
         MemberExp, "SELECT * FROM member_exp WHERE uid = ?", uid
     )
@@ -59,6 +60,7 @@ async def add_member_exp(
     msg_cnt: int = 0,
     cdr: str | None = None,
 ) -> None:
+    """Upsert a member's exp row (INSERT-only; the row already exists on update)."""
     await db.execute(
         """
 		INSERT OR IGNORE INTO member_exp (uid, lifetime, msg_cnt, cdr)
@@ -79,6 +81,7 @@ async def update_member_exp(
     msg_cnt: int,
     cdr: pendulum.DateTime,
 ) -> None:
+    """Set a member's lifetime, message count, and next exp cooldown."""
     await db.execute(
         """
 		UPDATE member_exp
@@ -100,6 +103,7 @@ async def add_exp_log(
     *,
     source: MemberExpLogSourceEnum = MemberExpLogSourceEnum.MESSAGE,
 ) -> None:
+    """Log one exp event with its ``source`` and timestamp."""
     await db.execute(
         """
 		INSERT INTO member_exp_log (uid, exp, at, source)
@@ -134,6 +138,7 @@ async def seasonal_ranked(
 async def seasonal_exp(
     db: Database, uid: int, year: int, season: int
 ) -> int:
+    """A member's exp earned within a single season."""
     start, end = season_bounds(year, season)
     val = await db.fetchval(
         """
@@ -151,6 +156,7 @@ async def seasonal_exp(
 async def seasonal_total_members(
     db: Database, year: int, season: int
 ) -> int:
+    """How many distinct members earned exp within a season."""
     start, end = season_bounds(year, season)
     val = await db.fetchval(
         """
@@ -165,6 +171,7 @@ async def seasonal_total_members(
 
 
 async def lifetime_ranked(db: Database) -> list[tuple[int, int, int]]:
+    """All members' lifetime exp, ranked: [(rank, uid, exp)]."""
     rows = await db.fetchall(
         "SELECT uid, lifetime AS exp FROM member_exp ORDER BY lifetime DESC"
     )
@@ -172,6 +179,7 @@ async def lifetime_ranked(db: Database) -> list[tuple[int, int, int]]:
 
 
 async def total_members(db: Database) -> int:
+    """How many members have an exp row."""
     val = await db.fetchval("SELECT COUNT(*) FROM member_exp")
     return int(val or 0)
 

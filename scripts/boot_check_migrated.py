@@ -49,6 +49,7 @@ FAILS: list[str] = []
 
 
 def check(cond: bool, label: str, detail: str = "") -> None:
+    """Print a pass/fail check line; failures collect in ``FAILS``."""
     status = "ok  " if cond else "FAIL"
     if not cond:
         FAILS.append(label)
@@ -56,6 +57,7 @@ def check(cond: bool, label: str, detail: str = "") -> None:
 
 
 def snapshot() -> dict[int, dict[str, int]]:
+    """Read each member's frog/exp counts from the DB as a dict."""
     conn = sqlite3.connect(DB)
     rows = conn.execute(
         "SELECT uid, normal, frozen, capture, msg_cnt FROM member_frog f "
@@ -68,6 +70,7 @@ def snapshot() -> dict[int, dict[str, int]]:
 
 
 async def main() -> None:
+    """Boot the v2 stack against the prod DB and verify the migration."""
     print(f"booting v2 stack against {DB}")
     before = snapshot()
     total_normal_before = sum(s["n"] for s in before.values())

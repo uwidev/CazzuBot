@@ -121,6 +121,7 @@ class At:
     _minute: int = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
+        """Validate the schedule spec and cache the parsed hour/minute."""
         match = re.fullmatch(r"(\d{2}):(\d{2})", self.time)
         if match is None:
             raise ValueError(
@@ -171,6 +172,7 @@ class At:
                 )
 
     def _clock(self) -> tuple[int, int]:
+        """The parsed ``(hour, minute)`` from ``time``."""
         return self._hour, self._minute
 
     def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
@@ -203,6 +205,7 @@ class At:
     # -- daily -----------------------------------------------------------
 
     def _next_daily(self, now: pendulum.DateTime) -> pendulum.DateTime:
+        """The next daily occurrence at ``time``, strictly after ``now``."""
         hour, minute = self._clock()
         candidate = now.start_of("day").replace(hour=hour, minute=minute)
         if candidate <= now:
@@ -210,6 +213,7 @@ class At:
         return candidate
 
     def _previous_daily(self, now: pendulum.DateTime) -> pendulum.DateTime:
+        """The most recent daily occurrence at ``time``, at-or-before ``now``."""
         hour, minute = self._clock()
         candidate = now.start_of("day").replace(hour=hour, minute=minute)
         if candidate > now:
@@ -342,6 +346,7 @@ class AtChaotic(At):
     _rng: random.Random = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
+        """Chain the base validation and build this instance's seeded RNG."""
         super().__post_init__()
         object.__setattr__(
             self, "_rng", _chaotic_rng(self.jitter, self.seed)
@@ -384,6 +389,7 @@ class In:
     interval: int | str
 
     def __post_init__(self) -> None:
+        """Reject intervals that are not positive."""
         if self._interval_seconds() <= 0:
             raise ValueError(
                 f"interval must be positive, got {self.interval!r}"
@@ -432,6 +438,7 @@ class InChaotic(In):
     _rng: random.Random = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
+        """Chain the base validation and build this instance's seeded RNG."""
         super().__post_init__()
         object.__setattr__(
             self, "_rng", _chaotic_rng(self.jitter, self.seed)
@@ -483,13 +490,16 @@ class TaskPolicy:
 class Cadence(Protocol):
     """Anything with a ``next_run`` — the schedule declarations above."""
 
-    def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime: ...
+    def next_run(self, now: pendulum.DateTime) -> pendulum.DateTime:
+        """The next occurrence of this cadence, strictly after ``now``."""
+        ...
 
 
 class Scheduler:
     """Owns the task table and dispatches due tasks once per second."""
 
     def __init__(self, bot: "CazzuBot", *, concurrency: int = 10) -> None:
+        """Bind ``bot`` and register the ready gate; ``concurrency`` caps handlers."""
         self.bot = bot
         self.handlers: dict[str, TaskHandler] = {}
         self.policies: dict[str, TaskPolicy] = {}
@@ -506,6 +516,7 @@ class Scheduler:
     schema = _SCHEMA
 
     async def start(self) -> None:
+        """Start the once-per-second dispatch loop (idempotent)."""
         if self._task is not None:
             return
         self._stopping = False
@@ -567,6 +578,7 @@ class Scheduler:
         self._ready.set()
 
     async def _run(self) -> None:
+        """Wait for the ready gate, then tick once per second until stopped."""
         await self._ready.wait()
         while not self._stopping:
             try:
@@ -624,16 +636,19 @@ class Scheduler:
         return out
 
     async def drop(self, task_id: int) -> None:
+        """Delete the task row with ``task_id``."""
         await self.bot.db.execute(
             "DELETE FROM tasks WHERE id = ?", task_id
         )
 
     async def drop_tag(self, tag: str) -> None:
+        """Delete every task row with ``tag``."""
         await self.bot.db.execute("DELETE FROM tasks WHERE tag = ?", tag)
 
     async def update_run_at(
         self, task_id: int, run_at: pendulum.DateTime
     ) -> None:
+        """Move the task row with ``task_id`` to a new ``run_at`` time."""
         await self.bot.db.execute(
             "UPDATE tasks SET run_at = ? WHERE id = ?",
             run_at.isoformat(),
@@ -849,4 +864,5 @@ def _is_stale(
 
 
 def _now(offset_seconds: int = 0) -> str:
+    """ISO-8601 UTC timestamp, optionally ``offset_seconds`` ahead."""
     return pendulum.now("UTC").add(seconds=offset_seconds).isoformat()

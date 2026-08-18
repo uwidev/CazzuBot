@@ -170,6 +170,7 @@ class Manifest:
     groups: tuple[GroupSpec, ...] = ()
 
     def role_names(self) -> tuple[str, ...]:
+        """All role names across every group, in order."""
         return tuple(
             role.name for group in self.groups for role in group.roles
         )

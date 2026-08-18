@@ -35,6 +35,7 @@ class EventBus:
     """Registers typed event handlers and dispatches emitted events."""
 
     def __init__(self) -> None:
+        """Start with no registered handlers."""
         self._handlers: list[tuple[type[Any], EventHandler[Any]]] = []
 
     def on(

@@ -52,6 +52,7 @@ async def snapshot_guild(
 
 
 def snapshot_role(role: hikari.Role, pos: int) -> RoleSnapshot:
+    """Snapshot a live role into the export dict for its ``pos``."""
     icon: str | None = None
     if role.unicode_emoji:
         icon = role.unicode_emoji
