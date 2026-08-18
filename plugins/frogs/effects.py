@@ -71,7 +71,8 @@ class Effect(Protocol):
         species_key: SpeciesKey,
         now: pendulum.DateTime,
     ) -> None:
-        """Handle the effect's catch side (protocol contract; no-op by default)."""
+        """Handle the effect's catch side (a protocol contract; each effect
+        implements it)."""
         ...
 
     async def consume(
@@ -85,7 +86,8 @@ class Effect(Protocol):
         state: FrogState,
         now: pendulum.DateTime,
     ) -> None:
-        """Handle the effect's consume side (a protocol contract; no-op by default)."""
+        """Handle the effect's consume side (a protocol contract; each
+        effect implements it)."""
         ...
 
 
