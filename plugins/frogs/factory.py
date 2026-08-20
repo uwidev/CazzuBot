@@ -133,9 +133,8 @@ async def spawn_and_wait(
 async def _frog_content(bot: CazzuBot, species_key: SpeciesKey) -> str:
     """The spawned frog's message text: species name + its art URL."""
     species = by_key(species_key)
-    name = species.name if species is not None else species_key.value
     art = await bot.assets.get(species.art) if species else None
-    return f"{name}\n{art}" if art else name
+    return f"{art}"
 
 
 class FrogCatchMenu(lightbulb.components.Menu):

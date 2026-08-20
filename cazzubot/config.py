@@ -23,12 +23,12 @@ DB_PATH_DEV = "DB_PATH_DEV"
 DB_PATH_DEFAULT_PROD = "data/cazzubot-prod.db"
 DB_PATH_DEFAULT_DEV = "data/cazzubot-dev.db"
 
-# The private channel per guild that hosts published asset blobs (the CDN
-# sync uploads new/changed files here and stores the returned URLs).
-# Common part front, side at the back, like GUILD_ID_*. Optional: without
-# a channel the bot boots and skips the sync with a warning.
-ASSET_CHANNEL_PROD = "ASSET_CHANNEL_PROD"
-ASSET_CHANNEL_DEV = "ASSET_CHANNEL_DEV"
+# The dedicated asset child-guild that hosts every asset (media blobs in a
+# private channel and custom emoji), shared by both served guilds — one
+# backing store, separation of concerns. Optional: without them the bot
+# boots and skips the sync with a warning.
+ASSET_GUILD_ID = "ASSET_GUILD_ID"
+ASSET_CHANNEL_ID = "ASSET_CHANNEL_ID"
 
 # Accepted spellings for the ``--bot``/``--guild`` sides (case-insensitive).
 _SIDES = {
@@ -71,9 +71,10 @@ class Config:
     - ``GUILD_ID_PROD`` / ``GUILD_ID_DEV``: the two guilds this bot serves
     - ``DB_PATH_PROD`` / ``DB_PATH_DEV``: per-guild sqlite database files
       (defaults ``data/cazzubot-prod.db`` / ``data/cazzubot-dev.db``)
-    - ``ASSET_CHANNEL_PROD`` / ``ASSET_CHANNEL_DEV``: the private channel
-      per guild that hosts published asset blobs (``None`` skips the CDN
-      sync with a boot warning)
+    - ``ASSET_GUILD_ID`` / ``ASSET_CHANNEL_ID``: the shared asset child-guild
+      and its private channel — media blobs CDN-publish into the channel and
+      custom emoji are created in the guild (``None`` skips the related sync
+      with a boot warning)
     """
 
     token: str
@@ -83,6 +84,7 @@ class Config:
     debug: bool = False
     sandbox_plugins: tuple[str, ...] | None = None
     debug_users: list[int] = field(default_factory=list)
+    asset_guild_id: int | None = None
     asset_channel_id: int | None = None
     # the guild side this config was loaded with ('production'/'development');
     # direct constructions (tests) default to the development side
@@ -121,11 +123,10 @@ class Config:
         default_db = _pick(
             guild_side, DB_PATH_DEFAULT_PROD, DB_PATH_DEFAULT_DEV
         )
-        # the asset channel follows the guild side too (optional)
-        asset_var = _pick(
-            guild_side, ASSET_CHANNEL_PROD, ASSET_CHANNEL_DEV
-        )
-        asset_channel = os.getenv(asset_var)
+        # the asset child-guild + its channel are SHARED (not side-paired):
+        # one backing store hosts media + emoji for both served guilds
+        asset_guild = os.getenv(ASSET_GUILD_ID)
+        asset_channel = os.getenv(ASSET_CHANNEL_ID)
 
         if token is None:
             raise RuntimeError(
@@ -151,6 +152,9 @@ class Config:
                 for uid in os.getenv("DEBUG_USERS", "").split(",")
                 if uid.strip()
             ],
+            asset_guild_id=int(asset_guild)
+            if asset_guild and asset_guild.strip().isdigit()
+            else None,
             asset_channel_id=int(asset_channel)
             if asset_channel and asset_channel.strip().isdigit()
             else None,

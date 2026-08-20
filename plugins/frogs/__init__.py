@@ -71,6 +71,13 @@ class FrogsPlugin(Plugin):
         await bot.scheduler.arm_if_rowless(
             QUARTERLY_TAG, QUARTERLY_CADENCE
         )
+        # present frog stacks in the generic /inventory grid
+        bot.inventory.register_renderer("frog", db.frog_renderer)
+
+    @override
+    async def on_unload(self, bot: CazzuBot) -> None:
+        # a hot-reload drops the renderer so the registry stays consistent
+        bot.inventory.unregister_renderer("frog")
 
 
 plugin = FrogsPlugin()

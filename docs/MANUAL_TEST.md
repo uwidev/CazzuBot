@@ -244,6 +244,12 @@ hikari.errors.NotFoundError: Not Found 404: (10015) 'Unknown Webhook' for https:
   Can't test this right now.
   ```
 
+- [ ] D7. `/inventory` shows a member's frog holdings as a numbered
+  inline-emoji grid (one embed, per-namespace header, empty state when the
+  member has nothing). Verify the slot numbers are stable across repeated
+  calls; the follow-up `/inventory consume (INDEX)` will address those
+  slots.
+
 ## E. mod
 
 Backlog all of mod. This isn't core nor is it finalized right now and is "in progress" in terms of development.

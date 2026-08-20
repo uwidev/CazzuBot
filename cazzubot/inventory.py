@@ -20,7 +20,8 @@ stay in per-feature logs (e.g. ``member_frog_log``).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Protocol
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable, Protocol
 
 from cazzubot.db import Database
 
@@ -57,6 +58,65 @@ class InventoryKey(Protocol):
     def key(self) -> str:
         """The derived storage string for this item."""
         ...
+
+
+@dataclass(frozen=True, slots=True)
+class ItemView:
+    """How one inventory item is presented in a grid slot.
+
+    The renderer's output: an inline ``icon`` (a Discord emoji, the only
+    thing that renders inline in an embed field) and a human ``label`` (the
+    species/item name and state). Kept framework-free so the core stays
+    hikari-clean.
+    """
+
+    icon: str
+    label: str
+
+
+Renderer = Callable[[str, int], ItemView]
+"""A presenter for one item namespace: ``(stored_item_key, qty) -> ItemView``.
+
+The core does not know what any namespace's items mean — the renderer for a
+``frog:...`` key parses it back into a species + state and renders its name/
+icon. The default (:data:`_default_renderer`) shows the raw key so an
+unknown or unregistered namespace degrades gracefully instead of crashing.
+"""
+
+
+# The namespace-keyed renderer registry — populate via register_renderer
+# (plugins do this in ``on_load``), so the generic inventory UI can present
+# any item type without the core importing that plugin (the effects-registry
+# pattern: no lookup table of the core's own, no plugin coupling).
+_RENDERERS: dict[str, Renderer] = {}
+
+
+def register_renderer(prefix: str, renderer: Renderer) -> None:
+    """Make ``prefix`` (e.g. ``"frog"``) renderable by ``renderer``.
+
+    Idempotent: re-registering replaces the entry, so a hot-reloaded plugin
+    can resubmit without a boot.
+    """
+    _RENDERERS[prefix] = renderer
+
+
+def unregister_renderer(prefix: str) -> None:
+    """Drop ``prefix``'s renderer (its plugin unloaded). A no-op if absent."""
+    _RENDERERS.pop(prefix, None)
+
+
+def renderer_for(prefix: str) -> Renderer:
+    """The renderer for ``prefix``, falling back to the default.
+
+    Unregistered namespaces (or a plugin that registered then unloaded) fall
+    back to :data:`_default_renderer`, so the inventory view never breaks on
+    an item kind it doesn't know.
+    """
+    return _RENDERERS.get(prefix, _default_renderer)
+
+
+def _default_renderer(item_key: str, _qty: int) -> ItemView:
+    return ItemView(icon="", label=item_key)
 
 
 async def add(
@@ -124,6 +184,25 @@ async def rows(
         *args,
     )
     return [(row["item"], row["qty"]) for row in rows_]
+
+
+async def rows_indexed(
+    db: Database, uid: int, *, prefix: str | None = None
+) -> list[tuple[int, str, int]]:
+    """A member's stacks with deterministic 1-based slot indices.
+
+    Returns ``[(slot, item, qty)]`` where ``slot`` is the position in
+    :func:`rows`' ``ORDER BY item`` order. Indices are **derived, not
+    stored** — the same ordering maps a grid slot back to its item, so a
+    future ``/inventory consume <slot>`` can resolve ``slot`` by re-computing
+    this same order. Stable across calls for an unchanged inventory.
+    """
+    return [
+        (slot, item, qty)
+        for slot, (item, qty) in enumerate(
+            await rows(db, uid, prefix=prefix), start=1
+        )
+    ]
 
 
 async def total(
@@ -197,6 +276,24 @@ class Inventory:
     ) -> list[tuple[str, int]]:
         """A member's non-empty stacks, optionally filtered by ``prefix``."""
         return await rows(self.bot.db, uid, prefix=prefix)
+
+    async def rows_indexed(
+        self, uid: int, *, prefix: str | None = None
+    ) -> list[tuple[int, str, int]]:
+        """A member's stacks with deterministic 1-based slot indices."""
+        return await rows_indexed(self.bot.db, uid, prefix=prefix)
+
+    def register_renderer(self, prefix: str, renderer: Renderer) -> None:
+        """Make ``prefix`` renderable by ``renderer`` (idempotent)."""
+        register_renderer(prefix, renderer)
+
+    def unregister_renderer(self, prefix: str) -> None:
+        """Drop ``prefix``'s renderer (no-op if absent)."""
+        unregister_renderer(prefix)
+
+    def renderer_for(self, prefix: str) -> Renderer:
+        """The renderer for ``prefix``, defaulting to the raw-key view."""
+        return renderer_for(prefix)
 
     async def total(self, uid: int, *, prefix: str | None = None) -> int:
         """Total quantity a member holds, optionally within ``prefix``."""

@@ -17,8 +17,8 @@ class FrogAsset(Enum):
     """Every asset the frogs plugin declares."""
 
     LEAF_FROG = AssetSpec(
-        kind=AssetKind.SPECIES, path="assets/leaf_frog.png"
+        kind=AssetKind.EMOJI, path="assets/leaf_frog.png"
     )
     CLASSY_FROG = AssetSpec(
-        kind=AssetKind.SPECIES, path="assets/classy_frog.webp"
+        kind=AssetKind.EMOJI, path="assets/classy_frog.webp"
     )

@@ -16,11 +16,12 @@ import pendulum
 
 from cazzubot import inventory
 from cazzubot.db import Database
+from cazzubot.inventory import ItemView
 from cazzubot.models import FrogState, SpeciesKey
 from cazzubot.settings import Settings
 from cazzubot.utils import rank_rows, season_bounds
 
-from .species import SPECIES
+from .species import SPECIES, by_key
 
 SCHEMA = [
     """
@@ -156,6 +157,23 @@ async def inventory_rows(
 async def total_inventory(db: Database, uid: int) -> int:
     """Every frog a member holds, across species and states."""
     return await inventory.total(db, uid, prefix="frog:")
+
+
+def frog_renderer(item_key: str, qty: int) -> ItemView:
+    """Render one frog stack for the generic /inventory grid.
+
+    Parses the stored ``frog:<species>:<state>`` string back into a species
+    + state (the read-side inverse of :class:`FrogItem`'s derived key).
+    Unknown/removed species fall back to the raw key. Framework-free, so it
+    satisfies the service-layer boundary.
+    """
+    try:
+        frog = FrogItem.parse(item_key)
+    except ValueError:
+        return ItemView(icon="", label=item_key)
+    species = by_key(frog.species)
+    name = species.name if species is not None else frog.species.value
+    return ItemView(icon="🐸", label=f"{name} ({frog.state.value})")
 
 
 # -- member_frog (lifetime capture counter) --------------------------------

@@ -113,26 +113,30 @@ def test_load_short_sides(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config.guild_id == int(_GID_DEV)
 
 
-def test_load_asset_channel_follows_guild_side(
+def test_load_asset_guild_and_channel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each guild side reads its own ASSET_CHANNEL_* (common part front)."""
+    """The asset child-guild + channel are SHARED (not side-paired)."""
     _env(monkeypatch)
-    monkeypatch.setenv("ASSET_CHANNEL_DEV", "111")
-    monkeypatch.setenv("ASSET_CHANNEL_PROD", "222")
+    monkeypatch.setenv("ASSET_GUILD_ID", "999")
+    monkeypatch.setenv("ASSET_CHANNEL_ID", "111")
+    assert Config.load().asset_guild_id == 999
     assert Config.load().asset_channel_id == 111
-    assert Config.load(guild="production").asset_channel_id == 222
+    # one backing store for both served guilds — same on either side
+    assert Config.load(guild="production").asset_guild_id == 999
+    assert Config.load(guild="production").asset_channel_id == 111
 
 
-def test_load_asset_channel_is_optional(
+def test_load_asset_guild_and_channel_are_optional(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No channel configured: the bot boots and skips the CDN sync."""
+    """No asset guild/channel configured: the bot boots and skips the sync."""
     _env(monkeypatch)
-    monkeypatch.delenv("ASSET_CHANNEL_DEV", raising=False)
-    monkeypatch.delenv("ASSET_CHANNEL_PROD", raising=False)
+    monkeypatch.delenv("ASSET_GUILD_ID", raising=False)
+    monkeypatch.delenv("ASSET_CHANNEL_ID", raising=False)
+    assert Config.load().asset_guild_id is None
     assert Config.load().asset_channel_id is None
-    assert Config.load(guild="production").asset_channel_id is None
+    assert Config.load(guild="production").asset_guild_id is None
 
 
 def test_load_missing_token(monkeypatch: pytest.MonkeyPatch) -> None:

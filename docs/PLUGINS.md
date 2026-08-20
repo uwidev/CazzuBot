@@ -132,9 +132,14 @@ Use these instead of reaching into internals:
 - `bot.inventory` / `bot.member_effects` — the generic game stores:
   `(uid, item, qty)` ledgers and `(uid, key, value, expires_at)` effects
   with lazy expiry. Frogs and exp use them directly — don't build
-  per-feature tables for these shapes.
+  per-feature tables for these shapes. For the inventory's user-facing view,
+  plugins register a **renderer** with
+  `bot.inventory.register_renderer(prefix, fn)` (in `on_load`) so the
+  generic `/inventory` command can present their items; see
+  `plugins/inventory/`.
 - `bot.lifecycle` — declare effect undos (see "Conventions" below).
-- `bot.assets` — enum-declared asset files (reconcile + CDN sync); see
+- `bot.assets` — enum-declared asset files (reconcile + kind-based sync to
+  the asset child-guild: media CDN blobs + custom emoji); see
   `docs/ASSETS.md`.
 - `bot.config` — `token`, `owner_id`, `guild_id`, `debug`, `sandbox`
 - `bot.guild` — the one guild this bot serves

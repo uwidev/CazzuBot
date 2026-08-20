@@ -1,10 +1,12 @@
 # CazzuBot — Asset Management
 
-> **Status:** implemented, static path (boot reconcile + CDN sync). The
-> dynamic admin-upload path and scheduler-driven seasonal drops stay
-> backlogged (`docs/BACKLOG.md`). This doc is the design record of what
-> shipped: the implementation is `cazzubot/assets.py` + each plugin's
-> `asset_decl`.
+> **Status:** implemented, static path (boot reconcile + kind-based sync to a
+> shared **asset child-guild**). Media blobs CDN-publish into a private
+> channel of the asset guild; custom **emoji** assets are created in the
+> guild and referenced by `<:name:id>`. The dynamic admin-upload path and
+> scheduler-driven seasonal drops stay backlogged (`docs/BACKLOG.md`). This
+> doc is the design record of what shipped: the implementation is
+> `cazzubot/assets.py` + each plugin's `asset_decl`.
 
 ## Motivation
 
@@ -93,10 +95,10 @@ same way — same shape either way).
 ```sql
 CREATE TABLE IF NOT EXISTS asset (
 	key    TEXT PRIMARY KEY,   -- derived: "FrogAsset.LEAF_FROG"
-	kind   TEXT NOT NULL,      -- AssetKind: "species" | ...
+	kind   TEXT NOT NULL,      -- AssetKind: "species" (media) | "emoji"
 	sha256 TEXT NOT NULL,      -- content address of the bytes
 	path   TEXT NOT NULL,      -- file under the owning plugin's folder
-	url    TEXT                -- published Discord CDN URL (Layer 3)
+	url    TEXT                -- published ref: CDN URL (media) | <:name:id> (emoji)
 )
 ```
 
@@ -124,18 +126,26 @@ about what frogs are. It mirrors the existing shared services:
 
 The message pipeline is URL-only (a deliberate constraint). Instead of
 fighting it with `discord.File`, the registry treats **Discord's CDN as the
-asset host**:
+asset host**, and the sync dispatches by **kind** to the shared **asset
+child-guild** (`ASSET_GUILD_ID` / `ASSET_CHANNEL_ID`):
 
-- A sync step compares registry hashes against what's published; only **new
-  or changed** blobs (sha256 diff) get uploaded — to a private asset channel
-  — and the resulting stable CDN URL is stored in the row. Skipped with a
-  boot warning when no asset channel is configured (`ASSET_CHANNEL_PROD`/`DEV`).
-- At runtime, `bot.assets.get(member)` returns that URL, which flows straight
-  into embeds and spawn messages — exactly like the old hardcoded URLs, just
-  centrally managed.
-- Discord does hosting, caching, animation, and delivery for free. Single
-  guild = a private channel is a fine "bucket"; uploads only happen on
-  content change, so rate limits are a non-issue.
+- **Media** (`SPECIES`) — a sync step compares registry hashes against what's
+  published; only **new or changed** blobs (sha256 diff) upload to the asset
+  guild's private channel, and the stable CDN URL is stored in the row.
+- **Emoji** (`EMOJI`) — the asset is created as a custom emoji in the asset
+  guild (from the same source file) and its `<:name:id>` reference is stored
+  in the row; a changed file deletes + recreates (emoji images are
+  immutable), and creations are paced to Discord's rate limit.
+- Both are skipped with a boot warning when the asset guild/channel isn't
+  configured (a missing guild skips emoji rows only).
+- At runtime, `bot.assets.get(member)` returns the stored reference — a URL
+  (media) or `<:name:id>` (emoji) — which flows straight into embeds and
+  spawn messages, exactly like the old hardcoded URLs, just centrally
+  managed.
+
+Discord does hosting, caching, animation, and delivery for free. Media
+uploads only happen on content change, emoji creates only on new/immutable
+change, so rate limits stay a non-issue.
 
 ## Lifecycle flows
 
@@ -149,23 +159,27 @@ asset host**:
 1. Missing file on disk → `AssetError` → boot abort, mirroring
    `Database.verify_schema`'s fail-fast drift check.
 1. **Prune** — a row whose key no plugin declares anymore (the definition
-   was deleted from code) is dropped; its published CDN message is queued
-   for deletion on the next sync.
+   was deleted from code) is dropped; its published reference (a CDN message
+   for media, a guild emoji for emoji) is queued for deletion on the next
+   sync.
 
 For static assets the **file on disk is the source of truth**; the row is a
 cached index of it. Edit the art and redeploy → boot notices, re-syncs.
-Delete the definition → boot prunes the row and deletes the CDN message.
+Delete the definition → boot prunes the row and deletes its reference.
 
-### CDN sync (every boot, after start)
+### Sync (every boot, after start; dispatched by kind)
 
-1. **Verify** — every published row's CDN message is fetched; a deleted
-   message (accidental or not) resets the row's `url` so it re-publishes.
-   The registry never serves a dead URL.
-1. **Cleanup** — the messages queued by reconcile's prune are deleted
-   (best-effort; already-gone is fine).
-1. **Upload** — rows with `url IS NULL` (new, hash-changed, or just
-   re-verified-dead) publish; the sha256 diff keeps re-uploads to content
-   changes only.
+1. **Verify** — every published row's reference is liveness-checked: a media
+   CDN message is fetched, an emoji's guild emoji is fetched; a dead one
+   (accidental or not) resets the row's `url` so it re-publishes. The
+   registry never serves a dead reference.
+1. **Cleanup** — references queued by reconcile's prune (and media/emoji
+   hash-changes) are deleted best-effort: CDN messages for media, guild
+   emojis for emoji; already-gone is fine.
+1. **Publish** — rows with `url IS NULL` (new, hash-changed, or just
+   re-verified-dead) publish; the sha256 diff keeps re-publishes to content
+   changes only. Media uploads into the asset channel; emoji are created in
+   the asset guild.
 
 ### New frog species (code path)
 
@@ -235,10 +249,10 @@ redesign shipped in a **code-first form** (the owner's choice — no
 ## Implementation status
 
 Done: `Plugin.asset_decl` contract + `bot.assets` service (keyed lookup);
-registry table + boot reconcile (static path, drift check); CDN sync to a
-private asset channel (URL delivery). Backlogged: admin upload command +
-`meta` schema (dynamic path); scheduler-driven promotion for seasonal drops;
-shop/recipes.
+registry table + boot reconcile (static path, drift check); kind-based sync
+to the asset child-guild (media CDN URL + emoji `<:name:id>` delivery).
+Backlogged: admin upload command + `meta` schema (dynamic path);
+scheduler-driven promotion for seasonal drops; shop/recipes.
 
 ## Relevant existing machinery
 

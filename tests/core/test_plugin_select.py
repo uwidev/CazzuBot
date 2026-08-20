@@ -96,6 +96,7 @@ def test_real_plugin_set_is_consistent() -> None:
         "experience",
         "frogs",
         "fun",
+        "inventory",
         "levels",
         "misc",
         "mod",

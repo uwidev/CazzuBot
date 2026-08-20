@@ -11,10 +11,16 @@ from typing import Any, cast
 
 import pytest
 
+import hikari
+
 from cazzubot import AssetKind, AssetSpec, Assets, Plugin
 from cazzubot.assets import (
     SCHEMA,
     AssetError,
+    _EMOJI_CREATE_DELAY,
+    _emoji_id_from_ref,
+    _emoji_name_from_key,
+    _is_emoji_ref,
     _message_id,
     asset_key,
 )
@@ -64,11 +70,14 @@ def _assets(
     db: Database,
     plugins_dir: str,
     *,
-    channel_id: int | None,
+    channel_id: int | None = None,
+    guild_id: int | None = None,
 ) -> Assets:
     fake = _FakeBot(db, plugins_dir)
     fake.plugins = [_AssetsPlugin()]
-    config = SimpleNamespace(asset_channel_id=channel_id)
+    config = SimpleNamespace(
+        asset_channel_id=channel_id, asset_guild_id=guild_id
+    )
     return Assets(cast(Any, fake), cast(Any, config), plugins_dir)
 
 
@@ -174,7 +183,7 @@ async def test_sync_without_channel_skips(
         await assets.sync_cdn(cast(Any, None))
 
     assert any(
-        "no asset channel configured" in record.message
+        "skipping asset sync" in record.message
         for record in caplog.records
     )
     assert (
@@ -336,3 +345,359 @@ def test_message_id_parses_attachment_url() -> None:
         == 222
     )
     assert _message_id("https://cdn.example.com/not-an-attachment") is None
+
+
+# -- emoji-kind assets (the asset child-guild) ------------------------------
+
+
+class _FakeEmoji:
+    """The bits of a guild emoji the sync reads back (its id)."""
+
+    def __init__(self, eid: int) -> None:
+        self.id = eid
+
+
+class _EmojiAsset(Enum):
+    FROG_GLYPH = AssetSpec(
+        kind=AssetKind.EMOJI, path="assets/frog_emoji.png"
+    )
+    CLASSY_GLYPH = AssetSpec(
+        kind=AssetKind.EMOJI, path="assets/classy_emoji.webp"
+    )
+
+
+class _EmojiPlugin(Plugin):
+    name = "emojis"
+    asset_decl = _EmojiAsset
+
+
+def _write_glyph(root: Path, name: str, content: bytes) -> Path:
+    path = root / "emojis" / "assets" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return path
+
+
+def _write_glyphs(root: Path) -> None:
+    """Write every file the emoji declaration needs (reconcile requires all)."""
+    _write_glyph(root, "frog_emoji.png", b"frog glyph bytes")
+    _write_glyph(root, "classy_emoji.webp", b"classy glyph bytes")
+
+
+def test_emoji_ref_helpers() -> None:
+    """``<:name:id>`` / ``<a:name:id>`` parse; CDN URLs do not."""
+    assert _is_emoji_ref("<:leaf:123>")
+    assert _is_emoji_ref("<a:leaf:123>")
+    assert not _is_emoji_ref("https://cdn.example.com/leaf.png")
+    assert _emoji_id_from_ref("<:leaf:123>") == 123
+    assert _emoji_id_from_ref("<a:leaf:123>") == 123
+    assert _emoji_id_from_ref("https://cdn.example.com/leaf.png") is None
+
+
+def test_emoji_name_is_derived_from_asset_key() -> None:
+    """Names are lowercase [a-z0-9_], 2-32 chars, no leading/trailing _."""
+    assert _emoji_name_from_key("_EmojiAsset.FROG_GLYPH") == "frog_glyph"
+    assert _emoji_name_from_key("FrogAsset.MY Bad NAME!!") == "mybadname"
+    assert _emoji_name_from_key("X._LEAD_TRAIL_") == "lead_trail"
+    assert len(_emoji_name_from_key("A." + "z" * 60)) <= 32
+
+
+async def test_emoji_asset_publishes_as_guild_emoji(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """An EMOJI asset creates a guild emoji and stores its ``<:name:id>``."""
+    _write_glyphs(tmp_path)
+    fake = _FakeBot(asset_db, str(tmp_path))
+    fake.plugins = [_EmojiPlugin()]
+    created: list[tuple[int, str]] = []
+
+    async def _create(
+        guild_id: int, *, name: str, image: object, **_: object
+    ) -> _FakeEmoji:
+        created.append((guild_id, name))
+        return _FakeEmoji(555 if name == "frog_glyph" else 777)
+
+    cast(Any, fake).rest = SimpleNamespace(create_emoji=_create)
+    assets = Assets(
+        cast(Any, fake),
+        cast(
+            Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)
+        ),
+        str(tmp_path),
+    )
+
+    await assets.reconcile()
+    await assets.sync_cdn(cast(Any, None))
+
+    assert (888, "frog_glyph") in created
+    assert await assets.get(_EmojiAsset.FROG_GLYPH) == "<:frog_glyph:555>"
+    assert (
+        await assets.get(_EmojiAsset.CLASSY_GLYPH) == "<:classy_glyph:777>"
+    )
+
+
+async def test_emoji_asset_skips_when_guild_unset(
+    asset_db: Database, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """No asset guild: emoji rows are skipped with a warning, url stays null."""
+    _write_glyphs(tmp_path)
+    fake = _FakeBot(asset_db, str(tmp_path))
+    fake.plugins = [_EmojiPlugin()]
+    cast(Any, fake).rest = SimpleNamespace(create_emoji=_no_message)
+    assets = Assets(
+        cast(Any, fake),
+        cast(
+            Any, SimpleNamespace(asset_channel_id=777, asset_guild_id=None)
+        ),
+        str(tmp_path),
+    )
+    await assets.reconcile()
+
+    with caplog.at_level(logging.WARNING, logger="cazzubot.assets"):
+        await assets.sync_cdn(cast(Any, None))
+
+    assert any(
+        "ASSET_GUILD_ID" in record.message for record in caplog.records
+    )
+    assert (
+        await asset_db.fetchval(
+            "SELECT url FROM asset WHERE key = ?",
+            asset_key(_EmojiAsset.FROG_GLYPH),
+        )
+        is None
+    )
+
+
+async def test_emoji_file_too_large_is_skipped(
+    asset_db: Database, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An emoji image over Discord's cap is logged and not created."""
+    _write_glyphs(tmp_path)
+    _write_glyph(tmp_path, "frog_emoji.png", b"x" * (256 * 1024 + 1))
+    fake = _FakeBot(asset_db, str(tmp_path))
+    fake.plugins = [_EmojiPlugin()]
+    created: list[str] = []
+
+    async def _create(
+        guild_id: int, *, name: str, **_: object
+    ) -> _FakeEmoji:
+        created.append(name)
+        return _FakeEmoji(1)
+
+    cast(Any, fake).rest = SimpleNamespace(create_emoji=_create)
+    assets = Assets(
+        cast(Any, fake),
+        cast(
+            Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)
+        ),
+        str(tmp_path),
+    )
+    await assets.reconcile()
+    await assets.sync_cdn(cast(Any, None))
+
+    # the oversized frog is skipped; only its healthy classy sibling created
+    assert "frog_glyph" not in created
+    assert created == ["classy_glyph"]
+    assert (
+        await asset_db.fetchval(
+            "SELECT url FROM asset WHERE key = ?",
+            asset_key(_EmojiAsset.FROG_GLYPH),
+        )
+        is None
+    )
+
+
+async def test_emoji_hash_change_deletes_and_recreates(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """A changed emoji file deletes the old guild emoji and creates a new one."""
+    _write_glyphs(tmp_path)
+    _write_glyph(tmp_path, "frog_emoji.png", b"v1")
+    fake = _FakeBot(asset_db, str(tmp_path))
+    fake.plugins = [_EmojiPlugin()]
+
+    async def _create(guild_id: int, **_: object) -> _FakeEmoji:
+        return _FakeEmoji(555 if guild_id else 555)
+
+    deleted: list[int] = []
+    cast(Any, fake).rest = SimpleNamespace(
+        create_emoji=_create,
+        delete_emoji=lambda guild, emoji: deleted.append(emoji),
+        fetch_emoji=lambda guild, emoji: _FakeEmoji(emoji),
+    )
+    assets = Assets(
+        cast(Any, fake),
+        cast(
+            Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)
+        ),
+        str(tmp_path),
+    )
+    await assets.reconcile()
+    await asset_db.execute(
+        "UPDATE asset SET url = '<:frog_glyph:999>' WHERE key = ?",
+        asset_key(_EmojiAsset.FROG_GLYPH),
+    )
+
+    # change the file — reconcile queues the old emoji for deletion
+    _write_glyph(tmp_path, "frog_emoji.png", b"v2")
+    await assets.reconcile()
+    assert assets._pending_deletes == ["<:frog_glyph:999>"]
+
+    await assets.sync_cdn(cast(Any, None))
+    assert deleted == [999]  # old emoji gone
+    assert await assets.get(_EmojiAsset.FROG_GLYPH) == "<:frog_glyph:555>"
+
+
+async def test_dead_guild_emoji_republishes(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """A guild emoji deleted by hand re-publishes on the next sync."""
+    _write_glyphs(tmp_path)
+    fake = _FakeBot(asset_db, str(tmp_path))
+    fake.plugins = [_EmojiPlugin()]
+
+    async def _create(guild_id: int, **_: object) -> _FakeEmoji:
+        return _FakeEmoji(444)
+
+    async def _raise_not_found(guild: object, emoji: object) -> _FakeEmoji:
+        headers: dict[str, str] = {}
+        raise hikari.NotFoundError(
+            url="https://example.com", headers=headers, raw_body=None
+        )
+
+    cast(Any, fake).rest = SimpleNamespace(
+        create_emoji=_create,
+        fetch_emoji=_raise_not_found,
+    )
+    assets = Assets(
+        cast(Any, fake),
+        cast(
+            Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)
+        ),
+        str(tmp_path),
+    )
+    await assets.reconcile()
+    await asset_db.execute(
+        "UPDATE asset SET url = '<:frog_glyph:9>' WHERE key = ?",
+        asset_key(_EmojiAsset.FROG_GLYPH),
+    )
+
+    await assets.sync_cdn(cast(Any, None))
+    assert await assets.get(_EmojiAsset.FROG_GLYPH) == "<:frog_glyph:444>"
+
+
+async def test_emoji_creates_are_throttled(
+    asset_db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Consecutive emoji creates in one pass sleep between them."""
+    _write_glyph(tmp_path, "frog_emoji.png", b"f")
+    _write_glyph(tmp_path, "classy_emoji.webp", b"c")
+    fake = _FakeBot(asset_db, str(tmp_path))
+    fake.plugins = [_EmojiPlugin()]
+
+    async def _create(guild_id: int, **_: object) -> _FakeEmoji:
+        return _FakeEmoji(guild_id)
+
+    cast(Any, fake).rest = SimpleNamespace(create_emoji=_create)
+    slept: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr("cazzubot.assets.asyncio.sleep", _fake_sleep)
+    assets = Assets(
+        cast(Any, fake),
+        cast(
+            Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)
+        ),
+        str(tmp_path),
+    )
+    await assets.reconcile()
+    await assets.sync_cdn(cast(Any, None))
+
+    # one pause between the two creates, of the configured delay
+    assert slept == [_EMOJI_CREATE_DELAY]
+
+
+async def test_reconcile_kind_change_republishes_as_emoji(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """Re-declaring an asset as EMOJI re-queues it and re-publishes as one.
+
+    Regression for the reported flow: changing ``AssetKind.SPECIES`` →
+    ``AssetKind.EMOJI`` on the same enum member (same key, unchanged file)
+    must update the stored kind and reset ``url`` so ``sync_cdn`` creates a
+    guild emoji instead of re-uploading to the channel as media.
+    """
+    _write_glyph(tmp_path, "glyph.png", b"same bytes every time")
+    # same enum class name + member ⇒ same derived key, only the kind differs
+    _SpeciesGlyph = Enum(
+        "_GlyphAsset",
+        {
+            "GLYPH": AssetSpec(
+                kind=AssetKind.SPECIES, path="assets/glyph.png"
+            )
+        },
+    )
+    _EmojiGlyph = Enum(
+        "_GlyphAsset",
+        {
+            "GLYPH": AssetSpec(
+                kind=AssetKind.EMOJI, path="assets/glyph.png"
+            )
+        },
+    )
+
+    plugin = _EmojiPlugin()  # name="emojis" → file under emojis/assets/
+    plugin.asset_decl = _SpeciesGlyph
+    fake = _FakeBot(asset_db, str(tmp_path))
+    fake.plugins = [plugin]
+
+    async def _create_emoji(guild_id: int, **_: object) -> _FakeEmoji:
+        return _FakeEmoji(4242)
+
+    async def _create_message(channel_id: int, **_: object) -> FakeMessage:
+        message = FakeMessage(id=1, channel_id=channel_id)
+        message.attachments = [
+            FakeAttachment(
+                id=1, filename="glyph.png", url=_url(777, 1, "glyph.png")
+            )
+        ]
+        return message
+
+    cast(Any, fake).rest = SimpleNamespace(
+        create_emoji=_create_emoji,
+        create_message=_create_message,
+        delete_message=lambda c, m: None,
+    )
+    assets = Assets(
+        cast(Any, fake),
+        cast(
+            Any, SimpleNamespace(asset_channel_id=777, asset_guild_id=888)
+        ),
+        str(tmp_path),
+    )
+
+    # first pass: registered as SPECIES media and published as a CDN url
+    await assets.reconcile()
+    await assets.sync_cdn(cast(Any, None))
+    key = asset_key(_SpeciesGlyph.GLYPH)
+    row = await asset_db.fetchone(
+        "SELECT kind, url FROM asset WHERE key = ?", key
+    )
+    assert row is not None
+    assert row["kind"] == "species"
+    assert row["url"] is not None  # published as media
+
+    # re-declare the same key as EMOJI — file bytes unchanged
+    plugin.asset_decl = _EmojiGlyph
+    await assets.reconcile()
+    row = await asset_db.fetchone(
+        "SELECT kind, sha256, url FROM asset WHERE key = ?", key
+    )
+    assert row is not None
+    assert row["kind"] == "emoji"  # declaration kind won
+    assert row["url"] is None  # re-queued
+
+    await assets.sync_cdn(cast(Any, None))
+    assert await assets.get(_EmojiGlyph.GLYPH) == f"<:glyph:{4242}>"

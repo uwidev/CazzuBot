@@ -51,6 +51,16 @@ species) — "a dish is just a crafted species" (roadmap). Combine = the
 inventory ledger as the mechanism (consume input stacks, grant the output)
 — a new economy sink; the alchemist profession is the combine track.
 
+### `/inventory consume` + real species emoji glyphs
+
+Follow-up to the `/inventory` grid (2026-08): an index-based
+`/inventory consume (INDEX) [AMOUNT]` that **replaces `/frog consume`**
+(`INDEX` resolves through the derived `bot.inventory.rows_indexed` slots)
+and **real per-species emoji glyphs** (declared as `AssetKind.EMOJI` in the
+asset child-guild) instead of the current 🐸 placeholder. Both ride on the
+foundation already built: the renderer registry, derived slot indices, and
+the emoji-kind asset sync (`docs/ASSETS.md`, `docs/INVENTORY.md`).
+
 ### Game-patterns lexicon (docs)
 
 Name the patterns and map each to its code home so "new feature" = "which

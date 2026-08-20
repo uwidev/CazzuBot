@@ -74,6 +74,7 @@ USER_FACING: set[tuple[str, ...]] = {
     ("frog", "consume"),
     ("frog", "catalog"),
     ("frog", "lifetime"),
+    ("inventory",),
 }
 
 
