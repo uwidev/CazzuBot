@@ -22,3 +22,7 @@ class FrogAsset(Enum):
     CLASSY_FROG = AssetSpec(
         kind=AssetKind.EMOJI, path="assets/classy_frog.webp"
     )
+    # the capture embed's thumbnail — a media image, CDN-published
+    CATCH_BANNER = AssetSpec(
+        kind=AssetKind.SPECIES, path="assets/catch_banner.png"
+    )

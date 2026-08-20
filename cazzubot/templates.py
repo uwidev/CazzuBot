@@ -215,7 +215,7 @@ async def send(
     kwargs win over the template default.
     """
     payload = build_payload(message)
-    for key, value in _mention_kwargs(
+    for key, value in mention_kwargs(
         message.get("allowed_mentions")
     ).items():
         kwargs.setdefault(key, value)
@@ -248,13 +248,14 @@ async def send_to_channel(
     return True
 
 
-def _mention_kwargs(allowed: bool | None) -> dict[str, bool]:
+def mention_kwargs(allowed: bool | None) -> dict[str, bool]:
     """Map a template's ``allowed_mentions`` flag to hikari mention kwargs.
 
-    absent → parse users + roles (Discord's platform default minus
-    ``@everyone``); ``true`` → also parse ``@everyone``/``@here``;
-    ``false`` → parse nothing (hikari's no-mentions default). Discord
-    validates mention presence server-side, so phantom pings can't occur.
+    Used by :func:`send`: absent → parse users + roles (Discord's platform
+    default minus ``@everyone``); ``true`` → also parse ``@everyone``/
+    ``@here``; ``false`` → parse nothing (hikari's no-mentions default).
+    Discord validates mention presence server-side, so phantom pings can't
+    occur.
     """
     if allowed is False:
         return {}

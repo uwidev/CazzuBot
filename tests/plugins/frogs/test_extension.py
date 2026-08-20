@@ -120,6 +120,11 @@ async def test_frog_catch_captures_once(
     assert len(created) == 1
     assert created[0].content == "caught Leaf Frog by cirno"
     assert created[0].channel_id == 99
+    # least-permissive: only the catcher is pinged — explicit user list,
+    # no role/@everyone parsing
+    assert created[0].create_kwargs["user_mentions"] == [_UID]
+    assert created[0].create_kwargs["role_mentions"] is hikari.UNDEFINED
+    assert created[0].create_kwargs["mentions_everyone"] is hikari.UNDEFINED
     assert (
         await frog_db.get_inventory(
             seeded_bot.db, _UID, SpeciesKey.LEAF_FROG
@@ -138,6 +143,80 @@ async def test_frog_catch_captures_once(
     await menu_button(menu).callback(mctx)
     assert mctx.sent[-1].content == "This frog was already caught."
     assert mctx.sent[-1].ephemeral is True
+
+
+async def test_frog_catch_default_embed_when_no_message(
+    seeded_bot: CazzuBot, author: FakeMember
+) -> None:
+    """No ``frog.message`` template: the built-in capture embed is sent,
+    never a blank message."""
+    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    mctx = FakeMenuContext(
+        FakeInteraction(id=1, member=author, channel_id=99)
+    )
+    await menu_button(menu).callback(mctx)
+
+    created = rest_of(seeded_bot).created
+    assert len(created) == 1
+    embed = created[0].embeds[0]
+    assert embed.title == "Frog caught!"
+    # the catcher is mentioned in the embed description
+    assert embed.description is not None and f"<@{_UID}>" in embed.description
+    # and the built-in capture embed pings only the catcher explicitly
+    assert created[0].create_kwargs["user_mentions"] == [_UID]
+    assert created[0].create_kwargs["role_mentions"] is hikari.UNDEFINED
+    # and the +1 still hit inventory
+    assert (
+        await frog_db.get_inventory(
+            seeded_bot.db, _UID, SpeciesKey.LEAF_FROG
+        )
+        == 1
+    )
+
+
+async def test_frog_catch_message_allowed_mentions_false_never_pings(
+    seeded_bot: CazzuBot, author: FakeMember
+) -> None:
+    """An explicit ``allowed_mentions: false`` opt-out keeps the capture
+    silent — no user/role mention parsing, so the catcher isn't pinged."""
+    await frog_db.set_message(
+        seeded_bot.settings,
+        {"content": "caught {mention}", "allowed_mentions": False},
+    )
+    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    mctx = FakeMenuContext(
+        FakeInteraction(id=1, member=author, channel_id=99)
+    )
+    await menu_button(menu).callback(mctx)
+
+    created = rest_of(seeded_bot).created
+    assert len(created) == 1
+    assert created[0].content == f"caught <@{_UID}>"
+    # suppression = no mention parsing: every mention gate is UNDEFINED, so
+    # hikari serializes allowed_mentions as {parse: []} (nothing pings)
+    assert created[0].create_kwargs["user_mentions"] is hikari.UNDEFINED
+    assert created[0].create_kwargs["role_mentions"] is hikari.UNDEFINED
+    assert created[0].create_kwargs["mentions_everyone"] is hikari.UNDEFINED
+
+
+async def test_frog_catch_default_embed_uses_banner_thumbnail(
+    seeded_bot: CazzuBot, author: FakeMember
+) -> None:
+    """A published CATCH_BANNER media asset becomes the embed's thumbnail."""
+    await seeded_bot.db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        "https://cdn.example/catch_banner.png",
+        "FrogAsset.CATCH_BANNER",
+    )
+    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    mctx = FakeMenuContext(
+        FakeInteraction(id=1, member=author, channel_id=99)
+    )
+    await menu_button(menu).callback(mctx)
+
+    embed = rest_of(seeded_bot).created[0].embeds[0]
+    assert embed.thumbnail is not None
+    assert embed.thumbnail.url == "https://cdn.example/catch_banner.png"
 
 
 async def test_frog_catch_emits_captured_event(
