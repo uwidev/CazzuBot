@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import random
 
-from cazzubot.models import SpeciesKey
+from cazzubot.models import FrogState, SpeciesKey
 
 from plugins.frogs import plugin as frog_plugin
 from plugins.frogs.assets import FrogAsset
-from plugins.frogs.effects import EffectKey, ExpPayload
+from plugins.frogs.items import frog_exp
 from plugins.frogs.species import (
     DEFAULT_SPECIES_KEY,
     SPECIES,
@@ -21,12 +21,12 @@ def test_default_species_is_leaf_frog() -> None:
     assert DEFAULT_SPECIES_KEY is SpeciesKey.LEAF_FROG
     leaf = by_key(SpeciesKey.LEAF_FROG)
     assert leaf is not None
-    # the legacy values — the default species preserves 10/3, carried by
-    # its consume-effect payload
-    assert isinstance(leaf.consume_effect, ExpPayload)
-    assert leaf.consume_effect.exp == 10
-    assert leaf.consume_effect.frozen_exp == 3
-    assert leaf.consume_effect.key is EffectKey.EXP
+    # the entity sheds consume data — the legacy 10/3 values moved to the
+    # item definitions (leaf normal/frozen give 10/3)
+    assert not hasattr(leaf, "consume_effect")
+    assert not hasattr(leaf, "consumable")
+    assert frog_exp(leaf.key, FrogState.NORMAL) == 10
+    assert frog_exp(leaf.key, FrogState.FROZEN) == 3
 
 
 def test_classy_frog_doubles_exp() -> None:
@@ -34,14 +34,14 @@ def test_classy_frog_doubles_exp() -> None:
     assert classy is not None
     leaf = by_key(SpeciesKey.LEAF_FROG)
     assert leaf is not None
-    assert isinstance(classy.consume_effect, ExpPayload)
-    assert isinstance(leaf.consume_effect, ExpPayload)
-    assert classy.consume_effect.exp == leaf.consume_effect.exp * 2
     assert (
-        classy.consume_effect.frozen_exp
-        == leaf.consume_effect.frozen_exp * 2
+        frog_exp(classy.key, FrogState.NORMAL)
+        == frog_exp(leaf.key, FrogState.NORMAL) * 2
     )
-    assert classy.consume_effect.key is EffectKey.EXP
+    assert (
+        frog_exp(classy.key, FrogState.FROZEN)
+        == frog_exp(leaf.key, FrogState.FROZEN) * 2
+    )
 
 
 def test_species_art_is_a_declared_asset_member() -> None:

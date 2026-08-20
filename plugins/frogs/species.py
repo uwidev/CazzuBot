@@ -14,9 +14,10 @@ at the data boundary (DB columns, slash options, custom ids), converted
 to/from the enums there.
 
 Effects are referenced by **payload instance**, not by key string: a
-species carries its configured ``catch_effect``/``consume_effect`` payloads
-(see ``effects.py``), so the same effect class is reusable with different
-values and a species never carries fields for effects it doesn't use.
+species carries its configured ``catch_effect`` payload (see ``effects.py``),
+so the same effect class is reusable with different values and a species
+never carries fields for effects it doesn't use. Consumption is *item-owned*
+— see ``items.py`` — so the entity carries no consume fields.
 """
 
 from __future__ import annotations
@@ -27,23 +28,28 @@ from dataclasses import dataclass
 from cazzubot.models import SpeciesKey
 
 from .assets import FrogAsset
-from .effects import EffectPayload, ExpPayload
+from .effects import EffectPayload
 
 DEFAULT_SPECIES_KEY = SpeciesKey.LEAF_FROG
 
 
 @dataclass(frozen=True, slots=True)
 class Species:
-    """One species — values are code, swappable only by editing them."""
+    """One species — values are code, swappable only by editing them.
+
+    The **entity**: what a frog *is* as a world/spawn object (its name,
+    rarity, spawn weight, art, and what happens on catch). What a caught
+    frog becomes as an inventory object (its item_id, icon, consume
+    behavior) lives on the matching :class:`Item` in ``items.py`` — not
+    here.
+    """
 
     key: SpeciesKey
     name: str
     rarity: str
     description: str
     spawn_weight: float
-    consumable: int
     catch_effect: EffectPayload | None
-    consume_effect: EffectPayload | None
     art: FrogAsset
 
 
@@ -54,9 +60,7 @@ SPECIES: tuple[Species, ...] = (
         rarity="common",
         description="A perfectly ordinary frog.",
         spawn_weight=1.0,
-        consumable=1,
         catch_effect=None,
-        consume_effect=ExpPayload(exp=10, frozen_exp=3),
         art=FrogAsset.LEAF_FROG,
     ),
     Species(
@@ -65,9 +69,7 @@ SPECIES: tuple[Species, ...] = (
         rarity="common",
         description="A frog of refined taste.",
         spawn_weight=1.0,
-        consumable=1,
         catch_effect=None,
-        consume_effect=ExpPayload(exp=20, frozen_exp=6),
         art=FrogAsset.CLASSY_FROG,
     ),
 )

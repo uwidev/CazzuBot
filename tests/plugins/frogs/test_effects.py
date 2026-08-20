@@ -2,28 +2,25 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any, cast
 
 import pendulum
 import pytest
 
-from cazzubot import utils
 from cazzubot.bot import CazzuBot
 from cazzubot.models import FrogState, SpeciesKey
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.assets import FrogAsset
-from plugins.frogs.extension import Consume
 from plugins.frogs.effects import EffectKey, ExpPayload
+from plugins.frogs.events import FrogConsumedEvent
+from plugins.frogs.items import FrogItems
 from plugins.frogs.species import SPECIES, Species
 from tests.fakes import (
-    FakeContext,
     FakeInteraction,
     FakeMember,
     FakeMenuContext,
-    invoke_command,
     menu_button,
 )
 
@@ -109,13 +106,13 @@ async def test_exp_effect_rejects_wrong_payload(bot: CazzuBot) -> None:
 
 
 async def test_species_effects_resolve(bot: CazzuBot) -> None:
-    """Every species' effect payload keys map to a handler."""
+    """Every species' catch-effect payload key maps to a handler."""
     for species in SPECIES:
-        for payload in (species.catch_effect, species.consume_effect):
-            if payload is not None:
-                assert payload.key in EffectKey, (
-                    f"{species.key} has unknown effect key {payload.key!r}"
-                )
+        payload = species.catch_effect
+        if payload is not None:
+            assert payload.key in EffectKey, (
+                f"{species.key} has unknown effect key {payload.key!r}"
+            )
 
 
 async def test_capture_dispatches_species_payload(
@@ -149,9 +146,7 @@ async def test_capture_dispatches_species_payload(
         rarity="common",
         description="Crackles with static.",
         spawn_weight=1.0,
-        consumable=1,
         catch_effect=ExpPayload(exp=5, frozen_exp=1),
-        consume_effect=None,
         art=FrogAsset.LEAF_FROG,
     )
     from plugins.frogs.species import by_key as real_by_key
@@ -181,59 +176,35 @@ async def test_capture_dispatches_species_payload(
     assert uid == _UID and species_key is SpeciesKey.LEAF_FROG
 
 
-async def test_consume_dispatches_species_payload(
+async def test_frog_item_consume_grants_exp_and_reports(
     bot: CazzuBot,
-    ctx: FakeContext,
-    author: FakeMember,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The consume flow hands the effect the bot + the species' payload."""
-    calls: list[tuple[object, ...]] = []
+    """The item-owned consume grants seasonal exp and reports the event.
 
-    async def fake_consume(
-        bot_: object,
-        payload: object,
-        *,
-        uid: int,
-        species_key: SpeciesKey,
-        amount: int,
-        state: FrogState,
-        now: object,
-    ) -> None:
-        calls.append(
-            ("consume", bot_, payload, uid, species_key, amount, state)
+    Consumption moved off the entity onto the item; the frog item's consume
+    handler both grants the exp and emits :class:`FrogConsumedEvent` (the
+    badge system's observation path), so the generic ``/inventory consume``
+    need not know about frogs.
+    """
+    received: list[FrogConsumedEvent] = []
+
+    async def on_consumed(event: FrogConsumedEvent) -> None:
+        received.append(event)
+
+    bot.events.on(FrogConsumedEvent, on_consumed)
+    consume = FrogItems.LEAF_NORMAL.value.consume
+    assert consume is not None
+    await consume(bot, _UID, 2)
+
+    now = pendulum.now("UTC")
+    assert (
+        await exp_db.seasonal_exp(
+            bot.db, _UID, now.year, (now.month - 1) // 3
         )
-
-    monkeypatch.setattr(EffectKey.EXP.value, "consume", fake_consume)
-    await frog_db.modify_inventory(
-        bot.db, _UID, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 1
-    )
-
-    async def _fake_attach(
-        menu: utils.ConfirmMenu, _client: object, **_: object
-    ) -> None:
-        while menu.value is None:
-            await asyncio.sleep(0.01)
-
-    monkeypatch.setattr(utils.ConfirmMenu, "attach", _fake_attach)
-
-    task = asyncio.create_task(invoke_command(Consume(), ctx, amount=1))
-    client = cast(Any, ctx.client)
-    for _ in range(200):
-        if client._attached_menus:  # pyright: ignore[reportPrivateUsage]
-            break
-        await asyncio.sleep(0.01)
-    menu = ctx.sent[0].components
-    assert isinstance(menu, utils.ConfirmMenu)
-    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
-    await menu_button(menu).callback(mctx)
-    await task
-
-    assert len(calls) == 1
-    kind, bot_, payload, uid, species_key, amount, state = calls[0]
-    assert kind == "consume"
-    assert bot_ is bot
-    assert isinstance(payload, ExpPayload)
-    assert payload.exp == 10  # leaf's payload
-    assert uid == _UID and species_key is SpeciesKey.LEAF_FROG
-    assert amount == 1 and state is FrogState.NORMAL
+        == 20
+    )  # 10 exp/unit * 2
+    assert len(received) == 1
+    assert received[0].uid == _UID
+    assert received[0].species_key is SpeciesKey.LEAF_FROG
+    assert received[0].amount == 2
+    assert received[0].state is FrogState.NORMAL

@@ -131,10 +131,15 @@ async def spawn_and_wait(
 
 
 async def _frog_content(bot: CazzuBot, species_key: SpeciesKey) -> str:
-    """The spawned frog's message text: species name + its art URL."""
+    """The spawned frog's message text: its art URL, else the species name.
+
+    When the species' art asset isn't published (no asset channel configured,
+    or a missing emoji row) the emoji falls back to the plain name instead of
+    printing "None".
+    """
     species = by_key(species_key)
     art = await bot.assets.get(species.art) if species else None
-    return f"{art}"
+    return art or (species.name if species is not None else "Frog")
 
 
 class FrogCatchMenu(lightbulb.components.Menu):
@@ -198,18 +203,12 @@ class FrogCatchMenu(lightbulb.components.Menu):
                 waited_for=time.time() - self._spawned_at,
                 species_key=species.key,
             )
-            await frog_db.modify_inventory(
-                self.bot.db,
-                uid,
-                species.key,
-                FrogState.NORMAL,
-                1,
-            )
             await frog_db.modify_capture(self.bot.db, uid, modify=1)
 
             if species.catch_effect is not None:
                 payload = species.catch_effect
-                # the enum member's value IS the handler — no lookup
+                # the enum member's value IS the handler — no lookup; a
+                # custom catch effect owns whatever it grants
                 await payload.key.value.catch(
                     self.bot,
                     payload,
@@ -217,6 +216,14 @@ class FrogCatchMenu(lightbulb.components.Menu):
                     species_key=species.key,
                     now=now,
                 )
+            else:
+                # the default: catching grants the matching frog item. Its
+                # item_id IS the stored "frog:<species>:<state>" string, so
+                # the ledger needs no migration.
+                item_id = frog_db.FrogItem(
+                    species.key, FrogState.NORMAL
+                ).key
+                await self.bot.inventory.add(uid, item_id)
 
             msg_json = await frog_db.get_message(self.bot.settings) or {}
             frog_cnt_total = await frog_db.total_inventory(

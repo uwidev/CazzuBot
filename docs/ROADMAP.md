@@ -7,7 +7,11 @@
 > (`bot.events` + frog domain events), and the DB migration
 > (`scripts/migrate_frog_species.py`, run while stopped before booting
 > the live dev/prod DBs) are in, suite green. Phase 4 (docs) is partially
-> done (ASSETS/ROADMAP/BACKLOG updated; PLUGINS/MANUAL_TEST pending).
+> done (ASSETS/ROADMAP/BACKLOG updated; PLUGINS updated too). The
+> **item-vs-entity split** (2026-08-19) is complete: consumption moved off
+> the species onto an **item-owned** `Item.consume`, `/frog consume` was
+> replaced by the generic `/inventory consume`, and `Species` sheds its
+> consume fields (see `docs/ITEMS.md`).
 > Complements `docs/ASSETS.md` (the asset-management design this roadmap
 > builds on); supersedes nothing.
 
@@ -239,19 +243,31 @@ class EffectPayload(Protocol):
 
 class Effect(Protocol):
     async def catch(
-        self, bot, payload: EffectPayload, *,
-        uid: int, species_key: str, now: pendulum.DateTime
+        self,
+        bot,
+        payload: EffectPayload,
+        *,
+        uid: int,
+        species_key: str,
+        now: pendulum.DateTime,
     ) -> None: ...
 
     async def consume(
-        self, bot, payload: EffectPayload, *,
-        uid: int, species_key: str, amount: int,
-        state: FrogState, now: pendulum.DateTime
+        self,
+        bot,
+        payload: EffectPayload,
+        *,
+        uid: int,
+        species_key: str,
+        amount: int,
+        state: FrogState,
+        now: pendulum.DateTime,
     ) -> None: ...
 
 
 class ExpEffect:
     """consume: seasonal exp per payload values."""
+
     ...
 
 

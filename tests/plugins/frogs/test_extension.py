@@ -1,26 +1,20 @@
-"""Frogs extension + factory tests — spawn math, register, consume, capture."""
+"""Frogs extension + factory tests — spawn math, register, catalog, capture."""
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any, cast
+from typing import Any
 
 import hikari
 import pendulum
 import pytest
 
-from cazzubot import utils
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
-from cazzubot.models import FrogState, SpeciesKey
-from plugins.experience import db as exp_db
+from cazzubot.models import SpeciesKey
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
-from plugins.frogs.events import (
-    FrogCapturedEvent,
-    FrogConsumedEvent,
-)
-from plugins.frogs.extension import Catalog, Consume, Profile, Register
+from plugins.frogs.events import FrogCapturedEvent
+from plugins.frogs.extension import Catalog, Profile, Register
 from tests.fakes import (
     FakeCache,
     FakeChannel,
@@ -95,211 +89,6 @@ async def test_frog_catalog_lists_species(
     assert len(embed.fields) == 2
     assert any("Leaf Frog" in field.name for field in embed.fields)
     assert any("Classy Frog" in field.name for field in embed.fields)
-
-
-# -- consume -----------------------------------------------------------------
-
-
-async def test_frog_consume_full_flow(
-    bot: CazzuBot,
-    ctx: FakeContext,
-    author: FakeMember,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    await frog_db.modify_inventory(
-        bot.db, _UID, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 3
-    )
-
-    async def _fake_attach(
-        menu: utils.ConfirmMenu, _client: object, **_: object
-    ) -> None:
-        # real attach waits on the menu's stop event; simulate a click-driven
-        # termination by polling the value the callback sets.
-        while menu.value is None:
-            await asyncio.sleep(0.01)
-
-    monkeypatch.setattr(utils.ConfirmMenu, "attach", _fake_attach)
-
-    task = asyncio.create_task(invoke_command(Consume(), ctx, amount=2))
-    client = cast(Any, ctx.client)
-    for _ in range(200):  # wait for attach — no fixed-sleep race
-        if client._attached_menus:  # pyright: ignore[reportPrivateUsage]
-            break
-        await asyncio.sleep(0.01)
-    menu = ctx.sent[0].components
-    assert isinstance(menu, utils.ConfirmMenu)
-    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
-    await menu_button(menu).callback(mctx)
-    await task
-
-    assert (
-        await frog_db.get_inventory(bot.db, _UID, SpeciesKey.LEAF_FROG)
-        == 1
-    )
-    now = pendulum.now("UTC")
-    assert (
-        await exp_db.seasonal_exp(
-            bot.db, _UID, now.year, (now.month - 1) // 3
-        )
-        == 20
-    )  # 10 exp/frog * 2
-    assert ctx.edits[-1]["embed"].title == "Frog(s) have been consumed!"
-
-
-async def test_frog_consume_classy_frog_double_exp(
-    bot: CazzuBot,
-    ctx: FakeContext,
-    author: FakeMember,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The decision: classy frogs grant double the default's exp."""
-    await frog_db.modify_inventory(
-        bot.db, _UID, SpeciesKey.CLASSY_FROG, FrogState.NORMAL, 1
-    )
-
-    async def _fake_attach(
-        menu: utils.ConfirmMenu, _client: object, **_: object
-    ) -> None:
-        while menu.value is None:
-            await asyncio.sleep(0.01)
-
-    monkeypatch.setattr(utils.ConfirmMenu, "attach", _fake_attach)
-
-    task = asyncio.create_task(
-        invoke_command(Consume(), ctx, amount=1, species="classy_frog")
-    )
-    client = cast(Any, ctx.client)
-    for _ in range(200):
-        if client._attached_menus:  # pyright: ignore[reportPrivateUsage]
-            break
-        await asyncio.sleep(0.01)
-    menu = ctx.sent[0].components
-    assert isinstance(menu, utils.ConfirmMenu)
-    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
-    await menu_button(menu).callback(mctx)
-    await task
-
-    assert (
-        await frog_db.get_inventory(bot.db, _UID, SpeciesKey.CLASSY_FROG)
-        == 0
-    )
-    now = pendulum.now("UTC")
-    assert (
-        await exp_db.seasonal_exp(
-            bot.db, _UID, now.year, (now.month - 1) // 3
-        )
-        == 20
-    )  # classy: 20 exp/frog
-
-
-async def test_frog_consume_frozen_state_uses_frozen_exp(
-    bot: CazzuBot,
-    ctx: FakeContext,
-    author: FakeMember,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    await frog_db.modify_inventory(
-        bot.db, _UID, SpeciesKey.LEAF_FROG, FrogState.FROZEN, 2
-    )
-
-    async def _fake_attach(
-        menu: utils.ConfirmMenu, _client: object, **_: object
-    ) -> None:
-        while menu.value is None:
-            await asyncio.sleep(0.01)
-
-    monkeypatch.setattr(utils.ConfirmMenu, "attach", _fake_attach)
-
-    task = asyncio.create_task(
-        invoke_command(Consume(), ctx, amount=2, state="frozen")
-    )
-    client = cast(Any, ctx.client)
-    for _ in range(200):
-        if client._attached_menus:  # pyright: ignore[reportPrivateUsage]
-            break
-        await asyncio.sleep(0.01)
-    menu = ctx.sent[0].components
-    assert isinstance(menu, utils.ConfirmMenu)
-    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
-    await menu_button(menu).callback(mctx)
-    await task
-
-    assert (
-        await frog_db.get_inventory(
-            bot.db, _UID, SpeciesKey.LEAF_FROG, FrogState.FROZEN
-        )
-        == 0
-    )
-    now = pendulum.now("UTC")
-    assert (
-        await exp_db.seasonal_exp(
-            bot.db, _UID, now.year, (now.month - 1) // 3
-        )
-        == 6
-    )  # frozen: 3 exp/frog * 2
-
-
-async def test_frog_consume_rejects_insufficient(
-    bot: CazzuBot, ctx: FakeContext
-) -> None:
-    await frog_db.modify_inventory(
-        bot.db, _UID, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 1
-    )
-    with pytest.raises(UserInputError):
-        await invoke_command(Consume(), ctx, amount=5)
-
-
-async def test_frog_consume_rejects_zero(
-    bot: CazzuBot, ctx: FakeContext
-) -> None:
-    with pytest.raises(UserInputError):
-        await invoke_command(Consume(), ctx, amount=0)
-
-
-async def test_frog_consume_emits_consumed_event(
-    bot: CazzuBot,
-    ctx: FakeContext,
-    author: FakeMember,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Observers (badges) see the completed consume via the event bus."""
-    received: list[FrogConsumedEvent] = []
-
-    async def on_consumed(event: FrogConsumedEvent) -> None:
-        received.append(event)
-
-    bot.events.on(FrogConsumedEvent, on_consumed)
-    await frog_db.modify_inventory(
-        bot.db, _UID, SpeciesKey.CLASSY_FROG, FrogState.NORMAL, 1
-    )
-
-    async def _fake_attach(
-        menu: utils.ConfirmMenu, _client: object, **_: object
-    ) -> None:
-        while menu.value is None:
-            await asyncio.sleep(0.01)
-
-    monkeypatch.setattr(utils.ConfirmMenu, "attach", _fake_attach)
-
-    task = asyncio.create_task(
-        invoke_command(Consume(), ctx, amount=1, species="classy_frog")
-    )
-    client = cast(Any, ctx.client)
-    for _ in range(200):
-        if client._attached_menus:  # pyright: ignore[reportPrivateUsage]
-            break
-        await asyncio.sleep(0.01)
-    menu = ctx.sent[0].components
-    assert isinstance(menu, utils.ConfirmMenu)
-    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
-    await menu_button(menu).callback(mctx)
-    await task
-
-    assert len(received) == 1
-    assert received[0].uid == _UID
-    assert received[0].species_key is SpeciesKey.CLASSY_FROG
-    assert received[0].amount == 1
-    assert received[0].state is FrogState.NORMAL
 
 
 # -- capture menu -----------------------------------------------------------

@@ -32,18 +32,20 @@ async def test_inventory_grid_shows_numbered_slots(
     """Seeded frogs render as numbered inline-emoji grid slots."""
     await _seed_frogs(full_bot, 424242)
 
-    result = await run_slash(full_bot, "inventory", user_id=424242)
+    result = await run_slash(full_bot, "inventory view", user_id=424242)
 
     assert result.exceptions == []
     assert result.response_type == hikari.ResponseType.MESSAGE_CREATE
     embed = result.first_response.get("embed")
     assert embed is not None
 
-    # namespace header + one field per stack (ORDER BY item → classy first)
+    # namespace header + one field per stack (ORDER BY item → classy first);
+    # each slot shows the item's own emoji icon (no label — the grid is
+    # emoji-only via the item registry)
     values = [field.value for field in embed.fields]
     assert "**FROG**" in values
-    assert "🐸Classy Frog (frozen) ×1" in values
-    assert "🐸Leaf Frog (normal) ×3" in values
+    assert "🐸 ×1" in values
+    assert "🐸 ×3" in values
     # deterministic slot numbers on the item fields (blank = header)
     slot_names = [field.name for field in embed.fields if field.name]
     assert slot_names == ["1", "2"]
@@ -51,7 +53,7 @@ async def test_inventory_grid_shows_numbered_slots(
 
 async def test_inventory_empty_state(full_bot: CazzuBot) -> None:
     """A member with no holdings sees the empty state, not an error."""
-    result = await run_slash(full_bot, "inventory", user_id=424242)
+    result = await run_slash(full_bot, "inventory view", user_id=424242)
 
     assert result.exceptions == []
     embed = result.first_response.get("embed")

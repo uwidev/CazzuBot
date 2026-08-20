@@ -1,10 +1,8 @@
-"""Frogs plugin extension — profile, register/configure spawns, consume,
-catalog, owner commands."""
+"""Frogs plugin extension — profile, register/configure spawns, catalog,
+owner commands."""
 
-import asyncio
 import json
 from math import trunc
-from typing import Any, cast
 
 import hikari
 import lightbulb
@@ -18,10 +16,8 @@ from cazzubot.window import command_window, window_success
 
 from . import db as frog_db
 from . import factory
-from .effects import ExpPayload
-from .events import FrogConsumedEvent
-from .logic import ensure_consume_amount
-from .species import DEFAULT_SPECIES_KEY, SPECIES, by_key
+from .items import frog_exp
+from .species import SPECIES, by_key
 
 loader = lightbulb.Loader()
 
@@ -34,10 +30,6 @@ _COLOR = hikari.Color.from_hex_code("#a2dcf7")
 _SPECIES_CHOICES = [
     lightbulb.Choice(species.name, species.key.value)
     for species in SPECIES
-]
-_STATE_CHOICES = [
-    lightbulb.Choice("Normal", FrogState.NORMAL.value),
-    lightbulb.Choice("Frozen", FrogState.FROZEN.value),
 ]
 
 frog = lightbulb.Group("frog", "Frog species economy.")
@@ -96,145 +88,6 @@ class Profile(
 
 
 @frog.register
-class Consume(
-    lightbulb.SlashCommand,
-    name="consume",
-    description="Consume frogs for seasonal experience.",
-):
-    """Consume frogs for seasonal experience."""
-
-    amount = lightbulb.integer(
-        "amount", "How many frogs to consume", default=1, min_value=1
-    )
-    species = lightbulb.string(
-        "species",
-        "The frog species to consume",
-        default=DEFAULT_SPECIES_KEY.value,
-        choices=_SPECIES_CHOICES,
-    )
-    state = lightbulb.string(
-        "state",
-        "The inventory state to consume from",
-        default=FrogState.NORMAL.value,
-        choices=_STATE_CHOICES,
-    )
-
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Confirm and consume the selected frogs, granting their exp."""
-        bot = utils.bot_from(ctx)
-        uid = (ctx.member or ctx.user).id
-        species_key = _species_key(self.species)
-        if (
-            species_key is None
-        ):  # unreachable: the option always carries a value
-            raise UserInputError(f"Unknown frog species: {self.species}")
-        species = by_key(species_key)
-        assert species is not None  # every SpeciesKey member is in SPECIES
-        try:
-            state = FrogState(self.state)
-        except ValueError as err:
-            raise UserInputError(
-                f"Unknown frog state: {self.state}"
-            ) from err
-        balance = await frog_db.get_inventory(
-            bot.db, uid, species.key, state
-        )
-        ensure_consume_amount(self.amount, balance)
-
-        now = pendulum.now("UTC")
-
-        from plugins.experience.db import seasonal_exp
-
-        exp_old = await seasonal_exp(
-            bot.db, uid, now.year, utils.month2season(now.month)
-        )
-
-        # the confirmation shows exp math only for the exp effect; other
-        # payloads describe themselves generically
-        consume_effect = species.consume_effect
-        if isinstance(consume_effect, ExpPayload):
-            exp_per = consume_effect.per_frog(state)
-            total_exp = consume_effect.total(state, self.amount)
-            effect_desc = (
-                f"These frogs grant `{exp_per}` exp per frog, for a "
-                f"total of **`{total_exp}`**.\n\n"
-                f"Resulting exp\n**`{exp_old:,}`** -> "
-                f"**`{exp_old + total_exp:,}`**\n\n"
-            )
-        else:
-            effect_desc = ""
-
-        desc = (
-            f"You are about to consume **`{self.amount}` "
-            f"{species.name} ({state.value})**.\n\n"
-            f"{effect_desc}"
-            f"Resulting frogs\n**`{balance}`** -> "
-            f"**`{balance - self.amount}`**\n\n"
-            "Please confirm."
-        )
-        embed = utils.prepare_embed("**Confirmation**", desc)
-        embed.set_thumbnail("https://i.imgur.com/ybxI7pu.png")
-
-        menu = utils.ConfirmMenu(uid, delete_after=False)
-        await ctx.respond(embed=embed, components=cast(Any, menu))
-        try:
-            await menu.attach(ctx.client, timeout=120)
-        except asyncio.TimeoutError:
-            await ctx.delete_response(utils.INITIAL_RESPONSE_IDENTIFIER)
-            return
-        if not menu.value:
-            await ctx.delete_response(utils.INITIAL_RESPONSE_IDENTIFIER)
-            return
-
-        # re-check balance at the very moment of consumption
-        balance_now = await frog_db.get_inventory(
-            bot.db, uid, species.key, state
-        )
-        ensure_consume_amount(self.amount, balance_now)
-
-        # the consume effect runs first (grants exp etc.), then the
-        # inventory decrements — a failed effect never eats frogs. The
-        # enum member's value IS the handler — no lookup, and a key
-        # without a handler cannot exist.
-        if consume_effect is not None:
-            await consume_effect.key.value.consume(
-                bot,
-                consume_effect,
-                uid=uid,
-                species_key=species.key,
-                amount=self.amount,
-                state=state,
-                now=now,
-            )
-        await frog_db.modify_inventory(
-            bot.db, uid, species.key, state, -self.amount
-        )
-        # the sole FrogConsumedEvent emitter: observers subscribed via
-        # bot.events.on (badges etc.) see the completed consume here;
-        # failures are isolated by the bus and cannot break the command
-        await bot.events.emit(
-            FrogConsumedEvent(
-                uid=uid,
-                species_key=species.key,
-                amount=self.amount,
-                state=state,
-                at=now.isoformat(),
-            )
-        )
-
-        embed_post = utils.prepare_embed(
-            "Frog(s) have been consumed!",
-            f"Resulting {species.name} ({state.value}) frogs\n"
-            + f"**`{balance}`** -> **`{balance - self.amount}`**",
-        )
-        embed_post.set_thumbnail("https://i.imgur.com/kCHjymJ.png")
-        await ctx.edit_response(
-            utils.INITIAL_RESPONSE_IDENTIFIER, embed=embed_post
-        )
-
-
-@frog.register
 class Catalog(
     lightbulb.SlashCommand,
     name="catalog",
@@ -258,14 +111,14 @@ class Catalog(
                 if thumbnail_art is not None:
                     embed.set_thumbnail(thumbnail_art)
             value = f"{species.description}\nRarity: {species.rarity}"
-            consume_effect = species.consume_effect
-            if isinstance(consume_effect, ExpPayload):
-                value += (
-                    f"\nExp: **`{consume_effect.exp}`** "
-                    f"(frozen **`{consume_effect.frozen_exp}`**)"
-                )
-            elif consume_effect is not None:
-                value += f"\nConsume effect: `{consume_effect.key.value}`"
+            # consumption is item-owned — the catalog reports each species'
+            # consume value from its item definitions (per-state)
+            normal_exp = frog_exp(species.key, FrogState.NORMAL)
+            frozen_exp = frog_exp(species.key, FrogState.FROZEN)
+            value += (
+                f"\nConsume: **`{normal_exp}`** exp (normal) / "
+                f"**`{frozen_exp}`** exp (frozen)"
+            )
             embed.add_field(
                 name=f"{species.name} (`{species.key.value}`)", value=value
             )

@@ -56,9 +56,19 @@ class Plugin:
             scheduled   tag -> handler(bot, payload) for the central
                         scheduler, or tag -> (handler, TaskPolicy) to set
                         the tag's retry/stale configuration
-            asset_decl  the plugin's asset declaration enum — each member's
+    asset_decl  the plugin's asset declaration enum — each member's
                         value is an ``AssetSpec`` and the member IS the
                         reference; reconciled into the registry at boot
+            item_decl   the plugin's item-declaration enum — each member's
+                        value is an ``Item`` and its ``item_id`` is the
+                        durable oracle stored in the inventory ledger;
+                        registered with ``bot.items`` at load, independent
+                        of the ``enabled`` behavior flag
+            items_consumable
+                        whether this plugin's items may be consumed (the
+                        second, independent gate from ``enabled``): a
+                        behavior-disabled plugin keeps its holdings visible
+                        and consumable (or vice versa)
             depends_on  names of plugins this one needs loaded first
                         (transitively expanded by ``select_plugins``; cycles
                         load together as one strongly-connected component)
@@ -73,6 +83,8 @@ class Plugin:
     schema: list[str] = []
     scheduled: dict[str, ScheduledEntry] = {}
     asset_decl: type[Enum] | None = None
+    item_decl: type[Enum] | None = None
+    items_consumable: bool = True
     depends_on: tuple[str, ...] = ()
     enabled: bool = True
 

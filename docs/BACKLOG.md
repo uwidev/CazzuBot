@@ -51,15 +51,23 @@ species) — "a dish is just a crafted species" (roadmap). Combine = the
 inventory ledger as the mechanism (consume input stacks, grant the output)
 — a new economy sink; the alchemist profession is the combine track.
 
-### `/inventory consume` + real species emoji glyphs
+### `/inventory consume` — **DONE (2026-08-19); the emoji glyphs remain**
 
-Follow-up to the `/inventory` grid (2026-08): an index-based
-`/inventory consume (INDEX) [AMOUNT]` that **replaces `/frog consume`**
-(`INDEX` resolves through the derived `bot.inventory.rows_indexed` slots)
-and **real per-species emoji glyphs** (declared as `AssetKind.EMOJI` in the
-asset child-guild) instead of the current 🐸 placeholder. Both ride on the
-foundation already built: the renderer registry, derived slot indices, and
-the emoji-kind asset sync (`docs/ASSETS.md`, `docs/INVENTORY.md`).
+The index-based `/inventory consume (INDEX) [AMOUNT]` half is **done and
+archived** (see `docs/DONE.md`): it replaces `/frog consume` — `INDEX`
+resolves through the derived `bot.inventory.rows_indexed` slots, then runs
+the item's **item-owned** consume and decrements the stack (item-vs-entity
+model + "deprecate behavior, keep items" story in `docs/ITEMS.md`).
+`/inventory` is now a group (`/inventory view`, `/inventory consume`) and
+rides on `bot.items`, not the old renderer registry (removed as redundant;
+unresolved ids are hidden in the grid).
+
+Still open: **real per-species emoji glyphs** for the frog *items* (and the
+`/inventory` grid + `/frog catalog` that render them) — declared as
+`AssetKind.EMOJI` in the asset child-guild instead of the current 🐸
+placeholder. The emoji-kind asset sync is built (`docs/ASSETS.md`); what's
+left is declaring and publishing per-species glyphs and pointing the item
+icons at them.
 
 ### Game-patterns lexicon (docs)
 
@@ -69,7 +77,11 @@ pattern is this?": loot tables → `roll_species`, inventory ledger →
 quarterly, achievements → badges, event spine → `bot.events`, faucets /
 sinks → capture / consume. Include the emergent-dynamics vocabulary
 (hold-vs-spend, conversion + decay, the daily/weekly/quarterly tempo
-layers).
+layers). The **entity↔item lexicon and the two-flag "deprecate behavior,
+keep items" story** now live in `docs/ITEMS.md` (entity = world/spawn
+object with behavior; item = ledger object with an immutable `item_id`
+oracle and item-owned consume; `enabled` gates behavior while
+`items_consumable` gates consumption, independently).
 
 ## Self-documenting / low-friction sweep
 

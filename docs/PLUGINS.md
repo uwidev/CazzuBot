@@ -21,6 +21,12 @@ class MyFeature(Plugin):
         "mytag": my_due_handler
     }  # tag -> async handler(bot, payload)
     asset_decl = {MyAsset: "assets/myasset.png"}  # optional enum -> file
+    item_decl = (
+        MyItemEnum  # optional enum whose values are Item definitions
+    )
+    items_consumable = (
+        True  # optional: gates this plugin's item consumption
+    )
     depends_on = ("otherplugin",)  # names this plugin needs loaded first;
     # transitively expanded — see "Dependencies and sandbox mode" below
     enabled = False  # optional: ship disabled (mod does — see below)
@@ -129,14 +135,21 @@ Use these instead of reaching into internals:
   `bot.events.on(EventType, handler)` returns an **unsubscribe token**;
   `bot.events.off(EventType, handler)` withdraws. Defer subscriptions to the
   lifecycle so unload detaches them.
-- `bot.inventory` / `bot.member_effects` — the generic game stores:
-  `(uid, item, qty)` ledgers and `(uid, key, value, expires_at)` effects
-  with lazy expiry. Frogs and exp use them directly — don't build
-  per-feature tables for these shapes. For the inventory's user-facing view,
-  plugins register a **renderer** with
-  `bot.inventory.register_renderer(prefix, fn)` (in `on_load`) so the
-  generic `/inventory` command can present their items; see
-  `plugins/inventory/`.
+- `bot.inventory` / `bot.items` — the two halves of inventory:
+  `bot.inventory` is the generic `(uid, item, qty)` ledger with the explicit
+  `add` (+1) / `remove` (−1) / `modify` (signed delta) primitives (stacks
+  prune at zero) plus `get`/`rows`/`rows_indexed`/`total`/`move_all`.
+  `bot.items` is the **definitions layer**: what each stored `item_id` *is* —
+  its icon/display name and its **item-owned consume** behavior (see
+  `docs/ITEMS.md`). A plugin declares its item definitions with
+  `item_decl = SomeEnum` (each member's value is an `Item`; the immutable
+  `item_id` is the ledger oracle, so renaming the member/name is free) and
+  `items_consumable` gates whether they may be consumed — independent of the
+  `enabled` behavior flag, so a behavior-disabled plugin keeps its holdings
+  visible/consumable. `bot.member_effects` is the `(uid, key, value,
+  expires_at)` effect store. Frogs and exp use these directly — don't build
+  per-feature tables for these shapes. The generic `/inventory view` /
+  `/inventory consume <slot>` commands are in `plugins/inventory/`.
 - `bot.lifecycle` — declare effect undos (see "Conventions" below).
 - `bot.assets` — enum-declared asset files (reconcile + kind-based sync to
   the asset child-guild: media CDN blobs + custom emoji); see

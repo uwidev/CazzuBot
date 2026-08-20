@@ -102,7 +102,7 @@ async def test_author_confirm_wrong_user_rejected(
         pytest.param("No", 5, 0, id="no-changes-nothing"),
     ],
 )
-async def test_frog_consume_confirm(
+async def test_inventory_consume_confirm(
     full_bot: CazzuBot,
     button_label: str,
     expected_normal: int,
@@ -119,8 +119,16 @@ async def test_frog_consume_confirm(
 		INSERT OR IGNORE INTO member_frog (uid, capture) VALUES (424242, 5)
 		"""
     )
+    # the generic /inventory consume replaces the retired /frog consume:
+    # address the stack by its derived slot number (the only stack → 1)
     task = asyncio.create_task(
-        run_slash(full_bot, "frog consume", user_id=424242, timeout=10.0)
+        run_slash(
+            full_bot,
+            "inventory consume",
+            options={"slot": 1},
+            user_id=424242,
+            timeout=10.0,
+        )
     )
     buttons = await wait_for_menu(full_bot)
 

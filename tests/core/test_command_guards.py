@@ -71,10 +71,10 @@ USER_FACING: set[tuple[str, ...]] = {
     ("exp", "top"),
     ("exp", "quiet", "list"),
     ("frog", "profile"),
-    ("frog", "consume"),
     ("frog", "catalog"),
     ("frog", "lifetime"),
-    ("inventory",),
+    ("inventory", "view"),
+    ("inventory", "consume"),
 }
 
 

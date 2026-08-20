@@ -571,3 +571,36 @@ plugin refuses to boot with guidance. Owner commands in the dev plugin —
 load/unload live (dependents included, reusing the lifecycle's
 dependents-aware unload). mod ships `enabled = False`; the test harness
 force-enables it (the `full_bot` contract stays "every plugin loaded").
+
+## Items vs entities separation (frogs first) + generic `/inventory consume`
+
+The game's two player-visible concepts were conflated on the frog: a caught
+frog was both a world/spawn object and an inventory item, and consumption
+was species/entity-owned (a `Species.consume_effect` carried the exp values).
+**Done (2026-08-19):** they're separated — an **entity** (a frog) is a
+world/spawn object with its own behavior (spawn cadence, `catch_effect`),
+while an **item** is a stackable inventory object (immutable `item_id`
+oracle, display name/icon, **item-owned consume**). Notes:
+
+- `cazzubot/items.py` is the new **definitions layer** (`bot.items`): a
+  plugin declares `item_decl = SomeEnum` (member value is an `Item`), and
+  `bot.py` registers/unregisters it at load/unload plus sets its
+  `items_consumable` flag — both **independent of `enabled`**, so you can
+  deprecate a behavior while keeping its items visible/consumable (the
+  "two-flag" story, `docs/ITEMS.md`).
+- `Species` sheds `consumable`/`consume_effect` (consume is item-owned; it
+  keeps `catch_effect`). Frog item ids match the legacy stored strings, so
+  **no DB migration**.
+- The inventory API is explicit: `add` (+1) / `remove` (−1) / `modify`
+  (signed delta), prune-at-zero intact.
+- `/inventory` is now a **group** — `/inventory view` (emoji grid via
+  `bot.items`; unresolved ids hidden) and `/inventory consume <slot>
+  [amount]` (generic, item-owned consume) — and **replaces `/frog consume`**
+  (retired). The old namespace **renderer registry** (`ItemView`,
+  `register_renderer`/`renderer_for`, `frog_renderer`) was removed as
+  redundant. `FrogConsumedEvent` still fires, from the frog item's consume
+  handler (so the generic path stays frog-agnostic and the future badge
+  system's observation path stays alive).
+- Docs: `docs/ITEMS.md` (the model + two-flag story), `docs/PLUGINS.md`
+  (`bot.items`/`item_decl`/`/inventory`), BACKLOG/ROADMAP updated. Full
+  suite green.

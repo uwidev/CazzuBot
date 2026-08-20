@@ -7,6 +7,7 @@ from typing_extensions import override
 
 from . import db, factory
 from .assets import FrogAsset
+from .items import FrogItems
 
 # the season rollover: first instant of Jan/Apr/Jul/Oct — freezes every
 # normal stack into frozen (the quarterly soft reset)
@@ -59,6 +60,7 @@ class FrogsPlugin(Plugin):
     # consuming frogs grants exp via the experience tables
     depends_on = ("experience",)
     asset_decl = FrogAsset
+    item_decl = FrogItems
 
     @override
     async def on_load(self, bot: CazzuBot) -> None:
@@ -71,13 +73,12 @@ class FrogsPlugin(Plugin):
         await bot.scheduler.arm_if_rowless(
             QUARTERLY_TAG, QUARTERLY_CADENCE
         )
-        # present frog stacks in the generic /inventory grid
-        bot.inventory.register_renderer("frog", db.frog_renderer)
 
     @override
     async def on_unload(self, bot: CazzuBot) -> None:
-        # a hot-reload drops the renderer so the registry stays consistent
-        bot.inventory.unregister_renderer("frog")
+        # a hot-reload drops nothing durable — items were unregistered by
+        # bot.py, spawn tasks/rows by the lifecycle undos
+        return None
 
 
 plugin = FrogsPlugin()

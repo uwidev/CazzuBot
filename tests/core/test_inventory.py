@@ -2,24 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 import pytest
 
 from cazzubot.db import Database
-from cazzubot import inventory
 from cazzubot.inventory import (
     SCHEMA,
-    ItemView,
     add,
     get,
     move_all,
-    register_renderer,
-    renderer_for,
     rows,
     rows_indexed,
     total,
-    unregister_renderer,
 )
 
 
@@ -34,14 +27,6 @@ class _Item:
 async def inv_db(db: Database) -> Database:
     await db.run_schema(SCHEMA)
     return db
-
-
-@pytest.fixture(autouse=True)
-def _clear_renderers() -> Iterator[None]:
-    """The renderer registry is module-global — reset between tests."""
-    inventory._RENDERERS.clear()
-    yield
-    inventory._RENDERERS.clear()
 
 
 async def test_add_get_and_prune_at_zero(inv_db: Database) -> None:
@@ -101,51 +86,6 @@ async def test_move_all_is_idempotent(inv_db: Database) -> None:
 
     assert await get(inv_db, 1, frozen) == 3
     assert await get(inv_db, 1, normal) == 0
-
-
-# -- renderer registry (how namespaces present themselves) ------------------
-
-
-def _leaf(item_key: str, qty: int) -> ItemView:
-    return ItemView(icon="🐸", label=f"{item_key} x{qty}")
-
-
-def test_renderer_for_unregistered_namespace_uses_default() -> None:
-    """An unknown prefix renders the raw key — degrades, doesn't crash."""
-    view = renderer_for("unknown")("frog:leaf_frog:normal", 3)
-    assert view == ItemView(icon="", label="frog:leaf_frog:normal")
-
-
-def test_register_and_render_by_prefix() -> None:
-    register_renderer("frog", _leaf)
-    assert renderer_for("frog")("frog:leaf_frog:normal", 4) == _leaf(
-        "frog:leaf_frog:normal", 4
-    )
-    # other namespaces untouched (default)
-    assert renderer_for("badge")("badge:x", 1) == ItemView(
-        icon="", label="badge:x"
-    )
-
-
-def test_register_replaces_and_unregister_falls_back() -> None:
-    register_renderer("frog", _leaf)
-    register_renderer("frog", lambda k, q: ItemView(icon="x", label=k))
-    assert renderer_for("frog")("a", 1) == ItemView(icon="x", label="a")
-
-    unregister_renderer("frog")
-    assert renderer_for("frog")("a", 1) == ItemView(icon="", label="a")
-
-
-def test_renderers_are_isolated_by_prefix() -> None:
-    """Two namespaces render independently through the shared registry."""
-    register_renderer("frog", lambda k, q: ItemView(icon="🐸", label=k))
-    register_renderer("badge", lambda k, q: ItemView(icon="🏅", label=k))
-    assert renderer_for("frog")("frog:leaf_frog:normal", 1) == ItemView(
-        icon="🐸", label="frog:leaf_frog:normal"
-    )
-    assert renderer_for("badge")("badge:first_capture", 1) == ItemView(
-        icon="🏅", label="badge:first_capture"
-    )
 
 
 # -- derived indices (grid slots address items deterministically) -----------

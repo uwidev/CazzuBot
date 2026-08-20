@@ -20,8 +20,7 @@ stay in per-feature logs (e.g. ``member_frog_log``).
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from cazzubot.db import Database
 
@@ -60,74 +59,16 @@ class InventoryKey(Protocol):
         ...
 
 
-@dataclass(frozen=True, slots=True)
-class ItemView:
-    """How one inventory item is presented in a grid slot.
-
-    The renderer's output: an inline ``icon`` (a Discord emoji, the only
-    thing that renders inline in an embed field) and a human ``label`` (the
-    species/item name and state). Kept framework-free so the core stays
-    hikari-clean.
-    """
-
-    icon: str
-    label: str
-
-
-Renderer = Callable[[str, int], ItemView]
-"""A presenter for one item namespace: ``(stored_item_key, qty) -> ItemView``.
-
-The core does not know what any namespace's items mean — the renderer for a
-``frog:...`` key parses it back into a species + state and renders its name/
-icon. The default (:data:`_default_renderer`) shows the raw key so an
-unknown or unregistered namespace degrades gracefully instead of crashing.
-"""
-
-
-# The namespace-keyed renderer registry — populate via register_renderer
-# (plugins do this in ``on_load``), so the generic inventory UI can present
-# any item type without the core importing that plugin (the effects-registry
-# pattern: no lookup table of the core's own, no plugin coupling).
-_RENDERERS: dict[str, Renderer] = {}
-
-
-def register_renderer(prefix: str, renderer: Renderer) -> None:
-    """Make ``prefix`` (e.g. ``"frog"``) renderable by ``renderer``.
-
-    Idempotent: re-registering replaces the entry, so a hot-reloaded plugin
-    can resubmit without a boot.
-    """
-    _RENDERERS[prefix] = renderer
-
-
-def unregister_renderer(prefix: str) -> None:
-    """Drop ``prefix``'s renderer (its plugin unloaded). A no-op if absent."""
-    _RENDERERS.pop(prefix, None)
-
-
-def renderer_for(prefix: str) -> Renderer:
-    """The renderer for ``prefix``, falling back to the default.
-
-    Unregistered namespaces (or a plugin that registered then unloaded) fall
-    back to :data:`_default_renderer`, so the inventory view never breaks on
-    an item kind it doesn't know.
-    """
-    return _RENDERERS.get(prefix, _default_renderer)
-
-
-def _default_renderer(item_key: str, _qty: int) -> ItemView:
-    return ItemView(icon="", label=item_key)
-
-
-async def add(
-    db: Database, uid: int, item: InventoryKey, amount: int
+async def modify(
+    db: Database, uid: int, item: str | InventoryKey, amount: int
 ) -> None:
-    """Add (or subtract, with negative ``amount``) from a member's stack.
+    """Apply a signed delta (``amount``) to a member's stack.
 
     A stack that reaches zero or below is pruned — zero-quantity rows never
     accumulate. No error on negative results: validation of "can you afford
-    this" stays with the caller (frogs checks balances before consuming).
+    this" stays with the caller (consume checks balances before running).
     """
+    key = _key(item)
     await db.execute(
         """
 		INSERT INTO inventory (uid, item, qty) VALUES (?, ?, ?)
@@ -135,22 +76,41 @@ async def add(
 			qty = inventory.qty + excluded.qty
 		""",
         uid,
-        item.key,
+        key,
         amount,
     )
     await db.execute(
         "DELETE FROM inventory WHERE uid = ? AND item = ? AND qty <= 0",
         uid,
-        item.key,
+        key,
     )
 
 
-async def get(db: Database, uid: int, item: InventoryKey) -> int:
+async def add(
+    db: Database, uid: int, item: str | InventoryKey, amount: int = 1
+) -> None:
+    """Pick up one (or ``amount``) of ``item`` — a positive delta."""
+    await modify(db, uid, item, amount)
+
+
+async def remove(
+    db: Database, uid: int, item: str | InventoryKey, amount: int = 1
+) -> None:
+    """Drop one (or ``amount``) of ``item`` — a negative delta."""
+    await modify(db, uid, item, -amount)
+
+
+def _key(item: str | InventoryKey) -> str:
+    """The stored storage string for a typed identity or raw key."""
+    return item if isinstance(item, str) else item.key
+
+
+async def get(db: Database, uid: int, item: str | InventoryKey) -> int:
     """A member's stack of ``item`` (0 when absent)."""
     val = await db.fetchval(
         "SELECT qty FROM inventory WHERE uid = ? AND item = ?",
         uid,
-        item.key,
+        _key(item),
     )
     return int(val or 0)
 
@@ -263,11 +223,25 @@ class Inventory:
         """Bind the service to ``bot`` (operations run on ``bot.db``)."""
         self.bot = bot
 
-    async def add(self, uid: int, item: InventoryKey, amount: int) -> None:
-        """Add (or subtract) ``amount`` from a member's ``item`` stack."""
+    async def add(
+        self, uid: int, item: str | InventoryKey, amount: int = 1
+    ) -> None:
+        """Add ``amount`` (default 1) of ``item`` to a member's stack."""
         return await add(self.bot.db, uid, item, amount)
 
-    async def get(self, uid: int, item: InventoryKey) -> int:
+    async def remove(
+        self, uid: int, item: str | InventoryKey, amount: int = 1
+    ) -> None:
+        """Drop ``amount`` (default 1) of ``item`` from a member's stack."""
+        return await remove(self.bot.db, uid, item, amount)
+
+    async def modify(
+        self, uid: int, item: str | InventoryKey, amount: int
+    ) -> None:
+        """Apply a signed delta ``amount`` to a member's ``item`` stack."""
+        return await modify(self.bot.db, uid, item, amount)
+
+    async def get(self, uid: int, item: str | InventoryKey) -> int:
         """A member's stack of ``item`` (0 when absent)."""
         return await get(self.bot.db, uid, item)
 
@@ -282,18 +256,6 @@ class Inventory:
     ) -> list[tuple[int, str, int]]:
         """A member's stacks with deterministic 1-based slot indices."""
         return await rows_indexed(self.bot.db, uid, prefix=prefix)
-
-    def register_renderer(self, prefix: str, renderer: Renderer) -> None:
-        """Make ``prefix`` renderable by ``renderer`` (idempotent)."""
-        register_renderer(prefix, renderer)
-
-    def unregister_renderer(self, prefix: str) -> None:
-        """Drop ``prefix``'s renderer (no-op if absent)."""
-        unregister_renderer(prefix)
-
-    def renderer_for(self, prefix: str) -> Renderer:
-        """The renderer for ``prefix``, defaulting to the raw-key view."""
-        return renderer_for(prefix)
 
     async def total(self, uid: int, *, prefix: str | None = None) -> int:
         """Total quantity a member holds, optionally within ``prefix``."""

@@ -17,6 +17,7 @@ from cazzubot.db import Database, SchemaMismatchError
 from cazzubot.errors import UserInputError
 from cazzubot.events import EventBus
 from cazzubot.inventory import Inventory
+from cazzubot.items import Items
 from cazzubot.lifecycle import Lifecycle
 from cazzubot.member_effects import MemberEffects
 from cazzubot.plugin import (
@@ -62,6 +63,7 @@ class CazzuBot(hikari.GatewayBot):
         self.assets = Assets(self, config, plugins_dir)
         self.events = EventBus()
         self.inventory = Inventory(self)
+        self.items = Items(self)
         self.member_effects = MemberEffects(self)
         self.lifecycle = Lifecycle(self)
 
@@ -316,6 +318,12 @@ class CazzuBot(hikari.GatewayBot):
             )
         self.plugins.append(plugin)
         self._plugin_by_name[plugin.name] = plugin
+        if plugin.item_decl is not None:
+            # items resolve independent of behavior enablement: register the
+            # definitions and the consuming flag at load, so a later
+            # behavior-disable still leaves holdings visible/consumable
+            self.items.register(plugin.name, plugin.item_decl)
+            self.items.set_consumable(plugin.name, plugin.items_consumable)
         if run_hooks:
             await plugin.on_load(self)
         _log.info("loaded plugin: %s", plugin.name)
@@ -341,6 +349,8 @@ class CazzuBot(hikari.GatewayBot):
                 exc_info=failure,
             )
         await plugin.on_unload(self)
+        if plugin.item_decl is not None:
+            self.items.unregister(plugin.name)
         self.plugins.remove(plugin)
         self._plugin_by_name.pop(plugin.name, None)
         _log.info("unloaded plugin: %s", plugin.name)
