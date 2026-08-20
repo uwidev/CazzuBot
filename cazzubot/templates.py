@@ -10,6 +10,7 @@ delivers one through any send target.
 import copy
 import json
 import logging
+import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, cast
@@ -83,6 +84,11 @@ MESSAGE_SCHEMA: dict[str, Any] = {
     },
     "additionalProperties": False,
 }
+
+# mention patterns scanned in rendered message text (content + embeds) to
+# derive the least-permissive user/role mention lists
+_USER_MENTION = re.compile(r"<@!?(\d+)>")
+_ROLE_MENTION = re.compile(r"<@&(\d+)>")
 
 
 def verify(
@@ -209,16 +215,30 @@ async def send(
     target supports them. Unset payload keys go out as
     ``hikari.undefined.UNDEFINED`` (omitted), never ``None``.
 
-    Mention parsing follows the template's ``allowed_mentions`` flag:
-    absent → users + roles are parsed (``@everyone``/``@here`` never),
-    ``true`` → everything, ``false`` → nothing. Caller-supplied mention
-    kwargs win over the template default.
+    Mention policy is least-permissive: only the users/roles actually
+    written as ``<@id>`` / ``<@&id>`` in the rendered message — content or
+    any embed text field — get parse rights, never a blanket "all users"
+    or "all roles". ``allowed_mentions: true`` additionally allows
+    ``@everyone``/``@here`` when present; ``false`` parses nothing.
+    Caller-supplied mention kwargs win over the template-derived values.
     """
+    content, embed, embeds = prepare(message)
+    allowed = message.get("allowed_mentions")
+    if allowed is not False:
+        user_ids, role_ids, everyone = _extract_mentions(
+            content, [embed] if embed else list(embeds)
+        )
+        kwargs.setdefault(
+            "user_mentions", user_ids if user_ids else hikari.UNDEFINED
+        )
+        kwargs.setdefault(
+            "role_mentions", role_ids if role_ids else hikari.UNDEFINED
+        )
+        kwargs.setdefault(
+            "mentions_everyone",
+            True if (allowed is True and everyone) else hikari.UNDEFINED,
+        )
     payload = build_payload(message)
-    for key, value in mention_kwargs(
-        message.get("allowed_mentions")
-    ).items():
-        kwargs.setdefault(key, value)
     if isinstance(destination, lightbulb.Context):
         # hikari channels have ``send``; lightbulb contexts have ``respond``
         return await destination.respond(**payload, **kwargs)
@@ -248,18 +268,51 @@ async def send_to_channel(
     return True
 
 
-def mention_kwargs(allowed: bool | None) -> dict[str, bool]:
-    """Map a template's ``allowed_mentions`` flag to hikari mention kwargs.
+def _extract_mentions(
+    content: str | None,
+    embeds: list[dict[str, Any]],
+) -> tuple[list[int], list[int], bool]:
+    """The explicitly-mentioned user/role ids in a rendered message.
 
-    Used by :func:`send`: absent → parse users + roles (Discord's platform
-    default minus ``@everyone``); ``true`` → also parse ``@everyone``/
-    ``@here``; ``false`` → parse nothing (hikari's no-mentions default).
-    Discord validates mention presence server-side, so phantom pings can't
-    occur.
+    Least-permissive mention source: only users/roles written as ``<@id>``
+    / ``<@&id>`` in the message (content + every embed string field) get
+    parse rights. Returns ``(user_ids, role_ids, everyone)`` — ``everyone``
+    is True when ``@everyone``/``@here`` appears in the text.
     """
-    if allowed is False:
-        return {}
-    kwargs = {"user_mentions": True, "role_mentions": True}
-    if allowed is True:
-        kwargs["mentions_everyone"] = True
-    return kwargs
+    user_ids: list[int] = []
+    role_ids: list[int] = []
+    everyone = False
+    for text in _text_parts(content, embeds):
+        user_ids.extend(int(uid) for uid in _USER_MENTION.findall(text))
+        role_ids.extend(int(rid) for rid in _ROLE_MENTION.findall(text))
+        if "@everyone" in text or "@here" in text:
+            everyone = True
+    return (
+        list(dict.fromkeys(user_ids)),
+        list(dict.fromkeys(role_ids)),
+        everyone,
+    )
+
+
+def _text_parts(
+    content: str | None, embeds: list[dict[str, Any]]
+) -> list[str]:
+    """Every user-visible message string (content + embed text) as a list."""
+    parts = [content] if content else []
+    for embed in embeds:
+        for key in ("title", "description"):
+            value = embed.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+        author = embed.get("author") or {}
+        if isinstance(author.get("name"), str):
+            parts.append(author["name"])
+        footer = embed.get("footer") or {}
+        if isinstance(footer.get("text"), str):
+            parts.append(footer["text"])
+        for field in embed.get("fields") or []:
+            for key in ("name", "value"):
+                value = field.get(key)
+                if isinstance(value, str):
+                    parts.append(value)
+    return parts

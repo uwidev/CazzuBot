@@ -7,6 +7,7 @@ before/after states of one member).
 
 from __future__ import annotations
 
+import hikari
 import pytest
 
 from cazzubot.bot import CazzuBot
@@ -100,10 +101,11 @@ async def test_pending_mode_welcomes_and_adds_role(
     await _fire(seeded_bot, before, after, fake_cache)
 
     assert channel.sent[-1]["content"] == "hi <@424242>"
-    # the welcome mentions must actually parse (the "Unknown User" fix) —
-    # hikari's default allowed_mentions is {"parse": []}
-    assert channel.sent[-1]["user_mentions"] is True
-    assert channel.sent[-1]["role_mentions"] is True
+    # the welcome mentions the new member explicitly (least-permissive) —
+    # hikari's default allowed_mentions is {"parse": []}, so the mention
+    # must be handed over as an explicit id list to actually ping
+    assert channel.sent[-1]["user_mentions"] == [424242]
+    assert channel.sent[-1]["role_mentions"] is hikari.UNDEFINED
     assert rest_of(seeded_bot).added_roles == [(424242, role.id, None)]
 
 

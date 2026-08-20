@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 
+import hikari
 import pytest
 
 from cazzubot import templates, utils
@@ -87,34 +88,72 @@ def test_prepare_keeps_color_only_embed() -> None:
     assert embeds == []
 
 
-# -- send: mention parsing (the "Unknown User" welcome fix) ----------------
+# -- send: least-permissive mention parsing --------------------------------
 
 
-async def test_send_default_parses_users_and_roles() -> None:
-    """Absent ``allowed_mentions`` → users + roles parsed, no @everyone."""
+async def test_send_mentions_only_those_present() -> None:
+    """Least-permissive: only users/roles actually written get parse rights,
+    never a blanket "all users"/"all roles"."""
     channel = FakeChannel(id=1)
-    await templates.send(channel, {"content": "hi {mention}"})
+    await templates.send(
+        channel, {"content": "hi <@424242> and <@&777>"}
+    )
     sent = channel.sent[-1]
-    assert sent["user_mentions"] is True
-    assert sent["role_mentions"] is True
-    assert "mentions_everyone" not in sent
+    assert sent["user_mentions"] == [424242]
+    assert sent["role_mentions"] == [777]
+    assert sent["mentions_everyone"] is hikari.UNDEFINED
 
 
-async def test_send_allowed_mentions_true_adds_everyone() -> None:
+async def test_send_no_mentions_means_no_parsing() -> None:
+    """A message with no user/role mentions gets no parse entries."""
     channel = FakeChannel(id=1)
+    await templates.send(channel, {"content": "plain text"})
+    sent = channel.sent[-1]
+    assert sent["user_mentions"] is hikari.UNDEFINED
+    assert sent["role_mentions"] is hikari.UNDEFINED
+    assert sent["mentions_everyone"] is hikari.UNDEFINED
+
+
+async def test_send_extracts_mentions_from_embeds() -> None:
+    """Mentions inside embed text fields are scanned too."""
+    channel = FakeChannel(id=1)
+    await templates.send(
+        channel,
+        {
+            "content": "plain",
+            "embed": {"description": "hi <@424242> and <@&777>"},
+        },
+    )
+    sent = channel.sent[-1]
+    assert sent["user_mentions"] == [424242]
+    assert sent["role_mentions"] == [777]
+
+
+async def test_send_allowed_mentions_true_allows_present_everyone() -> None:
+    """``allowed_mentions: true`` + ``@everyone``/``@here`` present → enabled;
+    without @everyone in the text it stays off."""
+    channel = FakeChannel(id=1)
+    await templates.send(
+        channel, {"content": "hi @everyone", "allowed_mentions": True}
+    )
+    sent = channel.sent[-1]
+    assert sent["user_mentions"] is hikari.UNDEFINED
+    assert sent["role_mentions"] is hikari.UNDEFINED
+    assert sent["mentions_everyone"] is True
+
     await templates.send(
         channel, {"content": "hi", "allowed_mentions": True}
     )
     sent = channel.sent[-1]
-    assert sent["user_mentions"] is True
-    assert sent["role_mentions"] is True
-    assert sent["mentions_everyone"] is True
+    assert sent["mentions_everyone"] is hikari.UNDEFINED
 
 
 async def test_send_allowed_mentions_false_parses_nothing() -> None:
+    """``allowed_mentions: false`` suppresses parsing entirely."""
     channel = FakeChannel(id=1)
     await templates.send(
-        channel, {"content": "hi", "allowed_mentions": False}
+        channel,
+        {"content": "hi <@424242>", "allowed_mentions": False},
     )
     sent = channel.sent[-1]
     assert "user_mentions" not in sent
@@ -123,13 +162,15 @@ async def test_send_allowed_mentions_false_parses_nothing() -> None:
 
 
 async def test_send_caller_mention_kwargs_win() -> None:
+    """Caller-supplied mention kwargs override the template-derived values."""
     channel = FakeChannel(id=1)
     await templates.send(
         channel,
-        {"content": "hi", "allowed_mentions": True},
+        {"content": "hi <@424242> @everyone", "allowed_mentions": True},
         user_mentions=False,
+        mentions_everyone=False,
     )
     sent = channel.sent[-1]
     assert sent["user_mentions"] is False
-    assert sent["role_mentions"] is True
-    assert sent["mentions_everyone"] is True
+    assert sent["role_mentions"] is hikari.UNDEFINED
+    assert sent["mentions_everyone"] is False
