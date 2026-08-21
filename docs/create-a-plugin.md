@@ -43,15 +43,15 @@ That's everything the loader needs to pick it up.
 
 ## 3. Add optional bridges (as needed)
 
-| Field | What it does | Example |
-| --- | --- | --- |
-| `schema` | list of idempotent DDL statements (tables/columns) | `db.SCHEMA` |
-| `extensions` | import paths of lightbulb extension modules | `["plugins.badges.extension"]` |
-| `scheduled` | tag → handler `(bot, payload)` for the central scheduler | `{"badges": on_..._due}` |
-| `depends_on` | plugin names this one needs loaded first | `("experience",)` |
-| `asset_decl` | enum of assets this plugin declares | see add-an-asset |
-| `item_decl` | enum of items this plugin declares | see add-an-item |
-| `on_load` / `on_unload` | async hooks after/before load | reset state, re-arm tasks |
+| Field                   | What it does                                             | Example                        |
+| ----------------------- | -------------------------------------------------------- | ------------------------------ |
+| `schema`                | list of idempotent DDL statements (tables/columns)       | `db.SCHEMA`                    |
+| `extensions`            | import paths of lightbulb extension modules              | `["plugins.badges.extension"]` |
+| `scheduled`             | tag → handler `(bot, payload)` for the central scheduler | `{"badges": on_..._due}`       |
+| `depends_on`            | plugin names this one needs loaded first                 | `("experience",)`              |
+| `asset_decl`            | enum of assets this plugin declares                      | see add-an-asset               |
+| `item_decl`             | enum of items this plugin declares                       | see add-an-item                |
+| `on_load` / `on_unload` | async hooks after/before load                            | reset state, re-arm tasks      |
 
 ```python
 class BadgesPlugin(Plugin):

@@ -594,8 +594,7 @@ oracle, display name/icon, **item-owned consume**). Notes:
 - The inventory API is explicit: `add` (+1) / `remove` (−1) / `modify`
   (signed delta), prune-at-zero intact.
 - `/inventory` is now a **group** — `/inventory view` (emoji grid via
-  `bot.items`; unresolved ids hidden) and `/inventory consume <slot>
-  [amount]` (generic, item-owned consume) — and **replaces `/frog consume`**
+  `bot.items`; unresolved ids hidden) and `/inventory consume <slot> [amount]` (generic, item-owned consume) — and **replaces `/frog consume`**
   (retired). The old namespace **renderer registry** (`ItemView`,
   `register_renderer`/`renderer_for`, `frog_renderer`) was removed as
   redundant. `FrogConsumedEvent` still fires, from the frog item's consume

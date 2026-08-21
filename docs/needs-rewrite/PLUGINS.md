@@ -146,8 +146,7 @@ Use these instead of reaching into internals:
   `item_id` is the ledger oracle, so renaming the member/name is free) and
   `items_consumable` gates whether they may be consumed — independent of the
   `enabled` behavior flag, so a behavior-disabled plugin keeps its holdings
-  visible/consumable. `bot.member_effects` is the `(uid, key, value,
-  expires_at)` effect store. Frogs and exp use these directly — don't build
+  visible/consumable. `bot.member_effects` is the `(uid, key, value, expires_at)` effect store. Frogs and exp use these directly — don't build
   per-feature tables for these shapes. The generic `/inventory view` /
   `/inventory consume <slot>` commands are in `plugins/inventory/`.
 - `bot.lifecycle` — declare effect undos (see "Conventions" below).

@@ -1,4 +1,4 @@
-* Inventory
+- Inventory
 
 This document is a rough spec for how inventory will work.
 
@@ -10,12 +10,12 @@ The user can query their inventory with a slash command.
 
 The UI will show a grid of items with an index below (or to the left with a colon separating?) with some quantity signifier. Their icon will be some emoji. So for example.
 
-1:EMOJIx3   2:EMOJIx4
+1:EMOJIx3 2:EMOJIx4
 
 Or potentially
 
-EMOJIx3     EMOJIx4
-1           2
+EMOJIx3 EMOJIx4
+1 2
 
 We will test how it looks, but for now, we'll use the latter formatting.
 

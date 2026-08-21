@@ -4,6 +4,22 @@ Deferred work, parked by request ("we will work on it later when I request it").
 Pick these up when the owner asks; each item links to the discussion that
 motivated it. Completed items are archived in `docs/DONE.md`.
 
+## dev friendly timestamp to sqlite compatible format time
+Right now, this is how it looks to add a timestamp to the database.
+
+> pendulum.now("UTC").to_iso8601_string()
+
+Looks very ugly, and doesn't really hint "use this to encode to sqlite friendly time". Either refactor or rename, something so it reads more elegantly.
+
+## bot.settings, surely there's more elegant way...
+This was originally some per-guild settings key:value pair. But now that gid's are no more, this now exists as, well, the bot settings on how to do specific operations that can be configured at runtime on the admin side.
+
+In practice, as a one-guild specialization, this seems to(?) create some odd friction when developing, as I have to consider if a setting is something that needs to be dynamically set at runtime rather than mostly set in stone.
+
+For example, most if not all messages are more-or-less locked in stone for now. If I ever change it, it would probably best be done through code, not through some json file.
+
+Enabling/disabling frog spawns... probably fine. Need a full review of this.
+
 ## Game features — the app is becoming a game
 
 Design discussion (2026-08): the bot has evolved into a casual

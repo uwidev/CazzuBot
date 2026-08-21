@@ -1,8 +1,7 @@
 # Handoff — items vs entities separation (WIP, follow-up on the /inventory + emoji work)
 
 > **UPDATE (2026-08-19):** the foundation AND the "Remaining" items below are
-> now implemented and the suite is green — see `docs/ITEMS.md`. `/frog
-> consume` retired in favor of `/inventory consume`; `Species` sheds its
+> now implemented and the suite is green — see `docs/ITEMS.md`. `/frog consume` retired in favor of `/inventory consume`; `Species` sheds its
 > consume fields; the frog renderer registry is removed (`/inventory`
 > renders via `bot.items`). Only the settings-backed `items_consumable`
 > override (Remaining #5) is intentionally left as a code-level `Plugin`
@@ -99,21 +98,21 @@ a definitions layer (`bot.items`) on top of the already-generic ledger
    and `consumable` fields — consume is item-owned. Keep `catch_effect` (defines
    what happens on catch). This will break `/frog consume`, `/frog catalog`, and
    `/frog profile` (they read `species.consume_effect`); update them accordingly.
-2. **Retire `/frog consume`** in favor of `/inventory consume` (plan: it
+1. **Retire `/frog consume`** in favor of `/inventory consume` (plan: it
    replaces `/frog consume`). Update the frog extension (remove the Consume
    command) + `test_confirm_menu_driver.test_frog_consume_confirm` + command
    guard. Decide whether the frog-specific `FrogConsumedEvent` should still fire
    from the generic path (the generic consume currently doesn't emit it — a gap
    for the future badge system).
-3. **Remove the now-redundant `frog_renderer`** and the renderer registry in
+1. **Remove the now-redundant `frog_renderer`** and the renderer registry in
    `cazzubot/inventory.py` (register_renderer/unregister_renderer/renderer_for/
    ItemView) — `/inventory` now renders via `bot.items`, so the renderer path is
    dead. Remove the frogs `on_load` `register_renderer("frog", …)`.
-4. **Docs**: a short `docs/ITEMS.md` capturing the item-vs-entity model and the
+1. **Docs**: a short `docs/ITEMS.md` capturing the item-vs-entity model and the
    two-flag deprecation story; update `docs/PLUGINS.md` (`bot.items`, item_decl,
    the `/inventory` group, add/remove/modify), `docs/ROADMAP.md`/`docs/BACKLOG.md`
    (entity↔item lexicon; note the two-flag "deprecate behavior, keep items").
-5. Consider a settings-backed override for `items_consumable` (currently a
+1. Consider a settings-backed override for `items_consumable` (currently a
    code-level `Plugin` attr only) mirroring `plugin.enabled.<name>`.
 
 ## Environment notes (unchanged)

@@ -1,7 +1,27 @@
 # Quick start
 
 Get from a fresh clone to running code in a few minutes. Skim it, then dig
-into the [How do I...](../README.md) pages when you hit a specific task.
+into a **How do I...** page when you hit a specific task.
+
+## How do I...
+
+Each page is a short, concrete walkthrough.
+
+- [create a new plugin](create-a-plugin.md)
+- [add dependencies](add-dependencies.md)
+- [add a schema](add-a-schema.md)
+- [add scheduled work](add-scheduled.md)
+- [hook into Discord (extensions)](hook-into-discord.md)
+- [add a command group with admin gating](add-a-command-group.md)
+- [read & write settings](read-write-settings.md)
+- [send templated messages](send-templated-messages.md)
+- [emit & listen to domain events](emit-listen-events.md)
+- [grant & consume items at runtime](grant-consume-items.md)
+- [add persistent buttons & modals](persistent-buttons-modals.md)
+- [write a plugin test](write-a-plugin-test.md)
+- [add a new asset](add-an-asset.md)
+- [add a new item](add-an-item.md)
+- [add a new frog species](add-a-frog-species.md)
 
 ## 1. Install
 
@@ -39,9 +59,9 @@ Use it to test a single feature in isolation.
 While developing a plugin:
 
 1. Edit the code.
-2. If you only changed an extension (commands, listeners), hot-reload it
+1. If you only changed an extension (commands, listeners), hot-reload it
    from Discord: `/plugin reload <name>`.
-3. Otherwise restart the bot (`Ctrl+C`, then run again).
+1. Otherwise restart the bot (`Ctrl+C`, then run again).
 
 Schema changes (new tables/columns) need a restart. See
 [create a new plugin](create-a-plugin.md) for the file layout.
@@ -72,6 +92,6 @@ Tests run entirely offline (no Discord connection). For interactive flows
 ## Next steps
 
 - Want to add something? Pick a **How do I...** page from the
-  [index](../README.md).
+  [index](#how-do-i).
 - Want the full picture? Read `AGENTS.md` and the old docs under
   `docs/needs-rewrite/`.
