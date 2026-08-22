@@ -108,11 +108,10 @@ async def main() -> None:
         # fires (the migration leaves `tasks` empty, so on_load arms fresh)
         q_rows = await bot.scheduler.get("quarterly")
         check(
-            len(q_rows) == 1
-            and q_rows[0].run_at > pendulum.now("UTC").isoformat(),
+            len(q_rows) == 1 and q_rows[0].run_at > pendulum.now("UTC"),
             "quarterly cadence armed for the next season boundary",
             f"{len(q_rows)} row(s), run_at="
-            + (q_rows[0].run_at if q_rows else "none"),
+            + (str(q_rows[0].run_at) if q_rows else "none"),
         )
 
         # daily reset must NOT have forced (last_daily is today)

@@ -16,6 +16,7 @@ explicitly. Tests drive all three directly.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -48,6 +49,14 @@ class MemberEffectKey(Enum):
     """The known member modifiers — typed keys, never bare strings."""
 
     EXP_MULTIPLIER = "exp_multiplier"
+
+
+@dataclass(slots=True)
+class MemberEffectRow:
+    """One ``member_effect`` row (``expires_at`` lazily checked by ``get``)."""
+
+    value: float
+    expires_at: pendulum.DateTime | None
 
 
 async def set(
@@ -86,25 +95,25 @@ async def get(
     Lazy expiry: a past ``expires_at`` reads as absent and the row is
     pruned (read-time cleanup, no sweeper). ``now`` is injected for tests.
     """
-    row = await db.fetchone(
-        "SELECT value, expires_at FROM member_effect WHERE uid = ? AND key = ?",
+    row = await db.fetch_model(
+        MemberEffectRow,
+        "SELECT value, expires_at"
+        + " FROM member_effect WHERE uid = ? AND key = ?",
         uid,
         key.value,
     )
     if row is None:
         return None
-    if row["expires_at"] is not None:
-        expires_at = pendulum.parse(row["expires_at"])
-        if not isinstance(expires_at, pendulum.DateTime):
-            return row["value"]
-        if expires_at <= (now or pendulum.now("UTC")):
-            await db.execute(
-                "DELETE FROM member_effect WHERE uid = ? AND key = ?",
-                uid,
-                key.value,
-            )
-            return None
-    return row["value"]
+    if row.expires_at is not None and row.expires_at <= (
+        now or pendulum.now("UTC")
+    ):
+        await db.execute(
+            "DELETE FROM member_effect WHERE uid = ? AND key = ?",
+            uid,
+            key.value,
+        )
+        return None
+    return row.value
 
 
 async def clear(db: Database, uid: int, key: MemberEffectKey) -> None:

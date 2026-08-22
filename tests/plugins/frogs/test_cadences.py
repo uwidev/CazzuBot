@@ -75,7 +75,7 @@ async def test_quarterly_due_freezes_and_rearms(bot: CazzuBot) -> None:
     # re-armed for the next season start — exactly one future-dated row
     rows = await bot.scheduler.get("quarterly")
     assert len(rows) == 1
-    assert rows[0].run_at > pendulum.now("UTC").isoformat()
+    assert rows[0].run_at > pendulum.now("UTC")
 
 
 async def test_quarterly_on_load_arms_when_rowless(bot: CazzuBot) -> None:
@@ -84,9 +84,8 @@ async def test_quarterly_on_load_arms_when_rowless(bot: CazzuBot) -> None:
     await FrogsPlugin().on_load(bot)
     rows = await bot.scheduler.get("quarterly")
     assert len(rows) == 1
-    assert (
-        rows[0].run_at
-        == QUARTERLY_CADENCE.next_run(pendulum.now("UTC")).isoformat()
+    assert rows[0].run_at == QUARTERLY_CADENCE.next_run(
+        pendulum.now("UTC")
     )
 
 
@@ -103,7 +102,7 @@ async def test_quarterly_on_load_leaves_existing_row(
     await FrogsPlugin().on_load(bot)
     rows = await bot.scheduler.get("quarterly")
     assert len(rows) == 1
-    assert rows[0].run_at == run_at.isoformat()  # untouched
+    assert rows[0].run_at == run_at  # untouched
 
 
 async def test_daily_frog_due_resyncs_and_rearms(bot: CazzuBot) -> None:
@@ -125,4 +124,4 @@ async def test_daily_frog_due_resyncs_and_rearms(bot: CazzuBot) -> None:
     assert ranked[0][2] == 1
     rows = await bot.scheduler.get("daily.frog")
     assert len(rows) == 1
-    assert rows[0].run_at > pendulum.now("UTC").isoformat()
+    assert rows[0].run_at > pendulum.now("UTC")

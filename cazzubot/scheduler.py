@@ -32,6 +32,7 @@ import aiosqlite
 import hikari
 import pendulum
 
+from cazzubot.db import row_to
 from cazzubot.timeparse import InvalidTimeError, parse_duration
 
 if TYPE_CHECKING:
@@ -829,18 +830,13 @@ class Task:
 
     id: int
     tag: str
-    run_at: str
+    run_at: pendulum.DateTime
     payload: dict[str, Any]
 
     @classmethod
     def from_row(cls, row: aiosqlite.Row) -> Task:
         """Parse a raw task row (payload column is JSON text)."""
-        return cls(
-            id=row["id"],
-            tag=row["tag"],
-            run_at=row["run_at"],
-            payload=json.loads(row["payload"]),
-        )
+        return row_to(Task, row)
 
 
 def _is_stale(
@@ -856,11 +852,9 @@ def _is_stale(
     """
     if stale_after is None:
         return False
-    scheduled = pendulum.parse(task.run_at)
-    if not isinstance(scheduled, pendulum.DateTime):
-        # unparseable timestamp — run it rather than drop it
-        return False
-    return (now - scheduled).total_seconds() > stale_after.total_seconds()
+    return (
+        now - task.run_at
+    ).total_seconds() > stale_after.total_seconds()
 
 
 def _now(offset_seconds: int = 0) -> str:

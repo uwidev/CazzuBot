@@ -34,7 +34,7 @@ class RankThreshold:
 
     rid: int
     threshold: int
-    mode: str
+    mode: WindowEnum
 
 
 # -- rank_threshold table --------------------------------------------------

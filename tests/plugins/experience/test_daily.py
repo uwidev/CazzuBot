@@ -51,7 +51,7 @@ async def test_daily_due_resets_and_rearms(bot: CazzuBot) -> None:
     # re-armed for the next midnight — exactly one future-dated row
     rows = await bot.scheduler.get("daily")
     assert len(rows) == 1
-    assert rows[0].run_at > pendulum.now("UTC").isoformat()
+    assert rows[0].run_at > pendulum.now("UTC")
 
 
 async def test_daily_on_load_arms_when_rowless(bot: CazzuBot) -> None:
@@ -60,9 +60,7 @@ async def test_daily_on_load_arms_when_rowless(bot: CazzuBot) -> None:
     await ExperiencePlugin().on_load(bot)
     rows = await bot.scheduler.get("daily")
     assert len(rows) == 1
-    assert (
-        rows[0].run_at == CADENCE.next_run(pendulum.now("UTC")).isoformat()
-    )
+    assert rows[0].run_at == CADENCE.next_run(pendulum.now("UTC"))
 
 
 async def test_daily_on_load_leaves_existing_row(bot: CazzuBot) -> None:
@@ -76,4 +74,4 @@ async def test_daily_on_load_leaves_existing_row(bot: CazzuBot) -> None:
     await ExperiencePlugin().on_load(bot)
     rows = await bot.scheduler.get("daily")
     assert len(rows) == 1
-    assert rows[0].run_at == run_at.isoformat()  # untouched
+    assert rows[0].run_at == run_at  # untouched

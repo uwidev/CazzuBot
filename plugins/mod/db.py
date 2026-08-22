@@ -3,10 +3,15 @@
 Single-guild port of v1's ``src/db/modlog.py``.
 """
 
+from dataclasses import dataclass
+
 import pendulum
 
 from cazzubot.db import Database
-from cazzubot.models import ModlogStatusEnum, ModlogTypeEnum
+from cazzubot.models import (
+    ModlogStatusEnum,
+    ModlogTypeEnum,
+)
 from cazzubot.settings import Settings
 
 SCHEMA = [
@@ -24,6 +29,19 @@ SCHEMA = [
 ]
 
 MUTE_ROLE_KEY = "mod.mute_role"
+
+
+@dataclass(slots=True)
+class ModlogEntry:
+    """One ``modlog`` row (``expires_on`` is None for permanent actions)."""
+
+    id: int
+    uid: int
+    log_type: ModlogTypeEnum
+    given_on: pendulum.DateTime
+    status: ModlogStatusEnum
+    expires_on: pendulum.DateTime | None
+    reason: str | None
 
 
 async def add_log(
@@ -61,19 +79,16 @@ async def pending_expiries(
     The **source of truth** for state-backed scheduling: scheduler rows
     are projections of this list, rebuilt on load and withdrawn on unload.
     """
-    rows = await db.fetchall(
-        """
-		SELECT id, uid, log_type, expires_on FROM modlog
-		WHERE status = ? AND expires_on IS NOT NULL
-		""",
+    rows = await db.fetch_models(
+        ModlogEntry,
+        "SELECT * FROM modlog WHERE status = ? AND expires_on IS NOT NULL",
         ModlogStatusEnum.ACTIVE.value,
     )
     out: list[tuple[int, int, str, pendulum.DateTime]] = []
     for row in rows:
-        expires_on = pendulum.parse(row["expires_on"])
-        if isinstance(expires_on, pendulum.DateTime):
+        if row.expires_on is not None:
             out.append(
-                (row["id"], row["uid"], row["log_type"], expires_on)
+                (row.id, row.uid, row.log_type.value, row.expires_on)
             )
     return out
 

@@ -48,7 +48,7 @@ class Poll:
     description: str
     max_vote: int
     mid: int | None
-    open: int
+    open: bool
     cid: int | None
 
 

@@ -246,7 +246,7 @@ async def test_on_board_weekly_due_rearms(
 
     rows = await bot.scheduler.get("board_weekly")
     assert len(rows) == 1
-    assert rows[0].run_at > pendulum.now("UTC").isoformat()
+    assert rows[0].run_at > pendulum.now("UTC")
     assert rows[0].payload.get("retry") is True
 
 
@@ -254,7 +254,7 @@ async def test_board_on_load_arms_when_rowless(bot: CazzuBot) -> None:
     await BoardPlugin().on_load(bot)
     rows = await bot.scheduler.get("board_weekly")
     assert len(rows) == 1
-    assert rows[0].run_at > pendulum.now("UTC").isoformat()
+    assert rows[0].run_at > pendulum.now("UTC")
     assert rows[0].payload.get("retry") is True
 
 
@@ -264,7 +264,7 @@ async def test_board_on_load_leaves_existing_row(bot: CazzuBot) -> None:
     await BoardPlugin().on_load(bot)
     rows = await bot.scheduler.get("board_weekly")
     assert len(rows) == 1
-    assert rows[0].run_at == run_at.isoformat()
+    assert rows[0].run_at == run_at
 
 
 def test_cadence_is_sunday_midnight() -> None:
@@ -296,7 +296,7 @@ async def test_run_weekly_schedules_monday_close(
     assert task.payload["cid"] == POST_CHANNEL_DEV
     assert task.payload["retry"] is True
     assert pendulum.parse(str(task.payload["start"])) is not None
-    assert task.run_at >= now.add(days=1).start_of("minute").isoformat()
+    assert task.run_at >= now.add(days=1).start_of("minute")
 
 
 async def test_board_weekly_close_resolves_winner(

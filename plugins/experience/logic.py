@@ -18,7 +18,6 @@ from cazzubot.member_effects import (
     MemberEffectKey,
     get as member_effects_get,
 )
-from cazzubot.timeparse import parse_iso8601
 from cazzubot.utils import OldNew, month2season
 
 from . import db as exp_db
@@ -73,7 +72,7 @@ async def award_exp(
         assert member_db is not None  # the insert just created the row
 
     cdr = member_db.cdr
-    if cdr and now < parse_iso8601(cdr):
+    if cdr and now < cdr:
         return None  # cooldown not yet expired
 
     # compute gains

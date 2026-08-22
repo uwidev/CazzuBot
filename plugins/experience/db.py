@@ -37,12 +37,12 @@ SCHEMA = [
 
 @dataclass(slots=True)
 class MemberExp:
-    """One ``member_exp`` row (``cdr`` is the exp cooldown ISO timestamp)."""
+    """One ``member_exp`` row (``cdr`` is the exp cooldown expiry, UTC)."""
 
     uid: int
     lifetime: int
     msg_cnt: int
-    cdr: str | None
+    cdr: pendulum.DateTime | None
 
 
 async def get_member_exp(db: Database, uid: int) -> MemberExp | None:

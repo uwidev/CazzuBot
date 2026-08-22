@@ -124,7 +124,9 @@ async def test_frog_catch_captures_once(
     # no role/@everyone parsing
     assert created[0].create_kwargs["user_mentions"] == [_UID]
     assert created[0].create_kwargs["role_mentions"] is hikari.UNDEFINED
-    assert created[0].create_kwargs["mentions_everyone"] is hikari.UNDEFINED
+    assert (
+        created[0].create_kwargs["mentions_everyone"] is hikari.UNDEFINED
+    )
     assert (
         await frog_db.get_inventory(
             seeded_bot.db, _UID, SpeciesKey.LEAF_FROG
@@ -161,7 +163,9 @@ async def test_frog_catch_default_embed_when_no_message(
     embed = created[0].embeds[0]
     assert embed.title == "Frog caught!"
     # the catcher is mentioned in the embed description
-    assert embed.description is not None and f"<@{_UID}>" in embed.description
+    assert (
+        embed.description is not None and f"<@{_UID}>" in embed.description
+    )
     # and the built-in capture embed pings only the catcher explicitly
     assert created[0].create_kwargs["user_mentions"] == [_UID]
     assert created[0].create_kwargs["role_mentions"] is hikari.UNDEFINED
@@ -196,7 +200,9 @@ async def test_frog_catch_message_allowed_mentions_false_never_pings(
     # hikari serializes allowed_mentions as {parse: []} (nothing pings)
     assert created[0].create_kwargs["user_mentions"] is hikari.UNDEFINED
     assert created[0].create_kwargs["role_mentions"] is hikari.UNDEFINED
-    assert created[0].create_kwargs["mentions_everyone"] is hikari.UNDEFINED
+    assert (
+        created[0].create_kwargs["mentions_everyone"] is hikari.UNDEFINED
+    )
 
 
 async def test_frog_catch_default_embed_uses_banner_thumbnail(
@@ -331,8 +337,7 @@ async def test_on_frog_due_rolls_from_fire_instant(
     await factory.on_frog_due(seeded_bot, payload)
     rows = await seeded_bot.scheduler.get("frog")
     assert len(rows) == 1
-    run_at = pendulum.parse(rows[0].run_at)
-    assert isinstance(run_at, pendulum.DateTime)
+    run_at = rows[0].run_at  # already a DateTime at the model boundary
     # interval ± 50% from the fire instant — the upper bound is what
     # rejects the old despawn-anchored design (it would arm ≥ now+660)
     assert before.add(seconds=60) <= run_at

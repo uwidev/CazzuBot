@@ -52,9 +52,7 @@ async def _enable_ranks(bot: CazzuBot, mode: WindowEnum) -> None:
 
 def _thresholds(*pairs: tuple[int, int]) -> list[RankThreshold]:
     return [
-        RankThreshold(
-            rid=rid, threshold=lvl, mode=WindowEnum.SEASONAL.value
-        )
+        RankThreshold(rid=rid, threshold=lvl, mode=WindowEnum.SEASONAL)
         for rid, lvl in pairs
     ]
 

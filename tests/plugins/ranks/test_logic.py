@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from cazzubot.models import WindowEnum
 from cazzubot.utils import OldNew
 from plugins.ranks.db import RankThreshold
 from plugins.ranks.logic import rank_difference
 
 _THRESHOLDS = [
-    RankThreshold(rid=111, threshold=5, mode="seasonal"),
-    RankThreshold(rid=222, threshold=10, mode="seasonal"),
-    RankThreshold(rid=333, threshold=20, mode="seasonal"),
+    RankThreshold(rid=111, threshold=5, mode=WindowEnum.SEASONAL),
+    RankThreshold(rid=222, threshold=10, mode=WindowEnum.SEASONAL),
+    RankThreshold(rid=333, threshold=20, mode=WindowEnum.SEASONAL),
 ]
 
 

@@ -36,10 +36,10 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import aiosqlite
 import hikari
 
 from cazzubot.config import Config
+from cazzubot.db import rows_to
 
 if TYPE_CHECKING:
     from cazzubot.bot import CazzuBot
@@ -107,6 +107,17 @@ class AssetSpec:
 
     kind: AssetKind
     path: str  # file relative to the owning plugin's folder
+
+
+@dataclass(frozen=True, slots=True)
+class AssetRow:
+    """One ``asset`` registry row (``url`` is None until published)."""
+
+    key: str
+    kind: AssetKind
+    sha256: str
+    path: str
+    url: str | None
 
 
 def asset_key(asset: Enum) -> str:
@@ -185,8 +196,9 @@ class Assets:
                     )
                 sha = _sha256(path)
                 stored_path = f"{plugin.name}/{spec.path}"
-                row = await self.bot.db.fetchone(
-                    "SELECT sha256, url, kind, path FROM asset WHERE key = ?",
+                row = await self.bot.db.fetch_model(
+                    AssetRow,
+                    "SELECT key, sha256, url, kind, path FROM asset WHERE key = ?",
                     key,
                 )
                 if row is None:
@@ -202,20 +214,20 @@ class Assets:
                     )
                     _log.info("asset %s registered (%s)", key, sha[:8])
                 elif (
-                    row["sha256"] != sha
+                    row.sha256 != sha
                     # the declaration is the source of truth — a change of
                     # kind (SPECIES → EMOJI) or path on an unchanged file
                     # must re-publish under the new kind, not silently keep
                     # the stale row
-                    or row["kind"] != spec.kind.value
-                    or row["path"] != stored_path
+                    or row.kind is not spec.kind
+                    or row.path != stored_path
                 ):
                     # changed (bytes, kind, or path) — re-publish on the next
                     # CDN sync. The old published ref (media CDN URL or emoji
                     # <:name:id>) is queued for deletion (an emoji's image is
                     # immutable, so a changed emoji file means delete + recreate).
-                    if row["url"]:
-                        self._pending_deletes.append(row["url"])
+                    if row.url:
+                        self._pending_deletes.append(row.url)
                     await self.bot.db.execute(
                         """
 						UPDATE asset
@@ -240,16 +252,18 @@ class Assets:
         re-registers and re-publishes it on the next boot: the prune is
         fully idempotent.
         """
-        rows = await self.bot.db.fetchall("SELECT key, url FROM asset")
-        for row in rows:
-            if row["key"] in declared:
+        rows = await self.bot.db.fetchall(
+            "SELECT key, kind, sha256, path, url FROM asset"
+        )
+        for row in rows_to(AssetRow, rows):
+            if row.key in declared:
                 continue
-            if row["url"]:
-                self._pending_deletes.append(row["url"])
+            if row.url:
+                self._pending_deletes.append(row.url)
             await self.bot.db.execute(
-                "DELETE FROM asset WHERE key = ?", row["key"]
+                "DELETE FROM asset WHERE key = ?", row.key
             )
-            _log.info("pruned undeclared asset %s", row["key"])
+            _log.info("pruned undeclared asset %s", row.key)
 
     # -- sync ---------------------------------------------------------------
 
@@ -288,14 +302,14 @@ class Assets:
         await self._verify_published(channel_id, guild_id)
         await self._delete_orphaned(channel_id, guild_id)
         rows = await self.bot.db.fetchall(
-            "SELECT * FROM asset WHERE url IS NULL"
+            "SELECT key, kind, sha256, path, url FROM asset WHERE url IS NULL"
         )
-        for row in rows:
-            if row["kind"] == AssetKind.EMOJI.value:
+        for row in rows_to(AssetRow, rows):
+            if row.kind is AssetKind.EMOJI:
                 if guild_id is None:
                     _log.warning(
                         "asset %s is emoji but ASSET_GUILD_ID unset; skipping",
-                        row["key"],
+                        row.key,
                     )
                     continue
                 await self._publish_emoji(guild_id, row)
@@ -303,16 +317,16 @@ class Assets:
             if channel_id is None:
                 _log.warning(
                     "asset %s is media but ASSET_CHANNEL_ID unset; skipping",
-                    row["key"],
+                    row.key,
                 )
                 continue
-            path = self.plugins_dir / row["path"]
+            path = self.plugins_dir / row.path
             try:
                 data = path.read_bytes()
             except FileNotFoundError:
                 _log.error(
                     "asset %s file missing at sync time: %s",
-                    row["key"],
+                    row.key,
                     path,
                 )
                 continue
@@ -321,13 +335,11 @@ class Assets:
             )
             url = message.attachments[0].url
             await self.bot.db.execute(
-                "UPDATE asset SET url = ? WHERE key = ?", url, row["key"]
+                "UPDATE asset SET url = ? WHERE key = ?", url, row.key
             )
-            _log.info("asset %s published (%s)", row["key"], url)
+            _log.info("asset %s published (%s)", row.key, url)
 
-    async def _publish_emoji(
-        self, guild_id: int, row: aiosqlite.Row
-    ) -> None:
+    async def _publish_emoji(self, guild_id: int, row: AssetRow) -> None:
         """Create a guild emoji for an emoji-kind asset, store ``<:name:id>``.
 
         Emoji images are immutable and capped at 256 KB, so an over-large
@@ -335,22 +347,22 @@ class Assets:
         are paced to Discord's rate limit: sleep *between* consecutive
         creates within a sync pass, never before the first.
         """
-        path = self.plugins_dir / row["path"]
+        path = self.plugins_dir / row.path
         try:
             data = path.read_bytes()
         except FileNotFoundError:
             _log.error(
-                "asset %s file missing at sync time: %s", row["key"], path
+                "asset %s file missing at sync time: %s", row.key, path
             )
             return
         if len(data) > _MAX_EMOJI_BYTES:
             _log.error(
                 "asset %s file too large for a guild emoji (%d bytes)",
-                row["key"],
+                row.key,
                 len(data),
             )
             return
-        name = _emoji_name_from_key(row["key"])
+        name = _emoji_name_from_key(row.key)
         emoji = await self.bot.rest.create_emoji(
             guild_id,
             name=name,
@@ -358,9 +370,9 @@ class Assets:
         )
         ref = f"<:{name}:{emoji.id}>"
         await self.bot.db.execute(
-            "UPDATE asset SET url = ? WHERE key = ?", ref, row["key"]
+            "UPDATE asset SET url = ? WHERE key = ?", ref, row.key
         )
-        _log.info("asset %s published as emoji (%s)", row["key"], ref)
+        _log.info("asset %s published as emoji (%s)", row.key, ref)
         self._emoji_created_this_pass += 1
         if self._emoji_created_this_pass > 1:
             await asyncio.sleep(_EMOJI_CREATE_DELAY)
@@ -377,23 +389,25 @@ class Assets:
         alone — a hiccup must not cause a re-publish storm.
         """
         rows = await self.bot.db.fetchall(
-            "SELECT key, url, kind FROM asset WHERE url IS NOT NULL"
+            "SELECT key, kind, sha256, path, url FROM asset WHERE url IS NOT NULL"
         )
-        for row in rows:
-            if row["kind"] == AssetKind.EMOJI.value:
+        for row in rows_to(AssetRow, rows):
+            if row.url is None:
+                continue  # the query excludes NULLs; defensive narrowing
+            if row.kind is AssetKind.EMOJI:
                 if guild_id is None:
                     _log.warning(
                         "asset %s is emoji but ASSET_GUILD_ID unset; "
                         + "skipping verification",
-                        row["key"],
+                        row.key,
                     )
                     continue
-                emoji_id = _emoji_id_from_ref(row["url"])
+                emoji_id = _emoji_id_from_ref(row.url)
                 if emoji_id is None:
                     _log.warning(
                         "asset %s has an unparseable emoji ref: %s",
-                        row["key"],
-                        row["url"],
+                        row.key,
+                        row.url,
                     )
                     continue
                 try:
@@ -401,30 +415,30 @@ class Assets:
                 except hikari.NotFoundError:
                     _log.info(
                         "asset %s emoji gone; re-queuing publish",
-                        row["key"],
+                        row.key,
                     )
                     await self.bot.db.execute(
                         "UPDATE asset SET url = NULL WHERE key = ?",
-                        row["key"],
+                        row.key,
                     )
                 except Exception:
                     _log.exception(
-                        "failed to verify asset %s emoji", row["key"]
+                        "failed to verify asset %s emoji", row.key
                     )
                 continue
             if channel_id is None:
                 _log.warning(
                     "asset %s is media but ASSET_CHANNEL_ID unset; "
                     + "skipping verification",
-                    row["key"],
+                    row.key,
                 )
                 continue
-            message_id = _message_id(row["url"])
+            message_id = _message_id(row.url)
             if message_id is None:
                 _log.warning(
                     "asset %s has an unparseable URL: %s",
-                    row["key"],
-                    row["url"],
+                    row.key,
+                    row.url,
                 )
                 continue
             try:
@@ -432,14 +446,14 @@ class Assets:
             except hikari.NotFoundError:
                 _log.info(
                     "asset %s CDN message gone; re-queuing publish",
-                    row["key"],
+                    row.key,
                 )
                 await self.bot.db.execute(
-                    "UPDATE asset SET url = NULL WHERE key = ?", row["key"]
+                    "UPDATE asset SET url = NULL WHERE key = ?", row.key
                 )
             except Exception:
                 _log.exception(
-                    "failed to verify asset %s publication", row["key"]
+                    "failed to verify asset %s publication", row.key
                 )
 
     async def _delete_orphaned(

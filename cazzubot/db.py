@@ -1,19 +1,35 @@
 """SQLite data layer.
 
 Thin async wrapper over aiosqlite: one connection, WAL mode, foreign keys
-enabled, explicit transactions guarded by an asyncio lock. Timestamps are
-ISO-8601 strings, dicts/lists are JSON text, enums are their ``.value``.
+enabled, explicit transactions guarded by an asyncio lock. Stored values are
+ISO-8601 UTC timestamp strings, JSON text for dicts/lists, enums as their
+``.value`` — and :func:`row_to`/:func:`rows_to` coerce them back to their
+declared dataclass field types (``pendulum.DateTime``, ``Enum``, ``dict``/
+``list``, ``bool``) at the model boundary, so a row fetch is typed end to end.
 """
 
 import asyncio
+import functools
 import json
 import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from enum import Enum
 from pathlib import Path
-from typing import Any, TypeVar
+from types import UnionType
+from typing import (
+    Any,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import aiosqlite
+import pendulum
+
+from cazzubot.timeparse import parse_iso8601
 
 _T = TypeVar("_T")
 
@@ -320,14 +336,77 @@ async def _schema_diff(
 # -- helpers for (de)serializing values ---------------------------------
 
 
+def _field_hints(model: type) -> dict[str, Any]:
+    """Per-model field type hints, cached (resolves forward annotations).
+
+    ``get_type_hints`` resolves ``from __future__ import annotations``
+    strings to real types; caching avoids paying that per row on hot paths
+    (the scheduler ticks every second).
+    """
+    return get_type_hints(model)
+
+
+_field_hints = functools.lru_cache(maxsize=None)(get_type_hints)
+
+
+def _coerce_field(field_type: Any, value: Any) -> Any:
+    """Map one stored value to a dataclass field's declared type.
+
+    Knows the storage conventions (see the module docstring): ISO-8601 UTC
+    text ``->`` ``pendulum.DateTime``, enum ``.value`` text ``->`` the enum,
+    JSON text ``->`` ``dict``/``list``, INTEGER 0/1 ``->`` ``bool``. Values
+    already of the right kind pass through (idempotent); anything else is
+    returned as stored. ``None`` stays ``None``.
+    """
+    if value is None:
+        return None
+    origin = get_origin(field_type)
+    if origin is Union or origin is UnionType:
+        members = [
+            member
+            for member in get_args(field_type)
+            if member is not type(None)
+        ]
+        if len(members) == 1:  # X | None / Optional[X]
+            return _coerce_field(members[0], value)
+        return value  # arbitrary union: leave as stored
+    if field_type is pendulum.DateTime:
+        if isinstance(value, pendulum.DateTime):
+            return value
+        return parse_iso8601(value)
+    if isinstance(field_type, type) and issubclass(field_type, Enum):
+        if isinstance(value, field_type):
+            return value
+        return field_type(value)
+    if origin is dict or origin is list or field_type in (dict, list):
+        return load_json(value) if isinstance(value, str) else value
+    if field_type is bool:
+        return value if isinstance(value, bool) else bool(value)
+    if isinstance(field_type, type) and isinstance(value, field_type):
+        return value
+    return value
+
+
 def row_to(model: type[_T], row: aiosqlite.Row) -> _T:
     """Build a dataclass from a row; column names must match field names.
 
     The constructor is the honest boundary between sqlite's dynamic rows and
     static types: a column/field mismatch raises here instead of returning a
-    wrong-typed dict.
+    wrong-typed dict. Each value is coerced to its field's declared type
+    (see :func:`_coerce_field`); a value that cannot be coerced raises with
+    the column and field named.
     """
-    return model(**{k: row[k] for k in row.keys()})
+    hints = _field_hints(model)
+    kwargs: dict[str, Any] = {}
+    for key in row.keys():
+        try:
+            kwargs[key] = _coerce_field(hints.get(key, str), row[key])
+        except (TypeError, ValueError) as err:
+            raise TypeError(
+                f"row_to({model.__name__}): column {key!r} "
+                f"({row[key]!r}) is not a {hints.get(key)!r}: {err}"
+            ) from err
+    return model(**kwargs)
 
 
 def rows_to(model: type[_T], rows: Sequence[aiosqlite.Row]) -> list[_T]:

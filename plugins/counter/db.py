@@ -7,7 +7,7 @@ row. The count is *derived* — ``COUNT(*)`` over the events — never stored.
 ``updated_at``) for presses backfilled from the pre-history aggregate count.
 """
 
-import aiosqlite
+from dataclasses import dataclass
 
 from cazzubot.db import Database
 
@@ -34,6 +34,14 @@ SCHEMA = [
 ]
 
 
+@dataclass(slots=True)
+class CounterRow:
+    """One ``counter`` row: the row owning a registered message."""
+
+    id: int
+    mid: int
+
+
 async def create(db: Database, mid: int) -> int:
     """Register a counter message; returns its unique id (idempotent by mid)."""
     await db.execute("INSERT OR IGNORE INTO counter (mid) VALUES (?)", mid)
@@ -42,17 +50,17 @@ async def create(db: Database, mid: int) -> int:
     return int(row["id"])
 
 
-async def by_id(db: Database, counter_id: int) -> aiosqlite.Row | None:
+async def by_id(db: Database, counter_id: int) -> CounterRow | None:
     """The counter row (``id``, ``mid``) for a unique id."""
-    return await db.fetchone(
-        "SELECT id, mid FROM counter WHERE id = ?", counter_id
+    return await db.fetch_model(
+        CounterRow, "SELECT id, mid FROM counter WHERE id = ?", counter_id
     )
 
 
-async def by_mid(db: Database, mid: int) -> aiosqlite.Row | None:
+async def by_mid(db: Database, mid: int) -> CounterRow | None:
     """The counter row (``id``, ``mid``) owning a message id."""
-    return await db.fetchone(
-        "SELECT id, mid FROM counter WHERE mid = ?", mid
+    return await db.fetch_model(
+        CounterRow, "SELECT id, mid FROM counter WHERE mid = ?", mid
     )
 
 

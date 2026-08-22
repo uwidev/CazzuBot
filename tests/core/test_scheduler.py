@@ -19,9 +19,11 @@ async def _pump(bot: CazzuBot) -> None:
     await bot.scheduler._drain()  # pyright: ignore[reportPrivateUsage]  # pump
 
 
-def _parse_dt(iso: str) -> pendulum.DateTime:
-    """Parse a stored ISO timestamp (pendulum.parse returns a union)."""
-    parsed = pendulum.parse(iso)
+def _parse_dt(value: str | pendulum.DateTime) -> pendulum.DateTime:
+    """A task's run_at as a DateTime (already typed since the model boundary)."""
+    if isinstance(value, pendulum.DateTime):
+        return value
+    parsed = pendulum.parse(value)
     assert isinstance(parsed, pendulum.DateTime)
     return parsed
 

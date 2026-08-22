@@ -139,16 +139,16 @@ async def _handle_baka(bot: CazzuBot, interaction: Any) -> None:
     now = pendulum.now("UTC")
     await db.record_event(
         bot.db,
-        counter["id"],
+        counter.id,
         user.id,
         display_name if isinstance(display_name, str) else user.username,
         now.to_iso8601_string(),
     )
 
-    count_new = await db.count_by_id(bot.db, counter["id"])
+    count_new = await db.count_by_id(bot.db, counter.id)
     names = await db.recent_names(
         bot.db,
-        counter["id"],
+        counter.id,
         now.subtract(hours=RECENT_WINDOW_HOURS).to_iso8601_string(),
     )
 
