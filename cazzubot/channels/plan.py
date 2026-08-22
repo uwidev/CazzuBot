@@ -559,8 +559,6 @@ def _target_layout(
     return blocks
 
 
-
-
 def _describe(spec: ChannelSpec) -> str:
     """Re-render a channel's manifest tokens for the diff output."""
     tokens: list[str] = []

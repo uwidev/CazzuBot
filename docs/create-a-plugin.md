@@ -74,7 +74,9 @@ loader = lightbulb.Loader()
 
 
 @loader.command
-class Badges(lightbulb.SlashCommand, name="badges", description="Show badges."):
+class Badges(
+    lightbulb.SlashCommand, name="badges", description="Show badges."
+):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = utils.bot_from(ctx)

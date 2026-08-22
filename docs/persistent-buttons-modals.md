@@ -69,7 +69,9 @@ class BadgeModal(modals.Modal):
 
 custom_id = "badges:submit"
 modal = BadgeModal()
-await interaction.create_modal_response("Add badge", custom_id, components=modal)
+await interaction.create_modal_response(
+    "Add badge", custom_id, components=modal
+)
 ```
 
 Attach the handler for the modal's session, then act on submit:
@@ -90,7 +92,9 @@ Drive buttons and modals offline with the driver — see **write a plugin
 test**:
 
 ```python
-press = await press_button(bot, custom_id="badges:grant", message_id=mid, user_id=1)
+press = await press_button(
+    bot, custom_id="badges:grant", message_id=mid, user_id=1
+)
 ```
 
 `attached_buttons(bot)` lists the button custom ids on attached menus, and

@@ -208,7 +208,9 @@ def test_duplicate_rename_source_is_error() -> None:
     # A->B and A->C would fight for the same live role
     with pytest.raises(ManifestError) as exc:
         parse("[x]\nA->B\nA->C\n")
-    assert any("duplicate rename source" in i.message for i in exc.value.issues)
+    assert any(
+        "duplicate rename source" in i.message for i in exc.value.issues
+    )
 
 
 def test_rename_from_marker_is_error() -> None:

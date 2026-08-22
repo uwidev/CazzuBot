@@ -17,7 +17,9 @@ def formatter(s, *, member: MemberSnapshot):
     return utils.format_member(s, member)
 
 
-decoded = templates.verify(raw, formatter, member=member)  # UserInputError on bad
+decoded = templates.verify(
+    raw, formatter, member=member
+)  # UserInputError on bad
 await bot.settings.set("badges.message", decoded)
 ```
 
@@ -28,8 +30,8 @@ await bot.settings.set("badges.message", decoded)
 
 ```python
 raw = await bot.settings.get("badges.message")
-await templates.send(ctx, raw)          # ctx is a lightbulb Context
-await templates.send(channel, raw)      # or any hikari channel
+await templates.send(ctx, raw)  # ctx is a lightbulb Context
+await templates.send(channel, raw)  # or any hikari channel
 ```
 
 `prepare(message)` returns `(content, embed, embeds)` as **plain JSON** — use
@@ -45,7 +47,7 @@ from cazzubot.window import command_window
 
 async with command_window(ctx) as window:
     window.info("fetching...")
-    await window.flush()   # only before blocking work
+    await window.flush()  # only before blocking work
     window.success("done")
 ```
 

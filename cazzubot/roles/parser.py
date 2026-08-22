@@ -368,9 +368,7 @@ def parse(text: str) -> Manifest:
 
     # rename validation: no chains (A->B then B->C) and no duplicate
     # sources (A->B and A->C would fight for the same live role)
-    validate_renames(
-        (role for g in groups for role in g.roles), issues
-    )
+    validate_renames((role for g in groups for role in g.roles), issues)
 
     if issues:
         raise ManifestError(issues)

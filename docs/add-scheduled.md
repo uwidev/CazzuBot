@@ -57,8 +57,8 @@ boot, re-arm pending work from state so nothing is lost across a restart:
 
 ```python
 async def on_load(self, bot):
-    await bot.scheduler.arm_if_rowless(TAG, CADENCE)   # never clobber a row
-    await bot.scheduler.arm(TAG, CADENCE)              # or replace the row
+    await bot.scheduler.arm_if_rowless(TAG, CADENCE)  # never clobber a row
+    await bot.scheduler.arm(TAG, CADENCE)  # or replace the row
 ```
 
 `arm` drops `tag`'s rows and schedules the next occurrence; `arm_if_rowless`

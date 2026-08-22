@@ -123,6 +123,7 @@ SNAPSHOT: list[RoleSnapshot] = [
     },
 ]
 
+
 def mutated(name: str, **fields: Any) -> list[RoleSnapshot]:
     """SNAPSHOT with one role's fields replaced by ``fields``."""
     return [

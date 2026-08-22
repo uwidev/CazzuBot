@@ -95,9 +95,7 @@ async def test_send_mentions_only_those_present() -> None:
     """Least-permissive: only users/roles actually written get parse rights,
     never a blanket "all users"/"all roles"."""
     channel = FakeChannel(id=1)
-    await templates.send(
-        channel, {"content": "hi <@424242> and <@&777>"}
-    )
+    await templates.send(channel, {"content": "hi <@424242> and <@&777>"})
     sent = channel.sent[-1]
     assert sent["user_mentions"] == [424242]
     assert sent["role_mentions"] == [777]
@@ -129,7 +127,9 @@ async def test_send_extracts_mentions_from_embeds() -> None:
     assert sent["role_mentions"] == [777]
 
 
-async def test_send_allowed_mentions_true_allows_present_everyone() -> None:
+async def test_send_allowed_mentions_true_allows_present_everyone() -> (
+    None
+):
     """``allowed_mentions: true`` + ``@everyone``/``@here`` present → enabled;
     without @everyone in the text it stays off."""
     channel = FakeChannel(id=1)

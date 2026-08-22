@@ -67,7 +67,9 @@ def rewrite_renames(
             continue
         lines[idx] = re.sub(
             rf"{re.escape(old)}\s*->\s*{re.escape(new)}",
-            lambda _match: new,  # replacement is literal (backslashes safe)
+            lambda _match: (
+                new
+            ),  # replacement is literal (backslashes safe)
             lines[idx],
             count=1,
         )
@@ -218,9 +220,7 @@ def commit_group(
         )
     elif group.title is not None:
         seen_titles[group.title] = group.line
-        groups.append(
-            replace(group, **{items_field: tuple(items)})
-        )
+        groups.append(replace(group, **{items_field: tuple(items)}))
     elif items:
         # implicit group — commit only if it has items
         groups.append(replace(group, **{items_field: tuple(items)}))

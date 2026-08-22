@@ -23,8 +23,8 @@ await bot.inventory.add(uid, FrogItem(species_key, state))
 ## 2. Read a stack
 
 ```python
-count = await bot.inventory.get(uid, item_id)   # 0 when absent
-total = await bot.inventory.total(uid)          # all items
+count = await bot.inventory.get(uid, item_id)  # 0 when absent
+total = await bot.inventory.total(uid)  # all items
 ```
 
 ## 3. Consume

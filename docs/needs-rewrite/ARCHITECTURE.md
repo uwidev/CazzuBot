@@ -60,11 +60,13 @@ from cazzubot import Plugin
 
 class MyFeature(Plugin):
     name = "myfeature"
-    extensions = ["plugins.myfeature.extension"]  # lightbulb loader modules
+    extensions = [
+        "plugins.myfeature.extension"
+    ]  # lightbulb loader modules
     schema = ["CREATE TABLE IF NOT EXISTS myfeature (…)"]
     scheduled = {"mytag": my_handler}  # tag -> async handler(bot, payload)
-    asset_decl = {MyAsset: "path"}     # optional enum -> file declarations
-    depends_on = ()                    # optional plugin names, load-ordered
+    asset_decl = {MyAsset: "path"}  # optional enum -> file declarations
+    depends_on = ()  # optional plugin names, load-ordered
 
     async def on_load(self, bot): ...  # optional startup hook
     async def on_unload(self, bot): ...  # optional teardown hook

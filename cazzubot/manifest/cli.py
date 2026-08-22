@@ -36,11 +36,15 @@ class ManifestDomain:
     name: str  # backup file prefix ("roles" / "channels")
     backup_dir: Path
     snapshot: Callable[[hikari.api.RESTClient, int], Awaitable[list[Any]]]
-    render: Callable[[list[Any], str, str], str]  # (snapshot, source, exported)
+    render: Callable[
+        [list[Any], str, str], str
+    ]  # (snapshot, source, exported)
     parse: Callable[[str], Any]
     plan_from: Callable[..., Awaitable[Any | None]]
     apply: Callable[..., Awaitable[Any]]
-    guard: Callable[[Any], str | None] | None = None  # pre-apply block message
+    guard: Callable[[Any], str | None] | None = (
+        None  # pre-apply block message
+    )
 
 
 async def run_export(
@@ -227,7 +231,9 @@ async def run_restore(
             file=sys.stderr,
         )
         return 1
-    plan = await domain.plan_from(client, config, manifest, args, delete=False)
+    plan = await domain.plan_from(
+        client, config, manifest, args, delete=False
+    )
     if plan is None:
         return 1
     print(plan.render())
@@ -316,7 +322,9 @@ def _atomic_write(path: Path, text: str) -> None:
 # -- argparse helpers (identical across the two domains) ---------------------
 
 
-def add_file_args(default: Path) -> Callable[[argparse.ArgumentParser], None]:
+def add_file_args(
+    default: Path,
+) -> Callable[[argparse.ArgumentParser], None]:
     """Build the ``--file`` argument group bound to ``default``."""
 
     def _add(parser: argparse.ArgumentParser) -> None:

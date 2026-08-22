@@ -38,6 +38,7 @@ from cazzubot.manifest.cli import (
 
 CHANNELS_BACKUP_DIR = Path("data/channels_backups")
 
+
 async def cmd_export(
     client: hikari.api.RESTClient, config: Config, args: argparse.Namespace
 ) -> int:
@@ -135,7 +136,10 @@ _DOMAIN = ManifestDomain(
 domain = Domain(
     name="channels",
     help="manage the channel manifest (export/diff/check/apply/restore)",
-    common_args=(add_file_args(Path("channels.manifest")), _add_scope_args),
+    common_args=(
+        add_file_args(Path("channels.manifest")),
+        _add_scope_args,
+    ),
     commands={
         "export": Command(
             cmd_export,

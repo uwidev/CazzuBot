@@ -32,9 +32,15 @@ from tests.driver import run_slash, press_button, submit_modal
 
 
 async def test_my_flow(full_bot):
-    result = await run_slash(full_bot, "badges give", options={...}, user_id=1)
-    press = await press_button(full_bot, custom_id="badges:yes", message_id=...)
-    modal = await submit_modal(full_bot, custom_id="poll:submit:1", values={...})
+    result = await run_slash(
+        full_bot, "badges give", options={...}, user_id=1
+    )
+    press = await press_button(
+        full_bot, custom_id="badges:yes", message_id=...
+    )
+    modal = await submit_modal(
+        full_bot, custom_id="poll:submit:1", values={...}
+    )
 ```
 
 - `full_bot` (`tests/conftest.py`) boots every plugin — the real path any

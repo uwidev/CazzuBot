@@ -55,8 +55,7 @@ async def on_load(self, bot):
 The handler receives the event object:
 
 ```python
-async def _on_badge_granted(self, event: BadgeGrantedEvent) -> None:
-    ...
+async def _on_badge_granted(self, event: BadgeGrantedEvent) -> None: ...
 ```
 
 ## 4. Rules

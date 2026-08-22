@@ -28,7 +28,9 @@ from cazzubot.assets import AssetKind, AssetSpec
 
 
 class BadgeAsset(Enum):
-    COMMON = AssetSpec(kind=AssetKind.EMOJI, path="assets/badge_common.png")
+    COMMON = AssetSpec(
+        kind=AssetKind.EMOJI, path="assets/badge_common.png"
+    )
     BANNER = AssetSpec(kind=AssetKind.SPECIES, path="assets/banner.png")
 ```
 
@@ -45,6 +47,7 @@ In the plugin class (`plugins/badges/__init__.py`):
 
 ```python
 from .assets import BadgeAsset
+
 
 class BadgesPlugin(Plugin):
     name = "badges"

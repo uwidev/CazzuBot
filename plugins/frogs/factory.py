@@ -189,9 +189,11 @@ async def grant_catch_frog(
     else:
         # no configured capture message — fall back to the built-in capture
         # embed rather than sending a blank message
-        payload: dict[str, Any] = {"embed": await _default_capture_embed(
-            bot, member, species, frog_cnt_total, seasonal
-        )}
+        payload: dict[str, Any] = {
+            "embed": await _default_capture_embed(
+                bot, member, species, frog_cnt_total, seasonal
+            )
+        }
     # Least-permissive mention policy: explicitly allow mention of exactly
     # the catcher we're pinging (``user_mentions=[uid]``), never a blanket
     # "all users" / "all roles". The template's ``allowed_mentions`` flag can
@@ -204,7 +206,8 @@ async def grant_catch_frog(
         cid,
         **payload,
         user_mentions=(
-            [uid] if msg_json.get("allowed_mentions") is not False
+            [uid]
+            if msg_json.get("allowed_mentions") is not False
             else hikari.UNDEFINED
         ),
         role_mentions=hikari.UNDEFINED,
@@ -295,9 +298,7 @@ class FrogCatchMenu(lightbulb.components.Menu):
                 await grant_catch_frog(
                     self.bot,
                     uid=uid,
-                    member=utils.member_snapshot(
-                        mctx.interaction.user
-                    ),
+                    member=utils.member_snapshot(mctx.interaction.user),
                     species=species,
                     now=now,
                     cid=mctx.channel_id,

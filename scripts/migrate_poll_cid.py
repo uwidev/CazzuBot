@@ -35,7 +35,9 @@ def main() -> int:
     """Add the poll ``cid`` column (CLI entry)."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--db", default="data/cazzubot-prod.db", help="sqlite database file"
+        "--db",
+        default="data/cazzubot-prod.db",
+        help="sqlite database file",
     )
     parser.add_argument(
         "--backup-dir",
@@ -43,7 +45,9 @@ def main() -> int:
         help="where to write the pre-migration backup (default data/)",
     )
     parser.add_argument(
-        "--commit", action="store_true", help="apply the change (dry-run by default)"
+        "--commit",
+        action="store_true",
+        help="apply the change (dry-run by default)",
     )
     args = parser.parse_args()
 
@@ -63,7 +67,9 @@ def main() -> int:
             return 0
 
         count = conn.execute("SELECT COUNT(*) FROM poll").fetchone()[0]
-        print(f"{args.db}: would add poll.cid ({count} existing poll row(s))")
+        print(
+            f"{args.db}: would add poll.cid ({count} existing poll row(s))"
+        )
         if not args.commit:
             print("dry run — pass --commit to apply")
             return 0

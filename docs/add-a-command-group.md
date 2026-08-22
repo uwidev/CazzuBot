@@ -28,8 +28,7 @@ class Give(
     hooks=[utils.OWNER_ONLY],
 ):
     @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        ...
+    async def invoke(self, ctx: lightbulb.Context) -> None: ...
 
 
 loader.command(badges)
@@ -45,7 +44,8 @@ Nest further with `group.subgroup(name, description)`:
 
 ```python
 welcome = lightbulb.Group(
-    "welcome", "Welcome message settings.",
+    "welcome",
+    "Welcome message settings.",
     default_member_permissions=hikari.Permissions.ADMINISTRATOR,
 )
 welcome_set = welcome.subgroup("set", "Set welcome settings.")

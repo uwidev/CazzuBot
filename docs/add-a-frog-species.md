@@ -16,7 +16,7 @@ This example adds a **`BOG_FROG`** species. The existing leaf/classy frogs
 class SpeciesKey(Enum):
     LEAF_FROG = "leaf_frog"
     CLASSY_FROG = "classy_frog"
-    BOG_FROG = "bog_frog"     # new
+    BOG_FROG = "bog_frog"  # new
 ```
 
 ## 2. Add the art asset
@@ -26,9 +26,13 @@ Put the image in `plugins/frogs/assets/`, then declare it in
 
 ```python
 class FrogAsset(Enum):
-    LEAF_FROG = AssetSpec(kind=AssetKind.EMOJI, path="assets/leaf_frog.png")
+    LEAF_FROG = AssetSpec(
+        kind=AssetKind.EMOJI, path="assets/leaf_frog.png"
+    )
     ...
-    BOG_FROG = AssetSpec(kind=AssetKind.EMOJI, path="assets/bog_frog.png")  # new
+    BOG_FROG = AssetSpec(
+        kind=AssetKind.EMOJI, path="assets/bog_frog.png"
+    )  # new
 ```
 
 ## 3. Define the species
@@ -36,15 +40,17 @@ class FrogAsset(Enum):
 `plugins/frogs/species.py` — add a `Species` to `SPECIES`:
 
 ```python
-Species(
-    key=SpeciesKey.BOG_FROG,
-    name="Bog Frog",
-    rarity="uncommon",
-    description="A frog from the bog.",
-    spawn_weight=0.5,
-    catch_effect=None,          # default catch: +1 to inventory
-    art=FrogAsset.BOG_FROG,
-),
+(
+    Species(
+        key=SpeciesKey.BOG_FROG,
+        name="Bog Frog",
+        rarity="uncommon",
+        description="A frog from the bog.",
+        spawn_weight=0.5,
+        catch_effect=None,  # default catch: +1 to inventory
+        art=FrogAsset.BOG_FROG,
+    ),
+)
 ```
 
 - `spawn_weight` sets how likely it is to spawn relative to the others
@@ -60,16 +66,22 @@ its own consume exp. Add the items in `plugins/frogs/items.py`:
 ```python
 class FrogItems(Enum):
     LEAF_NORMAL = _frog_item(
-        "frog:leaf_frog:normal", "Leaf Frog", "🐸",
+        "frog:leaf_frog:normal",
+        "Leaf Frog",
+        "🐸",
         frog_exp(SpeciesKey.LEAF_FROG, FrogState.NORMAL),
     )
     ...
     BOG_NORMAL = _frog_item(
-        "frog:bog_frog:normal", "Bog Frog", "🐸",
+        "frog:bog_frog:normal",
+        "Bog Frog",
+        "🐸",
         frog_exp(SpeciesKey.BOG_FROG, FrogState.NORMAL),
     )
     BOG_FROZEN = _frog_item(
-        "frog:bog_frog:frozen", "Bog Frog", "🐸",
+        "frog:bog_frog:frozen",
+        "Bog Frog",
+        "🐸",
         frog_exp(SpeciesKey.BOG_FROG, FrogState.FROZEN),
     )
 ```
@@ -81,7 +93,10 @@ with the key you added. Then register the per-state exp in `_SPECIES_EXP`:
 _SPECIES_EXP = {
     SpeciesKey.LEAF_FROG: {FrogState.NORMAL: 10, FrogState.FROZEN: 3},
     SpeciesKey.CLASSY_FROG: {FrogState.NORMAL: 20, FrogState.FROZEN: 6},
-    SpeciesKey.BOG_FROG: {FrogState.NORMAL: 30, FrogState.FROZEN: 9},  # new
+    SpeciesKey.BOG_FROG: {
+        FrogState.NORMAL: 30,
+        FrogState.FROZEN: 9,
+    },  # new
 }
 ```
 

@@ -44,6 +44,7 @@ In `plugins/badges/__init__.py`:
 ```python
 from .items import BadgeItems
 
+
 class BadgesPlugin(Plugin):
     name = "badges"
     ...
@@ -78,6 +79,7 @@ async def _consume_coin(bot, uid, amount) -> None:
     # item-owned consume behavior, e.g. grant exp
     ...
 
+
 class BadgeItems(Enum):
     GOLD_COIN = Item(
         item_id="badge:gold_coin",
@@ -93,7 +95,7 @@ Then in the plugin:
 class BadgesPlugin(Plugin):
     name = "badges"
     item_decl = BadgeItems
-    items_consumable = True   # the default
+    items_consumable = True  # the default
 ```
 
 `/inventory consume <slot> [amount]` resolves the item, checks the provider's

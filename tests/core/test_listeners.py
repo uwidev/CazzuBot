@@ -17,7 +17,10 @@ from tests.fakes import FakeMessage
 def test_event_guild_id_message_events() -> None:
     """The real ``MessageEvent.guild_id`` asserts non-None — reading it on
     a DM would raise; the helper must use ``message.guild_id`` instead."""
-    assert _event_guild_id(SimpleNamespace(message=FakeMessage(guild_id=2))) == 2
+    assert (
+        _event_guild_id(SimpleNamespace(message=FakeMessage(guild_id=2)))
+        == 2
+    )
     assert _event_guild_id(SimpleNamespace(message=FakeMessage())) is None
 
 
@@ -28,7 +31,10 @@ def test_event_guild_id_interaction_events() -> None:
         )
         == 2
     )
-    assert _event_guild_id(SimpleNamespace(interaction=SimpleNamespace())) is None
+    assert (
+        _event_guild_id(SimpleNamespace(interaction=SimpleNamespace()))
+        is None
+    )
 
 
 def test_event_guild_id_falls_back_to_event_attribute() -> None:
