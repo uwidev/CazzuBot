@@ -21,3 +21,7 @@ test/
 *.dump
 button_count
 docker-compose*.y*ml
+.reasonix/
+paper.pdf
+paper.txt
+reasonix.toml
