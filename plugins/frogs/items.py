@@ -34,11 +34,9 @@ if TYPE_CHECKING:
     from cazzubot.bot import CazzuBot
 
 # Per-item seasonal exp when one unit is consumed (item-owned — NOT on the
-# entity). Keeps the legacy values: leaf 10/3, classy 20/6.
+# entity). Keeps the legacy values: leaf 10/3.
 _LEAF_NORMAL = 10
 _LEAF_FROZEN = 3
-_CLASSY_NORMAL = 20
-_CLASSY_FROZEN = 6
 
 # species × state -> exp per unit, the single source for both the item
 # defs below and the catalog's consume display.
@@ -46,10 +44,6 @@ _SPECIES_EXP: dict[SpeciesKey, dict[FrogState, int]] = {
     SpeciesKey.LEAF_FROG: {
         FrogState.NORMAL: _LEAF_NORMAL,
         FrogState.FROZEN: _LEAF_FROZEN,
-    },
-    SpeciesKey.CLASSY_FROG: {
-        FrogState.NORMAL: _CLASSY_NORMAL,
-        FrogState.FROZEN: _CLASSY_FROZEN,
     },
 }
 
@@ -113,7 +107,7 @@ def _frog_item(
 
 
 class FrogItems(Enum):
-    """Every frog inventory item — leaf/classy × normal/frozen.
+    """Every frog inventory item — leaf × normal/frozen.
 
     The member is the code reference (rename freely); ``item_id`` is the
     immutable oracle. Registered as the frogs plugin's ``item_decl``.
@@ -130,16 +124,4 @@ class FrogItems(Enum):
         "Leaf Frog",
         "🐸",
         frog_exp(SpeciesKey.LEAF_FROG, FrogState.FROZEN),
-    )
-    CLASSY_NORMAL = _frog_item(
-        "frog:classy_frog:normal",
-        "Classy Frog",
-        "🐸",
-        frog_exp(SpeciesKey.CLASSY_FROG, FrogState.NORMAL),
-    )
-    CLASSY_FROZEN = _frog_item(
-        "frog:classy_frog:frozen",
-        "Classy Frog",
-        "🐸",
-        frog_exp(SpeciesKey.CLASSY_FROG, FrogState.FROZEN),
     )

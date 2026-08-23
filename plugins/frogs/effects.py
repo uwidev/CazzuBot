@@ -5,9 +5,8 @@ Effects are fully decoupled from the species and the controllers:
 - Each effect owns a **payload dataclass** — its configuration. A species
   definition carries payload *instances* (``catch_effect`` /
   ``consume_effect``), so one effect class is reusable with different
-  values (the ``exp`` effect powers both the 10/3 Leaf Frog and the 20/6
-  Classy Frog), and a species never carries fields for effects it doesn't
-  use.
+  values (the ``exp`` effect powers the 10/3 Leaf Frog), and a species
+  never carries fields for effects it doesn't use.
 - A payload's ``key`` is an :class:`EffectKey` enum member, and **the
   enum IS the registry**: each member's value is its handler object.
   ``payload.key.value`` is the effect with its ``catch``/``consume``

@@ -22,7 +22,7 @@ async def _seed_frogs(bot: CazzuBot, uid: int) -> None:
         uid, FrogItem(SpeciesKey.LEAF_FROG, FrogState.NORMAL), 3
     )
     await bot.inventory.add(
-        uid, FrogItem(SpeciesKey.CLASSY_FROG, FrogState.FROZEN), 1
+        uid, FrogItem(SpeciesKey.LEAF_FROG, FrogState.FROZEN), 1
     )
 
 
@@ -39,7 +39,7 @@ async def test_inventory_grid_shows_numbered_slots(
     embed = result.first_response.get("embed")
     assert embed is not None
 
-    # namespace header + one field per stack (ORDER BY item → classy first);
+    # namespace header + one field per stack (ORDER BY item → frozen first);
     # each slot shows the item's own emoji icon (no label — the grid is
     # emoji-only via the item registry)
     values = [field.value for field in embed.fields]

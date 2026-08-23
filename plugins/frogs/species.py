@@ -63,15 +63,6 @@ SPECIES: tuple[Species, ...] = (
         catch_effect=None,
         art=FrogAsset.LEAF_FROG,
     ),
-    Species(
-        key=SpeciesKey.CLASSY_FROG,
-        name="Classy Frog",
-        rarity="common",
-        description="A frog of refined taste.",
-        spawn_weight=1.0,
-        catch_effect=None,
-        art=FrogAsset.CLASSY_FROG,
-    ),
 )
 
 _BY_KEY: dict[SpeciesKey, Species] = {

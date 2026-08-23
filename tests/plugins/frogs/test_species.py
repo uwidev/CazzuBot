@@ -29,19 +29,10 @@ def test_default_species_is_leaf_frog() -> None:
     assert frog_exp(leaf.key, FrogState.FROZEN) == 3
 
 
-def test_classy_frog_doubles_exp() -> None:
-    classy = by_key(SpeciesKey.CLASSY_FROG)
-    assert classy is not None
-    leaf = by_key(SpeciesKey.LEAF_FROG)
-    assert leaf is not None
-    assert (
-        frog_exp(classy.key, FrogState.NORMAL)
-        == frog_exp(leaf.key, FrogState.NORMAL) * 2
-    )
-    assert (
-        frog_exp(classy.key, FrogState.FROZEN)
-        == frog_exp(leaf.key, FrogState.FROZEN) * 2
-    )
+def test_catalog_is_single_species() -> None:
+    """Right now only the normal Leaf Frog spawns — no extra species."""
+    assert [species.key for species in SPECIES] == [SpeciesKey.LEAF_FROG]
+    assert by_key(SpeciesKey.LEAF_FROG) is not None
 
 
 def test_species_art_is_a_declared_asset_member() -> None:

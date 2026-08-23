@@ -86,9 +86,9 @@ async def test_frog_catalog_lists_species(
     embed = ctx.sent[-1].embed
     assert embed is not None
     assert embed.title == "Frog Species Catalog"
-    assert len(embed.fields) == 2
+    assert len(embed.fields) == 1
     assert any("Leaf Frog" in field.name for field in embed.fields)
-    assert any("Classy Frog" in field.name for field in embed.fields)
+    assert not any("Classy Frog" in field.name for field in embed.fields)
 
 
 # -- capture menu -----------------------------------------------------------
@@ -252,15 +252,15 @@ async def test_frog_catch_button_carries_species(
     seeded_bot: CazzuBot, author: FakeMember
 ) -> None:
     """The custom_id embeds the species so the boot sweep still matches."""
-    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.CLASSY_FROG)
+    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
     button = menu_button(menu)
-    assert button.custom_id == "frog:catch:99:classy_frog"
+    assert button.custom_id == "frog:catch:99:leaf_frog"
     assert factory._is_frog_message(  # pyright: ignore[reportPrivateUsage]
-        _frog_message(99, 1, "frog:catch:99:classy_frog"), 99
+        _frog_message(99, 1, "frog:catch:99:leaf_frog"), 99
     )
     # channel prefixes stay apart: frog:catch:99: never matches channel 999
     assert not factory._is_frog_message(  # pyright: ignore[reportPrivateUsage]
-        _frog_message(999, 1, "frog:catch:99:classy_frog"), 999
+        _frog_message(999, 1, "frog:catch:99:leaf_frog"), 999
     )
 
 

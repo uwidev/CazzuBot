@@ -48,7 +48,6 @@ class SpeciesKey(Enum):
     """
 
     LEAF_FROG = "leaf_frog"
-    CLASSY_FROG = "classy_frog"
 
 
 class WelcomeModeEnum(Enum):

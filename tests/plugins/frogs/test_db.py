@@ -55,11 +55,11 @@ async def test_inventory_freeze_and_capture_log(bot: CazzuBot) -> None:
 async def test_inventory_rows(bot: CazzuBot) -> None:
     """Per-species inventory rows drive the profile rendering."""
     await frog_db.modify_inventory(
-        bot.db, _UID, SpeciesKey.CLASSY_FROG, FrogState.NORMAL, 2
+        bot.db, _UID, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 2
     )
     assert await frog_db.total_inventory(bot.db, _UID) == 2
     rows = await frog_db.inventory_rows(bot.db, _UID)
-    assert rows == [(SpeciesKey.CLASSY_FROG, FrogState.NORMAL, 2)], rows
+    assert rows == [(SpeciesKey.LEAF_FROG, FrogState.NORMAL, 2)], rows
 
 
 async def test_spawn_roundtrip_typed(bot: CazzuBot) -> None:

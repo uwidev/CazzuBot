@@ -5,8 +5,8 @@ spawns, what happens on catch), its **art asset**, and the **inventory
 items** a caught frog becomes. All three are defined in code — there's no
 species table in the database.
 
-This example adds a **`BOG_FROG`** species. The existing leaf/classy frogs
-(`plugins/frogs/`) are the reference.
+This example adds a **`BOG_FROG`** species. The existing leaf frog
+(`plugins/frogs/`) is the reference.
 
 ## 1. Add the species key
 
@@ -15,7 +15,6 @@ This example adds a **`BOG_FROG`** species. The existing leaf/classy frogs
 ```python
 class SpeciesKey(Enum):
     LEAF_FROG = "leaf_frog"
-    CLASSY_FROG = "classy_frog"
     BOG_FROG = "bog_frog"  # new
 ```
 
@@ -92,7 +91,6 @@ with the key you added. Then register the per-state exp in `_SPECIES_EXP`:
 ```python
 _SPECIES_EXP = {
     SpeciesKey.LEAF_FROG: {FrogState.NORMAL: 10, FrogState.FROZEN: 3},
-    SpeciesKey.CLASSY_FROG: {FrogState.NORMAL: 20, FrogState.FROZEN: 6},
     SpeciesKey.BOG_FROG: {
         FrogState.NORMAL: 30,
         FrogState.FROZEN: 9,
