@@ -17,8 +17,13 @@ class FrogAsset(Enum):
     """Every asset the frogs plugin declares."""
 
     FROG_BASIC = AssetSpec(
-        kind=AssetKind.EMOJI, path="assets/frog_basic.png"
+        kind=AssetKind.EMOJI, path="assets/frog-basic.png"
     )
+
+    FROG_BASIC_FROZEN = AssetSpec(
+        kind=AssetKind.EMOJI, path="assets/frog-basic-frozen.png"
+    )
+
     # the capture embed's thumbnail — a media image, CDN-published
     CATCH_BANNER = AssetSpec(
         kind=AssetKind.IMAGE, path="assets/caught.png"

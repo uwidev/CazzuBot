@@ -131,5 +131,5 @@ class FrogItems(Enum):
         "Basic Frog (Frozen)",
         "🐸",
         frog_exp(FrogItemKey.BASIC, FrogState.FROZEN),
-        icon_asset=FrogAsset.FROG_BASIC,
+        icon_asset=FrogAsset.FROG_BASIC_FROZEN,
     )
