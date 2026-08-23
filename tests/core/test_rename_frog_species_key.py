@@ -16,7 +16,7 @@ import hikari
 
 from cazzubot import CazzuBot, Config
 from cazzubot.models import FrogState, FrogItemKey
-from scripts.rename_frog_species_key import (
+from scripts.migrations.frog_species_key import (
     INVENTORY_DDL,
     migrate,
     needs_renaming,

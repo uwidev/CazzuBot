@@ -13,7 +13,7 @@ import sqlite3
 from pathlib import Path
 
 from cazzubot.assets import AssetKind
-from scripts.rename_asset_kind import migrate, needs_renaming, plan
+from scripts.migrations.asset_kind import migrate, needs_renaming, plan
 
 _ASSET_DDL = """
 CREATE TABLE asset (

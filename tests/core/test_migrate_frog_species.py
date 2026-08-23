@@ -16,7 +16,7 @@ import hikari
 
 from cazzubot import CazzuBot, Config
 from cazzubot.models import FrogState, FrogItemKey
-from scripts.migrate_frog_species import (
+from scripts.migrations.frog_species import (
     DEFAULT_SPECIES_KEY,
     migrate,
     needs_migration,
