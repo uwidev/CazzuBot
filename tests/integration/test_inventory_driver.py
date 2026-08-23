@@ -56,17 +56,26 @@ async def test_inventory_grid_shows_numbered_slots(
 async def test_inventory_grid_uses_published_asset_emoji(
     full_bot: CazzuBot,
 ) -> None:
-    """A published EMOJI-kind icon_asset replaces the static item icon."""
+    """Published EMOJI-kind icon_assets replace the static item icons."""
     from cazzubot.assets import asset_key
     from plugins.frogs.assets import FrogAsset
 
     await _seed_frogs(full_bot, 424242)
-    # simulate a published asset (offline tests seed rows with NULL url —
-    # the "not published yet" state that exercises the fallback instead)
-    await full_bot.db.execute(
+    # simulate published assets (offline tests seed rows with NULL url —
+    # the "not published yet" state that exercises the fallback instead);
+    # each frog state has its own emoji asset
+    await full_bot.db.executemany(
         "UPDATE asset SET url = ? WHERE key = ?",
-        "<:frog_basic:123456789012345678>",
-        asset_key(FrogAsset.FROG_BASIC),
+        [
+            (
+                "<:frog_basic:123456789012345678>",
+                asset_key(FrogAsset.FROG_BASIC),
+            ),
+            (
+                "<:frog_frozen:123456789012345678>",
+                asset_key(FrogAsset.FROG_BASIC_FROZEN),
+            ),
+        ],
     )
 
     result = await run_slash(full_bot, "inventory view", user_id=424242)
@@ -77,8 +86,8 @@ async def test_inventory_grid_uses_published_asset_emoji(
     embed = first_response.get("embed")
     assert embed is not None
     values = [field.value for field in embed.fields]
-    assert "<:frog_basic:123456789012345678> ×1" in values
     assert "<:frog_basic:123456789012345678> ×3" in values
+    assert "<:frog_frozen:123456789012345678> ×1" in values
 
 
 async def test_inventory_empty_state(full_bot: CazzuBot) -> None:
