@@ -13,8 +13,8 @@ This example adds a **`BOG_FROG`** species. The existing leaf frog
 `cazzubot/models.py` — the enum of valid species keys:
 
 ```python
-class SpeciesKey(Enum):
-    LEAF_FROG = "leaf_frog"
+class FrogItemKey(Enum):
+    BASIC = "basic"
     BOG_FROG = "bog_frog"  # new
 ```
 
@@ -25,8 +25,8 @@ Put the image in `plugins/frogs/assets/`, then declare it in
 
 ```python
 class FrogAsset(Enum):
-    LEAF_FROG = AssetSpec(
-        kind=AssetKind.EMOJI, path="assets/leaf_frog.png"
+    FROG_BASIC = AssetSpec(
+        kind=AssetKind.EMOJI, path="assets/frog_basic.png"
     )
     ...
     BOG_FROG = AssetSpec(
@@ -41,7 +41,7 @@ class FrogAsset(Enum):
 ```python
 (
     Species(
-        key=SpeciesKey.BOG_FROG,
+        key=FrogItemKey.BOG_FROG,
         name="Bog Frog",
         rarity="uncommon",
         description="A frog from the bog.",
@@ -64,24 +64,24 @@ its own consume exp. Add the items in `plugins/frogs/items.py`:
 
 ```python
 class FrogItems(Enum):
-    LEAF_NORMAL = _frog_item(
-        "frog:leaf_frog:normal",
-        "Leaf Frog",
+    BASIC_NORMAL = _frog_item(
+        "frog:basic:normal",
+        "Basic Frog",
         "🐸",
-        frog_exp(SpeciesKey.LEAF_FROG, FrogState.NORMAL),
+        frog_exp(FrogItemKey.BASIC, FrogState.NORMAL),
     )
     ...
     BOG_NORMAL = _frog_item(
         "frog:bog_frog:normal",
         "Bog Frog",
         "🐸",
-        frog_exp(SpeciesKey.BOG_FROG, FrogState.NORMAL),
+        frog_exp(FrogItemKey.BOG_FROG, FrogState.NORMAL),
     )
     BOG_FROZEN = _frog_item(
         "frog:bog_frog:frozen",
         "Bog Frog",
         "🐸",
-        frog_exp(SpeciesKey.BOG_FROG, FrogState.FROZEN),
+        frog_exp(FrogItemKey.BOG_FROG, FrogState.FROZEN),
     )
 ```
 
@@ -90,8 +90,8 @@ with the key you added. Then register the per-state exp in `_SPECIES_EXP`:
 
 ```python
 _SPECIES_EXP = {
-    SpeciesKey.LEAF_FROG: {FrogState.NORMAL: 10, FrogState.FROZEN: 3},
-    SpeciesKey.BOG_FROG: {
+    FrogItemKey.BASIC: {FrogState.NORMAL: 10, FrogState.FROZEN: 3},
+    FrogItemKey.BOG_FROG: {
         FrogState.NORMAL: 30,
         FrogState.FROZEN: 9,
     },  # new

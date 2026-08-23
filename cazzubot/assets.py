@@ -15,10 +15,10 @@ of the declarations**: rows whose key is no longer declared are pruned
 (their published reference removed), and every published reference is
 re-verified on boot — a dead one re-queues its row for re-publish.
 
-The kind dispatches the sync to the shared **asset child-guild**: media
-(``SPECIES``) blobs CDN-publish into a private channel, while ``EMOJI``
-assets are created as custom emoji in the guild and referenced as
-``<:name:id>`` — both stored in the row's ``url``.
+The kind dispatches the sync to the shared **asset child-guild**: images
+(``IMAGE``) CDN-publish into a private channel, while ``EMOJI`` assets are
+created as custom emoji in the guild and referenced as ``<:name:id>`` —
+both stored in the row's ``url``.
 
 Failure policy mirrors ``Database.verify_schema``: a missing declared file
 aborts boot (the caller decides how to fail). ``sync_cdn`` is skipped with
@@ -78,23 +78,23 @@ class AssetError(RuntimeError):
 
 
 class AssetKind(Enum):
-    """The asset category — declared, stored, and consumed by the sync.
+    """The asset kind — how the asset is stored/accessed by the sync.
 
-    It records what each declared asset *is* (species art vs. badge art vs.
-    dish art vs. an inline emoji glyph) in the registry's ``kind`` column,
-    so the category cannot drift into a magic string. The kind is what the
-    sync dispatches on: ``SPECIES``/media blobs CDN-publish into the asset
-    channel, while ``EMOJI`` assets are created as custom emoji in the asset
-    guild and referenced as ``<:name:id>`` (both stored in the row's ``url``
-    — ``get()`` returns whichever reference applies). A future kind-driven
-    feature (cataloging only species art, badge/dish/shop assets) is where
-    it earns its keep; that future may also nest the members (e.g.
-    ``AssetKind.SPECIES`` → species-scoped members) for a better workflow
-    instead of the current flat single member.
+    It records the storage/access path each declared asset uses (a
+    CDN-published image vs. an inline emoji glyph) in the registry's
+    ``kind`` column, so the category cannot drift into a magic string. The
+    kind is what the sync dispatches on: ``IMAGE`` blobs CDN-publish into
+    the asset channel, while ``EMOJI`` assets are created as custom emoji
+    in the asset guild and referenced as ``<:name:id>`` (both stored in
+    the row's ``url`` — ``get()`` returns whichever reference applies). A
+    future kind-driven feature (cataloging only species art, badge/dish/
+    shop assets) is where it earns its keep; that future may also nest the
+    members (e.g. ``AssetKind.IMAGE`` → species-scoped members) for a
+    better workflow instead of the current flat single member.
     """
 
-    SPECIES = "species"
     EMOJI = "emoji"
+    IMAGE = "image"
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,7 +216,7 @@ class Assets:
                 elif (
                     row.sha256 != sha
                     # the declaration is the source of truth — a change of
-                    # kind (SPECIES → EMOJI) or path on an unchanged file
+                    # kind (IMAGE → EMOJI) or path on an unchanged file
                     # must re-publish under the new kind, not silently keep
                     # the stale row
                     or row.kind is not spec.kind
@@ -502,7 +502,7 @@ class Assets:
     async def get(self, asset: Enum) -> str | None:
         """The published reference for a declared asset member.
 
-        The stored reference — a CDN URL for media (``SPECIES``) or a
+        The stored reference — a CDN URL for media (``IMAGE``) or a
         ``<:name:id>`` string for an inline emoji (``EMOJI``). ``None``
         when the asset isn't published yet (no asset guild/channel
         configured or a pending re-sync). Raises ``KeyError`` for an

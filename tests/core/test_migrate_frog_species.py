@@ -15,7 +15,7 @@ from pathlib import Path
 import hikari
 
 from cazzubot import CazzuBot, Config
-from cazzubot.models import FrogState, SpeciesKey
+from cazzubot.models import FrogState, FrogItemKey
 from scripts.migrate_frog_species import (
     DEFAULT_SPECIES_KEY,
     migrate,
@@ -96,9 +96,9 @@ def test_migrate_folds_into_default_species(tmp_path: Path) -> None:
             "SELECT uid, item, qty FROM inventory ORDER BY uid, item"
         ).fetchall()
         assert rows == [
-            (1, "frog:leaf_frog:frozen", 2),
-            (1, "frog:leaf_frog:normal", 3),
-            (2, "frog:leaf_frog:frozen", 1),
+            (1, "frog:basic:frozen", 2),
+            (1, "frog:basic:normal", 3),
+            (2, "frog:basic:frozen", 1),
         ], rows
         # member_frog keeps only the lifetime capture counter
         columns = {
@@ -124,7 +124,7 @@ def test_migrate_folds_into_default_species(tmp_path: Path) -> None:
             "PRAGMA table_info(member_frog_log)"
         ).fetchall()
         type_default = next(r for r in info if r[1] == "type")
-        assert type_default[4] == "'leaf_frog'"
+        assert type_default[4] == "'basic'"
         assert needs_migration(conn) is False
     finally:
         conn.close()
@@ -180,13 +180,13 @@ async def test_migrated_db_boots_new_code(tmp_path: Path) -> None:
 
         assert (
             await frog_db.get_inventory(
-                instance.db, 1, SpeciesKey.LEAF_FROG, FrogState.NORMAL
+                instance.db, 1, FrogItemKey.BASIC, FrogState.NORMAL
             )
             == 3
         )
         assert (
             await frog_db.get_inventory(
-                instance.db, 2, SpeciesKey.LEAF_FROG, FrogState.FROZEN
+                instance.db, 2, FrogItemKey.BASIC, FrogState.FROZEN
             )
             == 1
         )

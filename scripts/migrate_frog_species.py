@@ -7,7 +7,7 @@ generic inventory (``cazzubot/inventory.py`` — frog stacks as
 ``frog:<species>:<state>`` items) and stores the species key in
 ``member_frog_log.type``. Species themselves are code-defined
 (``plugins/frogs/species.py``), so no species rows are created — the
-legacy quantities fold into the default species' (``leaf_frog``)
+legacy quantities fold into the default species' (``basic``)
 inventory.
 
 Run this while the bot is stopped, BEFORE booting the new code (the
@@ -34,8 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _log = logging.getLogger("migrate_frog_species")
 
-# mirrors plugins/frogs/species.py SpeciesKey.LEAF_FROG.value
-DEFAULT_SPECIES_KEY = "leaf_frog"
+# mirrors plugins/frogs/species.py FrogItemKey.BASIC.value
+DEFAULT_SPECIES_KEY = "basic"
 
 # The generic inventory DDL, mirroring cazzubot/inventory.py exactly: the
 # boot-time schema guard compares column order, defaults and the
@@ -58,7 +58,7 @@ MEMBER_FROG_LOG_DDL = """
 CREATE TABLE member_frog_log_new (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     uid        INTEGER NOT NULL,
-    type       TEXT NOT NULL DEFAULT 'leaf_frog',
+    type       TEXT NOT NULL DEFAULT 'basic',
     at         TEXT NOT NULL,
     waited_for REAL
 )

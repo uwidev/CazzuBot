@@ -16,7 +16,7 @@ import pendulum
 
 from cazzubot import inventory
 from cazzubot.db import Database
-from cazzubot.models import FrogState, SpeciesKey
+from cazzubot.models import FrogState, FrogItemKey
 from cazzubot.settings import Settings
 from cazzubot.utils import rank_rows, season_bounds
 
@@ -33,7 +33,7 @@ SCHEMA = [
 	CREATE TABLE IF NOT EXISTS member_frog_log (
 		id         INTEGER PRIMARY KEY AUTOINCREMENT,
 		uid        INTEGER NOT NULL,
-		type       TEXT NOT NULL DEFAULT 'leaf_frog',
+		type       TEXT NOT NULL DEFAULT 'basic',
 		at         TEXT NOT NULL,
 		waited_for REAL
 	)
@@ -106,7 +106,7 @@ class FrogItem:
     identifies a stack.
     """
 
-    species: SpeciesKey
+    species: FrogItemKey
     state: FrogState
 
     @property
@@ -118,13 +118,13 @@ class FrogItem:
     def parse(cls, key: str) -> FrogItem:
         """Build a FrogItem from a stored inventory item string."""
         _, species, state = key.split(":")
-        return cls(species=SpeciesKey(species), state=FrogState(state))
+        return cls(species=FrogItemKey(species), state=FrogState(state))
 
 
 async def get_inventory(
     db: Database,
     uid: int,
-    species_key: SpeciesKey,
+    species_key: FrogItemKey,
     state: FrogState = FrogState.NORMAL,
 ) -> int:
     """A member's stack of ``species`` in ``state``."""
@@ -134,7 +134,7 @@ async def get_inventory(
 async def modify_inventory(
     db: Database,
     uid: int,
-    species_key: SpeciesKey,
+    species_key: FrogItemKey,
     state: FrogState,
     modify: int,
 ) -> None:
@@ -144,7 +144,7 @@ async def modify_inventory(
 
 async def inventory_rows(
     db: Database, uid: int
-) -> list[tuple[SpeciesKey, FrogState, int]]:
+) -> list[tuple[FrogItemKey, FrogState, int]]:
     """A member's whole frog inventory: [(species_key, state, qty)]."""
     rows = await inventory.rows(db, uid, prefix="frog:")
     return [
@@ -225,7 +225,7 @@ async def add_capture_log(
     at: pendulum.DateTime,
     *,
     waited_for: float,
-    species_key: SpeciesKey,
+    species_key: FrogItemKey,
 ) -> None:
     """Log one capture with the species and wait time."""
     await db.execute(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from cazzubot.models import FrogState, SpeciesKey
+from cazzubot.models import FrogState, FrogItemKey
 
 from plugins.frogs import plugin as frog_plugin
 from plugins.frogs.assets import FrogAsset
@@ -18,8 +18,8 @@ from plugins.frogs.species import (
 
 
 def test_default_species_is_leaf_frog() -> None:
-    assert DEFAULT_SPECIES_KEY is SpeciesKey.LEAF_FROG
-    leaf = by_key(SpeciesKey.LEAF_FROG)
+    assert DEFAULT_SPECIES_KEY is FrogItemKey.BASIC
+    leaf = by_key(FrogItemKey.BASIC)
     assert leaf is not None
     # the entity sheds consume data — the legacy 10/3 values moved to the
     # item definitions (leaf normal/frozen give 10/3)
@@ -31,8 +31,8 @@ def test_default_species_is_leaf_frog() -> None:
 
 def test_catalog_is_single_species() -> None:
     """Right now only the normal Leaf Frog spawns — no extra species."""
-    assert [species.key for species in SPECIES] == [SpeciesKey.LEAF_FROG]
-    assert by_key(SpeciesKey.LEAF_FROG) is not None
+    assert [species.key for species in SPECIES] == [FrogItemKey.BASIC]
+    assert by_key(FrogItemKey.BASIC) is not None
 
 
 def test_species_art_is_a_declared_asset_member() -> None:
@@ -44,7 +44,7 @@ def test_species_art_is_a_declared_asset_member() -> None:
 def test_by_key_unknown_returns_none() -> None:
     # every SpeciesKey member is registered; an unknown key cannot be
     # spelled — this documents that by_key stays None-free for valid keys
-    for key in SpeciesKey:
+    for key in FrogItemKey:
         assert by_key(key) is not None, key
 
 

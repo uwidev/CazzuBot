@@ -31,14 +31,14 @@ class BadgeAsset(Enum):
     COMMON = AssetSpec(
         kind=AssetKind.EMOJI, path="assets/badge_common.png"
     )
-    BANNER = AssetSpec(kind=AssetKind.SPECIES, path="assets/banner.png")
+    BANNER = AssetSpec(kind=AssetKind.IMAGE, path="assets/banner.png")
 ```
 
 Choose the kind:
 
 - `AssetKind.EMOJI` — created as a custom emoji in the asset guild,
   referenced as `<:name:id>`. Image must be ≤ 256 KB.
-- `AssetKind.SPECIES` — CDN-published into the asset channel, referenced by
+- `AssetKind.IMAGE` — CDN-published into the asset channel, referenced by
   URL. Good for larger images like banners.
 
 ## 3. Wire it into the plugin
@@ -75,6 +75,11 @@ from .assets import BadgeAsset
 
 ref = await bot.assets.get(BadgeAsset.COMMON)
 ```
+
+An `AssetKind.EMOJI` asset can also back an **item icon**: set the item's
+`icon_asset` to the member (with a static `icon` fallback) and the
+`/inventory` grid resolves the published `<:name:id>` automatically — see
+`docs/add-an-item.md`.
 
 ## Notes
 

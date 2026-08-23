@@ -40,14 +40,14 @@ class FrogState(Enum):
     FROZEN = "frozen"
 
 
-class SpeciesKey(Enum):
+class FrogItemKey(Enum):
     """The valid frog species keys — code references them, never strings.
 
     Lives next to ``FrogState`` because both are stored as TEXT and shared
     across the frogs plugin's modules (and future consumers like badges).
     """
 
-    LEAF_FROG = "leaf_frog"
+    BASIC = "basic"
 
 
 class WelcomeModeEnum(Enum):

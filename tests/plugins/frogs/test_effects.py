@@ -8,7 +8,7 @@ import pendulum
 import pytest
 
 from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogState, SpeciesKey
+from cazzubot.models import FrogState, FrogItemKey
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
@@ -51,7 +51,7 @@ async def test_exp_effect_grants_payload_values(bot: CazzuBot) -> None:
         bot,
         payload,
         uid=_UID,
-        species_key=SpeciesKey.LEAF_FROG,
+        species_key=FrogItemKey.BASIC,
         amount=2,
         state=FrogState.NORMAL,
         now=now,
@@ -67,7 +67,7 @@ async def test_exp_effect_grants_payload_values(bot: CazzuBot) -> None:
         bot,
         payload,
         uid=_UID,
-        species_key=SpeciesKey.LEAF_FROG,
+        species_key=FrogItemKey.BASIC,
         amount=1,
         state=FrogState.FROZEN,
         now=now,
@@ -85,7 +85,7 @@ async def test_exp_effect_catch_is_a_noop(bot: CazzuBot) -> None:
         bot,
         ExpPayload(exp=10, frozen_exp=3),
         uid=_UID,
-        species_key=SpeciesKey.LEAF_FROG,
+        species_key=FrogItemKey.BASIC,
         now=pendulum.now("UTC"),
     )
     # nothing to assert beyond not raising — no log rows, no inventory
@@ -98,7 +98,7 @@ async def test_exp_effect_rejects_wrong_payload(bot: CazzuBot) -> None:
             bot,
             cast(Any, _WrongPayload()),
             uid=_UID,
-            species_key=SpeciesKey.LEAF_FROG,
+            species_key=FrogItemKey.BASIC,
             amount=1,
             state=FrogState.NORMAL,
             now=pendulum.now("UTC"),
@@ -132,7 +132,7 @@ async def test_capture_dispatches_species_payload(
         payload: object,
         *,
         uid: int,
-        species_key: SpeciesKey,
+        species_key: FrogItemKey,
         now: object,
     ) -> None:
         calls.append(("catch", bot, payload, uid, species_key))
@@ -141,13 +141,13 @@ async def test_capture_dispatches_species_payload(
     monkeypatch.setattr(EffectKey.EXP.value, "catch", fake_catch)
 
     spawned = Species(
-        key=SpeciesKey.LEAF_FROG,
+        key=FrogItemKey.BASIC,
         name="Sparkle Frog",
         rarity="common",
         description="Crackles with static.",
         spawn_weight=1.0,
         catch_effect=ExpPayload(exp=5, frozen_exp=1),
-        art=FrogAsset.LEAF_FROG,
+        art=FrogAsset.FROG_BASIC,
     )
     from plugins.frogs.species import by_key as real_by_key
 
@@ -155,12 +155,12 @@ async def test_capture_dispatches_species_payload(
         factory,
         "by_key",
         lambda key: (
-            spawned if key is SpeciesKey.LEAF_FROG else real_by_key(key)
+            spawned if key is FrogItemKey.BASIC else real_by_key(key)
         ),
     )
     await frog_db.set_message(seeded_bot.settings, {"content": "ok"})
 
-    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
     mctx = FakeMenuContext(
         FakeInteraction(id=1, member=author, channel_id=99)
     )
@@ -173,7 +173,7 @@ async def test_capture_dispatches_species_payload(
     assert isinstance(payload, ExpPayload)
     # the species' own catch payload instance flowed through
     assert payload.exp == 5 and payload.frozen_exp == 1
-    assert uid == _UID and species_key is SpeciesKey.LEAF_FROG
+    assert uid == _UID and species_key is FrogItemKey.BASIC
 
 
 async def test_frog_item_consume_grants_exp_and_reports(
@@ -192,7 +192,7 @@ async def test_frog_item_consume_grants_exp_and_reports(
         received.append(event)
 
     bot.events.on(FrogConsumedEvent, on_consumed)
-    consume = FrogItems.LEAF_NORMAL.value.consume
+    consume = FrogItems.BASIC.value.consume
     assert consume is not None
     await consume(bot, _UID, 2)
 
@@ -205,6 +205,6 @@ async def test_frog_item_consume_grants_exp_and_reports(
     )  # 10 exp/unit * 2
     assert len(received) == 1
     assert received[0].uid == _UID
-    assert received[0].species_key is SpeciesKey.LEAF_FROG
+    assert received[0].species_key is FrogItemKey.BASIC
     assert received[0].amount == 2
     assert received[0].state is FrogState.NORMAL

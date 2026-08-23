@@ -23,7 +23,7 @@ import pendulum
 
 from cazzubot import templates, utils
 from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogState, MemberSnapshot, SpeciesKey
+from cazzubot.models import FrogState, MemberSnapshot, FrogItemKey
 from cazzubot.scheduler import InChaotic
 
 from . import db as frog_db
@@ -83,7 +83,7 @@ async def spawn_and_wait(
     ctx: lightbulb.Context | None = None,
     *,
     cid: int,
-    species_key: SpeciesKey | None = None,
+    species_key: FrogItemKey | None = None,
 ) -> bool:
     """Spawn a frog and wait for someone to capture it.
 
@@ -134,7 +134,7 @@ async def spawn_and_wait(
     return menu.captured
 
 
-async def _frog_content(bot: CazzuBot, species_key: SpeciesKey) -> str:
+async def _frog_content(bot: CazzuBot, species_key: FrogItemKey) -> str:
     """The spawned frog's message text: its art URL, else the species name.
 
     When the species' art asset isn't published (no asset channel configured,
@@ -226,7 +226,7 @@ class FrogCatchMenu(lightbulb.components.Menu):
     """
 
     def __init__(
-        self, bot: CazzuBot, cid: int, species_key: SpeciesKey
+        self, bot: CazzuBot, cid: int, species_key: FrogItemKey
     ) -> None:
         """Build the capture button and remember the catch target."""
         super().__init__()

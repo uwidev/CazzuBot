@@ -9,7 +9,9 @@ Every item has:
 
 - an immutable **`item_id`** (the string stored in the ledger — renaming it
   is a migration), and
-- a `display_name` and `icon` (an emoji tag or URL shown in `/inventory`), and
+- a `display_name` and `icon` (an emoji tag or URL shown in `/inventory`; an
+  optional `icon_asset` can back the icon with a published custom emoji — see
+  "Use an emoji asset as the icon" below), and
 - an optional **`consume`** behavior.
 
 This example adds a **`gold_coin`** item to a `badges` plugin.
@@ -70,7 +72,38 @@ await bot.inventory.modify(uid, BadgeItems.GOLD_COIN, -1)
 
 Members see items in `/inventory view` automatically.
 
-## 4. Make it consumable (optional)
+## 4. Use an emoji asset as the icon (optional)
+
+A static `icon` string is enough for Unicode emojis, but a **custom emoji
+asset** (see `docs/add-an-asset.md`) can back the icon instead: declare it
+with `AssetKind.EMOJI`, point the item's `icon_asset` at the member, and keep
+`icon` as the fallback glyph. The inventory view resolves the published
+`<:name:id>` at render time (via `bot.assets.get`) and falls back to `icon`
+until the asset is published.
+
+`plugins/badges/items.py`:
+
+```python
+from enum import Enum
+
+from cazzubot import Item
+
+from .assets import BadgeAsset
+
+
+class BadgeItems(Enum):
+    GOLD_COIN = Item(
+        item_id="badge:gold_coin",
+        display_name="Gold Coin",
+        icon="🪙",  # fallback while the emoji asset is unpublished
+        icon_asset=BadgeAsset.COIN_EMOJI,
+    )
+```
+
+The asset must be EMOJI-kind (not a CDN media asset) — embed field values
+render an emoji tag, not a URL image.
+
+## 5. Make it consumable (optional)
 
 Give the item a `consume` handler and enable consumption:
 

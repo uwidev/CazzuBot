@@ -16,7 +16,7 @@ import pendulum
 import pytest
 
 from cazzubot import CazzuBot, Config
-from cazzubot.models import FrogState, SpeciesKey
+from cazzubot.models import FrogState, FrogItemKey
 from cazzubot.plugin import Plugin
 from cazzubot.scheduler import TaskPolicy
 from plugins.experience import db as exp_db
@@ -242,7 +242,7 @@ async def test_data_persists_across_reopen(tmp_path: Path) -> None:
     await exp_db.add_exp_log(bot1.db, _UID, 80, now)
     await exp_db.sync_with_exp_logs(bot1.db)
     await frog_db.modify_inventory(
-        bot1.db, _UID, SpeciesKey.LEAF_FROG, FrogState.FROZEN, 5
+        bot1.db, _UID, FrogItemKey.BASIC, FrogState.FROZEN, 5
     )
     await bot1.settings.set("welcome.message", {"content": "hi {name}"})
     await _shutdown(bot1)
@@ -254,7 +254,7 @@ async def test_data_persists_across_reopen(tmp_path: Path) -> None:
         assert member is not None and member.lifetime == 80
         assert (
             await frog_db.get_inventory(
-                bot2.db, _UID, SpeciesKey.LEAF_FROG, FrogState.FROZEN
+                bot2.db, _UID, FrogItemKey.BASIC, FrogState.FROZEN
             )
             == 5
         )

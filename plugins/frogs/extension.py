@@ -11,7 +11,7 @@ import pendulum
 from cazzubot import leaderboard, templates, timeparse, utils
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
-from cazzubot.models import FrogState, SpeciesKey
+from cazzubot.models import FrogState, FrogItemKey
 from cazzubot.window import command_window, window_success
 
 from . import db as frog_db
@@ -43,12 +43,12 @@ def _species_option(
     )
 
 
-def _species_key(value: str | None) -> SpeciesKey | None:
+def _species_key(value: str | None) -> FrogItemKey | None:
     """Parse a slash option's species string; None rolls at spawn."""
     if value is None:
         return None
     try:
-        return SpeciesKey(value)
+        return FrogItemKey(value)
     except ValueError as err:
         raise UserInputError(f"Unknown frog species: {value}") from err
 

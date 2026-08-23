@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Protocol
 
 import pendulum
 
-from cazzubot.models import FrogState, MemberExpLogSourceEnum, SpeciesKey
+from cazzubot.models import FrogState, MemberExpLogSourceEnum, FrogItemKey
 
 from plugins.experience import db as exp_db
 
@@ -67,7 +67,7 @@ class Effect(Protocol):
         payload: EffectPayload,
         *,
         uid: int,
-        species_key: SpeciesKey,
+        species_key: FrogItemKey,
         now: pendulum.DateTime,
     ) -> None:
         """Handle the effect's catch side (a protocol contract; each effect
@@ -80,7 +80,7 @@ class Effect(Protocol):
         payload: EffectPayload,
         *,
         uid: int,
-        species_key: SpeciesKey,
+        species_key: FrogItemKey,
         amount: int,
         state: FrogState,
         now: pendulum.DateTime,
@@ -99,7 +99,7 @@ class ExpEffect:
         payload: EffectPayload,
         *,
         uid: int,
-        species_key: SpeciesKey,
+        species_key: FrogItemKey,
         now: pendulum.DateTime,
     ) -> None:
         """No catch behavior — exp is granted on consume only."""
@@ -111,7 +111,7 @@ class ExpEffect:
         payload: EffectPayload,
         *,
         uid: int,
-        species_key: SpeciesKey,
+        species_key: FrogItemKey,
         amount: int,
         state: FrogState,
         now: pendulum.DateTime,

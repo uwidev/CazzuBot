@@ -37,10 +37,10 @@ async def asset_db(db: Database) -> Database:
 
 class _FrogAsset(Enum):
     LEAF_FROG = AssetSpec(
-        kind=AssetKind.SPECIES, path="assets/leaf_frog.png"
+        kind=AssetKind.IMAGE, path="assets/leaf_frog.png"
     )
     CLASSY_FROG = AssetSpec(
-        kind=AssetKind.SPECIES, path="assets/classy_frog.webp"
+        kind=AssetKind.IMAGE, path="assets/classy_frog.webp"
     )
 
 
@@ -203,7 +203,7 @@ async def test_get_unknown_asset_raises(
     await assets.reconcile()
 
     class _GhostAsset(Enum):
-        GHOST = AssetSpec(kind=AssetKind.SPECIES, path="assets/ghost.png")
+        GHOST = AssetSpec(kind=AssetKind.IMAGE, path="assets/ghost.png")
 
     with pytest.raises(KeyError, match="GHOST"):
         await assets.get(_GhostAsset.GHOST)
@@ -218,7 +218,7 @@ _LeafOnly = Enum(
     "_FrogAsset",
     {
         "LEAF_FROG": AssetSpec(
-            kind=AssetKind.SPECIES, path="assets/leaf_frog.png"
+            kind=AssetKind.IMAGE, path="assets/leaf_frog.png"
         )
     },
 )
@@ -624,7 +624,7 @@ async def test_reconcile_kind_change_republishes_as_emoji(
 ) -> None:
     """Re-declaring an asset as EMOJI re-queues it and re-publishes as one.
 
-    Regression for the reported flow: changing ``AssetKind.SPECIES`` →
+    Regression for the reported flow: changing ``AssetKind.IMAGE`` →
     ``AssetKind.EMOJI`` on the same enum member (same key, unchanged file)
     must update the stored kind and reset ``url`` so ``sync_cdn`` creates a
     guild emoji instead of re-uploading to the channel as media.
@@ -635,7 +635,7 @@ async def test_reconcile_kind_change_republishes_as_emoji(
         "_GlyphAsset",
         {
             "GLYPH": AssetSpec(
-                kind=AssetKind.SPECIES, path="assets/glyph.png"
+                kind=AssetKind.IMAGE, path="assets/glyph.png"
             )
         },
     )
@@ -678,7 +678,7 @@ async def test_reconcile_kind_change_republishes_as_emoji(
         str(tmp_path),
     )
 
-    # first pass: registered as SPECIES media and published as a CDN url
+    # first pass: registered as IMAGE media and published as a CDN url
     await assets.reconcile()
     await assets.sync_cdn(cast(Any, None))
     key = asset_key(_SpeciesGlyph.GLYPH)
@@ -686,7 +686,7 @@ async def test_reconcile_kind_change_republishes_as_emoji(
         "SELECT kind, url FROM asset WHERE key = ?", key
     )
     assert row is not None
-    assert row["kind"] == "species"
+    assert row["kind"] == "image"
     assert row["url"] is not None  # published as media
 
     # re-declare the same key as EMOJI — file bytes unchanged

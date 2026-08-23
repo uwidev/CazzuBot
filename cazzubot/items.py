@@ -55,7 +55,11 @@ class Item:
     - ``item_id`` — the **immutable oracle**: this exact string is what's
       stored in ``inventory.item``. Never rename without a migration.
     - ``display_name`` — mutable, user-facing (inventory/profile).
-    - ``icon`` — an emoji tag (or URL) rendered inline in ``/inventory``.
+    - ``icon`` — the static glyph rendered inline in ``/inventory`` (an
+      emoji tag or URL).
+    - ``icon_asset`` — optional EMOJI-kind asset member whose published
+      ``<:name:id>`` reference *replaces* ``icon`` at render time; falls
+      back to ``icon`` while the asset is unpublished (get() -> None).
     - ``consume`` — optional item-owned behavior when consumed (None = not
       directly consumable). Signature: ``async (bot, uid, amount) -> None``.
     """
@@ -63,6 +67,7 @@ class Item:
     item_id: str
     display_name: str
     icon: str
+    icon_asset: Enum | None = None
     consume: Callable[["CazzuBot", int, int], Awaitable[None]] | None = (
         None
     )

@@ -25,12 +25,12 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from cazzubot.models import SpeciesKey
+from cazzubot.models import FrogItemKey
 
 from .assets import FrogAsset
 from .effects import EffectPayload
 
-DEFAULT_SPECIES_KEY = SpeciesKey.LEAF_FROG
+DEFAULT_SPECIES_KEY = FrogItemKey.BASIC
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +44,7 @@ class Species:
     here.
     """
 
-    key: SpeciesKey
+    key: FrogItemKey
     name: str
     rarity: str
     description: str
@@ -55,22 +55,22 @@ class Species:
 
 SPECIES: tuple[Species, ...] = (
     Species(
-        key=SpeciesKey.LEAF_FROG,
+        key=FrogItemKey.BASIC,
         name="Leaf Frog",
         rarity="common",
         description="A perfectly ordinary frog.",
         spawn_weight=1.0,
         catch_effect=None,
-        art=FrogAsset.LEAF_FROG,
+        art=FrogAsset.FROG_BASIC,
     ),
 )
 
-_BY_KEY: dict[SpeciesKey, Species] = {
+_BY_KEY: dict[FrogItemKey, Species] = {
     species.key: species for species in SPECIES
 }
 
 
-def by_key(key: SpeciesKey) -> Species | None:
+def by_key(key: FrogItemKey) -> Species | None:
     """The species for ``key`` (None when unknown)."""
     return _BY_KEY.get(key)
 

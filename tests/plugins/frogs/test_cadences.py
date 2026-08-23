@@ -10,7 +10,7 @@ from __future__ import annotations
 import pendulum
 
 from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogState, SpeciesKey
+from cazzubot.models import FrogState, FrogItemKey
 from plugins.frogs import db as frog_db
 from plugins.frogs import (
     FrogsPlugin,
@@ -22,17 +22,15 @@ from plugins.frogs import (
 
 async def test_quarterly_reset_freezes_frogs(bot: CazzuBot) -> None:
     await frog_db.modify_inventory(
-        bot.db, 1, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 3
+        bot.db, 1, FrogItemKey.BASIC, FrogState.NORMAL, 3
     )
 
     await on_quarterly_due(bot, {})
 
-    assert (
-        await frog_db.get_inventory(bot.db, 1, SpeciesKey.LEAF_FROG) == 0
-    )
+    assert await frog_db.get_inventory(bot.db, 1, FrogItemKey.BASIC) == 0
     assert (
         await frog_db.get_inventory(
-            bot.db, 1, SpeciesKey.LEAF_FROG, FrogState.FROZEN
+            bot.db, 1, FrogItemKey.BASIC, FrogState.FROZEN
         )
         == 3
     )
@@ -41,18 +39,16 @@ async def test_quarterly_reset_freezes_frogs(bot: CazzuBot) -> None:
 async def test_quarterly_reset_is_idempotent(bot: CazzuBot) -> None:
     """Re-freezing is a no-op — safe for retries and late catch-up."""
     await frog_db.modify_inventory(
-        bot.db, 1, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 3
+        bot.db, 1, FrogItemKey.BASIC, FrogState.NORMAL, 3
     )
 
     await on_quarterly_due(bot, {})
     await on_quarterly_due(bot, {})
 
-    assert (
-        await frog_db.get_inventory(bot.db, 1, SpeciesKey.LEAF_FROG) == 0
-    )
+    assert await frog_db.get_inventory(bot.db, 1, FrogItemKey.BASIC) == 0
     assert (
         await frog_db.get_inventory(
-            bot.db, 1, SpeciesKey.LEAF_FROG, FrogState.FROZEN
+            bot.db, 1, FrogItemKey.BASIC, FrogState.FROZEN
         )
         == 3
     )
@@ -61,14 +57,14 @@ async def test_quarterly_reset_is_idempotent(bot: CazzuBot) -> None:
 async def test_quarterly_due_freezes_and_rearms(bot: CazzuBot) -> None:
     """Every fire is a rollover by construction — the freeze is unconditional."""
     await frog_db.modify_inventory(
-        bot.db, 1, SpeciesKey.LEAF_FROG, FrogState.NORMAL, 2
+        bot.db, 1, FrogItemKey.BASIC, FrogState.NORMAL, 2
     )
 
     await on_quarterly_due(bot, {})
 
     assert (
         await frog_db.get_inventory(
-            bot.db, 1, SpeciesKey.LEAF_FROG, FrogState.FROZEN
+            bot.db, 1, FrogItemKey.BASIC, FrogState.FROZEN
         )
         == 2
     )
@@ -110,7 +106,7 @@ async def test_daily_frog_due_resyncs_and_rearms(bot: CazzuBot) -> None:
     now = pendulum.now("UTC")
     await frog_db.modify_capture(bot.db, 1, modify=5)  # stale count
     await frog_db.add_capture_log(
-        bot.db, 1, now, waited_for=1.5, species_key=SpeciesKey.LEAF_FROG
+        bot.db, 1, now, waited_for=1.5, species_key=FrogItemKey.BASIC
     )
     await bot.scheduler.add(
         "daily.frog", pendulum.now("UTC").subtract(seconds=1)

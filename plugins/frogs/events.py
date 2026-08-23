@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cazzubot.models import FrogState, SpeciesKey
+from cazzubot.models import FrogState, FrogItemKey
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,7 +30,7 @@ class FrogCapturedEvent:
     """
 
     uid: int
-    species_key: SpeciesKey
+    species_key: FrogItemKey
     at: str  # ISO-8601 UTC
 
 
@@ -43,7 +43,7 @@ class FrogConsumedEvent:
     """
 
     uid: int
-    species_key: SpeciesKey
+    species_key: FrogItemKey
     amount: int
     state: FrogState
     at: str  # ISO-8601 UTC

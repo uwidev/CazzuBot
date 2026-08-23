@@ -10,7 +10,7 @@ import pytest
 
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
-from cazzubot.models import SpeciesKey
+from cazzubot.models import FrogItemKey
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.events import FrogCapturedEvent
@@ -100,7 +100,7 @@ async def test_frog_catch_captures_once(
     await frog_db.set_message(
         seeded_bot.settings, {"content": "caught {species} by {name}"}
     )
-    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
     interaction = FakeInteraction(id=1, member=author, channel_id=99)
     mctx = FakeMenuContext(interaction)
 
@@ -128,9 +128,7 @@ async def test_frog_catch_captures_once(
         created[0].create_kwargs["mentions_everyone"] is hikari.UNDEFINED
     )
     assert (
-        await frog_db.get_inventory(
-            seeded_bot.db, _UID, SpeciesKey.LEAF_FROG
-        )
+        await frog_db.get_inventory(seeded_bot.db, _UID, FrogItemKey.BASIC)
         == 1
     )
     # capture log records the species key
@@ -138,7 +136,7 @@ async def test_frog_catch_captures_once(
         await seeded_bot.db.fetchval(
             "SELECT type FROM member_frog_log WHERE uid = ?", _UID
         )
-        == "leaf_frog"
+        == "basic"
     )
 
     # second click is denied
@@ -152,7 +150,7 @@ async def test_frog_catch_default_embed_when_no_message(
 ) -> None:
     """No ``frog.message`` template: the built-in capture embed is sent,
     never a blank message."""
-    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
     mctx = FakeMenuContext(
         FakeInteraction(id=1, member=author, channel_id=99)
     )
@@ -171,9 +169,7 @@ async def test_frog_catch_default_embed_when_no_message(
     assert created[0].create_kwargs["role_mentions"] is hikari.UNDEFINED
     # and the +1 still hit inventory
     assert (
-        await frog_db.get_inventory(
-            seeded_bot.db, _UID, SpeciesKey.LEAF_FROG
-        )
+        await frog_db.get_inventory(seeded_bot.db, _UID, FrogItemKey.BASIC)
         == 1
     )
 
@@ -187,7 +183,7 @@ async def test_frog_catch_message_allowed_mentions_false_never_pings(
         seeded_bot.settings,
         {"content": "caught {mention}", "allowed_mentions": False},
     )
-    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
     mctx = FakeMenuContext(
         FakeInteraction(id=1, member=author, channel_id=99)
     )
@@ -214,7 +210,7 @@ async def test_frog_catch_default_embed_uses_banner_thumbnail(
         "https://cdn.example/catch_banner.png",
         "FrogAsset.CATCH_BANNER",
     )
-    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
     mctx = FakeMenuContext(
         FakeInteraction(id=1, member=author, channel_id=99)
     )
@@ -237,7 +233,7 @@ async def test_frog_catch_emits_captured_event(
     seeded_bot.events.on(FrogCapturedEvent, on_captured)
     await frog_db.set_message(seeded_bot.settings, {"content": "ok"})
 
-    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
     mctx = FakeMenuContext(
         FakeInteraction(id=1, member=author, channel_id=99)
     )
@@ -245,22 +241,22 @@ async def test_frog_catch_emits_captured_event(
 
     assert len(received) == 1
     assert received[0].uid == _UID
-    assert received[0].species_key is SpeciesKey.LEAF_FROG
+    assert received[0].species_key is FrogItemKey.BASIC
 
 
 async def test_frog_catch_button_carries_species(
     seeded_bot: CazzuBot, author: FakeMember
 ) -> None:
     """The custom_id embeds the species so the boot sweep still matches."""
-    menu = factory.FrogCatchMenu(seeded_bot, 99, SpeciesKey.LEAF_FROG)
+    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
     button = menu_button(menu)
-    assert button.custom_id == "frog:catch:99:leaf_frog"
+    assert button.custom_id == "frog:catch:99:basic"
     assert factory._is_frog_message(  # pyright: ignore[reportPrivateUsage]
-        _frog_message(99, 1, "frog:catch:99:leaf_frog"), 99
+        _frog_message(99, 1, "frog:catch:99:basic"), 99
     )
     # channel prefixes stay apart: frog:catch:99: never matches channel 999
     assert not factory._is_frog_message(  # pyright: ignore[reportPrivateUsage]
-        _frog_message(999, 1, "frog:catch:99:leaf_frog"), 999
+        _frog_message(999, 1, "frog:catch:99:basic"), 999
     )
 
 
@@ -387,7 +383,7 @@ async def test_cleanup_dangling_frogs(
         fake_rest.messages[(channel.id, mid)] = _frog_message(
             channel.id,
             mid,
-            f"frog:catch:{channel.id}:leaf_frog" if with_button else None,
+            f"frog:catch:{channel.id}:basic" if with_button else None,
         )
 
     await factory.cleanup_dangling_frogs(seeded_bot)

@@ -11,7 +11,7 @@ from __future__ import annotations
 import hikari
 
 from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogState, SpeciesKey
+from cazzubot.models import FrogState, FrogItemKey
 from tests.driver import run_slash
 
 
@@ -19,10 +19,10 @@ async def _seed_frogs(bot: CazzuBot, uid: int) -> None:
     from plugins.frogs.db import FrogItem
 
     await bot.inventory.add(
-        uid, FrogItem(SpeciesKey.LEAF_FROG, FrogState.NORMAL), 3
+        uid, FrogItem(FrogItemKey.BASIC, FrogState.NORMAL), 3
     )
     await bot.inventory.add(
-        uid, FrogItem(SpeciesKey.LEAF_FROG, FrogState.FROZEN), 1
+        uid, FrogItem(FrogItemKey.BASIC, FrogState.FROZEN), 1
     )
 
 
@@ -36,7 +36,9 @@ async def test_inventory_grid_shows_numbered_slots(
 
     assert result.exceptions == []
     assert result.response_type == hikari.ResponseType.MESSAGE_CREATE
-    embed = result.first_response.get("embed")
+    first_response = result.first_response
+    assert first_response is not None
+    embed = first_response.get("embed")
     assert embed is not None
 
     # namespace header + one field per stack (ORDER BY item → frozen first);
@@ -51,12 +53,42 @@ async def test_inventory_grid_shows_numbered_slots(
     assert slot_names == ["1", "2"]
 
 
+async def test_inventory_grid_uses_published_asset_emoji(
+    full_bot: CazzuBot,
+) -> None:
+    """A published EMOJI-kind icon_asset replaces the static item icon."""
+    from cazzubot.assets import asset_key
+    from plugins.frogs.assets import FrogAsset
+
+    await _seed_frogs(full_bot, 424242)
+    # simulate a published asset (offline tests seed rows with NULL url —
+    # the "not published yet" state that exercises the fallback instead)
+    await full_bot.db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        "<:frog_basic:123456789012345678>",
+        asset_key(FrogAsset.FROG_BASIC),
+    )
+
+    result = await run_slash(full_bot, "inventory view", user_id=424242)
+
+    assert result.exceptions == []
+    first_response = result.first_response
+    assert first_response is not None
+    embed = first_response.get("embed")
+    assert embed is not None
+    values = [field.value for field in embed.fields]
+    assert "<:frog_basic:123456789012345678> ×1" in values
+    assert "<:frog_basic:123456789012345678> ×3" in values
+
+
 async def test_inventory_empty_state(full_bot: CazzuBot) -> None:
     """A member with no holdings sees the empty state, not an error."""
     result = await run_slash(full_bot, "inventory view", user_id=424242)
 
     assert result.exceptions == []
-    embed = result.first_response.get("embed")
+    first_response = result.first_response
+    assert first_response is not None
+    embed = first_response.get("embed")
     assert embed is not None
     assert embed.description is not None
     assert "empty" in embed.description

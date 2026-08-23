@@ -18,7 +18,7 @@ from typing import Any, cast
 import pendulum
 
 from cazzubot import utils
-from cazzubot.models import SpeciesKey
+from cazzubot.models import FrogItemKey
 from plugins.experience.extension import TopMenu
 from plugins.frogs import factory
 from plugins.poll.extension import PollModal
@@ -57,9 +57,7 @@ def test_top_menu_builds() -> None:
 
 def test_frog_catch_menu_builds() -> None:
     _assert_builds(
-        factory.FrogCatchMenu(
-            cast(Any, object()), 99, SpeciesKey.LEAF_FROG
-        )
+        factory.FrogCatchMenu(cast(Any, object()), 99, FrogItemKey.BASIC)
     )
 
 

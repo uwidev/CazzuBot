@@ -1,7 +1,9 @@
 """Inventory plugin extension — /inventory view and /inventory consume.
 
 ``view`` renders the shared ledger as a numbered inline-emoji grid, resolving
-each stack's icon through the item-definitions registry (``bot.items``);
+each stack's icon through the item-definitions registry (``bot.items``) —
+an item with an ``icon_asset`` uses its published custom-emoji reference
+(``bot.assets.get``), falling back to the static ``icon`` while unpublished;
 unresolved ids (a provider that was unregistered/removed) are hidden rather
 than shown as garbage. ``consume <slot>`` resolves a stack by its derived slot
 number, then runs the item's own consume handler and decrements the stack.
@@ -16,6 +18,7 @@ import lightbulb
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
+from cazzubot.items import Item
 
 loader = lightbulb.Loader()
 
@@ -42,7 +45,7 @@ class View(
         bot = utils.bot_from(ctx)
         target = self.user or ctx.member or ctx.user
         indexed = await bot.inventory.rows_indexed(target.id)
-        embed = _build_grid(bot, indexed, target)
+        embed = await _build_grid(bot, indexed, target)
         await ctx.respond(embed=embed)
 
 
@@ -128,7 +131,7 @@ loader.command(inventory)
 # -- helpers ---------------------------------------------------------------
 
 
-def _build_grid(
+async def _build_grid(
     bot: CazzuBot,
     indexed: list[tuple[int, str, int]],
     target: hikari.PartialUser,
@@ -136,8 +139,11 @@ def _build_grid(
     """The inventory embed: numbered inline-emoji grid across namespaces.
 
     Each non-empty stack resolves its icon through ``bot.items.item_for``;
-    stacks whose id no longer resolves (a provider that was removed from the
-    registry) are hidden instead of shown as raw keys.
+    an item whose ``icon_asset`` points at an EMOJI-kind asset uses the
+    published ``<:name:id>`` reference (falling back to the static ``icon``
+    while the asset is unpublished). Stacks whose id no longer resolves (a
+    provider that was removed from the registry) are hidden instead of
+    shown as raw keys.
     """
     embed = hikari.Embed(color=_COLOR)
     embed.set_author(name=f"{target.display_name}'s Inventory")
@@ -152,11 +158,26 @@ def _build_grid(
         if prefix != current:
             embed.add_field(name="", value=f"**{prefix.upper()}**")
             current = prefix
-        icon = bot.items.item_for(item_id).icon
+        item = bot.items.item_for(item_id)
         embed.add_field(
-            name=str(slot), value=f"{icon} ×{qty}", inline=True
+            name=str(slot),
+            value=f"{await _grid_icon(bot, item)} ×{qty}",
+            inline=True,
         )
     return embed
+
+
+async def _grid_icon(bot: CazzuBot, item: Item) -> str:
+    """The icon glyph for one item: custom-emoji asset when published.
+
+    An ``icon_asset`` (EMOJI-kind) resolves through ``bot.assets.get`` to
+    its published ``<:name:id>``; ``None`` (unpublished: no asset guild
+    configured or a pending re-sync) falls back to the static ``icon``.
+    Items without an ``icon_asset`` always use ``icon``.
+    """
+    if item.icon_asset is not None:
+        return (await bot.assets.get(item.icon_asset)) or item.icon
+    return item.icon
 
 
 async def _slot_entry(

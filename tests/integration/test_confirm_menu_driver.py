@@ -111,7 +111,7 @@ async def test_inventory_consume_confirm(
     await full_bot.db.execute(
         """
 		INSERT OR IGNORE INTO inventory (uid, item, qty)
-		VALUES (424242, 'frog:leaf_frog:normal', 5)
+		VALUES (424242, 'frog:basic:normal', 5)
 		"""
     )
     await full_bot.db.execute(
@@ -145,7 +145,7 @@ async def test_inventory_consume_confirm(
     row = await full_bot.db.fetchone(
         """
 		SELECT qty FROM inventory
-		WHERE uid = 424242 AND item = 'frog:leaf_frog:normal'
+		WHERE uid = 424242 AND item = 'frog:basic:normal'
 		"""
     )
     assert row is not None and row["qty"] == expected_normal
