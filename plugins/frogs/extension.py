@@ -106,7 +106,7 @@ class Catalog(
         # thumbnail: the first species with published art wins the slot
         thumbnail_art: str | None = None
         for species in SPECIES:
-            if thumbnail_art is None:
+            if thumbnail_art is None and species.art is not None:
                 thumbnail_art = await bot.assets.get(species.art)
                 if thumbnail_art is not None:
                     embed.set_thumbnail(thumbnail_art)

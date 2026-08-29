@@ -149,6 +149,7 @@ async def test_capture_dispatches_species_payload(
         description="Crackles with static.",
         spawn_weight=1.0,
         catch_effect=ExpPayload(exp=5, frozen_exp=1),
+        spawn_effect=None,
         art=FrogAsset.FROG_BASIC,
     )
     from plugins.frogs.species import by_key as real_by_key

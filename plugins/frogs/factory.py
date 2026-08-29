@@ -138,11 +138,15 @@ async def _frog_content(bot: CazzuBot, species_key: FrogItemKey) -> str:
     """The spawned frog's message text: its art URL, else the species name.
 
     When the species' art asset isn't published (no asset channel configured,
-    or a missing emoji row) the emoji falls back to the plain name instead of
-    printing "None".
+    or a missing emoji row) — or the species has no art (Cluster) — the
+    text falls back to the plain name instead of printing "None".
     """
     species = by_key(species_key)
-    art = await bot.assets.get(species.art) if species else None
+    art = (
+        await bot.assets.get(species.art)
+        if species is not None and species.art is not None
+        else None
+    )
     return art or (species.name if species is not None else "Frog")
 
 
@@ -183,7 +187,11 @@ async def grant_catch_frog(
             seasonal_cap_old=seasonal - 1,
             seasonal_cap_new=seasonal,
             species=species.name,
-            species_art=(await bot.assets.get(species.art) or ""),
+            species_art=(
+                (await bot.assets.get(species.art) or "")
+                if species.art is not None
+                else ""
+            ),
         )
         payload = templates.build_payload(msg_json)
     else:

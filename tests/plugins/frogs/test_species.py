@@ -17,28 +17,59 @@ from plugins.frogs.species import (
 )
 
 
-def test_default_species_is_leaf_frog() -> None:
+def test_default_species_is_basic() -> None:
     assert DEFAULT_SPECIES_KEY is FrogItemKey.BASIC
-    leaf = by_key(FrogItemKey.BASIC)
-    assert leaf is not None
+    basic = by_key(FrogItemKey.BASIC)
+    assert basic is not None and basic.name == "Basic Frog"
     # the entity sheds consume data — the legacy 10/3 values moved to the
-    # item definitions (leaf normal/frozen give 10/3)
-    assert not hasattr(leaf, "consume_effect")
-    assert not hasattr(leaf, "consumable")
-    assert frog_exp(leaf.key, FrogState.NORMAL) == 10
-    assert frog_exp(leaf.key, FrogState.FROZEN) == 3
+    # item definitions (basic normal/frozen give 10/3)
+    assert not hasattr(basic, "consume_effect")
+    assert not hasattr(basic, "consumable")
+    assert frog_exp(basic.key, FrogState.NORMAL) == 10
+    assert frog_exp(basic.key, FrogState.FROZEN) == 3
 
 
-def test_catalog_is_single_species() -> None:
-    """Right now only the normal Leaf Frog spawns — no extra species."""
-    assert [species.key for species in SPECIES] == [FrogItemKey.BASIC]
-    assert by_key(FrogItemKey.BASIC) is not None
+def test_species_registry_has_frogmd_five() -> None:
+    """FROG.md's five species with their spawn weights are registered."""
+    keys = {species.key for species in SPECIES}
+    assert keys == {
+        FrogItemKey.BASIC,
+        FrogItemKey.POG,
+        FrogItemKey.FROGGERS,
+        FrogItemKey.CLASSY,
+        FrogItemKey.CLUSTER,
+    }
+    weights = {species.key: species.spawn_weight for species in SPECIES}
+    # FROG.md weights (relative)
+    assert weights[FrogItemKey.BASIC] == 1000.0
+    assert weights[FrogItemKey.POG] == 200.0
+    assert weights[FrogItemKey.FROGGERS] == 50.0
+    assert weights[FrogItemKey.CLASSY] == 200.0
+    assert weights[FrogItemKey.CLUSTER] == 300.0
+    # cluster is uncatchable-by-design: no art (spawn_effect wired in Task 5)
+    cluster = by_key(FrogItemKey.CLUSTER)
+    assert cluster is not None and cluster.art is None
 
 
-def test_species_art_is_a_declared_asset_member() -> None:
-    """The reference is the declaration: an asset cannot be misspelled."""
+def test_species_art_is_a_declared_asset_member_or_none() -> None:
+    """The reference is the declaration: an asset cannot be misspelled.
+
+    A species with visible art carries a :class:`FrogAsset` member; an
+    uncatchable species (Cluster) deliberately carries ``None``.
+    """
     for species in SPECIES:
-        assert isinstance(species.art, FrogAsset)
+        if species.art is not None:
+            assert isinstance(species.art, FrogAsset)
+
+
+def test_roll_species_respects_weights() -> None:
+    """The weighted roll lands near the FROG.md distribution."""
+    rng = random.Random(42)
+    rolls = [roll_species(rng).key for _ in range(2000)]
+    basic = rolls.count(FrogItemKey.BASIC) / len(rolls)
+    froggers = rolls.count(FrogItemKey.FROGGERS) / len(rolls)
+    assert 0.50 < basic < 0.65  # 1000/1750 ≈ 0.571 within noise
+    assert 0.01 < froggers < 0.08  # 50/1750 ≈ 0.029
 
 
 def test_by_key_unknown_returns_none() -> None:

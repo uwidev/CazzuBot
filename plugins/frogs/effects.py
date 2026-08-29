@@ -54,6 +54,15 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
+def frog_item_key(species_key: FrogItemKey, state: FrogState) -> str:
+    """The inventory item string for a species in a state (one derivation).
+
+    Mirrors ``db.FrogItem.key``, which delegates here, so a consume
+    effect's seam ``source`` is byte-identical to the consumed item id.
+    """
+    return f"frog:{species_key.value}:{state.value}"
+
+
 class EffectPayload(Protocol):
     """A species-side effect configuration.
 

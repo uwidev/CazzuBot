@@ -15,6 +15,7 @@ from plugins.frogs import db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.events import FrogCapturedEvent
 from plugins.frogs.extension import Catalog, Profile, Register
+from plugins.frogs.species import by_key
 from tests.fakes import (
     FakeCache,
     FakeChannel,
@@ -118,7 +119,7 @@ async def test_frog_catch_captures_once(
     assert mctx.sent == []
     created = rest_of(seeded_bot).created
     assert len(created) == 1
-    assert created[0].content == "caught Leaf Frog by cirno"
+    assert created[0].content == "caught Basic Frog by cirno"
     assert created[0].channel_id == 99
     # least-permissive: only the catcher is pinged — explicit user list,
     # no role/@everyone parsing
@@ -261,7 +262,9 @@ async def test_frog_catch_button_carries_species(
 
 
 async def test_on_frog_due_reschedules_and_despawns(
-    seeded_bot: CazzuBot, channel: FakeChannel
+    seeded_bot: CazzuBot,
+    channel: FakeChannel,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await frog_db.set_enabled(seeded_bot.settings, True)
     payload = {
@@ -270,6 +273,11 @@ async def test_on_frog_due_reschedules_and_despawns(
         "persist": 1,
         "fuzzy": 0.5,
     }
+    # five species roll by weight now — pin Basic so the spawn is
+    # deterministic (a rolled Cluster never posts a catchable frog)
+    monkeypatch.setattr(
+        factory, "roll_species", lambda: by_key(FrogItemKey.BASIC)
+    )
 
     await factory.on_frog_due(seeded_bot, payload)
 
@@ -277,7 +285,7 @@ async def test_on_frog_due_reschedules_and_despawns(
     assert len(await seeded_bot.scheduler.get("frog")) == 1
     # frog message sent (a rolled species), then removed when bored
     assert len(channel.sent) == 1
-    assert channel.sent[0]["content"] in {"Leaf Frog", "Classy Frog"}
+    assert channel.sent[0]["content"] == "Basic Frog"
     assert rest_of(seeded_bot).deleted == [(channel.id, 1)]
 
 

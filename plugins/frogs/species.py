@@ -8,8 +8,9 @@ want to avoid). Tuning a species = editing this file and restarting
 
 Keys and references are **typed, never strings**: ``SpeciesKey`` is the
 enum of valid species (the LSP completes it; a typo cannot compile), and
-a species' ``art`` is a :class:`FrogAsset` member — the declaration IS the
-reference, so an undeclared asset cannot be spelled. Strings exist only
+a species' ``art`` is a :class:`FrogAsset` member when it has visible art
+(``None`` for an uncatchable species like Cluster) — the declaration IS
+the reference, so an undeclared asset cannot be spelled. Strings exist only
 at the data boundary (DB columns, slash options, custom ids), converted
 to/from the enums there.
 
@@ -46,6 +47,10 @@ class Species:
     (``items.py::_SPECIES_CONSUME``), so a species carries no consume
     declaration. What a caught frog becomes as an inventory object (its
     item_id, icon, consume behavior) lives on that item, not here.
+
+    ``art`` is optional — an uncatchable species (Cluster) has no visible
+    art. ``catch_effect`` handles the catch side; ``spawn_effect``
+    replaces the catchable frog at spawn time (Cluster's explosion).
     """
 
     key: FrogItemKey
@@ -54,18 +59,60 @@ class Species:
     description: str
     spawn_weight: float
     catch_effect: EffectPayload | None
-    art: FrogAsset
+    spawn_effect: EffectPayload | None
+    art: FrogAsset | None
 
 
 SPECIES: tuple[Species, ...] = (
     Species(
         key=FrogItemKey.BASIC,
-        name="Leaf Frog",
+        name="Basic Frog",
         rarity="common",
-        description="A perfectly ordinary frog.",
-        spawn_weight=1.0,
+        description="The most normalest frog of them all.",
+        spawn_weight=1000.0,
         catch_effect=None,
+        spawn_effect=None,
         art=FrogAsset.FROG_BASIC,
+    ),
+    Species(
+        key=FrogItemKey.POG,
+        name="Pog Frog",
+        rarity="uncommon",
+        description="A frog with a pog.",
+        spawn_weight=200.0,
+        catch_effect=None,
+        spawn_effect=None,
+        art=FrogAsset.FROG_POG,
+    ),
+    Species(
+        key=FrogItemKey.FROGGERS,
+        name="Froggers Frog",
+        rarity="rare",
+        description="A frog with a poggers.",
+        spawn_weight=50.0,
+        catch_effect=None,
+        spawn_effect=None,
+        art=FrogAsset.FROG_FROGGERS,
+    ),
+    Species(
+        key=FrogItemKey.CLASSY,
+        name="Classy Frog",
+        rarity="rare",
+        description="A frog with rather refined tastes.",
+        spawn_weight=200.0,
+        catch_effect=None,
+        spawn_effect=None,
+        art=FrogAsset.FROG_CLASSY,
+    ),
+    Species(
+        key=FrogItemKey.CLUSTER,
+        name="Cluster Frog",
+        rarity="special",
+        description="Be careful with this one… she's… spawning!",
+        spawn_weight=300.0,
+        catch_effect=None,
+        spawn_effect=None,  # ClusterPayload wired in Task 5
+        art=None,
     ),
 )
 

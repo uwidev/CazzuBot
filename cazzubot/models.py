@@ -48,6 +48,10 @@ class FrogItemKey(Enum):
     """
 
     BASIC = "basic"
+    POG = "pog"
+    FROGGERS = "froggers"
+    CLASSY = "classy"
+    CLUSTER = "cluster"
 
 
 class WelcomeModeEnum(Enum):
