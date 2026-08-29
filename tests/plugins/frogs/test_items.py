@@ -21,14 +21,32 @@ from plugins.frogs.events import FrogConsumedEvent
 from plugins.frogs.items import (
     FrogItems,
     _SPECIES_CONSUME,
+    _SPECIES_EXP,
     _consume_blurb,
+    frog_exp,
 )
 
 
-def test_species_consume_composition_is_basic_only() -> None:
-    """Phase 1: no species composes an effect — Basic's tuple is empty."""
-    assert set(_SPECIES_CONSUME) == {FrogItemKey.BASIC}
+def test_species_consume_composition_covers_new_species() -> None:
+    """Every consumable species composes its modifiers; Cluster has none."""
+    assert set(_SPECIES_CONSUME) == {
+        FrogItemKey.BASIC,
+        FrogItemKey.POG,
+        FrogItemKey.FROGGERS,
+        FrogItemKey.CLASSY,
+    }
     assert _SPECIES_CONSUME[FrogItemKey.BASIC] == ()
+
+
+def test_new_species_exp_oracle_values() -> None:
+    """D1/D2 defaults (owner-tunable)."""
+    assert frog_exp(FrogItemKey.POG, FrogState.NORMAL) == 30
+    assert frog_exp(FrogItemKey.FROGGERS, FrogState.NORMAL) == 300
+    assert frog_exp(FrogItemKey.CLASSY, FrogState.NORMAL) == 200
+    assert frog_exp(FrogItemKey.POG, FrogState.FROZEN) == 15
+    assert frog_exp(FrogItemKey.FROGGERS, FrogState.FROZEN) == 150
+    assert frog_exp(FrogItemKey.CLASSY, FrogState.FROZEN) == 100
+    assert len(_SPECIES_EXP) == 4  # cluster has no exp (no item)
 
 
 def test_consume_blurb_reads_the_oracle() -> None:
@@ -41,6 +59,41 @@ def test_consume_blurb_reads_the_oracle() -> None:
         _consume_blurb(FrogItemKey.BASIC, FrogState.FROZEN)
         == "Grants **3** seasonal exp."
     )
+
+
+def test_consume_blurb_describes_composed_effects() -> None:
+    """Pog/Froggers/Classy blurbs read the same composition the consume runs."""
+    assert (
+        _consume_blurb(FrogItemKey.POG, FrogState.NORMAL)
+        == "Grants **30** seasonal exp. For the next hour, a **1%** chance "
+        "the bot reacts to your messages with the froggers emoji (10s "
+        "cooldown)."
+    )
+    assert (
+        _consume_blurb(FrogItemKey.CLASSY, FrogState.NORMAL)
+        == "Grants **200** seasonal exp. Grants the **Classy** role for "
+        "**3 hours**."
+    )
+
+
+async def test_consume_composes_item_effects(full_bot: Any) -> None:
+    """Consuming a Pog grants exp AND applies the item's composed reaction effect."""
+    from cazzubot.effects import Scope
+    from plugins.frogs.items import FrogItems
+    from plugins.frogs.seams import FrogSeam
+
+    bot = full_bot
+    uid = 123
+    await bot.inventory.add(uid, "frog:pog:normal", 2)
+    consume = FrogItems.POG.value.consume
+    assert consume is not None
+    await consume(bot, uid, 1)
+    # the item glue does not decrement — /inventory consume owns the stack
+    assert await bot.inventory.get(uid, "frog:pog:normal") == 2
+    contribs = await bot.effects.list(
+        Scope.member(uid), FrogSeam.FROG_REACTION
+    )
+    assert contribs and contribs[0].payload["chance"] == 0.01
 
 
 async def test_consume_dispatches_composed_modifiers(
