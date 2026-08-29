@@ -101,6 +101,40 @@ async def test_quarterly_on_load_leaves_existing_row(
     assert rows[0].run_at == run_at  # untouched
 
 
+async def test_quarterly_reset_converts_every_species_to_basic(
+    bot: CazzuBot,
+) -> None:
+    """Use it or lose it: pog/froggers/classy stacks become Basic."""
+    for key in (FrogItemKey.POG, FrogItemKey.FROGGERS, FrogItemKey.CLASSY):
+        await frog_db.modify_inventory(bot.db, 1, key, FrogState.NORMAL, 2)
+    await frog_db.modify_inventory(
+        bot.db, 1, FrogItemKey.POG, FrogState.FROZEN, 1
+    )
+
+    await on_quarterly_due(bot, {})
+
+    for key in (FrogItemKey.POG, FrogItemKey.FROGGERS, FrogItemKey.CLASSY):
+        assert await frog_db.get_inventory(bot.db, 1, key) == 0
+        assert (
+            await frog_db.get_inventory(bot.db, 1, key, FrogState.FROZEN)
+            == 0
+        )
+    # 2+2+2 (normal) + 1 (pog frozen) = 7 basics — all frozen after the
+    # basic devaluation step
+    assert (
+        await frog_db.get_inventory(
+            bot.db, 1, FrogItemKey.BASIC, FrogState.NORMAL
+        )
+        == 0
+    )
+    assert (
+        await frog_db.get_inventory(
+            bot.db, 1, FrogItemKey.BASIC, FrogState.FROZEN
+        )
+        == 7
+    )
+
+
 async def test_daily_frog_due_resyncs_and_rearms(bot: CazzuBot) -> None:
     """The frog half of the midnight reset: captures resync from logs."""
     now = pendulum.now("UTC")

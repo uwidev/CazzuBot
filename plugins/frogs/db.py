@@ -202,19 +202,28 @@ async def sync_with_frog_logs(db: Database) -> None:
     )
 
 
-async def freeze_frogs(db: Database) -> None:
-    """Quarterly: fold every normal stack into frozen, per species.
+async def season_reset_frogs(db: Database) -> None:
+    """Quarterly: every frog becomes a Basic Frog ("use it or lose it").
 
-    Built on the generic inventory's ``move_all`` — one call per species
-    (normal → frozen). Idempotent: a second run has no normal stacks left,
-    so nothing folds and nothing is deleted.
+    Owner rule (2026-08-28): at season end species identity and buffs
+    do not carry over. Every non-basic stack (normal OR frozen) folds
+    into ``frog:basic:normal``, then Basic's own soft reset folds the
+    normal stack into frozen (10->3 exp). After a reset a member holds
+    ``frog:basic:frozen`` only. Idempotent: a second run finds no
+    non-basic stacks and no basic-normal stacks to fold.
     """
+    basic_normal = FrogItem(FrogItemKey.BASIC, FrogState.NORMAL)
+    basic_frozen = FrogItem(FrogItemKey.BASIC, FrogState.FROZEN)
     for species in SPECIES:
+        if species.key is FrogItemKey.BASIC:
+            continue
         await inventory.move_all(
-            db,
-            FrogItem(species.key, FrogState.NORMAL),
-            FrogItem(species.key, FrogState.FROZEN),
+            db, FrogItem(species.key, FrogState.NORMAL), basic_normal
         )
+        await inventory.move_all(
+            db, FrogItem(species.key, FrogState.FROZEN), basic_normal
+        )
+    await inventory.move_all(db, basic_normal, basic_frozen)
 
 
 # -- member_frog_log -------------------------------------------------------

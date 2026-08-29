@@ -10,8 +10,8 @@ from .assets import FrogAsset
 from .effects import ClusterEffect
 from .items import FrogItems
 
-# the season rollover: first instant of Jan/Apr/Jul/Oct — freezes every
-# normal stack into frozen (the quarterly soft reset)
+# the season rollover: first instant of Jan/Apr/Jul/Oct — folds every
+# frog into a Basic Frog (the quarterly "use it or lose it" reset)
 QUARTERLY_CADENCE = At(day=1, months=(1, 4, 7, 10), time="00:00")
 # the frog half of the midnight reset: lifetime captures resync from the
 # logs (the exp half lives in the experience plugin under tag ``daily``)
@@ -37,13 +37,13 @@ async def on_daily_frog_due(
 async def on_quarterly_due(
     bot: CazzuBot, _payload: dict[str, object]
 ) -> None:
-    """Scheduler handler for tag ``quarterly`` — freeze, then re-arm.
+    """Scheduler handler for tag ``quarterly`` — season reset, then re-arm.
 
-    Every fire is a season rollover by construction, so the freeze is
+    Every fire is a season rollover by construction, so the reset is
     unconditional (and idempotent). Re-arming last keeps the fired row
-    live while the freeze runs, so a failed freeze is retried.
+    live while the reset runs, so a failed reset is retried.
     """
-    await db.freeze_frogs(bot.db)
+    await db.season_reset_frogs(bot.db)
     await bot.scheduler.arm(QUARTERLY_TAG, QUARTERLY_CADENCE)
 
 

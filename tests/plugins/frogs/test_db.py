@@ -38,7 +38,7 @@ async def test_inventory_freeze_and_capture_log(bot: CazzuBot) -> None:
     )
     assert f_ranked[0][2] == 1, f_ranked
 
-    await frog_db.freeze_frogs(bot.db)
+    await frog_db.season_reset_frogs(bot.db)
     assert (
         await frog_db.get_inventory(bot.db, _UID, FrogItemKey.BASIC) == 0
     )
