@@ -322,6 +322,9 @@ class FakeRest:
         reason: str | None = None,
     ) -> None:
         self.added_roles.append((user, role, reason))
+        member = self.members.get((_guild, user))
+        if member is not None:
+            member.role_ids.add(role)
 
     async def remove_role_from_member(
         self,
@@ -332,6 +335,9 @@ class FakeRest:
         reason: str | None = None,
     ) -> None:
         self.removed_roles.append((user, role, reason))
+        member = self.members.get((_guild, user))
+        if member is not None:
+            member.role_ids.discard(role)
 
     async def kick_member(
         self,

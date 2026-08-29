@@ -1,4 +1,6 @@
-"""Frog effects — enum-as-registry, dispatch contract, exp effect."""
+"""Frog effects — enum-as-registry, dispatch contract, and the generic
+scope-aware consume modifiers (reaction + role).
+"""
 
 from __future__ import annotations
 
@@ -14,15 +16,24 @@ from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.assets import FrogAsset
-from plugins.frogs.effects import EffectKey, ExpPayload
+from plugins.frogs.effects import (
+    EffectKey,
+    ExpPayload,
+    ReactionPayload,
+    RoleConverger,
+    RolePayload,
+)
 from plugins.frogs.events import FrogConsumedEvent
 from plugins.frogs.items import FrogItems
+from plugins.frogs.seams import FrogEffect, FrogSeam
 from plugins.frogs.species import SPECIES, Species
 from tests.fakes import (
     FakeInteraction,
     FakeMember,
     FakeMenuContext,
+    FakeRole,
     menu_button,
+    rest_of,
 )
 
 _UID = 424242
@@ -197,3 +208,245 @@ async def test_frog_item_consume_grants_exp_and_reports(
     assert received[0].species_key is FrogItemKey.BASIC
     assert received[0].amount == 2
     assert received[0].state is FrogState.NORMAL
+
+
+# -- reaction effect (identity-by-effect merge) ---------------------------
+
+_REACTION_DEV_ROLE = 1542294599358353430
+_REACTION_PROD_ROLE = 1542293782588952696
+
+
+async def test_reaction_is_one_effect_across_items(full_bot: CazzuBot) -> None:
+    """Pog and Froggers are the same effect: one row, strongest wins.
+
+    Both publish under the shared effect identity (FrogEffect.REACTION)
+    with the granting item as payload provenance; a stronger consume
+    overwrites the value while keeping the window additive, a weaker one
+    never downgrades — it only extends.
+    """
+    bot = full_bot
+    now = pendulum.now("UTC")
+    pog = ReactionPayload(chance=0.01, duration=pendulum.duration(hours=1))
+    froggers = ReactionPayload(
+        chance=0.07, duration=pendulum.duration(hours=1)
+    )
+
+    await EffectKey.REACTION.value.consume(
+        bot, pog,
+        scope=Scope.member(123), provenance="frog:pog:normal",
+        amount=1, now=now,
+    )
+    # a stronger frog 5 min later: overwrites the value, keeps the window
+    await EffectKey.REACTION.value.consume(
+        bot, froggers,
+        scope=Scope.member(123), provenance="frog:froggers:normal",
+        amount=1, now=now.add(minutes=5),
+    )
+    contribs = await bot.effects.list(
+        Scope.member(123), FrogSeam.FROG_REACTION, now=now.add(minutes=5)
+    )
+    assert len(contribs) == 1  # one effect, NOT one row per item
+    assert contribs[0].source == FrogEffect.REACTION.key
+    assert contribs[0].payload["chance"] == 0.07  # strongest wins
+    assert contribs[0].payload["from"] == "frog:froggers:normal"
+    # remaining 55m + new 1h, REPLACEd at T+5m -> T+2h (additive window)
+    assert contribs[0].expires_at == now.add(hours=2)
+
+    # a weaker consume never downgrades — it just extends the window
+    await EffectKey.REACTION.value.consume(
+        bot, pog,
+        scope=Scope.member(123), provenance="frog:pog:normal",
+        amount=1, now=now.add(minutes=30),
+    )
+    contribs = await bot.effects.list(
+        Scope.member(123), FrogSeam.FROG_REACTION, now=now.add(minutes=30)
+    )
+    assert len(contribs) == 1
+    assert contribs[0].payload["chance"] == 0.07  # still strongest
+    assert contribs[0].expires_at == now.add(hours=3)  # 2h + 1h
+
+
+async def test_reaction_expires_into_a_fresh_start(full_bot: CazzuBot) -> None:
+    """After expiry a fresh consume starts anew (no stale window)."""
+    bot = full_bot
+    now = pendulum.now("UTC")
+    payload = ReactionPayload(chance=0.01, duration=pendulum.duration(hours=1))
+
+    await EffectKey.REACTION.value.consume(
+        bot, payload,
+        scope=Scope.member(123), provenance="frog:pog:normal",
+        amount=1, now=now,
+    )
+    # past the expiry: the row reads as absent and is pruned
+    assert (
+        await bot.effects.list(
+            Scope.member(123), FrogSeam.FROG_REACTION,
+            now=now.add(hours=2),
+        )
+        == []
+    )
+    await EffectKey.REACTION.value.consume(
+        bot, payload,
+        scope=Scope.member(123), provenance="frog:pog:normal",
+        amount=1, now=now.add(hours=2),
+    )
+    contribs = await bot.effects.list(
+        Scope.member(123), FrogSeam.FROG_REACTION, now=now.add(hours=2)
+    )
+    assert len(contribs) == 1
+    assert contribs[0].expires_at == now.add(hours=3)  # fresh 1h from T+2h
+
+
+# -- role effect (external seam + converger) -------------------------------
+
+
+def test_role_payload_resolves_guild_role() -> None:
+    """role_id_for picks the FROG.md role id for the guild kind."""
+    payload = RolePayload(
+        role_dev=_REACTION_DEV_ROLE,
+        role_prod=_REACTION_PROD_ROLE,
+        duration=pendulum.duration(hours=3),
+    )
+    assert payload.role_id_for("development") == _REACTION_DEV_ROLE
+    assert payload.role_id_for("production") == _REACTION_PROD_ROLE
+
+
+async def test_role_consume_resolves_guild_role_and_publishes(
+    full_bot: CazzuBot,
+) -> None:
+    """Classy consume publishes the role seam and the world converges.
+
+    The converger is registered in-test (Phase-1 ships the machinery
+    tested but unwired — plugin-load registration is Phase 2); the
+    external publish runs it synchronously, so the member now holds the
+    resolved dev-guild role.
+    """
+    bot = full_bot
+    # full_bot boots with the development guild kind (Config default)
+    known = frozenset({_REACTION_DEV_ROLE, _REACTION_PROD_ROLE})
+    converger = RoleConverger(known)
+    rest = rest_of(bot)
+    bot.effects.register_converger(FrogSeam.CLASSY_ROLE, converger)
+    target = FakeMember(id=123, name="tester")
+    rest.members[(bot.config.guild_id, 123)] = target
+
+    payload = RolePayload(
+        role_dev=_REACTION_DEV_ROLE,
+        role_prod=_REACTION_PROD_ROLE,
+        duration=pendulum.duration(hours=3),
+    )
+    await EffectKey.ROLE.value.consume(
+        bot, payload, scope=Scope.member(123),
+        provenance="frog:classy:normal", amount=1,
+        now=pendulum.now("UTC"),
+    )
+    contribs = await bot.effects.list(
+        Scope.member(123), FrogSeam.CLASSY_ROLE
+    )
+    assert contribs and contribs[0].payload["role_id"] == _REACTION_DEV_ROLE
+    assert contribs[0].payload["from"] == "frog:classy:normal"
+    assert contribs[0].source == FrogEffect.CLASSY_ROLE.key
+    assert rest.added_roles == [
+        (123, _REACTION_DEV_ROLE, "classy frog role effect")
+    ]
+    member = await bot.rest.fetch_member(bot.config.guild_id, 123)
+    assert member.role_ids == {_REACTION_DEV_ROLE}
+
+
+async def test_role_converger_removes_role_on_expiry_or_clear(
+    full_bot: CazzuBot,
+) -> None:
+    """Expiry or explicit clear leaves the world converged (role removed)."""
+    bot = full_bot
+    # full_bot boots with the development guild kind (Config default)
+    known = frozenset({_REACTION_DEV_ROLE, _REACTION_PROD_ROLE})
+    converger = RoleConverger(known)
+    rest = rest_of(bot)
+    bot.effects.register_converger(FrogSeam.CLASSY_ROLE, converger)
+    target = FakeMember(id=123, name="tester")
+    rest.members[(bot.config.guild_id, 123)] = target
+
+    now = pendulum.now("UTC")
+    payload = RolePayload(
+        role_dev=_REACTION_DEV_ROLE,
+        role_prod=_REACTION_PROD_ROLE,
+        duration=pendulum.duration(hours=3),
+    )
+    scope = Scope.member(123)
+    reason = "classy frog role effect"
+
+    async def consume() -> None:
+        await EffectKey.ROLE.value.consume(
+            bot, payload, scope=scope,
+            provenance="frog:classy:normal", amount=1, now=now,
+        )
+
+    # expiry path: a past read prunes the row, then the converger reverts
+    await consume()
+    member = await bot.rest.fetch_member(bot.config.guild_id, 123)
+    assert _REACTION_DEV_ROLE in member.role_ids
+    assert (
+        await bot.effects.list(scope, FrogSeam.CLASSY_ROLE, now=now.add(hours=4))
+        == []
+    )
+    await converger(bot, scope, FrogSeam.CLASSY_ROLE.key)
+    member = await bot.rest.fetch_member(bot.config.guild_id, 123)
+    assert member.role_ids == set()
+    assert rest.removed_roles == [(123, _REACTION_DEV_ROLE, reason)]
+
+    # clear path: a fresh publish, then explicit termination + revert
+    await consume()
+    member = await bot.rest.fetch_member(bot.config.guild_id, 123)
+    assert _REACTION_DEV_ROLE in member.role_ids
+    await bot.effects.clear(
+        scope, FrogSeam.CLASSY_ROLE, FrogEffect.CLASSY_ROLE.key
+    )
+    await converger(bot, scope, FrogSeam.CLASSY_ROLE.key)
+    member = await bot.rest.fetch_member(bot.config.guild_id, 123)
+    assert member.role_ids == set()
+
+
+async def test_role_converger_is_idempotent_and_only_removes_known(
+    full_bot: CazzuBot,
+) -> None:
+    """Re-converging is a no-op and foreign roles are never touched."""
+    bot = full_bot
+    # full_bot boots with the development guild kind (Config default)
+    known = frozenset({_REACTION_DEV_ROLE, _REACTION_PROD_ROLE})
+    converger = RoleConverger(known)
+    rest = rest_of(bot)
+    bot.effects.register_converger(FrogSeam.CLASSY_ROLE, converger)
+    foreign = FakeRole(id=987654, name="some other role")
+    target = FakeMember(id=123, name="tester", roles=[foreign])
+    rest.members[(bot.config.guild_id, 123)] = target
+
+    payload = RolePayload(
+        role_dev=_REACTION_DEV_ROLE,
+        role_prod=_REACTION_PROD_ROLE,
+        duration=pendulum.duration(hours=3),
+    )
+    scope = Scope.member(123)
+    await EffectKey.ROLE.value.consume(
+        bot, payload, scope=scope,
+        provenance="frog:classy:normal", amount=1,
+        now=pendulum.now("UTC"),
+    )
+    await converger(bot, scope, FrogSeam.CLASSY_ROLE.key)
+    await converger(bot, scope, FrogSeam.CLASSY_ROLE.key)
+    member = await bot.rest.fetch_member(bot.config.guild_id, 123)
+    assert member.role_ids == {_REACTION_DEV_ROLE, 987654}
+    # idempotent re-converges added nothing
+    assert rest.added_roles == [
+        (123, _REACTION_DEV_ROLE, "classy frog role effect")
+    ]
+
+    # after expiry only the seam's known role is removed, foreign stays
+    await bot.effects.list(
+        scope, FrogSeam.CLASSY_ROLE, now=pendulum.now("UTC").add(hours=4)
+    )
+    await converger(bot, scope, FrogSeam.CLASSY_ROLE.key)
+    member = await bot.rest.fetch_member(bot.config.guild_id, 123)
+    assert member.role_ids == {987654}
+    assert rest.removed_roles == [
+        (123, _REACTION_DEV_ROLE, "classy frog role effect")
+    ]
