@@ -53,7 +53,9 @@ def test_every_effect_key_maps_to_a_handler() -> None:
         assert callable(getattr(handler, "consume", None)), key
 
 
-async def test_exp_effect_grants_payload_normal_value(bot: CazzuBot) -> None:
+async def test_exp_effect_grants_payload_normal_value(
+    bot: CazzuBot,
+) -> None:
     """The fossil exp effect grants the payload's per-unit value.
 
     Consume hooks are scope-aware now (2026-08-28 separation): exp
@@ -216,7 +218,9 @@ _REACTION_DEV_ROLE = 1542294599358353430
 _REACTION_PROD_ROLE = 1542293782588952696
 
 
-async def test_reaction_is_one_effect_across_items(full_bot: CazzuBot) -> None:
+async def test_reaction_is_one_effect_across_items(
+    full_bot: CazzuBot,
+) -> None:
     """Pog and Froggers are the same effect: one row, strongest wins.
 
     Both publish under the shared effect identity (FrogEffect.REACTION)
@@ -232,15 +236,21 @@ async def test_reaction_is_one_effect_across_items(full_bot: CazzuBot) -> None:
     )
 
     await EffectKey.REACTION.value.consume(
-        bot, pog,
-        scope=Scope.member(123), provenance="frog:pog:normal",
-        amount=1, now=now,
+        bot,
+        pog,
+        scope=Scope.member(123),
+        provenance="frog:pog:normal",
+        amount=1,
+        now=now,
     )
     # a stronger frog 5 min later: overwrites the value, keeps the window
     await EffectKey.REACTION.value.consume(
-        bot, froggers,
-        scope=Scope.member(123), provenance="frog:froggers:normal",
-        amount=1, now=now.add(minutes=5),
+        bot,
+        froggers,
+        scope=Scope.member(123),
+        provenance="frog:froggers:normal",
+        amount=1,
+        now=now.add(minutes=5),
     )
     contribs = await bot.effects.list(
         Scope.member(123), FrogSeam.FROG_REACTION, now=now.add(minutes=5)
@@ -254,9 +264,12 @@ async def test_reaction_is_one_effect_across_items(full_bot: CazzuBot) -> None:
 
     # a weaker consume never downgrades — it just extends the window
     await EffectKey.REACTION.value.consume(
-        bot, pog,
-        scope=Scope.member(123), provenance="frog:pog:normal",
-        amount=1, now=now.add(minutes=30),
+        bot,
+        pog,
+        scope=Scope.member(123),
+        provenance="frog:pog:normal",
+        amount=1,
+        now=now.add(minutes=30),
     )
     contribs = await bot.effects.list(
         Scope.member(123), FrogSeam.FROG_REACTION, now=now.add(minutes=30)
@@ -266,29 +279,40 @@ async def test_reaction_is_one_effect_across_items(full_bot: CazzuBot) -> None:
     assert contribs[0].expires_at == now.add(hours=3)  # 2h + 1h
 
 
-async def test_reaction_expires_into_a_fresh_start(full_bot: CazzuBot) -> None:
+async def test_reaction_expires_into_a_fresh_start(
+    full_bot: CazzuBot,
+) -> None:
     """After expiry a fresh consume starts anew (no stale window)."""
     bot = full_bot
     now = pendulum.now("UTC")
-    payload = ReactionPayload(chance=0.01, duration=pendulum.duration(hours=1))
+    payload = ReactionPayload(
+        chance=0.01, duration=pendulum.duration(hours=1)
+    )
 
     await EffectKey.REACTION.value.consume(
-        bot, payload,
-        scope=Scope.member(123), provenance="frog:pog:normal",
-        amount=1, now=now,
+        bot,
+        payload,
+        scope=Scope.member(123),
+        provenance="frog:pog:normal",
+        amount=1,
+        now=now,
     )
     # past the expiry: the row reads as absent and is pruned
     assert (
         await bot.effects.list(
-            Scope.member(123), FrogSeam.FROG_REACTION,
+            Scope.member(123),
+            FrogSeam.FROG_REACTION,
             now=now.add(hours=2),
         )
         == []
     )
     await EffectKey.REACTION.value.consume(
-        bot, payload,
-        scope=Scope.member(123), provenance="frog:pog:normal",
-        amount=1, now=now.add(hours=2),
+        bot,
+        payload,
+        scope=Scope.member(123),
+        provenance="frog:pog:normal",
+        amount=1,
+        now=now.add(hours=2),
     )
     contribs = await bot.effects.list(
         Scope.member(123), FrogSeam.FROG_REACTION, now=now.add(hours=2)
@@ -336,14 +360,19 @@ async def test_role_consume_resolves_guild_role_and_publishes(
         duration=pendulum.duration(hours=3),
     )
     await EffectKey.ROLE.value.consume(
-        bot, payload, scope=Scope.member(123),
-        provenance="frog:classy:normal", amount=1,
+        bot,
+        payload,
+        scope=Scope.member(123),
+        provenance="frog:classy:normal",
+        amount=1,
         now=pendulum.now("UTC"),
     )
     contribs = await bot.effects.list(
         Scope.member(123), FrogSeam.CLASSY_ROLE
     )
-    assert contribs and contribs[0].payload["role_id"] == _REACTION_DEV_ROLE
+    assert (
+        contribs and contribs[0].payload["role_id"] == _REACTION_DEV_ROLE
+    )
     assert contribs[0].payload["from"] == "frog:classy:normal"
     assert contribs[0].source == FrogEffect.CLASSY_ROLE.key
     assert rest.added_roles == [
@@ -377,8 +406,12 @@ async def test_role_converger_removes_role_on_expiry_or_clear(
 
     async def consume() -> None:
         await EffectKey.ROLE.value.consume(
-            bot, payload, scope=scope,
-            provenance="frog:classy:normal", amount=1, now=now,
+            bot,
+            payload,
+            scope=scope,
+            provenance="frog:classy:normal",
+            amount=1,
+            now=now,
         )
 
     # expiry path: a past read prunes the row, then the converger reverts
@@ -386,7 +419,9 @@ async def test_role_converger_removes_role_on_expiry_or_clear(
     member = await bot.rest.fetch_member(bot.config.guild_id, 123)
     assert _REACTION_DEV_ROLE in member.role_ids
     assert (
-        await bot.effects.list(scope, FrogSeam.CLASSY_ROLE, now=now.add(hours=4))
+        await bot.effects.list(
+            scope, FrogSeam.CLASSY_ROLE, now=now.add(hours=4)
+        )
         == []
     )
     await converger(bot, scope, FrogSeam.CLASSY_ROLE.key)
@@ -427,8 +462,11 @@ async def test_role_converger_is_idempotent_and_only_removes_known(
     )
     scope = Scope.member(123)
     await EffectKey.ROLE.value.consume(
-        bot, payload, scope=scope,
-        provenance="frog:classy:normal", amount=1,
+        bot,
+        payload,
+        scope=scope,
+        provenance="frog:classy:normal",
+        amount=1,
         now=pendulum.now("UTC"),
     )
     await converger(bot, scope, FrogSeam.CLASSY_ROLE.key)

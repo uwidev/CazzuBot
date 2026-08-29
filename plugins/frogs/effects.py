@@ -187,15 +187,26 @@ class ReactionEffect:
     """
 
     async def catch(
-        self, bot: "CazzuBot", payload: EffectPayload, *, uid: int,
-        species_key: FrogItemKey, now: pendulum.DateTime,
+        self,
+        bot: "CazzuBot",
+        payload: EffectPayload,
+        *,
+        uid: int,
+        species_key: FrogItemKey,
+        now: pendulum.DateTime,
     ) -> None:
         """No catch behavior — the effect applies on consume only."""
         return None
 
     async def consume(
-        self, bot: "CazzuBot", payload: EffectPayload, *, scope: Scope,
-        provenance: str, amount: int, now: pendulum.DateTime,
+        self,
+        bot: "CazzuBot",
+        payload: EffectPayload,
+        *,
+        scope: Scope,
+        provenance: str,
+        amount: int,
+        now: pendulum.DateTime,
     ) -> None:
         """Publish/merge the shared reaction effect into ``scope``."""
         if not isinstance(payload, ReactionPayload):
@@ -225,7 +236,10 @@ class ReactionEffect:
                 else pendulum.duration()
             )
             await bot.effects.publish(
-                scope, seam, source, prov,
+                scope,
+                seam,
+                source,
+                prov,
                 duration=remaining + payload.duration,
                 policy=ReapplyPolicy.REPLACE,
                 now=now,
@@ -233,7 +247,10 @@ class ReactionEffect:
         else:
             # weaker/equal: keep the value, extend the window additively
             await bot.effects.publish(
-                scope, seam, source, prov,
+                scope,
+                seam,
+                source,
+                prov,
                 duration=payload.duration,
                 policy=ReapplyPolicy.EXTEND,
                 now=now,
@@ -257,15 +274,26 @@ class RoleEffect:
     """
 
     async def catch(
-        self, bot: "CazzuBot", payload: EffectPayload, *, uid: int,
-        species_key: FrogItemKey, now: pendulum.DateTime,
+        self,
+        bot: "CazzuBot",
+        payload: EffectPayload,
+        *,
+        uid: int,
+        species_key: FrogItemKey,
+        now: pendulum.DateTime,
     ) -> None:
         """No catch behavior — the effect applies on consume only."""
         return None
 
     async def consume(
-        self, bot: "CazzuBot", payload: EffectPayload, *, scope: Scope,
-        provenance: str, amount: int, now: pendulum.DateTime,
+        self,
+        bot: "CazzuBot",
+        payload: EffectPayload,
+        *,
+        scope: Scope,
+        provenance: str,
+        amount: int,
+        now: pendulum.DateTime,
     ) -> None:
         """Publish the role grant into ``scope``."""
         if not isinstance(payload, RolePayload):
@@ -420,4 +448,8 @@ class RolePayload:
 
     def role_id_for(self, guild_kind: str) -> int:
         """The concrete role id for the guild side (FROG.md's two ids)."""
-        return self.role_dev if guild_kind == "development" else self.role_prod
+        return (
+            self.role_dev
+            if guild_kind == "development"
+            else self.role_prod
+        )

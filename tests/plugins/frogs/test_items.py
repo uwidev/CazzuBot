@@ -44,7 +44,8 @@ def test_consume_blurb_reads_the_oracle() -> None:
 
 
 async def test_consume_dispatches_composed_modifiers(
-    bot: Any, monkeypatch: pytest.MonkeyPatch,
+    bot: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The composition pipeline applies the item's composed modifiers.
 
@@ -109,7 +110,9 @@ async def test_consume_dispatches_composed_modifiers(
 
     now = pendulum.now("UTC")
     assert (
-        await exp_db.seasonal_exp(bot.db, uid, now.year, (now.month - 1) // 3)
+        await exp_db.seasonal_exp(
+            bot.db, uid, now.year, (now.month - 1) // 3
+        )
         == 10
     )
 
