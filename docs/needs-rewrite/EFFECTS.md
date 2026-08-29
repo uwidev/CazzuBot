@@ -113,6 +113,38 @@ identity rule, recorded here so the code and the store contract agree:
     message listener yet (all Phase 2, by design).
 
 
+Phase-2 record — the species consume the store (owner 2026-08-28)
+-----------------------------------------------------------------
+
+The frog-species plan's Phase 2 (the five FROG.md species) is **implemented
+and wired**. The Phase-1 record above stays true; this adds what shipped:
+
+ -  **Publishers live.** Pog/Froggers compose `ReactionPayload` and Classy
+    composes `RolePayload` in `plugins/frogs/items.py::_SPECIES_CONSUME`
+    (item-owned; species carry no consume declaration). The plugin's
+    `on_load` registers the `RoleConverger` for `CLASSY_ROLE` (so the
+    external publish converges synchronously and schedules the expiry job)
+    and subscribes `EffectsClearedEvent` for instant role revert;
+    `on_unload` withdraws both. Cluster's spawn hook (`ClusterEffect`) is
+    not a contribution at all — instant handlers never touch this store.
+ -  **The listener is the consumer.** `plugins/frogs/reactions.py` reads
+    the single `FROG_REACTION` row per member (one row by construction —
+    identity is the effect, not the item), rolls the chance per message
+    with a 10s in-memory cooldown, and no-ops while the froggers emoji is
+    unpublished.
+ -  **The feature-side merge is live, not hypothetical.** While a
+    contribution is live the strongest chance wins, a weaker re-publish
+    keeps the value, every re-publish extends the window additively, and
+    expiry is a fresh start — `ReactionEffect.consume` decides its own
+    reapply policy (REPLACE with the stronger value + the remaining
+    window, else EXTEND) against the engine's `(scope, seam, source)` key.
+ -  **`ExpEffect`/`EXP` remains vestigial.** Exp grant is item-owned
+    behavior (the `frog_exp` oracle); the fossil stays in the registry,
+    composed into nothing, slated for removal in a follow-up. The POG/
+    FROGGERS/CLASSY oracle rows (30/15, 300/150, 200/100) live beside the
+    composition, not here.
+
+
 Schema
 ------
 

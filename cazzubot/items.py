@@ -32,6 +32,10 @@ Call graph (self-documenting rule): ``bot.py`` registers a plugin's
 unload (both independent of behavior enablement); ``/inventory consume`` and
 ``/inventory view`` resolve ids through ``bot.items.item_for``. The registry
 is module-global (like the asset/settings registries), exposed as ``bot.items``.
+
+Depends on: the owning plugins' declaration enums (e.g. ``FrogItems``) and
+``assets`` (``icon_asset`` members). Depended on by: ``bot`` (register /
+unregister) and the ``inventory`` plugin (view / consume).
 """
 
 from __future__ import annotations
@@ -57,26 +61,37 @@ class Item:
     - ``display_name`` — mutable, user-facing (inventory/profile).
     - ``icon`` — the static glyph rendered inline in ``/inventory`` (an
       emoji tag or URL).
+    - ``description`` — **required** user-facing prose: the body of the
+      item's info card (``/inventory info``). Every item must carry one.
     - ``icon_asset`` — optional EMOJI-kind asset member whose published
-      ``<:name:id>`` reference *replaces* ``icon`` at render time; falls
-      back to ``icon`` while the asset is unpublished (get() -> None).
+      ``<:name:id>`` reference *replaces* ``icon`` at render time (and
+      becomes the info card's thumbnail); falls back to ``icon`` while the
+      asset is unpublished (get() -> None).
     - ``consume`` — optional item-owned behavior when consumed (None = not
       directly consumable). Signature: ``async (bot, uid, amount) -> None``.
+    - ``fields`` — optional ordered (label, text) pairs rendered as labeled
+      embed fields on the info card (e.g. ``("On consumption", ...)``).
+      Pure presentation — the underlying values stay in the owning
+      plugin's own data, never baked into the item as structured fields.
     """
 
     item_id: str
     display_name: str
     icon: str
+    description: str
     icon_asset: Enum | None = None
     consume: Callable[["CazzuBot", int, int], Awaitable[None]] | None = (
         None
     )
+    fields: tuple[tuple[str, str], ...] = ()
 
 
 # A sentinel representing "no such item definition" — displayed as nothing,
 # refused consumption. Uses the same runtime semantics as a resolved item so
 # callers never see an exception for a stale id.
-NOOP = Item(item_id="noop", display_name="", icon="", consume=None)
+NOOP = Item(
+    item_id="noop", display_name="", icon="", description="", consume=None
+)
 
 
 # -- registry (module-global, exposed as bot.items) -------------------------

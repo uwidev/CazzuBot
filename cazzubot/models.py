@@ -1,4 +1,8 @@
-"""Shared enums (values are stored as TEXT in sqlite) and plain value types."""
+"""Shared enums (values are stored as TEXT in sqlite) and plain value types.
+
+Depended on by: db modules and formatters (``MemberSnapshot`` is the value
+that crosses the service boundary); enum values are the TEXT stored in sqlite.
+"""
 
 from dataclasses import dataclass
 from enum import Enum

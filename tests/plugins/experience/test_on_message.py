@@ -75,12 +75,20 @@ async def test_bot_author_is_ignored(
 async def test_exp_multiplier_scales_award(
     seeded_bot: CazzuBot, author: FakeMember, channel: FakeChannel
 ) -> None:
-    """A member modifier (member_effect) scales the message exp award."""
-    from cazzubot import member_effects
-    from cazzubot.member_effects import MemberEffectKey
+    """A member contribution to the message-exp seam scales the award."""
+    from datetime import timedelta
 
-    await member_effects.set(
-        seeded_bot.db, _AUTHOR_ID, MemberEffectKey.EXP_MULTIPLIER, 2.0
+    from cazzubot import effects
+    from cazzubot.effects import Scope
+    from plugins.experience.logic import EffectSeam
+
+    await effects.publish(
+        seeded_bot.db,
+        Scope.member(_AUTHOR_ID),
+        EffectSeam.MESSAGE_EXP_MULTIPLIER,
+        "test",
+        {"value": 2.0},
+        duration=timedelta(hours=1),
     )
     await _send(seeded_bot, author, channel, "hello")
     row = await exp_db.get_member_exp(seeded_bot.db, _AUTHOR_ID)

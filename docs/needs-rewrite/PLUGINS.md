@@ -170,9 +170,16 @@ Use these instead of reaching into internals:
     an item's consume grants its own exp and applies the modifiers it
     declares; the modifier registry (`plugins/frogs/effects.py::EffectKey`)
     is a generic, scope-aware primitive library any caller can invoke.
-    Frogs' seams/modifiers (`FrogSeam`, `FrogEffect`, `ReactionEffect`,
-    `RoleEffect`, `RoleConverger`) are **Phase-2 consumers** of this store —
-    Phase 1 ships them tested but unwired.
+    Frogs consume through two live seams: `FrogSeam.FROG_REACTION`
+    (internal — the `plugins/frogs/reactions.py` listener rolls the
+    per-message chance on the strongest live contribution, 10s in-memory
+    cooldown, no-op until the emoji is published) and
+    `FrogSeam.CLASSY_ROLE` (external — `RoleConverger` registered at
+    plugin load adds/removes the classy role; `EffectsClearedEvent`
+    reverts instantly). Cluster's spawn explosion is a spawn-side hook
+    (`ClusterEffect`, `spawn_impl` injected at load — the edge
+    `effects → factory` would cycle through species). `EffectKey.EXP`
+    stays as the vestigial pre-composition fossil, composed into nothing.
  -  `bot.lifecycle` — declare effect undos (see “Conventions” below).
  -  `bot.assets` — enum-declared asset files (reconcile + kind-based sync to
     the asset child-guild: media CDN blobs + custom emoji); see
@@ -279,6 +286,42 @@ Old Name->New Name      rename a channel (rewritten to just the new name
     out-of-scope channels keep their exact positions.
  -  Export always writes the format cheatsheet and a `# vim: ft=txt :`
     modeline at the bottom.
+
+
+Frogs plugin — the five species
+-------------------------------
+
+`plugins/frogs/` is the frog economy: spawn → capture → inventory → consume,
+per `docs/FROG.md`. Five species (weights): Basic (1000), Pog (200),
+Froggers (50), Classy (200), Cluster (300). The species **entity**
+(`species.py`) declares the world/spawn side only — name, rarity, weight,
+art (Cluster has none), a catch effect, and an optional **spawn effect**
+(Cluster's explosion). Consumption is **item-owned**: `items.py` holds the
+`frog_exp` oracle (exp per species × state) beside `_SPECIES_CONSUME` — the
+effect payloads the item applies (Pog/Froggers → the shared reaction
+effect; Classy → the role grant; Basic → none; Cluster has **no item** —
+uncatchable). Display (`/frog catalog`, the item info card) reads the same
+sources as the grant, so they cannot drift.
+
+ -  **Reaction listener** (`reactions.py`, guild-scoped message listener):
+    an active `FROG_REACTION` contribution gives each message a chance the
+    bot reacts with the froggers emoji (strongest live chance wins, 10s
+    in-memory cooldown, no-op until the emoji is published).
+ -  **Classy role** (`FrogSeam.CLASSY_ROLE`): `RoleEffect.consume`
+    publishes the external seam; `RoleConverger` (registered at plugin
+    load) adds the dev/prod classy role now and removes it at expiry; an
+    explicit `EffectsClearedEvent` reverts instantly.
+ -  **Cluster**: uncatchable; `Species.spawn_effect` short-circuits the
+    spawn into 4–10 Basic frogs across the text channels ±2 around the
+    spawn channel, staggered 0.75s (`ClusterEffect`; its `spawn_impl` —
+    the factory's `spawn_and_wait` — is injected at load because
+    `effects → factory` would cycle through species).
+ -  **Quarterly reset** (`quarterly` tag): every frog becomes a Basic Frog
+    (“use it or lose it”) — non-basic stacks fold into basic, then Basic's
+    own normal→frozen devaluation runs.
+ -  Conventional plugin structure: `species.py`/`effects.py`/`db.py` stay
+    hikari-free (CSR); hikari lives in `factory.py` (the carve-out) and the
+    new `reactions.py` listener module.
 
 
 Roles plugin — declarative role manifest

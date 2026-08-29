@@ -1,14 +1,17 @@
-# Hikari migration — the seam map
+Hikari migration — the seam map
+===============================
 
 Goal: swap `discord.py` → `hikari` with behavior intact. **Status: done as
 of 022ba52** — the bot runs on hikari 2.5 + hikari-lightbulb 3.2 (slash-only,
 guild-scoped), all 14 plugins are ported, and the suite is green (260
 passed). The CLI tooling is also ported (hikari RESTApp — see docs/DONE.md); the
-only remaining discord.py-era pieces are the asyncpg migration scripts. This doc is the map that guided
-the port; everything marked **pure** survived untouched, everything marked
-**framework-bound** was rewritten as described.
+only remaining discord.py-era pieces are the asyncpg migration scripts. This
+doc is the map that guided the port; everything marked **pure** survived
+untouched, everything marked **framework-bound** was rewritten as described.
 
-## Current state of the seams
+
+Current state of the seams
+--------------------------
 
 ### Pure — survives the swap untouched
 
@@ -29,7 +32,7 @@ the port; everything marked **pure** survived untouched, everything marked
 | `plugins/*/cog.py` (counter, daily, dev, experience, frogs, fun, mod, poll, quarterly, ranks, welcome) | Command definitions move to the chosen framework (tanjun / lightbulb / raw). `hybrid_command` has **no hikari equivalent** — tanjun's shared callback (`@as_slash_command` + `@as_message_command` on one function) is the closest. Cog-raised `commands.BadArgument` → the framework's user-facing error type.                           |
 | `plugins/levels/presenter.py`, `plugins/ranks/presenter.py`                                            | The model for presentation code: call pure logic, then discord side effects. Only the side effects (reaction, `add_roles`, sends) change.                                                                                                                                                                                                 |
 | `plugins/frogs/factory.py`                                                                             | Stays controller-shaped by design (spawn handler + capture view) — the one permanent `test_csr_boundary.py` carve-out. `FrogCatchView` becomes a component event handler.                                                                                                                                                                 |
-| `cazzubot/utils.py` — `prepare_embed`, `find_user`, `ConfirmView`, `author_confirm`, `member_snapshot` | `member_snapshot` is the pattern: discord at the edge, plain values everywhere else. `ConfirmView`'s \`(author_id) → bool                                                                                                                                                                                                                 |
+| `cazzubot/utils.py` — `prepare_embed`, `find_user`, `ConfirmView`, `author_confirm`, `member_snapshot` | `member_snapshot` is the pattern: discord at the edge, plain values everywhere else. `ConfirmView`'s \`(author\_id) → bool                                                                                                                                                                                                                |
 | `cazzubot/templates.py` — `embed_from_raw`, `send`                                                     | The single embed-conversion seam: reimplement `embed_from_raw` for `hikari.Embed`; `send` keeps forwarding `content/embed/embeds` to the target.                                                                                                                                                                                          |
 | CLI tooling                                                                                            | `cazzubot/cli/core.py` boots a throwaway `discord.Client`; `roles/export.py` + `channels/export.py` fetch guild state; \`cli/roles.py                                                                                                                                                                                                     |
 | `scripts/probe_*.py`                                                                                   | dev probes; port when touched.                                                                                                                                                                                                                                                                                                            |
@@ -45,7 +48,9 @@ the port; everything marked **pure** survived untouched, everything marked
 | `commands.BadArgument` (cog edge only)          | framework error type (tanjun: `tanjun.BadMessageArgumentError`-style / lightbulb equivalent) |
 | `cazzubot.errors.UserInputError` (service/core) | unchanged — translate at the edge, as `bot.py` does today                                    |
 
-## Fake-surface freeze (`tests/fakes.py` is the contract)
+
+Fake-surface freeze (`tests/fakes.py` is the contract)
+------------------------------------------------------
 
 The suite's de facto interface. Port the fakes against **this list**, not
 against hikari's API. `discord.py` models are loose (assign `self.id`)
@@ -74,32 +79,36 @@ Framework mechanics (drop or map during the port, by rule): exact kwargs
 dicts recorded in fakes' `sent`, `ctx.reply` vs `ctx.send` distinction,
 `discord.NotFound` identity, `commands.BadArgument` message strings.
 
-## Decisions to lock before starting
 
-1. **Command framework** — tanjun (hikari-official, shared slash+message
-   callbacks ≈ current hybrids) vs lightbulb (cog-like) vs raw hikari.
-1. **Modal support** — poll plugin depends on it; verify hikari's modal
-   status (historically absent; merged later) before committing.
-1. **CLI scope** — port the roles/channels/snapshot tooling to hikari REST
-   in the same sweep (discord.py fully dies), or keep it as the last
-   discord.py consumer temporarily.
-1. **Prefix commands** — keep them (message-command framework) or drop to
-   slash-only; affects tanjun wiring and `main.py` `-d`/`-p` prefixes.
+Decisions to lock before starting
+---------------------------------
 
-## Port order (recommended)
+1.  **Command framework** — tanjun (hikari-official, shared slash+message
+    callbacks ≈ current hybrids) vs lightbulb (cog-like) vs raw hikari.
+2.  **Modal support** — poll plugin depends on it; verify hikari's modal
+    status (historically absent; merged later) before committing.
+3.  **CLI scope** — port the roles/channels/snapshot tooling to hikari REST
+    in the same sweep (discord.py fully dies), or keep it as the last
+    discord.py consumer temporarily.
+4.  **Prefix commands** — keep them (message-command framework) or drop to
+    slash-only; affects tanjun wiring and `main.py` `-d`/`-p` prefixes.
 
-1. `tests/fakes.py` + `tests/conftest.py` rebuild (the freeze list above is
-   the spec) — get the suite green against hikari fakes while the bot is
-   still discord.py? No — fakes import the framework's model classes, so
-   they can't be dual. Instead: swap the framework first, then port fakes
-   against the freeze list.
-1. `cazzubot/bot.py` + `main.py` + command framework wiring.
-1. Cog-by-cog: definitions → framework, side effects → presenters already
-   exist, `UserInputError` unwrap → framework error handler.
-1. `templates.embed_from_raw` + `utils.member_snapshot` + `window` send
-   targets.
-1. Views → component event handlers (Confirm, TopView, FrogCatch, poll).
-1. CLI + scripts.
-1. Drop `discord.py` from `pyproject.toml`; delete the now-dead fakes;
-   tighten `test_csr_boundary.py` to also walk `tests/` (fakes must not
-   import discord).
+
+Port order (recommended)
+------------------------
+
+1.  `tests/fakes.py` + `tests/conftest.py` rebuild (the freeze list above is
+    the spec) — get the suite green against hikari fakes while the bot is
+    still discord.py? No — fakes import the framework's model classes, so
+    they can't be dual. Instead: swap the framework first, then port fakes
+    against the freeze list.
+2.  `cazzubot/bot.py` + `main.py` + command framework wiring.
+3.  Cog-by-cog: definitions → framework, side effects → presenters already
+    exist, `UserInputError` unwrap → framework error handler.
+4.  `templates.embed_from_raw` + `utils.member_snapshot` + `window` send
+    targets.
+5.  Views → component event handlers (Confirm, TopView, FrogCatch, poll).
+6.  CLI + scripts.
+7.  Drop `discord.py` from `pyproject.toml`; delete the now-dead fakes;
+    tighten `test_csr_boundary.py` to also walk `tests/` (fakes must not
+    import discord).

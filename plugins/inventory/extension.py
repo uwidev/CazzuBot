@@ -1,4 +1,4 @@
-"""Inventory plugin extension — /inventory view and /inventory consume.
+"""Inventory plugin extension — /inventory view, consume, and info.
 
 ``view`` renders the shared ledger as a numbered inline-emoji grid, resolving
 each stack's icon through the item-definitions registry (``bot.items``) —
@@ -7,6 +7,9 @@ an item with an ``icon_asset`` uses its published custom-emoji reference
 unresolved ids (a provider that was unregistered/removed) are hidden rather
 than shown as garbage. ``consume <slot>`` resolves a stack by its derived slot
 number, then runs the item's own consume handler and decrements the stack.
+``info <slot>`` shows the invoker's item in that slot as a description card —
+thumbnail from the item's asset, title the item name, the description prose,
+then one labeled embed field per item ``field``.
 """
 
 import asyncio
@@ -123,6 +126,54 @@ class Consume(
         await ctx.edit_response(
             utils.INITIAL_RESPONSE_IDENTIFIER, embed=embed_post
         )
+
+
+@inventory.register
+class Info(
+    lightbulb.SlashCommand,
+    name="info",
+    description="Show an item's info from one of your inventory slots.",
+):
+    """Render an item's description card from the invoker's own inventory.
+
+    Discovery-by-possession: slots only exist for what the member holds, so
+    the card can only describe items they actually own. The card reuses the
+    slot numbering of ``/inventory view`` — thumbnail from the item's asset
+    (``icon_asset`` → CDN URL when published), title the display name, the
+    description prose, then one labeled embed field per item ``field``.
+    """
+
+    slot = lightbulb.integer(
+        "slot", "The inventory slot to inspect", min_value=1
+    )
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Resolve the slot's item and render its info embed."""
+        bot = utils.bot_from(ctx)
+        uid = (ctx.member or ctx.user).id
+
+        entry = await _slot_entry(bot, uid, self.slot)
+        if entry is None:
+            raise UserInputError(f"No item in slot **{self.slot}**.")
+        _slot, item_id, _qty = entry
+
+        item = bot.items.item_for(item_id)
+        if not bot.items.resolved(item_id):
+            raise UserInputError("That item is no longer available.")
+
+        embed = hikari.Embed(
+            title=item.display_name,
+            description=item.description,
+            color=_COLOR,
+        )
+        if item.icon_asset is not None:
+            url = await bot.assets.thumbnail_for(item.icon_asset)
+            if url is not None:
+                embed.set_thumbnail(url)
+        for label, text in item.fields:
+            embed.add_field(name=label, value=text)
+        await ctx.respond(embed=embed)
 
 
 loader.command(inventory)

@@ -17,6 +17,7 @@ The ids are numbered for stable ordering; the migrations are independent
 from scripts.migrations import (
     asset_kind,
     counter_events,
+    effect_contributions,
     frog_species,
     frog_species_key,
     poll_cid,
@@ -29,6 +30,7 @@ MIGRATIONS = (
     frog_species.MIGRATION,
     asset_kind.MIGRATION,
     frog_species_key.MIGRATION,
+    effect_contributions.MIGRATION,
 )
 
 __all__ = ["MIGRATIONS", "Migration"]

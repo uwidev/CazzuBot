@@ -17,6 +17,9 @@ Call graph: ``load_plugin`` defers framework-level effects (scheduler
 tags, extensions); plugins call ``bot.lifecycle.defer`` for custom
 effects during ``on_load``; ``unload_plugin`` calls ``withdraw`` before
 running ``on_unload``. Tests drive ``defer``/``withdraw`` directly.
+
+Depended on by: ``bot.load_plugin``/``unload_plugin`` (framework-level
+auto-deferrals); no plugin currently defers custom undos.
 """
 
 from __future__ import annotations

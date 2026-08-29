@@ -5,6 +5,9 @@ JSON with ``{placeholder}`` tokens, validated against a jsonschema that mirrors
 Discord's embed payload. ``verify`` checks + dry-runs a template;
 ``prepare`` turns a stored dict into sendable content/embeds; ``send``
 delivers one through any send target.
+
+Depended on by: ``levels``/``ranks`` presenters, ``frogs`` (configured spawn
+and capture messages) and ``welcome``.
 """
 
 import copy

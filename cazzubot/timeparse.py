@@ -3,6 +3,9 @@
 Parses natural relative/absolute time language into UTC ``pendulum.DateTime``.
 The bot always computes in UTC; timezone conversion happens only at the user
 boundary.
+
+Depended on by: ``scheduler`` (``parse_duration``, ``parse_iso8601``),
+``frogs`` (spawn interval parsing) and ``mod`` (duration tokens).
 """
 
 import logging

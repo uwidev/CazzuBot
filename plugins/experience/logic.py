@@ -9,15 +9,13 @@ plain values, calls this layer, and handles presentation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 import pendulum
 
-from cazzubot import levels
+from cazzubot import effects, levels
 from cazzubot.db import Database
-from cazzubot.member_effects import (
-    MemberEffectKey,
-    get as member_effects_get,
-)
+from cazzubot.effects import Scope
 from cazzubot.utils import OldNew, month2season
 
 from . import db as exp_db
@@ -29,6 +27,26 @@ _BONUS = 20
 _UNTIL_MSG = 77
 _DECAY_FACTOR = 2
 _EXP_COOLDOWN = 15  # seconds
+
+
+class EffectSeam(Enum):
+    """Experience's seams — typed keys, never bare strings (SeamKey pattern).
+
+    Each member's ``key`` is the stored seam string; the core ships zero
+    seams, so features declare their own (see ``cazzubot/effects.py``).
+    """
+
+    MESSAGE_EXP_MULTIPLIER = "message_exp_multiplier"
+
+    @property
+    def key(self) -> str:
+        """The derived storage string for this seam."""
+        return self.value
+
+    @property
+    def external(self) -> bool:
+        """Internal: a message-exp scale has no world consequence to converge."""
+        return False
 
 
 def from_msg(msg: int) -> int:
@@ -78,13 +96,16 @@ async def award_exp(
     # compute gains
     msg_cnt = member_db.msg_cnt + 1
     exp_gain = from_msg(msg_cnt)
-    # a member modifier (e.g. the exp_multiplier buff) scales the award —
-    # pulled lazily here, so no sweeper is needed for expiry
-    multiplier = await member_effects_get(
-        db, uid, MemberEffectKey.EXP_MULTIPLIER, now=now
+    # a member contribution to the message-exp seam (e.g. an exp_multiplier
+    # buff) scales the award — pulled lazily here, so no sweeper is needed
+    # for expiry (product reads 1.0, the identity, when none are active)
+    multiplier = await effects.product(
+        db,
+        Scope.member(uid),
+        EffectSeam.MESSAGE_EXP_MULTIPLIER,
+        now=now,
     )
-    if multiplier is not None:
-        exp_gain = round(exp_gain * multiplier)
+    exp_gain = round(exp_gain * multiplier)
     year, season = now.year, month2season(now.month)
 
     seasonal_old = await exp_db.seasonal_exp(db, uid, year, season)

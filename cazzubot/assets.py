@@ -23,6 +23,10 @@ both stored in the row's ``url``.
 Failure policy mirrors ``Database.verify_schema``: a missing declared file
 aborts boot (the caller decides how to fail). ``sync_cdn`` is skipped with
 a boot warning when neither the asset guild nor channel is configured.
+
+Depends on: ``db``, ``config`` (asset guild/channel) and hikari. Depended on
+by: ``frogs`` (species art, catch banner) and the ``inventory`` plugin (item
+icons).
 """
 
 from __future__ import annotations
@@ -517,6 +521,21 @@ class Assets:
             raise KeyError(f"unknown asset key {key!r}")
         return row["url"]
 
+    async def thumbnail_for(self, asset: Enum) -> str | None:
+        """A URL an embed thumbnail can use for ``asset``, or None.
+
+        EMOJI-kind assets store a ``<:name:id>`` tag, which renders inline
+        but is not a thumbnail URL — this converts it to the emoji's CDN
+        endpoint (``cdn.discordapp.com/emojis/<id>.png``, ``.gif`` when
+        animated). Media references (``IMAGE``) pass through as-is. None
+        when the asset is unpublished (get() -> None) — callers skip the
+        thumbnail then, mirroring the inventory grid's fallback behavior.
+        """
+        ref = await self.get(asset)
+        if ref is None:
+            return None
+        return emoji_cdn_url(ref) or ref
+
 
 def _sha256(path: Path) -> str:
     """Content address of a file (the registry's drift signal)."""
@@ -548,6 +567,24 @@ def _emoji_id_from_ref(ref: str) -> int | None:
     """The numeric id hidden inside a ``<:name:id>`` emoji reference."""
     match = _EMOJI_REF.match(ref)
     return int(match.group(3)) if match else None
+
+
+def emoji_cdn_url(ref: str) -> str | None:
+    """The Discord CDN URL for a stored emoji reference, or None.
+
+    An EMOJI-kind asset stores its published reference as ``<:name:id>``
+    (or ``<a:name:id>`` for animated), which renders inline but is not a
+    URL an embed thumbnail can display. Derives
+    ``https://cdn.discordapp.com/emojis/<id>.png`` (``.gif`` when animated)
+    from the reference; returns None for anything that is not an emoji
+    reference (a media CDN URL passes through untouched in callers).
+    """
+    match = _EMOJI_REF.match(ref)
+    if match is None:
+        return None
+    eid = match.group(3)
+    ext = "gif" if match.group(1) else "png"
+    return f"https://cdn.discordapp.com/emojis/{eid}.{ext}"
 
 
 def _emoji_name_from_key(asset_key: str) -> str:

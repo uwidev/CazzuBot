@@ -1,4 +1,8 @@
-"""Runtime configuration, loaded from environment variables."""
+"""Runtime configuration, loaded from environment variables.
+
+Depends on: the ``.env`` file (env vars). Depended on by: ``main``, ``bot``,
+``assets`` (asset guild/channel) and the admin CLI (``cazzubot/cli/``).
+"""
 
 import os
 from dataclasses import dataclass, field

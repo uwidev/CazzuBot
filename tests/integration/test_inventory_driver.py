@@ -1,9 +1,10 @@
 """Generic /inventory through the offline driver.
 
-The command reads the shared ledger and renders a numbered inline-emoji
-grid through the per-namespace renderer registry. These tests seed real
-inventory rows, run ``/inventory`` end-to-end via ``run_slash``, and assert
-the rendered embed (grid slots, namespace header, empty state).
+The commands read the shared ledger and render embeds: ``view`` as a numbered
+inline-emoji grid through the item registry, ``info`` as a description card
+(thumbnail from the item's asset, title the name, the description prose, then
+one field per item ``field``). These tests seed real inventory rows, run the
+commands end-to-end via ``run_slash``, and assert the rendered embeds.
 """
 
 from __future__ import annotations
@@ -101,3 +102,91 @@ async def test_inventory_empty_state(full_bot: CazzuBot) -> None:
     assert embed is not None
     assert embed.description is not None
     assert "empty" in embed.description
+
+
+# -- /inventory info ---------------------------------------------------------
+
+
+async def _info_embed(bot: CazzuBot, uid: int, slot: int) -> hikari.Embed:
+    """Run ``/inventory info <slot>`` as ``uid`` and return the embed."""
+    result = await run_slash(
+        bot, "inventory info", options={"slot": slot}, user_id=uid
+    )
+    assert result.exceptions == []
+    assert result.response_type == hikari.ResponseType.MESSAGE_CREATE
+    first_response = result.first_response
+    assert first_response is not None
+    embed = first_response.get("embed")
+    assert embed is not None
+    return embed
+
+
+async def test_inventory_info_shows_item_card(full_bot: CazzuBot) -> None:
+    """info renders the card: asset thumbnail, name, description, fields."""
+    from cazzubot.assets import asset_key
+    from plugins.frogs.assets import FrogAsset
+
+    await _seed_frogs(full_bot, 424242)
+    # publish the frozen frog's emoji asset (slot 1 = frozen, ORDER BY item)
+    await full_bot.db.executemany(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        [
+            (
+                "<:frog_frozen:123456789012345678>",
+                asset_key(FrogAsset.FROG_BASIC_FROZEN),
+            ),
+            (
+                "<:frog_basic:987654321098765432>",
+                asset_key(FrogAsset.FROG_BASIC),
+            ),
+        ],
+    )
+
+    embed = await _info_embed(full_bot, 424242, 1)
+
+    assert embed.title == "Basic Frog (Frozen)"
+    assert "frozen solid" in (embed.description or "")
+    assert (
+        embed.thumbnail is not None
+        and embed.thumbnail.url
+        == "https://cdn.discordapp.com/emojis/123456789012345678.png"
+    )
+    # the consumption field reads the same frog_exp oracle as the grant
+    assert [field.value for field in embed.fields] == [
+        "Grants **3** seasonal exp."
+    ]
+    assert [field.name for field in embed.fields] == ["On consumption"]
+
+
+async def test_inventory_info_unpublished_asset_has_no_thumbnail(
+    full_bot: CazzuBot,
+) -> None:
+    """An unpublished icon asset renders the card without a thumbnail."""
+    await _seed_frogs(full_bot, 424242)
+
+    embed = await _info_embed(full_bot, 424242, 1)
+
+    assert embed.title == "Basic Frog (Frozen)"
+    assert embed.thumbnail is None
+    assert [field.value for field in embed.fields] == [
+        "Grants **3** seasonal exp."
+    ]
+
+
+async def test_inventory_info_unknown_slot_is_an_error(
+    full_bot: CazzuBot,
+) -> None:
+    """Info is possession-driven: an empty slot is rejected, like consume."""
+    await _seed_frogs(full_bot, 424242)
+
+    result = await run_slash(
+        full_bot, "inventory info", options={"slot": 5}, user_id=424242
+    )
+
+    assert result.exceptions == []
+    first_response = result.first_response
+    assert first_response is not None
+    assert first_response.get("flags", 0) & hikari.MessageFlag.EPHEMERAL
+    assert "No item in slot **5**." in str(
+        first_response.get("content", "")
+    )

@@ -15,6 +15,8 @@ Future consumers (badges-as-items, shop) call them directly.
 
 Rows are holdings, not history: add/subtract quantities here; audit trails
 stay in per-feature logs (e.g. ``member_frog_log``).
+
+Depends on: ``db``.
 """
 
 from __future__ import annotations

@@ -27,6 +27,9 @@ Decorator::
 One-off::
 
     await window_success(ctx, "mute role set")
+
+Depended on by: nearly every command extension (experience, levels, ranks,
+frogs, board, mod, misc, fun, welcome).
 """
 
 import functools

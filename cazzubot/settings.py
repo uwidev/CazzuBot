@@ -4,6 +4,9 @@ Replaces v1's ``db/guild.py``, ``db/internal.py`` and most per-feature
 settings getters. Values are JSON-serialized; timestamps stored ISO-8601.
 
 Plugins should namespace their keys, e.g. ``"mod.mute_role"``.
+
+Depended on by: ``bot`` (``plugin.enabled.*``), the roles/channels drift
+plugins (``*.manifest.path``) and feature plugins (namespaced feature keys).
 """
 
 import logging

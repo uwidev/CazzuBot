@@ -23,6 +23,7 @@ from cazzubot.assets import (
     _is_emoji_ref,
     _message_id,
     asset_key,
+    emoji_cdn_url,
 )
 from cazzubot.db import Database
 from tests.fakes import FakeAttachment, FakeMessage, FakeRest
@@ -392,6 +393,63 @@ def test_emoji_ref_helpers() -> None:
     assert _emoji_id_from_ref("<:leaf:123>") == 123
     assert _emoji_id_from_ref("<a:leaf:123>") == 123
     assert _emoji_id_from_ref("https://cdn.example.com/leaf.png") is None
+
+
+def test_emoji_cdn_url_derives_embed_thumbnails() -> None:
+    """Emoji refs become CDN URLs; non-emoji references yield None."""
+    assert (
+        emoji_cdn_url("<:frog_glyph:555>")
+        == "https://cdn.discordapp.com/emojis/555.png"
+    )
+    # animated emoji refs use the .gif endpoint
+    assert (
+        emoji_cdn_url("<a:frog_glyph:555>")
+        == "https://cdn.discordapp.com/emojis/555.gif"
+    )
+    assert emoji_cdn_url("https://cdn.example.com/leaf.png") is None
+
+
+async def test_thumbnail_for_converts_emoji_and_passes_media(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """thumbnail_for: emoji refs → CDN URL, media URLs pass through, None
+    while unpublished."""
+    _write_glyphs(tmp_path)
+    fake = _FakeBot(asset_db, str(tmp_path))
+    fake.plugins = [_EmojiPlugin()]
+
+    async def _create(guild_id: int, **_: object) -> _FakeEmoji:
+        return _FakeEmoji(555)
+
+    cast(Any, fake).rest = SimpleNamespace(create_emoji=_create)
+    assets = Assets(
+        cast(Any, fake),
+        cast(
+            Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)
+        ),
+        str(tmp_path),
+    )
+    await assets.reconcile()
+
+    # unpublished -> no thumbnail (callers skip it, like the grid fallback)
+    assert await assets.thumbnail_for(_EmojiAsset.FROG_GLYPH) is None
+
+    await assets.sync_cdn(cast(Any, None))
+    assert (
+        await assets.thumbnail_for(_EmojiAsset.FROG_GLYPH)
+        == "https://cdn.discordapp.com/emojis/555.png"
+    )
+
+    # a media URL stored on the row passes through untouched
+    await asset_db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        "https://cdn.example.com/classy.webp",
+        asset_key(_EmojiAsset.CLASSY_GLYPH),
+    )
+    assert (
+        await assets.thumbnail_for(_EmojiAsset.CLASSY_GLYPH)
+        == "https://cdn.example.com/classy.webp"
+    )
 
 
 def test_emoji_name_is_derived_from_asset_key() -> None:

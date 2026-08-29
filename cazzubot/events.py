@@ -14,6 +14,9 @@ Subscriptions are **deferred effects** (see ``cazzubot/lifecycle.py``):
 ``on`` returns an unsubscribe token, so a plugin can hand it to the
 lifecycle at load and withdraw its interest on unload — a deactivated
 component never leaves dead handlers firing.
+
+Depended on by: ``frogs`` (emits capture/consume events); no consumers are
+subscribed yet (future badges).
 """
 
 from __future__ import annotations

@@ -401,10 +401,19 @@ class ClusterEffect:
     immediately instead of blocking on up to 10 capture waits.
     """
 
-    # spawn_and_wait(bot, persist, cid=..., species_key=...), set on load
-    spawn_impl: Callable[..., Awaitable[bool]] | None = None
-    # strong references keep background child tasks alive until done
-    _background: set[asyncio.Task[Any]] = set()
+    def __init__(self) -> None:
+        """Bind the per-instance spawn implementation.
+
+        A class attribute holding a plain function would **bind** on
+        instance access (the registered handler would receive this
+        ClusterEffect as its first argument), so the injection lives on
+        the instance. The registry singleton (``EffectKey.CLUSTER.value``
+        — the one the spawn dispatch always uses) gets it from the
+        plugin's ``on_load``; tests inject their own on fresh instances.
+        """
+        self.spawn_impl: Callable[..., Awaitable[bool]] | None = None
+        # strong references keep background child tasks alive until done
+        self._background: set[asyncio.Task[Any]] = set()
 
     async def catch(
         self,

@@ -1,4 +1,8 @@
-"""Text leaderboard rendering (port of v1's ``src/leaderboard.py``)."""
+"""Text leaderboard rendering (port of v1's ``src/leaderboard.py``).
+
+Depended on by: ``plugins.experience`` (``exp top``) and ``plugins.frogs``
+(frog board).
+"""
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass

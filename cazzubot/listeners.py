@@ -13,6 +13,9 @@ Usage in a plugin extension::
     @guild_listener(loader, hikari.MessageCreateEvent)
     async def on_message(event: hikari.MessageCreateEvent) -> None:
         ...
+
+Depended on by: every plugin extension that listens to the gateway (all
+guild-scoped listeners register through this).
 """
 
 from typing import Any, Callable, TypeVar, cast

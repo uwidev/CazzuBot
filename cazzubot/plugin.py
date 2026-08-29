@@ -15,6 +15,9 @@ defines exactly one ``Plugin`` subclass instance as ``plugin``::
 
 The loader discovers it, applies its schema, registers its extensions and its
 scheduled-task handlers. That's the whole contract — no central registration.
+
+Depends on: ``scheduler`` (``TaskPolicy``) and ``errors``. Depended on by:
+``bot`` (load/unload/reload/enable/disable) and every plugin package.
 """
 
 import importlib

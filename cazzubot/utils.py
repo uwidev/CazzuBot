@@ -1,4 +1,8 @@
-"""General-purpose helpers shared by plugins."""
+"""General-purpose helpers shared by plugins.
+
+Depended on by: essentially every plugin (permissions, seasons, ``ConfirmMenu``,
+``deep_map``, ``member_snapshot``) plus ``templates`` and ``leaderboard``.
+"""
 
 import asyncio
 import logging

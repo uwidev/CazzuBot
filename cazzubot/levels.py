@@ -2,6 +2,9 @@
 
 Level requirements follow a cosine "wave" bounded by asymptotic envelopes.
 Cumulative requirements are memoized; lookups double the memo when needed.
+
+Depended on by: ``plugins.experience`` (membership card, leaderboards) and
+``plugins.levels.logic`` (level-up decisions).
 """
 
 import logging

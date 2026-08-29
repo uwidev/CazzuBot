@@ -1,7 +1,7 @@
 """DB boundary enforcement — row fetches become models at the module edge.
 
 Repository modules (``plugins/*/db.py``) and the core table owners
-(``scheduler``/``settings``/``member_effects``/``assets``) must never expose a
+(``scheduler``/``settings``/``effects``/``assets``) must never expose a
 raw ``aiosqlite.Row`` (or untyped ``Any`` JSON) as a public return type: the
 caller gets a dataclass (``fetch_model``/``fetch_models``), or a precisely
 typed tuple/scalar for projections (``rank_rows`` results, ``fetchval``
@@ -22,7 +22,7 @@ from pathlib import Path
 _TABLE_OWNERS = (
     "cazzubot/scheduler.py",
     "cazzubot/settings.py",
-    "cazzubot/member_effects.py",
+    "cazzubot/effects.py",
     "cazzubot/assets.py",
 )
 
