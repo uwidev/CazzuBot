@@ -110,15 +110,23 @@ class Catalog(
                 thumbnail_art = await bot.assets.get(species.art)
                 if thumbnail_art is not None:
                     embed.set_thumbnail(thumbnail_art)
-            value = f"{species.description}\nRarity: {species.rarity}"
-            # consumption is item-owned — the catalog reports each species'
-            # consume value from its item definitions (per-state)
-            normal_exp = frog_exp(species.key, FrogState.NORMAL)
-            frozen_exp = frog_exp(species.key, FrogState.FROZEN)
-            value += (
-                f"\nConsume: **`{normal_exp}`** exp (normal) / "
-                f"**`{frozen_exp}`** exp (frozen)"
-            )
+            if species.spawn_effect is not None:
+                # uncatchable: never a consume line (no item/exp exists)
+                value = (
+                    f"{species.description}\nRarity: {species.rarity}\n"
+                    "Cannot be caught — it bursts into Basic Frogs nearby!"
+                )
+            else:
+                # consumption is item-owned — the catalog reports each
+                # species' consume value from its item definitions
+                # (per-state), so display and grant cannot drift
+                value = f"{species.description}\nRarity: {species.rarity}"
+                normal_exp = frog_exp(species.key, FrogState.NORMAL)
+                frozen_exp = frog_exp(species.key, FrogState.FROZEN)
+                value += (
+                    f"\nConsume: **`{normal_exp}`** exp (normal) / "
+                    f"**`{frozen_exp}`** exp (frozen)"
+                )
             embed.add_field(
                 name=f"{species.name} (`{species.key.value}`)", value=value
             )

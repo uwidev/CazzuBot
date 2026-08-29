@@ -79,17 +79,33 @@ async def test_frog_register_rejects_bad_fuzzy(
         await invoke_command(Register(), ctx, interval="2m", fuzzy=2.0)
 
 
-async def test_frog_catalog_lists_species(
-    bot: CazzuBot, ctx: FakeContext
+async def test_frog_catalog_lists_all_frogmd_species(
+    bot: CazzuBot,
+    ctx: FakeContext,
 ) -> None:
     await invoke_command(Catalog(), ctx)
 
     embed = ctx.sent[-1].embed
     assert embed is not None
     assert embed.title == "Frog Species Catalog"
-    assert len(embed.fields) == 1
-    assert any("Leaf Frog" in field.name for field in embed.fields)
-    assert not any("Classy Frog" in field.name for field in embed.fields)
+    names = [field.name for field in embed.fields]
+    assert len(names) == 5
+    assert any("Basic Frog" in name for name in names)
+    assert any("Pog Frog" in name for name in names)
+    assert any("Froggers Frog" in name for name in names)
+    assert any("Classy Frog" in name for name in names)
+    assert any("Cluster Frog" in name for name in names)
+    # cluster: burst note, no "Consume:" line (no item/exp exists)
+    cluster_field = next(
+        field for field in embed.fields if "Cluster Frog" in field.name
+    )
+    assert "Cannot be caught" in cluster_field.value
+    assert "Consume:" not in cluster_field.value
+    # classy: exp line renders the oracle value (D1 default: 200)
+    classy_field = next(
+        field for field in embed.fields if "Classy Frog" in field.name
+    )
+    assert "**`200`** exp" in classy_field.value
 
 
 # -- capture menu -----------------------------------------------------------
