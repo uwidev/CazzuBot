@@ -100,6 +100,22 @@ async def spawn_and_wait(
     """
     if species_key is None:
         species_key = roll_species().key
+    species = by_key(species_key)
+    if species is not None and species.spawn_effect is not None:
+        # spawn-effect species (Cluster) never post a catchable frog —
+        # their hook runs instead and this function returns immediately
+        payload = species.spawn_effect
+        handler = getattr(payload.key.value, "spawn", None)
+        if handler is not None:
+            await handler(
+                bot,
+                payload,
+                cid=cid,
+                guild_id=bot.config.guild_id,
+                persist=persist,
+                now=pendulum.now("UTC"),
+            )
+        return False
     menu = FrogCatchMenu(bot, cid, species_key)
     content = await _frog_content(bot, species_key)
     if ctx is not None:
@@ -277,6 +293,13 @@ class FrogCatchMenu(lightbulb.components.Menu):
                     "capture of unknown species %r (uid=%s)",
                     self.species_key.value,
                     uid,
+                )
+                return
+            if species.spawn_effect is not None:
+                await mctx.respond(
+                    "This frog cannot be caught — it already burst "
+                    "into its children!",
+                    flags=hikari.MessageFlag.EPHEMERAL,
                 )
                 return
             await frog_db.add_capture_log(

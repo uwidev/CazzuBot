@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from cazzubot.models import FrogItemKey
 
 from .assets import FrogAsset
-from .effects import EffectPayload
+from .effects import ClusterPayload, EffectPayload
 
 DEFAULT_SPECIES_KEY = FrogItemKey.BASIC
 
@@ -111,7 +111,7 @@ SPECIES: tuple[Species, ...] = (
         description="Be careful with this one… she's… spawning!",
         spawn_weight=300.0,
         catch_effect=None,
-        spawn_effect=None,  # ClusterPayload wired in Task 5
+        spawn_effect=ClusterPayload(),
         art=None,
     ),
 )

@@ -46,9 +46,11 @@ def test_species_registry_has_frogmd_five() -> None:
     assert weights[FrogItemKey.FROGGERS] == 50.0
     assert weights[FrogItemKey.CLASSY] == 200.0
     assert weights[FrogItemKey.CLUSTER] == 300.0
-    # cluster is uncatchable-by-design: no art (spawn_effect wired in Task 5)
+    # cluster is uncatchable-by-design: no art, but a spawn hook that
+    # replaces the catchable frog at spawn time
     cluster = by_key(FrogItemKey.CLUSTER)
     assert cluster is not None and cluster.art is None
+    assert cluster.spawn_effect is not None
 
 
 def test_species_art_is_a_declared_asset_member_or_none() -> None:

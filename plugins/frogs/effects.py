@@ -33,11 +33,14 @@ load — nothing here imports the factory.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import random
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import pendulum
 
@@ -52,6 +55,10 @@ if TYPE_CHECKING:
     from cazzubot.bot import CazzuBot
 
 _log = logging.getLogger(__name__)
+
+# hikari-free channel-type check: hikari.ChannelType.GUILD_TEXT == 0 and
+# the REST returns channel objects whose ``type`` is that value.
+_GUILD_TEXT = 0
 
 
 def frog_item_key(species_key: FrogItemKey, state: FrogState) -> str:
@@ -382,6 +389,141 @@ class RoleConverger:
             )
 
 
+class ClusterEffect:
+    """``cluster`` — the spawn hook: burst child frogs into nearby channels.
+
+    Children are spawned through ``spawn_impl`` — the factory's
+    ``spawn_and_wait`` — which this module cannot import (the edge
+    ``effects → factory`` would cycle through species). The plugin's
+    ``on_load`` injects it (see plugins/frogs/__init__.py), keeping the
+    import graph acyclic and hikari out of this service module. Children
+    run as **tracked background tasks** so the scheduler handler returns
+    immediately instead of blocking on up to 10 capture waits.
+    """
+
+    # spawn_and_wait(bot, persist, cid=..., species_key=...), set on load
+    spawn_impl: Callable[..., Awaitable[bool]] | None = None
+    # strong references keep background child tasks alive until done
+    _background: set[asyncio.Task[Any]] = set()
+
+    async def catch(
+        self,
+        bot: "CazzuBot",
+        payload: EffectPayload,
+        *,
+        uid: int,
+        species_key: FrogItemKey,
+        now: pendulum.DateTime,
+    ) -> None:
+        """No catch behavior — a cluster frog can never be captured."""
+        return None
+
+    async def consume(
+        self,
+        bot: "CazzuBot",
+        payload: EffectPayload,
+        *,
+        scope: Scope,
+        provenance: str,
+        amount: int,
+        now: pendulum.DateTime,
+    ) -> None:
+        """No consume behavior — cluster has no item (uncatchable)."""
+        return None
+
+    async def spawn(
+        self,
+        bot: "CazzuBot",
+        payload: EffectPayload,
+        *,
+        cid: int,
+        guild_id: int,
+        persist: int,
+        now: pendulum.DateTime,
+    ) -> None:
+        """Explode: 4–10 child Basic frogs into the text channels around ``cid``."""
+        if not isinstance(payload, ClusterPayload):
+            raise TypeError(
+                "cluster effect requires ClusterPayload, got "
+                f"{type(payload).__name__}"
+            )
+        if self.spawn_impl is None:
+            _log.error(
+                "cluster effect has no spawn_impl — plugin on_load missed"
+            )
+            return
+        zone = await self._zone(bot, guild_id, cid, payload.radius)
+        if not zone:
+            _log.warning(
+                "cluster spawn channel %s outside text channels", cid
+            )
+            return
+        count = random.randint(payload.min_spawns, payload.max_spawns)
+        targets = [random.choice(zone) for _ in range(count)]
+        _log.info(
+            "cluster frog bursts %d basic(s) across %d channel(s)",
+            count,
+            len(zone),
+        )
+        for target in targets:
+            self._start_child(bot, payload, persist, target)
+            if payload.delay > 0:
+                await asyncio.sleep(payload.delay)
+
+    async def _zone(
+        self, bot: "CazzuBot", guild_id: int, cid: int, radius: int
+    ) -> list[tuple[int, int]]:
+        """(channel_id, position) pairs within ``radius`` of ``cid``.
+
+        Text channels only, ordered by (position, id); the zone is the
+        slice ±``radius`` around the spawn channel, clamped at both ends.
+        """
+        channels = await bot.rest.fetch_guild_channels(guild_id)
+        texts = [
+            (
+                int(channel.id),
+                int(getattr(channel, "position", 0) or 0),
+            )
+            for channel in channels
+            if getattr(channel, "type", None) == _GUILD_TEXT
+        ]
+        texts.sort(key=lambda entry: (entry[1], entry[0]))
+        ids = [entry[0] for entry in texts]
+        if cid not in ids:
+            return []
+        index = ids.index(cid)
+        return texts[max(0, index - radius) : index + radius + 1]
+
+    def _start_child(
+        self,
+        bot: "CazzuBot",
+        payload: "ClusterPayload",
+        persist: int,
+        target: tuple[int, int],
+    ) -> None:
+        """Fire one child Basic-frog spawn as a tracked background task."""
+        impl = self.spawn_impl
+        if impl is None:
+            _log.error(
+                "cluster effect has no spawn_impl — plugin on_load missed"
+            )
+            return
+        child_persist = persist or payload.persist
+        task = asyncio.create_task(
+            cast(
+                Coroutine[Any, Any, bool],
+                impl(
+                    bot,
+                    child_persist,
+                    cid=target[0],
+                    species_key=payload.child_species,
+                ),
+            )
+        )
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+
 class EffectKey(Enum):
     """The effect registry — each member's value IS its handler.
 
@@ -390,14 +532,16 @@ class EffectKey(Enum):
     and slated for removal. ``REACTION``/``ROLE`` are the generic,
     scope-aware consume modifiers (2026-08-28 separation): any caller —
     item composition today, an admin command tomorrow — applies them to
-    any member/guild scope. Adding an effect = define the handler class,
-    then one enum member; dispatch everywhere is ``payload.key.value``
-    and needs no registration or lookup.
+    any member/guild scope. ``CLUSTER`` is the spawn-side entity hook (its
+    ``spawn`` replaces the catchable frog at spawn time). Adding an effect
+    = define the handler class, then one enum member; dispatch everywhere
+    is ``payload.key.value`` and needs no registration or lookup.
     """
 
     EXP = ExpEffect()
     REACTION = ReactionEffect()
     ROLE = RoleEffect()
+    CLUSTER = ClusterEffect()
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,3 +606,23 @@ class RolePayload:
             if guild_kind == "development"
             else self.role_prod
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ClusterPayload:
+    """The ``cluster`` spawn effect's configuration (FROG.md defaults).
+
+    Replaces the catchable frog at spawn time (``Species.spawn_effect``):
+    burst ``min_spawns``..``max_spawns`` child frogs into the text
+    channels within ``radius`` of the spawn channel, staggered by
+    ``delay`` seconds (the rate-limit guard).
+    """
+
+    key = EffectKey.CLUSTER
+
+    min_spawns: int = 4
+    max_spawns: int = 10
+    radius: int = 2  # text channels up AND down from the spawn channel
+    delay: float = 0.75  # seconds between child spawns (rate-limit guard)
+    child_species: FrogItemKey = FrogItemKey.BASIC
+    persist: int = 30  # child lifetime when the spawning ctx omits persist

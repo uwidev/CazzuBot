@@ -129,6 +129,7 @@ async def seeded_bot(
     fake_cache.add_guild(fake_guild)
     fake_cache.add_member(author)
     fake_cache.add_channel(channel)
+    fake_rest.guilds[fake_guild.id] = fake_guild
     fake_rest.members[(fake_guild.id, author.id)] = author
     seed_bot(bot, cache=fake_cache, rest=fake_rest)
     await seed_asset_registry(bot)
@@ -207,6 +208,7 @@ async def boot_full_bot(
     cache.add_guild(guild)
     cache.add_member(member)
     cache.add_channel(channel)
+    rest.guilds[guild.id] = guild
     rest.members[(guild.id, member.id)] = member
     seed_bot(instance, cache=cache, rest=rest)
     # owner checks short-circuit without a fetch_application round-trip

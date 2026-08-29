@@ -153,7 +153,10 @@ class FakeChannel:
         self.id = id
         self.name = name
         self.guild_id = guild_id
-        self.type = hikari.ChannelType.GUILD_TEXT
+        self.position: int = 0
+        self.type: hikari.ChannelType | None = (
+            hikari.ChannelType.GUILD_TEXT
+        )
         self.sent: list[dict[str, Any]] = []
         self.messages: list[FakeMessage] = []
 
@@ -284,6 +287,7 @@ class FakeRest:
     """
 
     def __init__(self) -> None:
+        self.guilds: dict[int, FakeGuild] = {}
         self.members: dict[tuple[int, int], FakeMember] = {}
         self.users: dict[int, FakeUser] = {}
         self.messages: dict[tuple[int, int], FakeMessage] = {}
@@ -374,6 +378,16 @@ class FakeRest:
         if member is None:
             raise _not_found("member not found")
         return member
+
+    async def fetch_guild_channels(
+        self,
+        guild_id: int,
+    ) -> list[FakeChannel]:
+        """The guild's channels (the cluster blast zone reads this)."""
+        guild = self.guilds.get(guild_id)
+        if guild is None:
+            return []
+        return list(guild.channels.values())
 
     async def fetch_user(self, user_id: int) -> FakeUser:
         user = self.users.get(user_id)

@@ -7,6 +7,7 @@ from typing_extensions import override
 
 from . import db, factory
 from .assets import FrogAsset
+from .effects import ClusterEffect
 from .items import FrogItems
 
 # the season rollover: first instant of Jan/Apr/Jul/Oct — freezes every
@@ -73,12 +74,13 @@ class FrogsPlugin(Plugin):
         await bot.scheduler.arm_if_rowless(
             QUARTERLY_TAG, QUARTERLY_CADENCE
         )
+        # inject the cluster spawn implementation (effects → factory would
+        # cycle through species; the plugin bridges them at load)
+        ClusterEffect.spawn_impl = factory.spawn_and_wait
 
     @override
     async def on_unload(self, bot: CazzuBot) -> None:
-        # a hot-reload drops nothing durable — items were unregistered by
-        # bot.py, spawn tasks/rows by the lifecycle undos
-        return None
+        ClusterEffect.spawn_impl = None
 
 
 plugin = FrogsPlugin()
