@@ -38,10 +38,14 @@ class Species:
     """One species — values are code, swappable only by editing them.
 
     The **entity**: what a frog *is* as a world/spawn object (its name,
-    rarity, spawn weight, art, and what happens on catch). What a caught
-    frog becomes as an inventory object (its item_id, icon, consume
-    behavior) lives on the matching :class:`Item` in ``items.py`` — not
-    here.
+    rarity, spawn weight, art, and what happens on catch). What consuming
+    a caught frog does is deliberately NOT here: consumption is
+    **item-owned** (owner 2026-08-28 — the item composes, effects
+    modify). The matching :class:`Item` in ``items.py`` grants exp from
+    its oracle and composes the effects it applies
+    (``items.py::_SPECIES_CONSUME``), so a species carries no consume
+    declaration. What a caught frog becomes as an inventory object (its
+    item_id, icon, consume behavior) lives on that item, not here.
     """
 
     key: FrogItemKey
