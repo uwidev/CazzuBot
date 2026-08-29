@@ -51,7 +51,7 @@ class FrogsPlugin(Plugin):
 
     name = "frogs"
     schema = db.SCHEMA
-    extensions = ["plugins.frogs.extension"]
+    extensions = ["plugins.frogs.extension", "plugins.frogs.reactions"]
     scheduled = {
         "frog": factory.on_frog_due,
         DAILY_FROG_TAG: on_daily_frog_due,

@@ -1,0 +1,82 @@
+"""Frog reactions — the message-time listener for FrogSeam.FROG_REACTION.
+
+A user with an active reaction contribution (Pog/Froggers consumed) has
+a per-message chance the bot reacts to their message with the froggers
+emoji. The seam only stores the chance; this listener is the consumer:
+
+- fold: the **strongest** active contribution decides the chance (max —
+  stacking reaction frogs never strengthens, mirroring the "duration
+  only, never stronger" rule).
+- throttle: one reaction per user per ``_REACT_COOLDOWN`` seconds
+  (10s per FROG.md). The cooldown is in-memory by design: a restart at
+  worst allows one extra reaction; no table is worth that.
+- gracefully no-ops while the froggers emoji asset is unpublished.
+"""
+
+from __future__ import annotations
+
+import logging
+import random
+import time
+from typing import cast
+
+import hikari
+import lightbulb
+
+from cazzubot.bot import CazzuBot
+from cazzubot.effects import Scope
+from cazzubot.listeners import guild_listener
+
+from .assets import FrogAsset
+from .seams import FrogSeam
+
+_log = logging.getLogger(__name__)
+
+loader = lightbulb.Loader()
+
+# seconds between reactions per user (FROG.md: "10 second cooldown per
+# react") — also the practical Discord rate-limit guard.
+_REACT_COOLDOWN = 10.0
+
+# uid -> epoch of the last reaction; in-memory per D4.
+_last_react: dict[int, float] = {}
+
+
+@guild_listener(loader, hikari.MessageCreateEvent)
+async def on_message(event: hikari.MessageCreateEvent) -> None:
+    """Roll the reaction chance for the message author, throttled.
+
+    Reads ``event.message`` (not the event's convenience props) so the
+    offline fakes drive it exactly like the experience listener.
+    """
+    message = event.message
+    author = message.author
+    if author is None or not event.is_human:
+        return
+    bot = cast(CazzuBot, event.app)
+    uid = author.id
+    # one row by construction (the reaction effect is keyed by effect
+    # identity, not by item) — read it directly, no fold
+    contribs = await bot.effects.list(
+        Scope.member(uid), FrogSeam.FROG_REACTION
+    )
+    if not contribs:
+        return
+    raw_chance = contribs[0].payload.get("chance", 0.0)
+    chance = (
+        float(raw_chance) if isinstance(raw_chance, (int, float)) else 0.0
+    )
+    if chance <= 0.0 or random.random() >= chance:
+        return
+    if time.time() - _last_react.get(uid, 0.0) < _REACT_COOLDOWN:
+        return
+    emoji = await bot.assets.get(FrogAsset.FROG_FROGGERS)
+    if emoji is None:
+        return  # froggers emoji not published yet — nothing to react with
+    try:
+        await bot.rest.add_reaction(message.channel_id, message.id, emoji)
+        _last_react[uid] = time.time()
+    except hikari.NotFoundError:
+        pass  # message or emoji vanished between pull and react — fine
+    # hikari's REST client already sleeps through 429s internally, so a
+    # rate-limited react cannot raise — there is no RateLimitError to catch
