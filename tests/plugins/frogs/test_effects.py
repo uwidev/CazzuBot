@@ -8,6 +8,7 @@ import pendulum
 import pytest
 
 from cazzubot.bot import CazzuBot
+from cazzubot.effects import Scope
 from cazzubot.models import FrogState, FrogItemKey
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
@@ -41,8 +42,14 @@ def test_every_effect_key_maps_to_a_handler() -> None:
         assert callable(getattr(handler, "consume", None)), key
 
 
-async def test_exp_effect_grants_payload_values(bot: CazzuBot) -> None:
-    """Reusable effect: the same handler, different payload values."""
+async def test_exp_effect_grants_payload_normal_value(bot: CazzuBot) -> None:
+    """The fossil exp effect grants the payload's per-unit value.
+
+    Consume hooks are scope-aware now (2026-08-28 separation): exp
+    grants are member-scoped, and the fossil grants the payload's normal
+    per-unit value — frozen exp is item-owned behavior (the oracle in
+    ``items.py``), not a modifier concern.
+    """
     effect = EffectKey.EXP.value
     now = pendulum.now("UTC")
     payload = ExpPayload(exp=20, frozen_exp=6)
@@ -50,10 +57,9 @@ async def test_exp_effect_grants_payload_values(bot: CazzuBot) -> None:
     await effect.consume(
         bot,
         payload,
-        uid=_UID,
-        species_key=FrogItemKey.BASIC,
+        scope=Scope.member(_UID),
+        provenance="frog:basic:normal",
         amount=2,
-        state=FrogState.NORMAL,
         now=now,
     )
     assert (
@@ -62,22 +68,6 @@ async def test_exp_effect_grants_payload_values(bot: CazzuBot) -> None:
         )
         == 40
     )  # 20 exp/frog * 2
-
-    await effect.consume(
-        bot,
-        payload,
-        uid=_UID,
-        species_key=FrogItemKey.BASIC,
-        amount=1,
-        state=FrogState.FROZEN,
-        now=now,
-    )
-    assert (
-        await exp_db.seasonal_exp(
-            bot.db, _UID, now.year, (now.month - 1) // 3
-        )
-        == 46
-    )  # +6 frozen
 
 
 async def test_exp_effect_catch_is_a_noop(bot: CazzuBot) -> None:
@@ -97,10 +87,9 @@ async def test_exp_effect_rejects_wrong_payload(bot: CazzuBot) -> None:
         await EffectKey.EXP.value.consume(
             bot,
             cast(Any, _WrongPayload()),
-            uid=_UID,
-            species_key=FrogItemKey.BASIC,
+            scope=Scope.member(_UID),
+            provenance="frog:basic:normal",
             amount=1,
-            state=FrogState.NORMAL,
             now=pendulum.now("UTC"),
         )
 
