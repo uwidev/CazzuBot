@@ -18,7 +18,7 @@ import lightbulb
 from cazzubot.assets import AssetError, Assets
 from cazzubot.config import Config
 from cazzubot.db import Database, SchemaMismatchError
-from cazzubot.effects import Effects
+from cazzubot.statuses import Statuses
 from cazzubot.errors import UserInputError
 from cazzubot.events import EventBus
 from cazzubot.inventory import Inventory
@@ -68,7 +68,7 @@ class CazzuBot(hikari.GatewayBot):
         self.events = EventBus()
         self.inventory = Inventory(self)
         self.items = Items(self)
-        self.effects = Effects(self)
+        self.statuses = Statuses(self)
         self.lifecycle = Lifecycle(self)
 
         self.plugins: list[Plugin] = []
@@ -124,7 +124,7 @@ class CazzuBot(hikari.GatewayBot):
         await self.db.run_schema(self.scheduler.schema)
         await self.db.run_schema(self.assets.schema)
         await self.db.run_schema(self.inventory.schema)
-        await self.db.run_schema(self.effects.schema)
+        await self.db.run_schema(self.statuses.schema)
 
         # discover and load plugins — two phases so any on_load hook can
         # depend on every plugin's schema/extensions being ready (no load
@@ -181,7 +181,7 @@ class CazzuBot(hikari.GatewayBot):
             *self.scheduler.schema,
             *self.assets.schema,
             *self.inventory.schema,
-            *self.effects.schema,
+            *self.statuses.schema,
         ]
         for plugin in plugins:
             statements.extend(plugin.schema)

@@ -1,6 +1,6 @@
-"""Frog effect seams — typed keys, never bare strings (SeamKey pattern).
+"""Frog status seams — typed keys, never bare strings (SeamKey pattern).
 
-Mirrors ``plugins/experience/logic.py::EffectSeam``: the enum member's
+Mirrors ``plugins/experience/logic.py::StatusSeam``: the enum member's
 ``key`` is the stored seam string; ``external`` marks seams whose
 consequence touches Discord (only those get convergence jobs).
 """
@@ -11,12 +11,12 @@ from enum import Enum
 
 
 class FrogSeam(Enum):
-    """Frogs' input points on the effects engine."""
+    """Frogs' input points on the statuses engine."""
 
     # internal: message-time reaction chance (lazy expiry, no converger)
     FROG_REACTION = "frog_reaction"
     # external: a Discord role granted for a duration (converged by
-    # plugins/frogs/effects.py::RoleConverger)
+    # plugins/frogs/outcomes.py::RoleConverger)
     CLASSY_ROLE = "classy_role"
 
     @property
@@ -30,11 +30,11 @@ class FrogSeam(Enum):
         return self is FrogSeam.CLASSY_ROLE
 
 
-class FrogEffect(Enum):
-    """Frog effect identities — the `source` of a contribution.
+class FrogStatus(Enum):
+    """Frog status identities — the `source` of a contribution.
 
-    "The same effect" is keyed by (scope, seam, source); several items
-    that ARE the same effect (Pog and Froggers = reaction chance) share
+    "The same status" is keyed by (scope, seam, source); several items
+    that publish the same status (Pog and Froggers = reaction chance) share
     one identity here, and the granting item travels in the payload as
     ``"from"`` provenance — the item never defines identity.
     """
@@ -44,5 +44,5 @@ class FrogEffect(Enum):
 
     @property
     def key(self) -> str:
-        """The derived storage string for this effect identity."""
+        """The derived storage string for this status identity."""
         return self.value

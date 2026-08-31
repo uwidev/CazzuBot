@@ -4,13 +4,13 @@ from collections.abc import Callable
 
 from cazzubot import Plugin
 from cazzubot.bot import CazzuBot
-from cazzubot.effects import EffectsClearedEvent, ScopeKind
+from cazzubot.statuses import ScopeKind, StatusesClearedEvent
 from cazzubot.scheduler import At
 from typing_extensions import override
 
 from . import db, factory
 from .assets import FrogAsset
-from .effects import EffectKey, RoleConverger
+from .outcomes import OutcomeKey, RoleConverger
 from .items import FrogItems, classy_role_ids
 from .seams import FrogSeam
 
@@ -72,7 +72,7 @@ class FrogsPlugin(Plugin):
     item_decl = FrogItems
 
     # load-time wiring (set in on_load, withdrawn in on_unload): the
-    # captured bot for the effects-cleared revert, the classy-role
+    # captured bot for the statuses-cleared revert, the classy-role
     # converger, and the event-bus unsubscribe token
     _bot: CazzuBot  # pyright: ignore[reportUninitializedInstanceVariable]
     _converger: RoleConverger  # pyright: ignore[reportUninitializedInstanceVariable]
@@ -90,30 +90,30 @@ class FrogsPlugin(Plugin):
             QUARTERLY_TAG, QUARTERLY_CADENCE
         )
         # inject the cluster spawn implementation on the registry singleton
-        # (effects → factory would cycle through species; the plugin
+        # (outcomes → factory would cycle through species; the plugin
         # bridges them at load)
-        EffectKey.CLUSTER.value.spawn_impl = factory.spawn_and_wait
+        OutcomeKey.CLUSTER.value.spawn_impl = factory.spawn_and_wait
         # register the classy-role converger (the external seam fails fast
         # on publish until one is registered) + revert instantly on clear
         self._bot = bot
         self._converger = RoleConverger(_ROLE_IDS)
-        bot.effects.register_converger(
+        bot.statuses.register_converger(
             FrogSeam.CLASSY_ROLE, self._converger
         )
         self._unsub_cleared = bot.events.on(
-            EffectsClearedEvent, self._on_effects_cleared
+            StatusesClearedEvent, self._on_statuses_cleared
         )
 
     @override
     async def on_unload(self, bot: CazzuBot) -> None:
-        EffectKey.CLUSTER.value.spawn_impl = None
-        bot.effects.unregister_converger(FrogSeam.CLASSY_ROLE)
+        OutcomeKey.CLUSTER.value.spawn_impl = None
+        bot.statuses.unregister_converger(FrogSeam.CLASSY_ROLE)
         self._unsub_cleared()
 
-    async def _on_effects_cleared(
-        self, event: EffectsClearedEvent
+    async def _on_statuses_cleared(
+        self, event: StatusesClearedEvent
     ) -> None:
-        """Instant role revert when the effects engine explicitly clears.
+        """Instant role revert when the statuses engine explicitly clears.
 
         The engine emits the event without an app, so the bot is captured
         on the plugin at load (``self._bot``).

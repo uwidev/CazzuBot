@@ -56,9 +56,9 @@ class View(
 class Consume(
     lightbulb.SlashCommand,
     name="consume",
-    description="Consume an item from your inventory for its effect.",
+    description="Consume an item from your inventory for its outcome.",
 ):
-    """Confirm, then consume a stack for the item's own effect."""
+    """Confirm, then consume a stack for the item's own outcome."""
 
     slot = lightbulb.integer(
         "slot", "The inventory slot to consume", min_value=1
@@ -115,7 +115,7 @@ class Consume(
             raise UserInputError("Not enough of that item to consume.")
 
         # the item's own consume runs first (grants exp etc.), then the
-        # stack decrements — a failed effect never eats items.
+        # stack decrements — a failed outcome never eats items.
         await item.consume(bot, uid, self.amount)
         await bot.inventory.remove(uid, item_id, self.amount)
 

@@ -8,7 +8,7 @@ declared dataclass field types (``pendulum.DateTime``, ``Enum``, ``dict``/
 ``list``, ``bool``) at the model boundary, so a row fetch is typed end to end.
 
 Depends on: ``timeparse`` (ISO-8601 parsing). Depended on by: every store
-(settings, scheduler, assets, inventory, effects) and every plugin's db
+(settings, scheduler, assets, inventory, statuses) and every plugin's db
 module — the whole data layer.
 """
 

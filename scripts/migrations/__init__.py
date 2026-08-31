@@ -21,6 +21,7 @@ from scripts.migrations import (
     frog_species,
     frog_species_key,
     poll_cid,
+    status_contribution,
 )
 from scripts.migrations.common import Migration
 
@@ -31,6 +32,7 @@ MIGRATIONS = (
     asset_kind.MIGRATION,
     frog_species_key.MIGRATION,
     effect_contributions.MIGRATION,
+    status_contribution.MIGRATION,
 )
 
 __all__ = ["MIGRATIONS", "Migration"]

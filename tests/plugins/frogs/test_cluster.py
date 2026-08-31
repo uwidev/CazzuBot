@@ -9,7 +9,7 @@ import asyncio
 import pendulum
 
 from cazzubot.models import FrogItemKey
-from plugins.frogs.effects import ClusterEffect, ClusterPayload
+from plugins.frogs.outcomes import ClusterOutcome, ClusterPayload
 from tests.fakes import FakeChannel
 
 
@@ -38,14 +38,14 @@ async def test_cluster_spawn_bursts_basics_into_zone(
         spawned.append((cid or 0, species_key or FrogItemKey.BASIC))
         return False
 
-    effect = ClusterEffect()
-    effect.spawn_impl = fake_spawn
+    outcome = ClusterOutcome()
+    outcome.spawn_impl = fake_spawn
     monkeypatch.setattr(
-        "plugins.frogs.effects.random",
+        "plugins.frogs.outcomes.random",
         __import__("random").Random(7),
     )
 
-    await effect.spawn(
+    await outcome.spawn(
         bot,
         ClusterPayload(),
         cid=10,
@@ -78,6 +78,6 @@ async def test_cluster_zone_ignores_non_text_and_outside_channels(
             channel.type = None  # not a text channel
         guild.channels[cid_] = channel
 
-    effect = ClusterEffect()
-    zone = await effect._zone(bot, gid, cid=10, radius=2)  # type: ignore[attr-defined]
+    outcome = ClusterOutcome()
+    zone = await outcome._zone(bot, gid, cid=10, radius=2)  # type: ignore[attr-defined]
     assert [entry[0] for entry in zone] == [1, 9, 10, 11]  # 99 excluded

@@ -78,14 +78,14 @@ async def test_exp_multiplier_scales_award(
     """A member contribution to the message-exp seam scales the award."""
     from datetime import timedelta
 
-    from cazzubot import effects
-    from cazzubot.effects import Scope
-    from plugins.experience.logic import EffectSeam
+    from cazzubot import statuses
+    from cazzubot.statuses import Scope
+    from plugins.experience.logic import StatusSeam
 
-    await effects.publish(
+    await statuses.publish(
         seeded_bot.db,
         Scope.member(_AUTHOR_ID),
-        EffectSeam.MESSAGE_EXP_MULTIPLIER,
+        StatusSeam.MESSAGE_EXP_MULTIPLIER,
         "test",
         {"value": 2.0},
         duration=timedelta(hours=1),

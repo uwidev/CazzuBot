@@ -48,7 +48,7 @@ call it.
 4. Item-owned consume
 ---------------------
 
-`remove` only moves the count. To attach an effect (e.g. granting exp),
+`remove` only moves the count. To attach an outcome (e.g. granting exp),
 define the `consume` behavior on the `Item` definition itself — see
 `plugins/frogs/items.py`, where consuming a frog grants seasonal exp *and*
 emits a `FrogConsumedEvent`:

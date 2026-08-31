@@ -16,12 +16,12 @@ import hikari
 import pendulum
 
 from cazzubot.bot import CazzuBot
-from cazzubot.effects import EFFECT_CONVERGE_TAG, Scope
+from cazzubot.statuses import STATUS_CONVERGE_TAG, Scope
 from cazzubot.models import FrogItemKey
 from tests.driver import press_button, run_slash, wait_for_menu
 from tests.fakes import rest_of
 
-from plugins.frogs.seams import FrogEffect, FrogSeam
+from plugins.frogs.seams import FrogSeam, FrogStatus
 
 # the dev-guild classy role (FROG.md); tests run guild_kind=development
 _CLASSY_ROLE_DEV = 1542294599358353430
@@ -174,7 +174,7 @@ async def test_consume_pog_via_driver_publishes_reaction_seam(
         )
         == 1
     )
-    contribs = await full_bot.effects.list(
+    contribs = await full_bot.statuses.list(
         Scope.member(424242), FrogSeam.FROG_REACTION
     )
     assert len(contribs) == 1
@@ -212,7 +212,7 @@ async def test_consume_classy_via_driver_grants_role(
     assert _CLASSY_ROLE_DEV in member.role_ids
     # expiry: prune the row via a read past the window (lazy data expiry),
     # then fire the converge job the way the scheduler would at expires_at
-    await full_bot.effects.list(
+    await full_bot.statuses.list(
         Scope.member(424242),
         FrogSeam.CLASSY_ROLE,
         now=pendulum.now("UTC").add(hours=4),
@@ -222,9 +222,9 @@ async def test_consume_classy_via_driver_grants_role(
         "scope_kind": "member",
         "scope_id": 424242,
         "seam": FrogSeam.CLASSY_ROLE.key,
-        "source": FrogEffect.CLASSY_ROLE.key,
+        "source": FrogStatus.CLASSY_ROLE.key,
     }
-    await full_bot.scheduler.handlers[EFFECT_CONVERGE_TAG](
+    await full_bot.scheduler.handlers[STATUS_CONVERGE_TAG](
         full_bot, payload
     )
     member = await full_bot.rest.fetch_member(
@@ -239,7 +239,7 @@ async def test_capture_cluster_explodes_no_catchable_frog(
     """/frog fake species=cluster bursts basics; no catchable frog message."""
     from tests.fakes import FakeChannel
 
-    from plugins.frogs.effects import EffectKey
+    from plugins.frogs.outcomes import OutcomeKey
 
     # seed text channels around 99 (the driver's default channel)
     gid = full_bot.config.guild_id
@@ -260,7 +260,7 @@ async def test_capture_cluster_explodes_no_catchable_frog(
         spawned.append((cid or 0, species_key))
         return False
 
-    cluster = EffectKey.CLUSTER.value
+    cluster = OutcomeKey.CLUSTER.value
     original = cluster.spawn_impl
     cluster.spawn_impl = recording_spawn
     try:

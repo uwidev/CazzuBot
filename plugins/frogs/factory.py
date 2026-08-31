@@ -101,10 +101,10 @@ async def spawn_and_wait(
     if species_key is None:
         species_key = roll_species().key
     species = by_key(species_key)
-    if species is not None and species.spawn_effect is not None:
-        # spawn-effect species (Cluster) never post a catchable frog —
+    if species is not None and species.spawn_outcome is not None:
+        # spawn-outcome species (Cluster) never post a catchable frog —
         # their hook runs instead and this function returns immediately
-        payload = species.spawn_effect
+        payload = species.spawn_outcome
         handler = getattr(payload.key.value, "spawn", None)
         if handler is not None:
             await handler(
@@ -177,7 +177,7 @@ async def grant_catch_frog(
 ) -> hikari.Message:
     """The default frog catch — +1 to inventory plus the capture embed.
 
-    Species with no ``catch_effect`` take this path: the caught frog is
+    Species with no ``catch_outcome`` take this path: the caught frog is
     granted to the catcher's inventory (``bot.inventory``, +1 on the
     ``frog:<species>:normal`` stack) and a capture embed is posted to the
     spawn channel with the catcher's mention and the pre/post capture
@@ -295,7 +295,7 @@ class FrogCatchMenu(lightbulb.components.Menu):
                     uid,
                 )
                 return
-            if species.spawn_effect is not None:
+            if species.spawn_outcome is not None:
                 await mctx.respond(
                     "This frog cannot be caught — it already burst "
                     "into its children!",
@@ -311,10 +311,10 @@ class FrogCatchMenu(lightbulb.components.Menu):
             )
             await frog_db.modify_capture(self.bot.db, uid, modify=1)
 
-            if species.catch_effect is not None:
-                payload = species.catch_effect
+            if species.catch_outcome is not None:
+                payload = species.catch_outcome
                 # the enum member's value IS the handler — no lookup; a
-                # custom catch effect owns whatever it grants
+                # custom catch outcome owns whatever it grants
                 await payload.key.value.catch(
                     self.bot,
                     payload,
@@ -325,7 +325,7 @@ class FrogCatchMenu(lightbulb.components.Menu):
             else:
                 # the default: +1 to inventory and the capture embed (the
                 # generic catch path shared by every species without a
-                # custom effect — see grant_catch_frog)
+                # custom outcome — see grant_catch_frog)
                 await grant_catch_frog(
                     self.bot,
                     uid=uid,

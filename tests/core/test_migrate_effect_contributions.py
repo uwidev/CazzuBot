@@ -16,7 +16,7 @@ from pathlib import Path
 import hikari
 
 from cazzubot import CazzuBot, Config
-from cazzubot.effects import Scope
+from cazzubot.statuses import Scope
 from scripts.migrations.effect_contributions import (
     LEGACY_SOURCE,
     migrate,
@@ -125,11 +125,21 @@ def test_needs_migration_false_without_legacy_shape(
 async def test_migrated_db_boots_and_pull_reads_multiplier(
     tmp_path: Path,
 ) -> None:
-    """Acceptance: a migrated legacy DB boots and the seam pull sees the fold."""
+    """Acceptance: a migrated legacy DB boots and the seam pull sees the fold.
+
+    The full chain is 006 (member_effect -> effect_contribution) then
+    007 (effect_contribution -> status_contribution, the 2026-08-31
+    statuses rename) — exactly the registered MIGRATIONS order.
+    """
     db_path = tmp_path / "migrated.db"
     conn = _legacy_conn(db_path)
     try:
         migrate(conn)
+        from scripts.migrations.status_contribution import (
+            migrate as migrate_007,
+        )
+
+        migrate_007(conn)
     finally:
         conn.close()
 
@@ -149,22 +159,22 @@ async def test_migrated_db_boots_and_pull_reads_multiplier(
             hikari.StartingEvent(app=instance)
         )
         # the new experience pull reads the folded multipliers
-        from cazzubot import effects
-        from plugins.experience.logic import EffectSeam
+        from cazzubot import statuses
+        from plugins.experience.logic import StatusSeam
 
         assert (
-            await effects.product(
+            await statuses.product(
                 instance.db,
                 Scope.member(1),
-                EffectSeam.MESSAGE_EXP_MULTIPLIER,
+                StatusSeam.MESSAGE_EXP_MULTIPLIER,
             )
             == 2.0
         )
         assert (
-            await effects.product(
+            await statuses.product(
                 instance.db,
                 Scope.member(2),
-                EffectSeam.MESSAGE_EXP_MULTIPLIER,
+                StatusSeam.MESSAGE_EXP_MULTIPLIER,
             )
             == 1.5
         )

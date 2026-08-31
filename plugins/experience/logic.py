@@ -13,9 +13,9 @@ from enum import Enum
 
 import pendulum
 
-from cazzubot import effects, levels
+from cazzubot import statuses, levels
 from cazzubot.db import Database
-from cazzubot.effects import Scope
+from cazzubot.statuses import Scope
 from cazzubot.utils import OldNew, month2season
 
 from . import db as exp_db
@@ -29,11 +29,11 @@ _DECAY_FACTOR = 2
 _EXP_COOLDOWN = 15  # seconds
 
 
-class EffectSeam(Enum):
+class StatusSeam(Enum):
     """Experience's seams — typed keys, never bare strings (SeamKey pattern).
 
     Each member's ``key`` is the stored seam string; the core ships zero
-    seams, so features declare their own (see ``cazzubot/effects.py``).
+    seams, so features declare their own (see ``cazzubot/statuses.py``).
     """
 
     MESSAGE_EXP_MULTIPLIER = "message_exp_multiplier"
@@ -99,10 +99,10 @@ async def award_exp(
     # a member contribution to the message-exp seam (e.g. an exp_multiplier
     # buff) scales the award — pulled lazily here, so no sweeper is needed
     # for expiry (product reads 1.0, the identity, when none are active)
-    multiplier = await effects.product(
+    multiplier = await statuses.product(
         db,
         Scope.member(uid),
-        EffectSeam.MESSAGE_EXP_MULTIPLIER,
+        StatusSeam.MESSAGE_EXP_MULTIPLIER,
         now=now,
     )
     exp_gain = round(exp_gain * multiplier)

@@ -23,7 +23,7 @@ def test_default_species_is_basic() -> None:
     assert basic is not None and basic.name == "Basic Frog"
     # the entity sheds consume data — the legacy 10/3 values moved to the
     # item definitions (basic normal/frozen give 10/3)
-    assert not hasattr(basic, "consume_effect")
+    assert not hasattr(basic, "consume_outcome")
     assert not hasattr(basic, "consumable")
     assert frog_exp(basic.key, FrogState.NORMAL) == 10
     assert frog_exp(basic.key, FrogState.FROZEN) == 3
@@ -50,7 +50,7 @@ def test_species_registry_has_frogmd_five() -> None:
     # replaces the catchable frog at spawn time
     cluster = by_key(FrogItemKey.CLUSTER)
     assert cluster is not None and cluster.art is None
-    assert cluster.spawn_effect is not None
+    assert cluster.spawn_outcome is not None
 
 
 def test_species_art_is_a_declared_asset_member_or_none() -> None:

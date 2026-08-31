@@ -1,12 +1,12 @@
-Effects Seam Store
+Statuses Seam Store
 ==================
 
-> Status: **design spec** — infrastructure for persistent effects, planned
+> Status: **design spec** — infrastructure for persistent statuses, planned
 > ahead of the frog expansion in `docs/FROG.md`. Infra-only: the four new
 > frogs (Pog/Froggers/Classy/Cluster) are a separate follow-up plan that
 > consumes this store. Supersedes the `member_effect` data-model section of
 > `docs/ROADMAP.md`; complements `docs/ITEMS.md` (consume is item-owned) and
-> `docs/FROG.md` (species + effects requirements).
+> `docs/FROG.md` (species + statuses requirements).
 
 
 Why
@@ -15,17 +15,17 @@ Why
 FROG.md's rules section asks for three things the current `member_effect`
 store cannot express:
 
-1.  **Reapplying an effect extends only the duration, never the intensity.**
-2.  **Per-effect reapply policy** — “some kind of infrastructure to define
-    what happens when you reapply an effect that already exists on a user.”
-3.  **Generalization beyond member effects** — effects might apply to things
-    like frog spawn cadence, not just members.
+1.  **Reapplying a status extends only the duration, never the intensity.**
+2.  **Per-status reapply policy** — “some kind of infrastructure to define
+    what happens when you reapply a status that already exists on a user.”
+3.  **Generalization beyond member statuses** — statuses might apply to
+    things like frog spawn cadence, not just members.
 
 Today `cazzubot/member_effects.py` is one scalar `REAL value` per
 `(uid, key)`, replacement-on-set, member-only. It cannot hold a role id, a
 react probability + cooldown, or a world-scoped spawn modifier. The four
 frogs will need all of those. This design replaces the store with one
-generic, scope-aware effects engine built on a **seam / contribution /
+generic, scope-aware statuses engine built on a **seam / contribution /
 pull** model.
 
 
@@ -48,13 +48,13 @@ the calculation:
  -  **Contribution** — one recorded fact: “source S published value V into
     seam K, effective for target X until E”. Scoped to a **member** (`uid`)
     or the **guild** (the “world” — spawn cadence lives here); carries a
-    **source** (**the effect identity** — what published the value; “the
-    same effect” IS the same source, so several items that are the same
-    effect publish under one shared identity and the granting item rides in
+    **source** (**the status identity** — what published the value; “the
+    same status” IS the same source, so several items that publish the same
+    status share one identity and the granting item rides in
     the payload as ``"from"`` provenance — see the Phase-1 record below),
     the **payload** (the actual data the seam interprets), and an optional
     `expires_at` (NULL = permanent). The `(scope, seam, source)` key is the
-    identity of “the same effect”: re-publishing the same source targets
+    identity of “the same status”: re-publishing the same source targets
     the same row (`EXTEND`/`REPLACE` act on it), a different source is a
     separate contribution that stacks within the seam. Contributions are
     combinable and individually removable — a pull reads every active row
@@ -69,7 +69,7 @@ the calculation:
     [PoE's damage calculation]) is plain
     feature code at the pull site.
 
-Effects with no persistent lifetime (e.g. Cluster's instant spawn) never
+Outcomes with no persistent lifetime (e.g. Cluster's instant spawn) never
 touch this store — they stay handler-side, exactly as today.
 
 [PoE's damage calculation]: https://www.poewiki.net/wiki/Damage
@@ -82,30 +82,30 @@ The frog-species plan's Phase 1 (the separation; the four frogs themselves
 and their wiring are Phase 2) fixed the ownership model and the
 identity rule, recorded here so the code and the store contract agree:
 
- -  **The ITEM composes, effects modify (D11).** What consuming an item
-    does is the item's decision: it grants exp (a formula over its own
-    `frog_exp` oracle) and composes the state-modifying effect
-    applications it applies — `plugins/frogs/items.py::_SPECIES_CONSUME`,
-    beside the oracle. Species carry no consume declaration. The modifier
-    registry (`plugins/frogs/effects.py::EffectKey`) is a **generic,
-    scope-aware primitive library**: each consume modifier takes a
-    `Scope` (member or guild) plus the granting item id as provenance, so
-    any caller — item glue today, an admin `/effect apply` tomorrow —
-    composes it. `ExpEffect`/`EXP` is **vestigial**: exp is item-owned
-    behavior, not a modifier — it stays in the codebase, composed into
-    nothing, slated for removal in a follow-up.
- -  **Identity is the effect, not the item (D3).** The contribution
-    `source` is the **effect identity** — “re-publishing the same source”
-    means “re-applying the same effect”. Several items that ARE the same
-    effect (Pog and Froggers = reaction chance) publish under one shared
-    `source` (the `FrogEffect` identity), never per-item sources, and the
-    granting item rides in the payload as `"from"` provenance. The value
-    merge is **feature-side** (the store never interprets payloads):
-    while a contribution is live the strongest value wins, a weaker
-    re-publish keeps the value, every re-publish extends the window
-    additively, expiry is a fresh start. The publisher decides its
-    reapply policy against the engine's `(scope, seam, source)` key
-    (`ReactionEffect.consume`: REPLACE with the stronger value + the
+ -  **The ITEM composes, outcomes invoke statuses (D11).** What consuming
+    an item does is the item's decision: it grants exp (a formula over its
+    own `frog_exp` oracle) and composes the outcome applications it
+    applies — `plugins/frogs/items.py::_SPECIES_OUTCOMES`, beside the
+    oracle. Species carry no consume declaration. The outcome library
+    (`plugins/frogs/outcomes.py::OutcomeKey`) is a **generic, scope-aware
+    primitive library**: each consume outcome takes a `Scope` (member or
+    guild) plus the granting item id as provenance, so any caller — item
+    glue today, an admin command tomorrow — composes it. `ExpOutcome`/
+    `EXP` is **vestigial**: exp is item-owned behavior, not an outcome —
+    it stays in the codebase, composed into nothing, slated for removal
+    in a follow-up.
+ -  **Identity is the status, not the item (D3).** The contribution
+    `source` is the **status identity** — “re-publishing the same source”
+    means “re-applying the same status”. Several items that publish the
+    same status (Pog and Froggers = reaction chance) share one `source`
+    (the `FrogStatus` identity), never per-item sources, and the granting
+    item rides in the payload as `"from"` provenance. The value merge is
+    **feature-side** (the store never interprets payloads): while a
+    contribution is live the strongest value wins, a weaker re-publish
+    keeps the value, every re-publish extends the window additively,
+    expiry is a fresh start. The publisher decides its reapply policy
+    against the engine's `(scope, seam, source)` key
+    (`ReactionOutcome.consume`: REPLACE with the stronger value + the
     remaining window, else EXTEND).
  -  Frog consumers: `FrogSeam.FROG_REACTION` (internal) and
     `FrogSeam.CLASSY_ROLE` (external, with `RoleConverger`) ship
@@ -120,25 +120,26 @@ The frog-species plan's Phase 2 (the five FROG.md species) is **implemented
 and wired**. The Phase-1 record above stays true; this adds what shipped:
 
  -  **Publishers live.** Pog/Froggers compose `ReactionPayload` and Classy
-    composes `RolePayload` in `plugins/frogs/items.py::_SPECIES_CONSUME`
+    composes `RolePayload` in `plugins/frogs/items.py::_SPECIES_OUTCOMES`
     (item-owned; species carry no consume declaration). The plugin's
     `on_load` registers the `RoleConverger` for `CLASSY_ROLE` (so the
     external publish converges synchronously and schedules the expiry job)
-    and subscribes `EffectsClearedEvent` for instant role revert;
-    `on_unload` withdraws both. Cluster's spawn hook (`ClusterEffect`) is
-    not a contribution at all — instant handlers never touch this store.
+    and subscribes `StatusesClearedEvent` for instant role revert;
+    `on_unload` withdraws both. Cluster's spawn outcome
+    (`ClusterOutcome`) is not a contribution at all — instant handlers
+    never touch this store.
  -  **The listener is the consumer.** `plugins/frogs/reactions.py` reads
     the single `FROG_REACTION` row per member (one row by construction —
-    identity is the effect, not the item), rolls the chance per message
+    identity is the status, not the item), rolls the chance per message
     with a 10s in-memory cooldown, and no-ops while the froggers emoji is
     unpublished.
  -  **The feature-side merge is live, not hypothetical.** While a
     contribution is live the strongest chance wins, a weaker re-publish
     keeps the value, every re-publish extends the window additively, and
-    expiry is a fresh start — `ReactionEffect.consume` decides its own
+    expiry is a fresh start — `ReactionOutcome.consume` decides its own
     reapply policy (REPLACE with the stronger value + the remaining
     window, else EXTEND) against the engine's `(scope, seam, source)` key.
- -  **`ExpEffect`/`EXP` remains vestigial.** Exp grant is item-owned
+ -  **`ExpOutcome`/`EXP` remains vestigial.** Exp grant is item-owned
     behavior (the `frog_exp` oracle); the fossil stays in the registry,
     composed into nothing, slated for removal in a follow-up. The POG/
     FROGGERS/CLASSY oracle rows (30/15, 300/150, 200/100) live beside the
@@ -152,7 +153,7 @@ Replaces the `member_effect` table (core store, boot-run schema like
 `inventory`/`settings`):
 
 ~~~~ sql
-CREATE TABLE IF NOT EXISTS effect_contribution (
+CREATE TABLE IF NOT EXISTS status_contribution (
     scope_kind TEXT NOT NULL,      -- 'member' | 'guild'
     scope_id   INTEGER NOT NULL,   -- uid, or guild id
     seam       TEXT NOT NULL,      -- derived from a typed SeamKey
@@ -182,7 +183,7 @@ CREATE TABLE IF NOT EXISTS effect_contribution (
     separate mechanism (Reconciliation rule below).
 
 
-API — `cazzubot/effects.py`, service `bot.effects`
+API — `cazzubot/statuses.py`, service `bot.statuses`
 --------------------------------------------------
 
 Replaces `MemberEffects`; same module shape as `inventory.py` (module-level
@@ -197,8 +198,8 @@ Scope.guild(gid)     # scope_kind='guild'
 
 async def publish(db, scope, seam: SeamKey, source: str, payload,
                   *, duration, policy=ReapplyPolicy.EXTEND) -> None
-async def list(db, scope, seam: SeamKey) -> list[EffectContribution]  # prunes expired
-async def fetch(db, scope, seam: SeamKey, source: str) -> EffectContribution | None
+async def list(db, scope, seam: SeamKey) -> list[StatusContribution]  # prunes expired
+async def fetch(db, scope, seam: SeamKey, source: str) -> StatusContribution | None
 async def clear(db, scope, seam: SeamKey, source: str) -> None          # delete one contribution
 async def clear_scope(db, scope) -> None                                # delete a whole scope (timed only)
 async def product(db, scope, seam) -> float   # numeric convenience: multiply all values, 1.0 when empty
@@ -207,14 +208,14 @@ async def total(db, scope, seam) -> float     # numeric convenience: sum, 0 when
 
  -  Numeric conveniences never choose *order* — a pull with a complex formula
     ignores them and does its own math.
- -  Row shape crosses the API as the `EffectContribution` dataclass via
+ -  Row shape crosses the API as the `StatusContribution` dataclass via
     `fetch_model` (model-boundary rule); the payload stays a JSON dict field.
 
 
 Reapply machinery
 -----------------
 
- -  “The same effect” = `(scope, seam, source)`.
+ -  “The same status” = `(scope, seam, source)`.
  -  `ReapplyPolicy`, chosen **at publish time** by the publisher, applied in
     exactly one place inside `publish`:
 
@@ -231,11 +232,11 @@ Reapply machinery
 Reconciliation rule — world vs data laziness
 --------------------------------------------
 
-Two copies of every *external* effect exist: the **contribution row** (the
-recipe) and a **real-world consequence** (a granted role). Expiry or
-clearing removes the recipe; the consequence must be **converged** — the
-DB is authoritative and Discord is re-made to match. Internal effects (exp
-multipliers, react chance) have no stored consequence: they stop being read
+Two copies of every *external* status exist: the **contribution row**
+(the recipe) and a **real-world consequence** (a granted role). Expiry
+or clearing removes the recipe; the consequence must be **converged** —
+the DB is authoritative and Discord is re-made to match. Internal
+statuses (exp multipliers, react chance) have no stored consequence: they stop being read
 and nothing else happens.
 
 1.  **The seam contract declares externality** — a seam whose consequence
@@ -256,7 +257,7 @@ and nothing else happens.
 3.  **Two-way pulls stay as the safety net** — a pull still treats “no
     active contributions” as a real state (active → apply, inactive →
     revert), but this is no longer *the* mechanism.
-4.  **`EffectsClearedEvent`** on `bot.events` — emitted by the caller after
+4.  **`StatusesClearedEvent`** on `bot.events` — emitted by the caller after
     any explicit removal that touches external seams (`clear` or
     `clear_scope`), so termination reverts *instantly* rather than waiting
     for the scheduled job.
@@ -280,7 +281,7 @@ rows — no tombstones.
 External termination has two backstops: the already-scheduled convergence
 job fires whenever it fires and converges **idempotently** (no active
 contribution → revert; already reverted → no-op), and the emitted
-`EffectsClearedEvent` makes the revert instant. Convergence jobs
+`StatusesClearedEvent` makes the revert instant. Convergence jobs
 **re-evaluate on fire**: if an `EXTEND` rolled the row past the fire time
 they see it active and re-arm; otherwise they revert. Jobs never need
 cancellation — a stale one is redundant, never wrong.
@@ -296,7 +297,8 @@ mechanism is proven by integration tests with a fake external seam.
 Relationship to the scheduler
 -----------------------------
 
-`effect_contribution` deliberately coexists with `bot.scheduler`'s `tasks`
+`status_contribution` deliberately coexists with `bot.scheduler`'s
+`tasks`
 table — the store holds **state**, the scheduler holds **work**:
 
  -  A contribution is a **fact** (“X is in effect until T”), read by pulls
@@ -304,13 +306,14 @@ table — the store holds **state**, the scheduler holds **work**:
     executed by the loop and consumed (“due, handled, gone”).
  -  The store is **pulled** (passive, lazy reads); the scheduler **pushes**
     (polls due rows and dispatches).
- -  Game state is *never* derived from the tasks table — “is this effect
+ -  Game state is *never* derived from the tasks table — “is this status
     active?” is answered only by contributions; tasks are a queue, not
     truth.
- -  The crossing is one-way: **external effects translate their expiry into
-    scheduled work** (the convergence job), and task handlers may publish or
-    clear contributions as side effects of their work. The scheduler never
-    reads the effect table; a contribution is never implemented as a task.
+ -  The crossing is one-way: **external statuses translate their expiry
+    into scheduled work** (the convergence job), and task handlers may
+    publish or clear contributions as side effects of their work. The
+    scheduler never reads the status table; a contribution is never
+    implemented as a task.
 
 
 Migration
@@ -319,13 +322,15 @@ Migration
  -  `member_effect` table + `MemberEffects` service retire; `EXP_MULTIPLIER`
     becomes a contribution to experience's `message_exp_multiplier` seam.
  -  `experience.logic.award_exp` switches from `member_effects.get(...)` to
-    `effects.product(scope=Scope.member(uid), seam=…)` (1.0 when absent —
-    same math).
+    `statuses.product(scope=Scope.member(uid), seam=…)` (1.0 when absent
+    — same math).
  -  Migration script through the `scripts/migrate.py` harness (dry-run by
     default, backup before write; see `docs/add-a-migration.md`): create
     `effect_contribution`, fold any `member_effect` rows (uid → member scope,
     key → seam key, `value` → `{"op": "mult", "value": v}` payload), drop the
-    old table. Run while the bot is stopped — the boot `verify_schema` guard
+    old table; the 2026-08-31 rename (migration 007) then renames the table
+    to `status_contribution` (and the converge tag to `status.converge`).
+    Run while the bot is stopped — the boot `verify_schema` guard
     refuses the legacy shape until then. (Live `member_effect` rows are ~zero
     today: `EXP_MULTIPLIER` is only set in tests.)
 
@@ -333,7 +338,7 @@ Migration
 Testing
 -------
 
- -  Unit (`tests/core/test_effects.py`): EXTEND additive roll (two publishes
+ -  Unit (`tests/core/test_statuses.py`): EXTEND additive roll (two publishes
     → one row, value unchanged, `expires_at` = first + 2×duration); REPLACE
     overwrite; expiry-at-publish prunes then writes fresh; lazy data expiry
     (read → absent, prune); scope isolation (member A ≠ member B ≠ guild);
@@ -344,7 +349,7 @@ Testing
     and schedules a convergence job at `expires_at`; the job reverts
     idempotently (double-run → single revert); an internal seam schedules
     nothing; a fake state seam reverts synchronously on
-    `EffectsClearedEvent`.
+    `StatusesClearedEvent`.
  -  Existing `tests/core/test_member_effects.py` re-expressed through the new
     store; `award_exp` behavior preserved (tests stay green through the new
     path).
@@ -354,8 +359,8 @@ Testing
 Non-goals (this plan)
 ---------------------
 
- -  The frog effects themselves and the four new frogs (separate follow-up
-    plan).
+ -  The frog outcomes themselves and the four new frogs (separate
+    follow-up plan).
  -  World-scope consumers — the `spawn_interval` seam (frogs plan).
  -  React cooldown state — pull-side/feature-side state, not a contribution.
  -  Cluster's instant spawn — handler-side, never stored.
@@ -375,9 +380,9 @@ Acceptance
     convergence job at `expires_at`; the job is idempotent (double-run
     harmless); internal seams never schedule.
  -  `clear_scope` deletes timed contributions for one target only; the fake
-    seam reverts its consequence synchronously on `EffectsClearedEvent`.
+    seam reverts its consequence synchronously on `StatusesClearedEvent`.
  -  Termination deletes rows (no tombstone); external terminate emits
-    `EffectsClearedEvent`; a stale convergence job after termination is a
+    `StatusesClearedEvent`; a stale convergence job after termination is a
     no-op.
  -  `award_exp` behavior unchanged (multiplier via the seam).
  -  Migration dry-run + apply on the dev DB; boot passes `verify_schema`.
@@ -387,18 +392,19 @@ Acceptance
 Naming note
 -----------
 
-`cazzubot/effects.py` deliberately coexists with `plugins/frogs/effects.py`:
-the core module is the **persistent contributions store**; the frogs module
-is the **instant catch/consume handler registry** (species-side `EffectKey`
-→ handler). Both are “effects” in different senses; docstrings state the
-distinction.
+`cazzubot/statuses.py` deliberately coexists with
+`plugins/frogs/outcomes.py`: the core module is the **persistent status
+store**; the frogs module is the **instant catch/consume outcome library**
+(species-side `OutcomeKey` → handler). Outcomes may invoke statuses,
+never the reverse; neither is the generic catch-all “effect” anymore (see
+`docs/CONTEXT.md`).
 
 
 References
 ----------
 
- -  `docs/FROG.md` — the rules section (3 asks) + the frog effects that will
-    consume this store
+ -  `docs/FROG.md` — the rules section (3 asks) + the frog outcomes that
+    will consume this store
  -  `docs/ROADMAP.md` — the effects-registry section and the `member_effect`
     data model this supersedes
  -  `docs/ITEMS.md` — item-owned consume; where a future cleanse item's glue

@@ -53,7 +53,7 @@ class FrogAsset(Enum):
         rarity="uncommon",
         description="A frog from the bog.",
         spawn_weight=0.5,
-        catch_effect=None,  # default catch: +1 to inventory
+        catch_outcome=None,  # default catch: +1 to inventory
         art=FrogAsset.BOG_FROG,
     ),
 )
@@ -61,8 +61,8 @@ class FrogAsset(Enum):
 
  -  `spawn_weight` sets how likely it is to spawn relative to the others
     (weighted roll).
- -  `catch_effect` is optional; `None` uses the default catch (grant +1 to
-    inventory). To give it a custom effect, see `plugins/frogs/effects.py`.
+ -  `catch_outcome` is optional; `None` uses the default catch (grant +1 to
+    inventory). To give it a custom outcome, see `plugins/frogs/outcomes.py`.
 
 
 4. Add the inventory items

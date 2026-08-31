@@ -110,7 +110,7 @@ class Catalog(
                 thumbnail_art = await bot.assets.get(species.art)
                 if thumbnail_art is not None:
                     embed.set_thumbnail(thumbnail_art)
-            if species.spawn_effect is not None:
+            if species.spawn_outcome is not None:
                 # uncatchable: never a consume line (no item/exp exists)
                 value = (
                     f"{species.description}\nRarity: {species.rarity}\n"

@@ -1,5 +1,5 @@
 The purpose of this document is to formally layout the various types of frog
-and their effects.
+and their statuses and outcomes.
 
 
 Frog system
@@ -14,15 +14,15 @@ inventory and how much they have.
 Some rules
 ----------
 
- -  When consuming multiple stacks of items, or the same item when an effect is
-    ongoing, only the duration is increased, not for a stronger effect.
-     -  It's possible we may want a “stronger” stacking effect in the future.
+ -  When consuming multiple stacks of items, or the same item when a status
+    is ongoing, only the duration is increased, not for a stronger status.
+     -  It's possible we may want a “stronger” stacking status in the future.
         We need some kind on infrastructure to define what happens when you
-        reapply an effect that already exists on a user.
+        reapply a status that already exists on a user.
      -  It's possible we need to generalize this stacking feature not only to
-        user effects, but to any effect. Effects might apply to something like
-        the way frogs spawn (i.e. decreased interval of spawning of frogs). Not
-        too sure how to proceed here.
+        user statuses, but to any status. Statuses might apply to something
+        like the way frogs spawn (i.e. decreased interval of spawning of
+        frogs). Not too sure how to proceed here.
 
 
 Frog Types

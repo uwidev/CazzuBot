@@ -4,8 +4,8 @@ One shared table for every "player × item × stack" need (frog species×state
 today; badges-as-vanity, shop items, combine ingredients later). Items are
 identified by a **typed key** (:class:`InventoryKey`) whose stored string
 is *derived* — never a hand-written literal at call sites — so the ledger
-stays generic while references stay LSP-checked (the asset_key / EffectKey
-pattern). Item *definitions* (what an item is, its effects, art) live in
+stays generic while references stay LSP-checked (the asset_key / OutcomeKey
+pattern). Item *definitions* (what an item is, its outcomes, art) live in
 each plugin's code registry; this store only counts them.
 
 Call graph (per the self-documenting rule): the frogs plugin is the current

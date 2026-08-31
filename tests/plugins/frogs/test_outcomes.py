@@ -1,5 +1,5 @@
-"""Frog effects — enum-as-registry, dispatch contract, and the generic
-scope-aware consume modifiers (reaction + role).
+"""Frog outcomes — enum-as-registry, dispatch contract, and the generic
+scope-aware outcomes (reaction + role publish statuses).
 """
 
 from __future__ import annotations
@@ -10,14 +10,14 @@ import pendulum
 import pytest
 
 from cazzubot.bot import CazzuBot
-from cazzubot.effects import Scope
+from cazzubot.statuses import Scope
 from cazzubot.models import FrogState, FrogItemKey
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.assets import FrogAsset
-from plugins.frogs.effects import (
-    EffectKey,
+from plugins.frogs.outcomes import (
+    OutcomeKey,
     ExpPayload,
     ReactionPayload,
     RoleConverger,
@@ -25,7 +25,7 @@ from plugins.frogs.effects import (
 )
 from plugins.frogs.events import FrogConsumedEvent
 from plugins.frogs.items import FrogItems
-from plugins.frogs.seams import FrogEffect, FrogSeam
+from plugins.frogs.seams import FrogSeam, FrogStatus
 from plugins.frogs.species import SPECIES, Species
 from tests.fakes import (
     FakeInteraction,
@@ -40,34 +40,34 @@ _UID = 424242
 
 
 class _WrongPayload:
-    """A payload with a valid key but the wrong class for the exp effect."""
+    """A payload with a valid key but the wrong class for the exp outcome."""
 
-    key = EffectKey.EXP
+    key = OutcomeKey.EXP
 
 
-def test_every_effect_key_maps_to_a_handler() -> None:
+def test_every_outcome_key_maps_to_a_handler() -> None:
     """The enum IS the registry: a member's value is its handler."""
-    for key in EffectKey:
+    for key in OutcomeKey:
         handler = key.value
         assert callable(getattr(handler, "catch", None)), key
         assert callable(getattr(handler, "consume", None)), key
 
 
-async def test_exp_effect_grants_payload_normal_value(
+async def test_exp_outcome_grants_payload_normal_value(
     bot: CazzuBot,
 ) -> None:
-    """The fossil exp effect grants the payload's per-unit value.
+    """The fossil exp outcome grants the payload's per-unit value.
 
     Consume hooks are scope-aware now (2026-08-28 separation): exp
     grants are member-scoped, and the fossil grants the payload's normal
     per-unit value — frozen exp is item-owned behavior (the oracle in
-    ``items.py``), not a modifier concern.
+    ``items.py``), not an outcome concern.
     """
-    effect = EffectKey.EXP.value
+    outcome = OutcomeKey.EXP.value
     now = pendulum.now("UTC")
     payload = ExpPayload(exp=20, frozen_exp=6)
 
-    await effect.consume(
+    await outcome.consume(
         bot,
         payload,
         scope=Scope.member(_UID),
@@ -83,8 +83,8 @@ async def test_exp_effect_grants_payload_normal_value(
     )  # 20 exp/frog * 2
 
 
-async def test_exp_effect_catch_is_a_noop(bot: CazzuBot) -> None:
-    await EffectKey.EXP.value.catch(
+async def test_exp_outcome_catch_is_a_noop(bot: CazzuBot) -> None:
+    await OutcomeKey.EXP.value.catch(
         bot,
         ExpPayload(exp=10, frozen_exp=3),
         uid=_UID,
@@ -94,10 +94,10 @@ async def test_exp_effect_catch_is_a_noop(bot: CazzuBot) -> None:
     # nothing to assert beyond not raising — no log rows, no inventory
 
 
-async def test_exp_effect_rejects_wrong_payload(bot: CazzuBot) -> None:
+async def test_exp_outcome_rejects_wrong_payload(bot: CazzuBot) -> None:
     """A payload of the wrong class for the key fails loudly (TypeError)."""
     with pytest.raises(TypeError, match="ExpPayload"):
-        await EffectKey.EXP.value.consume(
+        await OutcomeKey.EXP.value.consume(
             bot,
             cast(Any, _WrongPayload()),
             scope=Scope.member(_UID),
@@ -107,13 +107,13 @@ async def test_exp_effect_rejects_wrong_payload(bot: CazzuBot) -> None:
         )
 
 
-async def test_species_effects_resolve(bot: CazzuBot) -> None:
-    """Every species' catch-effect payload key maps to a handler."""
+async def test_species_outcomes_resolve(bot: CazzuBot) -> None:
+    """Every species' catch-outcome payload key maps to a handler."""
     for species in SPECIES:
-        payload = species.catch_effect
+        payload = species.catch_outcome
         if payload is not None:
-            assert payload.key in EffectKey, (
-                f"{species.key} has unknown effect key {payload.key!r}"
+            assert payload.key in OutcomeKey, (
+                f"{species.key} has unknown outcome key {payload.key!r}"
             )
 
 
@@ -122,10 +122,11 @@ async def test_capture_dispatches_species_payload(
     author: FakeMember,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The capture flow hands the effect the bot + the species' payload.
+    """The capture flow hands the outcome the bot + the species' payload.
 
-    No shipped species has a catch effect, so this drives a synthetic one
-    — the point: an effect only needs a payload-bearing species to fire.
+    No shipped species has a catch outcome, so this drives a synthetic
+    one — the point: an outcome only needs a payload-bearing species to
+    fire.
     """
     calls: list[tuple[object, ...]] = []
 
@@ -140,7 +141,7 @@ async def test_capture_dispatches_species_payload(
         calls.append(("catch", bot, payload, uid, species_key))
 
     # swap the handler the enum member maps to (its value instance)
-    monkeypatch.setattr(EffectKey.EXP.value, "catch", fake_catch)
+    monkeypatch.setattr(OutcomeKey.EXP.value, "catch", fake_catch)
 
     spawned = Species(
         key=FrogItemKey.BASIC,
@@ -148,8 +149,8 @@ async def test_capture_dispatches_species_payload(
         rarity="common",
         description="Crackles with static.",
         spawn_weight=1.0,
-        catch_effect=ExpPayload(exp=5, frozen_exp=1),
-        spawn_effect=None,
+        catch_outcome=ExpPayload(exp=5, frozen_exp=1),
+        spawn_outcome=None,
         art=FrogAsset.FROG_BASIC,
     )
     from plugins.frogs.species import by_key as real_by_key
@@ -213,18 +214,18 @@ async def test_frog_item_consume_grants_exp_and_reports(
     assert received[0].state is FrogState.NORMAL
 
 
-# -- reaction effect (identity-by-effect merge) ---------------------------
+# -- reaction outcome (identity-by-status merge) -----------------------
 
 _REACTION_DEV_ROLE = 1542294599358353430
 _REACTION_PROD_ROLE = 1542293782588952696
 
 
-async def test_reaction_is_one_effect_across_items(
+async def test_reaction_is_one_status_across_items(
     full_bot: CazzuBot,
 ) -> None:
-    """Pog and Froggers are the same effect: one row, strongest wins.
+    """Pog and Froggers publish the same status: one row, strongest wins.
 
-    Both publish under the shared effect identity (FrogEffect.REACTION)
+    Both publish under the shared status identity (FrogStatus.REACTION)
     with the granting item as payload provenance; a stronger consume
     overwrites the value while keeping the window additive, a weaker one
     never downgrades — it only extends.
@@ -236,7 +237,7 @@ async def test_reaction_is_one_effect_across_items(
         chance=0.07, duration=pendulum.duration(hours=1)
     )
 
-    await EffectKey.REACTION.value.consume(
+    await OutcomeKey.REACTION.value.consume(
         bot,
         pog,
         scope=Scope.member(123),
@@ -245,7 +246,7 @@ async def test_reaction_is_one_effect_across_items(
         now=now,
     )
     # a stronger frog 5 min later: overwrites the value, keeps the window
-    await EffectKey.REACTION.value.consume(
+    await OutcomeKey.REACTION.value.consume(
         bot,
         froggers,
         scope=Scope.member(123),
@@ -253,18 +254,18 @@ async def test_reaction_is_one_effect_across_items(
         amount=1,
         now=now.add(minutes=5),
     )
-    contribs = await bot.effects.list(
+    contribs = await bot.statuses.list(
         Scope.member(123), FrogSeam.FROG_REACTION, now=now.add(minutes=5)
     )
-    assert len(contribs) == 1  # one effect, NOT one row per item
-    assert contribs[0].source == FrogEffect.REACTION.key
+    assert len(contribs) == 1  # one status, NOT one row per item
+    assert contribs[0].source == FrogStatus.REACTION.key
     assert contribs[0].payload["chance"] == 0.07  # strongest wins
     assert contribs[0].payload["from"] == "frog:froggers:normal"
     # remaining 55m + new 1h, REPLACEd at T+5m -> T+2h (additive window)
     assert contribs[0].expires_at == now.add(hours=2)
 
     # a weaker consume never downgrades — it just extends the window
-    await EffectKey.REACTION.value.consume(
+    await OutcomeKey.REACTION.value.consume(
         bot,
         pog,
         scope=Scope.member(123),
@@ -272,7 +273,7 @@ async def test_reaction_is_one_effect_across_items(
         amount=1,
         now=now.add(minutes=30),
     )
-    contribs = await bot.effects.list(
+    contribs = await bot.statuses.list(
         Scope.member(123), FrogSeam.FROG_REACTION, now=now.add(minutes=30)
     )
     assert len(contribs) == 1
@@ -290,7 +291,7 @@ async def test_reaction_expires_into_a_fresh_start(
         chance=0.01, duration=pendulum.duration(hours=1)
     )
 
-    await EffectKey.REACTION.value.consume(
+    await OutcomeKey.REACTION.value.consume(
         bot,
         payload,
         scope=Scope.member(123),
@@ -300,14 +301,14 @@ async def test_reaction_expires_into_a_fresh_start(
     )
     # past the expiry: the row reads as absent and is pruned
     assert (
-        await bot.effects.list(
+        await bot.statuses.list(
             Scope.member(123),
             FrogSeam.FROG_REACTION,
             now=now.add(hours=2),
         )
         == []
     )
-    await EffectKey.REACTION.value.consume(
+    await OutcomeKey.REACTION.value.consume(
         bot,
         payload,
         scope=Scope.member(123),
@@ -315,14 +316,14 @@ async def test_reaction_expires_into_a_fresh_start(
         amount=1,
         now=now.add(hours=2),
     )
-    contribs = await bot.effects.list(
+    contribs = await bot.statuses.list(
         Scope.member(123), FrogSeam.FROG_REACTION, now=now.add(hours=2)
     )
     assert len(contribs) == 1
     assert contribs[0].expires_at == now.add(hours=3)  # fresh 1h from T+2h
 
 
-# -- role effect (external seam + converger) -------------------------------
+# -- role outcome (external seam + converger) ---------------------------
 
 
 def test_role_payload_resolves_guild_role() -> None:
@@ -351,7 +352,7 @@ async def test_role_consume_resolves_guild_role_and_publishes(
     known = frozenset({_REACTION_DEV_ROLE, _REACTION_PROD_ROLE})
     converger = RoleConverger(known)
     rest = rest_of(bot)
-    bot.effects.register_converger(FrogSeam.CLASSY_ROLE, converger)
+    bot.statuses.register_converger(FrogSeam.CLASSY_ROLE, converger)
     target = FakeMember(id=123, name="tester")
     rest.members[(bot.config.guild_id, 123)] = target
 
@@ -360,7 +361,7 @@ async def test_role_consume_resolves_guild_role_and_publishes(
         role_prod=_REACTION_PROD_ROLE,
         duration=pendulum.duration(hours=3),
     )
-    await EffectKey.ROLE.value.consume(
+    await OutcomeKey.ROLE.value.consume(
         bot,
         payload,
         scope=Scope.member(123),
@@ -368,16 +369,16 @@ async def test_role_consume_resolves_guild_role_and_publishes(
         amount=1,
         now=pendulum.now("UTC"),
     )
-    contribs = await bot.effects.list(
+    contribs = await bot.statuses.list(
         Scope.member(123), FrogSeam.CLASSY_ROLE
     )
     assert (
         contribs and contribs[0].payload["role_id"] == _REACTION_DEV_ROLE
     )
     assert contribs[0].payload["from"] == "frog:classy:normal"
-    assert contribs[0].source == FrogEffect.CLASSY_ROLE.key
+    assert contribs[0].source == FrogStatus.CLASSY_ROLE.key
     assert rest.added_roles == [
-        (123, _REACTION_DEV_ROLE, "classy frog role effect")
+        (123, _REACTION_DEV_ROLE, "classy frog role status")
     ]
     member = await bot.rest.fetch_member(bot.config.guild_id, 123)
     assert member.role_ids == {_REACTION_DEV_ROLE}
@@ -392,7 +393,7 @@ async def test_role_converger_removes_role_on_expiry_or_clear(
     known = frozenset({_REACTION_DEV_ROLE, _REACTION_PROD_ROLE})
     converger = RoleConverger(known)
     rest = rest_of(bot)
-    bot.effects.register_converger(FrogSeam.CLASSY_ROLE, converger)
+    bot.statuses.register_converger(FrogSeam.CLASSY_ROLE, converger)
     target = FakeMember(id=123, name="tester")
     rest.members[(bot.config.guild_id, 123)] = target
 
@@ -403,10 +404,10 @@ async def test_role_converger_removes_role_on_expiry_or_clear(
         duration=pendulum.duration(hours=3),
     )
     scope = Scope.member(123)
-    reason = "classy frog role effect"
+    reason = "classy frog role status"
 
     async def consume() -> None:
-        await EffectKey.ROLE.value.consume(
+        await OutcomeKey.ROLE.value.consume(
             bot,
             payload,
             scope=scope,
@@ -420,7 +421,7 @@ async def test_role_converger_removes_role_on_expiry_or_clear(
     member = await bot.rest.fetch_member(bot.config.guild_id, 123)
     assert _REACTION_DEV_ROLE in member.role_ids
     assert (
-        await bot.effects.list(
+        await bot.statuses.list(
             scope, FrogSeam.CLASSY_ROLE, now=now.add(hours=4)
         )
         == []
@@ -434,8 +435,8 @@ async def test_role_converger_removes_role_on_expiry_or_clear(
     await consume()
     member = await bot.rest.fetch_member(bot.config.guild_id, 123)
     assert _REACTION_DEV_ROLE in member.role_ids
-    await bot.effects.clear(
-        scope, FrogSeam.CLASSY_ROLE, FrogEffect.CLASSY_ROLE.key
+    await bot.statuses.clear(
+        scope, FrogSeam.CLASSY_ROLE, FrogStatus.CLASSY_ROLE.key
     )
     await converger(bot, scope, FrogSeam.CLASSY_ROLE.key)
     member = await bot.rest.fetch_member(bot.config.guild_id, 123)
@@ -451,7 +452,7 @@ async def test_role_converger_is_idempotent_and_only_removes_known(
     known = frozenset({_REACTION_DEV_ROLE, _REACTION_PROD_ROLE})
     converger = RoleConverger(known)
     rest = rest_of(bot)
-    bot.effects.register_converger(FrogSeam.CLASSY_ROLE, converger)
+    bot.statuses.register_converger(FrogSeam.CLASSY_ROLE, converger)
     foreign = FakeRole(id=987654, name="some other role")
     target = FakeMember(id=123, name="tester", roles=[foreign])
     rest.members[(bot.config.guild_id, 123)] = target
@@ -462,7 +463,7 @@ async def test_role_converger_is_idempotent_and_only_removes_known(
         duration=pendulum.duration(hours=3),
     )
     scope = Scope.member(123)
-    await EffectKey.ROLE.value.consume(
+    await OutcomeKey.ROLE.value.consume(
         bot,
         payload,
         scope=scope,
@@ -476,16 +477,16 @@ async def test_role_converger_is_idempotent_and_only_removes_known(
     assert member.role_ids == {_REACTION_DEV_ROLE, 987654}
     # idempotent re-converges added nothing
     assert rest.added_roles == [
-        (123, _REACTION_DEV_ROLE, "classy frog role effect")
+        (123, _REACTION_DEV_ROLE, "classy frog role status")
     ]
 
     # after expiry only the seam's known role is removed, foreign stays
-    await bot.effects.list(
+    await bot.statuses.list(
         scope, FrogSeam.CLASSY_ROLE, now=pendulum.now("UTC").add(hours=4)
     )
     await converger(bot, scope, FrogSeam.CLASSY_ROLE.key)
     member = await bot.rest.fetch_member(bot.config.guild_id, 123)
     assert member.role_ids == {987654}
     assert rest.removed_roles == [
-        (123, _REACTION_DEV_ROLE, "classy frog role effect")
+        (123, _REACTION_DEV_ROLE, "classy frog role status")
     ]

@@ -7,7 +7,7 @@ from cazzubot.assets import AssetKind, AssetSpec, Assets
 from cazzubot.bot import CazzuBot
 from cazzubot.config import Config
 from cazzubot.db import Database
-from cazzubot.effects import Effects
+from cazzubot.statuses import Statuses
 from cazzubot.inventory import Inventory
 from cazzubot.items import Item, Items
 from cazzubot.lifecycle import Lifecycle
@@ -22,7 +22,7 @@ __all__ = [
     "CazzuBot",
     "Config",
     "Database",
-    "Effects",
+    "Statuses",
     "Inventory",
     "Item",
     "Items",

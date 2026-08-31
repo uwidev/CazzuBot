@@ -13,10 +13,10 @@ from __future__ import annotations
 import pytest
 
 from cazzubot.assets import asset_key
-from cazzubot.effects import Scope
+from cazzubot.statuses import Scope
 from plugins.frogs import reactions
 from plugins.frogs.assets import FrogAsset
-from plugins.frogs.seams import FrogEffect, FrogSeam
+from plugins.frogs.seams import FrogSeam, FrogStatus
 
 _EMOJI = "<:frog_froggers:9001>"
 _ASSET_KEY = asset_key(FrogAsset.FROG_FROGGERS)
@@ -53,10 +53,10 @@ async def _publish_froggers_emoji(bot) -> None:
 
 
 async def _seed_reaction(bot, uid: int, chance: float) -> None:
-    await bot.effects.publish(
+    await bot.statuses.publish(
         Scope.member(uid),
         FrogSeam.FROG_REACTION,
-        source=FrogEffect.REACTION.key,
+        source=FrogStatus.REACTION.key,
         payload={"chance": chance},
         duration=None,
         now=None,

@@ -14,11 +14,12 @@ the reference, so an undeclared asset cannot be spelled. Strings exist only
 at the data boundary (DB columns, slash options, custom ids), converted
 to/from the enums there.
 
-Effects are referenced by **payload instance**, not by key string: a
-species carries its configured ``catch_effect`` payload (see ``effects.py``),
-so the same effect class is reusable with different values and a species
-never carries fields for effects it doesn't use. Consumption is *item-owned*
-— see ``items.py`` — so the entity carries no consume fields.
+Outcomes are referenced by **payload instance**, not by key string: a
+species carries its configured ``catch_outcome`` payload (see
+``outcomes.py``), so the same outcome class is reusable with different
+values and a species never carries fields for outcomes it doesn't use.
+Consumption is *item-owned* — see ``items.py`` — so the entity carries
+no consume fields.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from dataclasses import dataclass
 from cazzubot.models import FrogItemKey
 
 from .assets import FrogAsset
-from .effects import ClusterPayload, EffectPayload
+from .outcomes import ClusterPayload, OutcomePayload
 
 DEFAULT_SPECIES_KEY = FrogItemKey.BASIC
 
@@ -41,15 +42,15 @@ class Species:
     The **entity**: what a frog *is* as a world/spawn object (its name,
     rarity, spawn weight, art, and what happens on catch). What consuming
     a caught frog does is deliberately NOT here: consumption is
-    **item-owned** (owner 2026-08-28 — the item composes, effects
-    modify). The matching :class:`Item` in ``items.py`` grants exp from
-    its oracle and composes the effects it applies
-    (``items.py::_SPECIES_CONSUME``), so a species carries no consume
+    **item-owned** (owner 2026-08-28 — the item composes, outcomes
+    invoke). The matching :class:`Item` in ``items.py`` grants exp from
+    its oracle and composes the outcomes it applies
+    (``items.py::_SPECIES_OUTCOMES``), so a species carries no consume
     declaration. What a caught frog becomes as an inventory object (its
     item_id, icon, consume behavior) lives on that item, not here.
 
     ``art`` is optional — an uncatchable species (Cluster) has no visible
-    art. ``catch_effect`` handles the catch side; ``spawn_effect``
+    art. ``catch_outcome`` handles the catch side; ``spawn_outcome``
     replaces the catchable frog at spawn time (Cluster's explosion).
     """
 
@@ -58,8 +59,8 @@ class Species:
     rarity: str
     description: str
     spawn_weight: float
-    catch_effect: EffectPayload | None
-    spawn_effect: EffectPayload | None
+    catch_outcome: OutcomePayload | None
+    spawn_outcome: OutcomePayload | None
     art: FrogAsset | None
 
 
@@ -70,8 +71,8 @@ SPECIES: tuple[Species, ...] = (
         rarity="common",
         description="The most normalest frog of them all.",
         spawn_weight=1000.0,
-        catch_effect=None,
-        spawn_effect=None,
+        catch_outcome=None,
+        spawn_outcome=None,
         art=FrogAsset.FROG_BASIC,
     ),
     Species(
@@ -80,8 +81,8 @@ SPECIES: tuple[Species, ...] = (
         rarity="uncommon",
         description="A frog with a pog.",
         spawn_weight=200.0,
-        catch_effect=None,
-        spawn_effect=None,
+        catch_outcome=None,
+        spawn_outcome=None,
         art=FrogAsset.FROG_POG,
     ),
     Species(
@@ -90,8 +91,8 @@ SPECIES: tuple[Species, ...] = (
         rarity="rare",
         description="A frog with a poggers.",
         spawn_weight=50.0,
-        catch_effect=None,
-        spawn_effect=None,
+        catch_outcome=None,
+        spawn_outcome=None,
         art=FrogAsset.FROG_FROGGERS,
     ),
     Species(
@@ -100,8 +101,8 @@ SPECIES: tuple[Species, ...] = (
         rarity="rare",
         description="A frog with rather refined tastes.",
         spawn_weight=200.0,
-        catch_effect=None,
-        spawn_effect=None,
+        catch_outcome=None,
+        spawn_outcome=None,
         art=FrogAsset.FROG_CLASSY,
     ),
     Species(
@@ -110,8 +111,8 @@ SPECIES: tuple[Species, ...] = (
         rarity="special",
         description="Be careful with this one… she's… spawning!",
         spawn_weight=300.0,
-        catch_effect=None,
-        spawn_effect=ClusterPayload(),
+        catch_outcome=None,
+        spawn_outcome=ClusterPayload(),
         art=None,
     ),
 )

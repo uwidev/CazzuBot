@@ -1,10 +1,10 @@
-"""Effects seam store — scope-aware persistent contributions, pulled by features.
+"""Statuses seam store — scope-aware persistent contributions, pulled by features.
 
 Replaces the old ``member_effect`` scalar store with a generic **seam /
 contribution / pull** model (see ``docs/needs-rewrite/EFFECTS.md``):
 features declare a typed :class:`SeamKey` (an input point on their own
 calculator — "message exp", "spawn interval", "react chance"); publishers
-record :class:`EffectContribution` rows ("source S published value V into
+record :class:`StatusContribution` rows ("source S published value V into
 seam K, effective for target X until E"); the feature's **pull** reads its
 seam's active rows and computes whatever it wants. The store never
 interprets payloads and never computes formulas.
@@ -16,23 +16,24 @@ Lazy data expiry: a past ``expires_at`` reads as absent and prunes the
 row — no sweeper, no scheduler (the row is the truth for its own
 question). World-side consequences are a separate mechanism: seams whose
 consequence touches Discord carry ``external=True`` and get a scheduled
-**convergence job** at ``expires_at`` through ``bot.effects`` (apply
-immediately on publish, revert idempotently on fire; ``EffectsClearedEvent``
+**convergence job** at ``expires_at`` through ``bot.statuses`` (apply
+immediately on publish, revert idempotently on fire; ``StatusesClearedEvent``
 for the instant revert on explicit clear/clear_scope). The store stays
 dumb; convergence logic is feature code.
 
-Naming note: this core module is the *persistent contributions store*;
-``plugins/frogs/effects.py`` is the species-side *instant catch/consume
-handler registry*. Both are "effects" in different senses.
+Naming note: this core module is the *persistent status store*;
+``plugins/frogs/outcomes.py`` is the species-side *instant catch/consume
+outcome library*. Outcomes may **invoke statuses** (never the reverse);
+an item's consume composes its own **outcome** from that library.
 
 Call graph (per the self-documenting rule): features' pulls call
 :func:`product`/:func:`total`/:func:`list` (experience's ``award_exp`` is
 the first consumer); publishers call :func:`publish` — module-level for
-pure store writes, ``Effects.publish`` when the seam is external (it
-applies the consequence and schedules). ``Effects`` emits
-:class:`EffectsClearedEvent` after explicit ``clear``/``clear_scope`` of
+pure store writes, ``Statuses.publish`` when the seam is external (it
+applies the consequence and schedules). ``Statuses`` emits
+:class:`StatusesClearedEvent` after explicit ``clear``/``clear_scope`` of
 external seams; the scheduler dispatches the engine tag to
-``Effects._on_converge_due``, which routes to each seam's registered
+``Statuses._on_converge_due``, which routes to each seam's registered
 converger.
 
 Depends on: ``db`` (the table) and ``scheduler`` (the convergence tag).
@@ -61,7 +62,7 @@ _log = logging.getLogger(__name__)
 
 _SCHEMA = [
     """
-	CREATE TABLE IF NOT EXISTS effect_contribution (
+	CREATE TABLE IF NOT EXISTS status_contribution (
 		scope_kind TEXT NOT NULL,      -- 'member' | 'guild'
 		scope_id   INTEGER NOT NULL,   -- uid, or guild id
 		seam       TEXT NOT NULL,      -- derived from a typed SeamKey
@@ -78,7 +79,7 @@ SCHEMA = _SCHEMA
 
 # The one scheduler tag every external seam's convergence job rides; the
 # engine dispatches rows to the seam's registered converger by payload.
-EFFECT_CONVERGE_TAG = "effect.converge"
+STATUS_CONVERGE_TAG = "status.converge"
 
 
 class ScopeKind(Enum):
@@ -131,8 +132,8 @@ class SeamKey(Protocol):
 
 
 @dataclass(slots=True)
-class EffectContribution:
-    """One ``effect_contribution`` row — the recipe, not the consequence."""
+class StatusContribution:
+    """One ``status_contribution`` row — the recipe, not the consequence."""
 
     scope_kind: ScopeKind
     scope_id: int
@@ -153,16 +154,16 @@ class ReapplyPolicy(Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class EffectsClearedEvent:
-    """External effect rows were explicitly cleared (not expired).
+class StatusesClearedEvent:
+    """External status rows were explicitly cleared (not expired).
 
-    Emitted by ``Effects.clear``/``clear_scope`` after the row deletion, so
+    Emitted by ``Statuses.clear``/``clear_scope`` after the row deletion, so
     subscribers with external seams revert their world consequence
     **instantly** instead of waiting for the scheduled convergence job.
     Subscribers match on ``scope`` and — when not a whole-scope cleanse —
     the exact ``seam``/``source`` they own.
 
-    Call graph: sole emitter is the ``Effects`` service (``bot.effects``);
+    Call graph: sole emitter is the ``Statuses`` service (``bot.statuses``);
     observed by every feature with an external seam via ``bot.events.on``.
     """
 
@@ -188,7 +189,7 @@ async def publish(
     ``policy`` decides what a re-publish of a live ``(scope, seam, source)``
     does — see :class:`ReapplyPolicy`. An already-expired row is pruned and
     a fresh one written (``now + duration``). This is the **pure store
-    write**: external seams need ``Effects.publish`` (the bot-bound
+    write**: external seams need ``Statuses.publish`` (the bot-bound
     service) for the consequence + scheduled convergence. ``now`` is
     injected for tests.
     """
@@ -204,7 +205,7 @@ async def publish(
         # fresh row (or an expired one just pruned by fetch): new payload
         await db.execute(
             """
-			INSERT INTO effect_contribution
+			INSERT INTO status_contribution
 				(scope_kind, scope_id, seam, source, payload, expires_at)
 			VALUES (?, ?, ?, ?, ?, ?)
 			""",
@@ -219,7 +220,7 @@ async def publish(
     if policy is ReapplyPolicy.REPLACE:
         await db.execute(
             """
-			UPDATE effect_contribution
+			UPDATE status_contribution
 			SET payload = ?, expires_at = ?
 			WHERE scope_kind = ? AND scope_id = ? AND seam = ? AND source = ?
 			""",
@@ -238,7 +239,7 @@ async def publish(
         expires_at = existing.expires_at + duration
     await db.execute(
         """
-		UPDATE effect_contribution SET expires_at = ?
+		UPDATE status_contribution SET expires_at = ?
 		WHERE scope_kind = ? AND scope_id = ? AND seam = ? AND source = ?
 		""",
         _iso(expires_at),
@@ -256,7 +257,7 @@ async def list(
     seam: str | SeamKey,
     *,
     now: pendulum.DateTime | None = None,
-) -> builtins.list[EffectContribution]:
+) -> builtins.list[StatusContribution]:
     """The seam's active contributions for ``scope``, pruned of expired rows.
 
     Lazy data expiry: a past ``expires_at`` reads as absent AND deletes
@@ -266,20 +267,20 @@ async def list(
     now = now or pendulum.now("UTC")
     seam_key = _key(seam)
     contribs = await db.fetch_models(
-        EffectContribution,
-        "SELECT * FROM effect_contribution"
+        StatusContribution,
+        "SELECT * FROM status_contribution"
         + " WHERE scope_kind = ? AND scope_id = ? AND seam = ?"
         + " ORDER BY source",
         scope.kind.value,
         scope.id,
         seam_key,
     )
-    active: builtins.list[EffectContribution] = []
+    active: builtins.list[StatusContribution] = []
     for contrib in contribs:
         if _expired(contrib, now):
             await db.execute(
                 """
-				DELETE FROM effect_contribution
+				DELETE FROM status_contribution
 				WHERE scope_kind = ? AND scope_id = ? AND seam = ? AND source = ?
 				""",
                 scope.kind.value,
@@ -299,13 +300,13 @@ async def fetch(
     source: str,
     *,
     now: pendulum.DateTime | None = None,
-) -> EffectContribution | None:
+) -> StatusContribution | None:
     """One contribution by ``(scope, seam, source)``, or None (prunes expired)."""
     now = now or pendulum.now("UTC")
     seam_key = _key(seam)
     contrib = await db.fetch_model(
-        EffectContribution,
-        "SELECT * FROM effect_contribution"
+        StatusContribution,
+        "SELECT * FROM status_contribution"
         + " WHERE scope_kind = ? AND scope_id = ? AND seam = ? AND source = ?",
         scope.kind.value,
         scope.id,
@@ -317,7 +318,7 @@ async def fetch(
     if _expired(contrib, now):
         await db.execute(
             """
-			DELETE FROM effect_contribution
+			DELETE FROM status_contribution
 			WHERE scope_kind = ? AND scope_id = ? AND seam = ? AND source = ?
 			""",
             scope.kind.value,
@@ -335,7 +336,7 @@ async def clear(
     """Delete one contribution (immediate termination — never an expire-mark)."""
     await db.execute(
         """
-		DELETE FROM effect_contribution
+		DELETE FROM status_contribution
 		WHERE scope_kind = ? AND scope_id = ? AND seam = ? AND source = ?
 		""",
         scope.kind.value,
@@ -350,11 +351,11 @@ async def clear_scope(db: Database, scope: Scope) -> None:
 
     Cross-feature (seam-blind single DELETE); permanent rows
     (``expires_at IS NULL``) survive. External termination also needs the
-    ``Effects`` service wrapper to emit :class:`EffectsClearedEvent`.
+    ``Statuses`` service wrapper to emit :class:`StatusesClearedEvent`.
     """
     await db.execute(
         """
-		DELETE FROM effect_contribution
+		DELETE FROM status_contribution
 		WHERE scope_kind = ? AND scope_id = ? AND expires_at IS NOT NULL
 		""",
         scope.kind.value,
@@ -417,7 +418,7 @@ def _add_duration(
     return now + duration if duration is not None else None
 
 
-def _numeric_value(contrib: EffectContribution, default: float) -> float:
+def _numeric_value(contrib: StatusContribution, default: float) -> float:
     """A contribution's numeric ``value``, or ``default`` when absent.
 
     The numeric-seam convention: what :func:`product`/:func:`total` fold.
@@ -431,13 +432,13 @@ def _numeric_value(contrib: EffectContribution, default: float) -> float:
     return float(value)
 
 
-def _expired(contrib: EffectContribution, now: pendulum.DateTime) -> bool:
+def _expired(contrib: StatusContribution, now: pendulum.DateTime) -> bool:
     """True when a timed contribution's ``expires_at`` has passed."""
     return contrib.expires_at is not None and contrib.expires_at <= now
 
 
-class Effects:
-    """The effects service on the bot (``bot.effects``).
+class Statuses:
+    """The statuses service on the bot (``bot.statuses``).
 
     Owns the schema (run at boot like settings/scheduler/inventory) and
     delegates the store operations against ``bot.db`` for consumers that
@@ -445,7 +446,7 @@ class Effects:
     the **engine** of the reconciliation rule (see the module docstring):
     it tracks external seams structurally, applies their consequences at
     publish time, schedules convergence jobs at expiry, and emits
-    :class:`EffectsClearedEvent` on explicit termination.
+    :class:`StatusesClearedEvent` on explicit termination.
     """
 
     schema = _SCHEMA
@@ -454,7 +455,7 @@ class Effects:
         """Bind the service and register the convergence job dispatcher.
 
         Every external seam's expiry job rides the one engine tag
-        (``EFFECT_CONVERGE_TAG``), routed by payload to the seam's
+        (``STATUS_CONVERGE_TAG``), routed by payload to the seam's
         registered converger. The scheduler's default retry policy applies
         (infinite backoff), so a world-convergence failure is retried —
         the same guarantee mutes have.
@@ -462,7 +463,7 @@ class Effects:
         self.bot = bot
         self._convergers: dict[str, Converger] = {}
         self.bot.scheduler.register(
-            EFFECT_CONVERGE_TAG, self._on_converge_due
+            STATUS_CONVERGE_TAG, self._on_converge_due
         )
 
     # -- convergence registry -------------------------------------------
@@ -489,7 +490,7 @@ class Effects:
         """Drop a convergence registration (the undo of ``register_converger``).
 
         Defer this to the lifecycle at plugin load so an unload withdraws
-        the feature's convergence interest with its other effects.
+        the feature's convergence interest with its other registrations.
         """
         self._convergers.pop(seam.key, None)
 
@@ -548,7 +549,7 @@ class Effects:
         await handler(self.bot, scope, seam.key)
         if expires_at is not None:
             await self.bot.scheduler.add(
-                EFFECT_CONVERGE_TAG,
+                STATUS_CONVERGE_TAG,
                 expires_at,
                 _job_payload(scope, seam.key, source),
             )
@@ -556,7 +557,7 @@ class Effects:
     async def clear(
         self, scope: Scope, seam: SeamKey, source: str
     ) -> None:
-        """Delete one contribution; external seams emit EffectsClearedEvent.
+        """Delete one contribution; external seams emit StatusesClearedEvent.
 
         Termination **deletes** the row (never an expire-at-now tombstone);
         the event makes an external seam's world consequence revert
@@ -565,7 +566,7 @@ class Effects:
         await clear(self.bot.db, scope, seam, source)
         if seam.external:
             await self.bot.events.emit(
-                EffectsClearedEvent(
+                StatusesClearedEvent(
                     scope=scope, seam=seam.key, source=source
                 )
             )
@@ -574,12 +575,12 @@ class Effects:
         """Cleanse one whole scope (timed contributions only) + revert event.
 
         Cross-feature and seam-blind (every seam for the target, one
-        DELETE); permanent rows survive. Emits :class:`EffectsClearedEvent`
+        DELETE); permanent rows survive. Emits :class:`StatusesClearedEvent`
         with ``seam``/``source`` None so subscribers revert what the
         cleanse removed.
         """
         await clear_scope(self.bot.db, scope)
-        await self.bot.events.emit(EffectsClearedEvent(scope=scope))
+        await self.bot.events.emit(StatusesClearedEvent(scope=scope))
 
     # -- pure store delegates ----------------------------------------------
 
@@ -589,7 +590,7 @@ class Effects:
         seam: SeamKey,
         *,
         now: pendulum.DateTime | None = None,
-    ) -> builtins.list[EffectContribution]:
+    ) -> builtins.list[StatusContribution]:
         """A seam's active contributions for ``scope`` (pruned of expired)."""
         return await list(self.bot.db, scope, seam, now=now)
 
@@ -600,7 +601,7 @@ class Effects:
         source: str,
         *,
         now: pendulum.DateTime | None = None,
-    ) -> EffectContribution | None:
+    ) -> StatusContribution | None:
         """One contribution by ``(scope, seam, source)``, or None."""
         return await fetch(self.bot.db, scope, seam, source, now=now)
 
@@ -629,7 +630,7 @@ class Effects:
     async def _on_converge_due(
         self, bot: "CazzuBot", payload: dict[str, Any]
     ) -> None:
-        """The convergence job dispatcher (scheduler tag EFFECT_CONVERGE_TAG).
+        """The convergence job dispatcher (scheduler tag STATUS_CONVERGE_TAG).
 
         Invoked by the scheduler when an external seam's expiry job fires,
         with the payload scheduled at publish
@@ -661,7 +662,7 @@ class Effects:
         ):
             # EXTEND rolled the row past the fire time — still active, re-arm
             await bot.scheduler.add(
-                EFFECT_CONVERGE_TAG, contribution.expires_at, payload
+                STATUS_CONVERGE_TAG, contribution.expires_at, payload
             )
             return
         await handler(bot, scope, seam)

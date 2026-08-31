@@ -1,34 +1,41 @@
-"""Frog species effects — a typed, payload-driven effect registry.
+"""Frog species outcomes — a typed, payload-driven outcome library.
 
-Effects are fully decoupled from the species and the controllers:
+Outcomes are the species-side counterpart of item outcomes: *what a
+thing does* (on catch, on consume, on spawn). They are fully decoupled
+from the species and the controllers:
 
-- Each effect owns a **payload dataclass** — its configuration. A species
-  definition carries payload *instances* (``catch_effect``), so one
-  effect class is reusable with different values, and a species never
-  carries fields for effects it doesn't use.
-- A payload's ``key`` is an :class:`EffectKey` enum member, and **the
+- Each outcome owns a **payload dataclass** — its configuration. A
+  species definition carries payload *instances* (``catch_outcome``), so
+  one outcome class is reusable with different values, and a species
+  never carries fields for outcomes it doesn't use.
+- A payload's ``key`` is an :class:`OutcomeKey` enum member, and **the
   enum IS the registry**: each member's value is its handler object.
-  ``payload.key.value`` is the effect with its ``catch``/``consume``
+  ``payload.key.value`` is the outcome with its ``catch``/``consume``
   hooks — dispatch is a plain attribute access, no lookup table, so a key
   without a handler cannot exist (the LSP guarantee is structural, not a
   test).
 - Hooks receive the **bot** plus the payload; consume hooks take a
-  **Scope** — effects modify state for any target, they never decide
+  **Scope** — outcomes modify state for any target, they never decide
   what consumption does.
 
-No hikari imports: ``bot`` is only a parameter (TYPE_CHECKING-annotated);
-effects reach services through it.
+The status/outcome boundary (2026-08-31): a **status** is persistent,
+scope-aware state recorded by the status store (``cazzubot/statuses.py``,
+``bot.statuses``); an **outcome** is the consequence of an action and may
+*invoke statuses* through the store — never the reverse.
 
-Consume modifiers are **generic, scope-aware primitives** (owner
-2026-08-28): each takes a :class:`~cazzubot.effects.Scope` plus the
+No hikari imports: ``bot`` is only a parameter (TYPE_CHECKING-annotated);
+outcomes reach services through it.
+
+Consume outcomes are **generic, scope-aware primitives** (owner
+2026-08-28): each takes a :class:`~cazzubot.statuses.Scope` plus the
 granting item id as ``provenance``, so *any* caller — the item's consume
-composition today (``items.py::_SPECIES_CONSUME``), an admin command
+composition today (``items.py::_SPECIES_OUTCOMES``), an admin command
 tomorrow — can apply them to any member/guild. ``REACTION``/``ROLE`` are
-the first such modifiers; ``EXP`` is the pre-composition fossil (exp
-grant is item-owned behavior, so it is composed into nothing and slated
-for removal). Phase 2 of the frog-species plan adds the spawn-side
-Cluster hook in this same module with its factory dependency injected at
-load — nothing here imports the factory.
+the first such outcomes (they publish statuses); ``EXP`` is the
+pre-composition fossil (exp grant is item-owned behavior, so it is
+composed into nothing and slated for removal). The cluster spawn hook
+lives in this same module with its factory dependency injected at load —
+nothing here imports the factory.
 """
 
 from __future__ import annotations
@@ -44,12 +51,12 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import pendulum
 
-from cazzubot.effects import ReapplyPolicy, Scope, ScopeKind
+from cazzubot.statuses import ReapplyPolicy, Scope, ScopeKind
 from cazzubot.models import FrogState, MemberExpLogSourceEnum, FrogItemKey
 
 from plugins.experience import db as exp_db
 
-from .seams import FrogEffect, FrogSeam
+from .seams import FrogStatus, FrogSeam
 
 if TYPE_CHECKING:
     from cazzubot.bot import CazzuBot
@@ -65,59 +72,60 @@ def frog_item_key(species_key: FrogItemKey, state: FrogState) -> str:
     """The inventory item string for a species in a state (one derivation).
 
     Mirrors ``db.FrogItem.key``, which delegates here, so a consume
-    effect's seam ``source`` is byte-identical to the consumed item id.
+    outcome's status ``source`` is byte-identical to the consumed
+    item id.
     """
     return f"frog:{species_key.value}:{state.value}"
 
 
-class EffectPayload(Protocol):
-    """A species-side effect configuration.
+class OutcomePayload(Protocol):
+    """A species-side outcome configuration.
 
-    Any dataclass whose ``key`` is an :class:`EffectKey` member; the key
-    selects the effect that consumes the payload. Protocol status means a
-    species' effect fields can only hold objects with a valid key — never
-    a bare string.
+    Any dataclass whose ``key`` is an :class:`OutcomeKey` member; the key
+    selects the outcome that consumes the payload. Protocol status means
+    a species' outcome fields can only hold objects with a valid key —
+    never a bare string.
     """
 
-    key: EffectKey
+    key: OutcomeKey
 
 
-class Effect(Protocol):
-    """One species effect: optional catch hook, optional consume hook.
+class Outcome(Protocol):
+    """One species outcome: optional catch hook, optional consume hook.
 
     The catch hook receives the bot, the species' payload instance for
-    this effect, and the entity context (uid / species key / now). The
+    this outcome, and the entity context (uid / species key / now). The
     consume hook is a **generic modifier**: the bot, the payload, and a
     Scope with the granting item id as ``provenance`` (+ amount / now).
-    Unused hooks are no-ops; a species with no effect on a side leaves
+    Unused hooks are no-ops; a species with no outcome on a side leaves
     that side None.
     """
 
     async def catch(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         uid: int,
         species_key: FrogItemKey,
         now: pendulum.DateTime,
     ) -> None:
-        """Handle the effect's catch side (a protocol contract; each effect
-        implements it)."""
+        """Handle the outcome's catch side (a protocol contract; each
+        outcome implements it)."""
         ...
 
     async def consume(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         scope: Scope,
         provenance: str,
         amount: int,
         now: pendulum.DateTime,
     ) -> None:
-        """Handle the effect's consume side (a protocol contract; each
-        effect implements it).
+        """Handle the outcome's consume side (a protocol contract; each
+        outcome implements it).
 
         A modifier takes a **Scope** (member or guild) plus the granting
         item id as ``provenance`` — it never decides *what consumption
@@ -126,13 +134,13 @@ class Effect(Protocol):
         ...
 
 
-class ExpEffect:
-    """``exp`` — consume: seasonal exp per payload values (a fossil)."""
+class ExpOutcome:
+    """``exp`` — consume outcome: seasonal exp per payload (a fossil)."""
 
     async def catch(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         uid: int,
         species_key: FrogItemKey,
@@ -144,7 +152,7 @@ class ExpEffect:
     async def consume(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         scope: Scope,
         provenance: str,
@@ -156,14 +164,14 @@ class ExpEffect:
         Fossil (owner 2026-08-28): consume-side exp is **item-owned**
         behavior — the item grants its own exp from the ``frog_exp``
         oracle in ``items.py`` — so this hook is composed into nothing
-        and exists only because :data:`EffectKey.EXP` predates the
+        and exists only because :data:`OutcomeKey.EXP` predates the
         composition split. It grants the normal per-unit value (the
         frozen concept belongs to the item, not the modifier) and is
-        slated for removal (see docs/needs-rewrite/EFFECTS.md).
+        slated for removal (see docs/needs-rewrite/STATUSES.md).
         """
         if not isinstance(payload, ExpPayload):
             raise TypeError(
-                "exp effect requires ExpPayload, got "
+                "exp outcome requires ExpPayload, got "
                 f"{type(payload).__name__}"
             )
         if scope.kind is not ScopeKind.MEMBER:
@@ -180,16 +188,17 @@ class ExpEffect:
         )
 
 
-class ReactionEffect:
-    """``reaction`` — a generic, composable state modifier: publish/merge
-    the ONE reaction effect for a Scope.
+class ReactionOutcome:
+    """``reaction`` — a generic, composable outcome: publish/merge the
+    ONE reaction status for a Scope.
 
-    Generic by design (owner 2026-08-28): takes a **Scope**, so item
-    composition applies it to the consuming member today, and a future
-    admin `/effect apply` can apply it to any member/guild. Pog and
-    Froggers are the same effect: both publish to the single
-    ``(scope, seam, source)`` row under the shared effect identity
-    ``FrogEffect.REACTION`` — never per-item sources — and the granting
+    Outcomes invoke statuses (2026-08-31): this one publishes the
+    reaction-chance status. Generic by design (owner 2026-08-28): takes
+    a **Scope**, so item composition applies it to the consuming member
+    today, and a future admin command can apply it to any member/guild.
+    Pog and Froggers are the same status: both publish to the single
+    ``(scope, seam, source)`` row under the shared status identity
+    ``FrogStatus.REACTION`` — never per-item sources — and the granting
     item travels in the payload as ``"from"`` provenance.
 
     While the window is active: the **strongest** chance wins (a
@@ -205,38 +214,38 @@ class ReactionEffect:
     async def catch(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         uid: int,
         species_key: FrogItemKey,
         now: pendulum.DateTime,
     ) -> None:
-        """No catch behavior — the effect applies on consume only."""
+        """No catch behavior — the outcome applies on consume only."""
         return None
 
     async def consume(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         scope: Scope,
         provenance: str,
         amount: int,
         now: pendulum.DateTime,
     ) -> None:
-        """Publish/merge the shared reaction effect into ``scope``."""
+        """Publish/merge the shared reaction status into ``scope``."""
         if not isinstance(payload, ReactionPayload):
             raise TypeError(
-                "reaction effect requires ReactionPayload, got "
+                "reaction outcome requires ReactionPayload, got "
                 f"{type(payload).__name__}"
             )
         seam = FrogSeam.FROG_REACTION
-        source = FrogEffect.REACTION.key
+        source = FrogStatus.REACTION.key
         prov: dict[str, object] = {
             "chance": payload.chance,
             "from": provenance,
         }
-        existing = await bot.effects.fetch(scope, seam, source, now=now)
+        existing = await bot.statuses.fetch(scope, seam, source, now=now)
         current = 0.0
         if existing is not None:
             value = existing.payload.get("chance", 0.0)
@@ -251,7 +260,7 @@ class ReactionEffect:
                 if existing is not None and existing.expires_at is not None
                 else pendulum.duration()
             )
-            await bot.effects.publish(
+            await bot.statuses.publish(
                 scope,
                 seam,
                 source,
@@ -262,7 +271,7 @@ class ReactionEffect:
             )
         else:
             # weaker/equal: keep the value, extend the window additively
-            await bot.effects.publish(
+            await bot.statuses.publish(
                 scope,
                 seam,
                 source,
@@ -273,15 +282,17 @@ class ReactionEffect:
             )
 
 
-class RoleEffect:
-    """``role`` — a generic, composable state modifier: publish the one
-    classy-role effect for a Scope.
+class RoleOutcome:
+    """``role`` — a generic, composable outcome: publish the one classy-
+    role status for a Scope.
 
-    ``FrogSeam.CLASSY_ROLE`` is an external seam: ``Effects.publish``
-    runs the RoleConverger synchronously (role added now) and schedules
-    the converge job at expiry (role removed then); explicit clear
-    reverts instantly via EffectsClearedEvent. Normal and frozen Classy
-    are the same effect (one row, EXTEND rolls the duration); the
+    Outcomes invoke statuses (2026-08-31): this one publishes the
+    classy-role status. ``FrogSeam.CLASSY_ROLE`` is an external seam:
+    ``Statuses.publish`` runs the RoleConverger synchronously (role
+    added now) and schedules the converge job at expiry (role removed
+    then); explicit clear reverts instantly via StatusesClearedEvent.
+    Normal and frozen Classy are the same status (one row, EXTEND rolls
+    the duration); the
     guild-side role id is resolved here from ``bot.config.guild_kind`` so
     the stored payload is the concrete role the converger must converge
     to, with the granting item as provenance. Scope-aware like every
@@ -292,19 +303,19 @@ class RoleEffect:
     async def catch(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         uid: int,
         species_key: FrogItemKey,
         now: pendulum.DateTime,
     ) -> None:
-        """No catch behavior — the effect applies on consume only."""
+        """No catch behavior — the outcome applies on consume only."""
         return None
 
     async def consume(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         scope: Scope,
         provenance: str,
@@ -314,14 +325,14 @@ class RoleEffect:
         """Publish the role grant into ``scope``."""
         if not isinstance(payload, RolePayload):
             raise TypeError(
-                "role effect requires RolePayload, got "
+                "role outcome requires RolePayload, got "
                 f"{type(payload).__name__}"
             )
         role_id = payload.role_id_for(bot.config.guild_kind)
-        await bot.effects.publish(
+        await bot.statuses.publish(
             scope,
             FrogSeam.CLASSY_ROLE,
-            source=FrogEffect.CLASSY_ROLE.key,
+            source=FrogStatus.CLASSY_ROLE.key,
             payload={"role_id": role_id, "from": provenance},
             duration=payload.duration,
             policy=ReapplyPolicy.EXTEND,
@@ -332,7 +343,7 @@ class RoleEffect:
 class RoleConverger:
     """World-reconciliation for the CLASSY_ROLE seam (member roles).
 
-    Registered via ``bot.effects.register_converger`` at plugin load
+    Registered via ``bot.statuses.register_converger`` at plugin load
     (Phase 2 wiring — Phase 1 ships this tested but unwired). Idempotent
     by construction: reads the seam's active contributions, computes the
     wanted role set, then diffs against the member's actual roles —
@@ -347,8 +358,8 @@ class RoleConverger:
 
         Derived from the species registry's payloads by
         ``plugins/frogs/__init__.py`` (which imports both ``species`` and
-        ``effects``, so ``effects`` never imports ``species`` — the edge
-        ``species → effects`` stays one-way).
+        ``outcomes``, so ``outcomes`` never imports ``species`` — the
+        edge ``species → outcomes`` stays one-way).
         """
         self._known = role_ids
 
@@ -362,7 +373,7 @@ class RoleConverger:
         """Reconcile one member's classy roles to the active contributions."""
         if scope.kind is not ScopeKind.MEMBER:
             return
-        contribs = await bot.effects.list(scope, FrogSeam.CLASSY_ROLE)
+        contribs = await bot.statuses.list(scope, FrogSeam.CLASSY_ROLE)
         wanted: set[int] = set()
         for contrib in contribs:
             role_id = contrib.payload.get("role_id")
@@ -378,7 +389,7 @@ class RoleConverger:
                 "classy role converge: cannot fetch member %s", scope.id
             )
             return
-        reason = "classy frog role effect"
+        reason = "classy frog role status"
         for role_id in wanted - current:
             await bot.rest.add_role_to_member(
                 bot.config.guild_id, scope.id, role_id, reason=reason
@@ -389,16 +400,20 @@ class RoleConverger:
             )
 
 
-class ClusterEffect:
-    """``cluster`` — the spawn hook: burst child frogs into nearby channels.
+class ClusterOutcome:
+    """``cluster`` — the spawn outcome: burst child frogs into nearby
+    channels.
 
-    Children are spawned through ``spawn_impl`` — the factory's
-    ``spawn_and_wait`` — which this module cannot import (the edge
-    ``effects → factory`` would cycle through species). The plugin's
-    ``on_load`` injects it (see plugins/frogs/__init__.py), keeping the
-    import graph acyclic and hikari out of this service module. Children
-    run as **tracked background tasks** so the scheduler handler returns
-    immediately instead of blocking on up to 10 capture waits.
+    An *outcome*, not a status (2026-08-31): it is not persistent
+    scope-aware state — it is the consequence of a spawn reaching a
+    cluster frog. Children are spawned through ``spawn_impl`` — the
+    factory's ``spawn_and_wait`` — which this module cannot import (the
+    edge ``outcomes → factory`` would cycle through species). The
+    plugin's ``on_load`` injects it (see plugins/frogs/__init__.py),
+    keeping the import graph acyclic and hikari out of this service
+    module. Children run as **tracked background tasks** so the scheduler
+    handler returns immediately instead of blocking on up to 10 capture
+    waits.
     """
 
     def __init__(self) -> None:
@@ -406,8 +421,8 @@ class ClusterEffect:
 
         A class attribute holding a plain function would **bind** on
         instance access (the registered handler would receive this
-        ClusterEffect as its first argument), so the injection lives on
-        the instance. The registry singleton (``EffectKey.CLUSTER.value``
+        ClusterOutcome as its first argument), so the injection lives on
+        the instance. The registry singleton (``OutcomeKey.CLUSTER.value``
         — the one the spawn dispatch always uses) gets it from the
         plugin's ``on_load``; tests inject their own on fresh instances.
         """
@@ -418,7 +433,7 @@ class ClusterEffect:
     async def catch(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         uid: int,
         species_key: FrogItemKey,
@@ -430,7 +445,7 @@ class ClusterEffect:
     async def consume(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         scope: Scope,
         provenance: str,
@@ -443,7 +458,7 @@ class ClusterEffect:
     async def spawn(
         self,
         bot: "CazzuBot",
-        payload: EffectPayload,
+        payload: OutcomePayload,
         *,
         cid: int,
         guild_id: int,
@@ -453,12 +468,12 @@ class ClusterEffect:
         """Explode: 4–10 child Basic frogs into the text channels around ``cid``."""
         if not isinstance(payload, ClusterPayload):
             raise TypeError(
-                "cluster effect requires ClusterPayload, got "
+                "cluster outcome requires ClusterPayload, got "
                 f"{type(payload).__name__}"
             )
         if self.spawn_impl is None:
             _log.error(
-                "cluster effect has no spawn_impl — plugin on_load missed"
+                "cluster outcome has no spawn_impl — plugin on_load missed"
             )
             return
         zone = await self._zone(bot, guild_id, cid, payload.radius)
@@ -514,7 +529,7 @@ class ClusterEffect:
         impl = self.spawn_impl
         if impl is None:
             _log.error(
-                "cluster effect has no spawn_impl — plugin on_load missed"
+                "cluster outcome has no spawn_impl — plugin on_load missed"
             )
             return
         child_persist = persist or payload.persist
@@ -533,38 +548,39 @@ class ClusterEffect:
         task.add_done_callback(self._background.discard)
 
 
-class EffectKey(Enum):
-    """The effect registry — each member's value IS its handler.
+class OutcomeKey(Enum):
+    """The outcome library — each member's value IS its handler.
 
     ``EXP`` is the pre-composition fossil: consume-side exp is item-owned
     behavior (the oracle in ``items.py``), so it is composed into nothing
-    and slated for removal. ``REACTION``/``ROLE`` are the generic,
-    scope-aware consume modifiers (2026-08-28 separation): any caller —
-    item composition today, an admin command tomorrow — applies them to
-    any member/guild scope. ``CLUSTER`` is the spawn-side entity hook (its
-    ``spawn`` replaces the catchable frog at spawn time). Adding an effect
-    = define the handler class, then one enum member; dispatch everywhere
-    is ``payload.key.value`` and needs no registration or lookup.
+    and slated for removal. ``REACTION``/``ROLE`` are generic, scope-aware
+    consume outcomes (2026-08-28 separation) that publish statuses: any
+    caller — item composition today, an admin command tomorrow — applies
+    them to any member/guild scope. ``CLUSTER`` is the spawn-side outcome
+    (its ``spawn`` replaces the catchable frog at spawn time). Adding an
+    outcome = define the handler class, then one enum member; dispatch
+    everywhere is ``payload.key.value`` and needs no registration or
+    lookup.
     """
 
-    EXP = ExpEffect()
-    REACTION = ReactionEffect()
-    ROLE = RoleEffect()
-    CLUSTER = ClusterEffect()
+    EXP = ExpOutcome()
+    REACTION = ReactionOutcome()
+    ROLE = RoleOutcome()
+    CLUSTER = ClusterOutcome()
 
 
 @dataclass(frozen=True, slots=True)
 class ExpPayload:
-    """The ``exp`` consume effect's configuration (a fossil).
+    """The ``exp`` consume outcome's configuration (a fossil).
 
     ``exp`` is the value per frog in the normal state, ``frozen_exp`` the
     value when consumed frozen (the default species preserves the legacy
-    10/3). Slated for removal with :class:`ExpEffect`: live consume-exp
+    10/3). Slated for removal with :class:`ExpOutcome`: live consume-exp
     values live in the item oracle (``items.py::frog_exp``) — this
     payload predates the item-owned composition split.
     """
 
-    key = EffectKey.EXP
+    key = OutcomeKey.EXP
 
     exp: int
     frozen_exp: int
@@ -580,15 +596,15 @@ class ExpPayload:
 
 @dataclass(frozen=True, slots=True)
 class ReactionPayload:
-    """The ``reaction`` consume effect's configuration.
+    """The ``reaction`` consume outcome's configuration.
 
     ``chance`` is the strongest-wins value merged into the shared
     frog-reaction seam row; ``duration`` is the additive window rolled
     on every consume (FROG.md: "only the duration is increased, never a
-    stronger effect").
+    stronger outcome").
     """
 
-    key = EffectKey.REACTION
+    key = OutcomeKey.REACTION
 
     chance: float
     duration: timedelta
@@ -596,13 +612,13 @@ class ReactionPayload:
 
 @dataclass(frozen=True, slots=True)
 class RolePayload:
-    """The ``role`` consume effect's configuration — the classy role.
+    """The ``role`` consume outcome's configuration — the classy role.
 
     FROG.md's two role ids, one per guild side; ``duration`` is the
     grant's lifetime (EXTEND rolls it on re-consume).
     """
 
-    key = EffectKey.ROLE
+    key = OutcomeKey.ROLE
 
     role_dev: int
     role_prod: int
@@ -619,15 +635,15 @@ class RolePayload:
 
 @dataclass(frozen=True, slots=True)
 class ClusterPayload:
-    """The ``cluster`` spawn effect's configuration (FROG.md defaults).
+    """The ``cluster`` spawn outcome's configuration (FROG.md defaults).
 
-    Replaces the catchable frog at spawn time (``Species.spawn_effect``):
+    Replaces the catchable frog at spawn time (``Species.spawn_outcome``):
     burst ``min_spawns``..``max_spawns`` child frogs into the text
     channels within ``radius`` of the spawn channel, staggered by
     ``delay`` seconds (the rate-limit guard).
     """
 
-    key = EffectKey.CLUSTER
+    key = OutcomeKey.CLUSTER
 
     min_spawns: int = 4
     max_spawns: int = 10

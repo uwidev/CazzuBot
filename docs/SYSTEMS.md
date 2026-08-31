@@ -27,7 +27,7 @@ A suggested reading order:
 1.  Plugin framework → bot core — how a plugin is declared, discovered, loaded
 2.  Config → database → settings — what a boot needs underneath
 3.  Scheduler → lifecycle → event bus → command window — the plumbing
-4.  Effects → inventory → items → assets — the game stores
+4.  Statuses → inventory → items → assets — the game stores
 5.  A plugin you care about — features compose the above
 
 
@@ -67,7 +67,7 @@ Core services (`cazzubot/`)
 
  -  What: DB-backed delayed tasks: tags, `At` cadences, retry policy
  -  Read first: database, timeparse
- -  Used by: bot (tags), effects (converge), timed plugins
+ -  Used by: bot (tags), statuses (converge), timed plugins
 
 ### Lifecycle — `cazzubot/lifecycle.py`
 
@@ -81,11 +81,11 @@ Core services (`cazzubot/`)
  -  Read first: lifecycle
  -  Used by: frogs (emits); future observers
 
-### Effects — `cazzubot/effects.py`
+### Statuses — `cazzubot/statuses.py`
 
- -  What: Scope-aware contribution store + convergence jobs
+ -  What: Scope-aware status store (contributions) + convergence jobs
  -  Read first: database, scheduler
- -  Used by: experience (pull); frogs (reaction + role seams)
+ -  Used by: experience (pull); frogs (reaction + role statuses)
 
 ### Inventory — `cazzubot/inventory.py`
 
@@ -201,8 +201,8 @@ Feature plugins (`plugins/`)
 
 ### frogs — `plugins/frogs/`
 
- -  What: Spawn/capture/consume; five species items, effects, art;
-    reaction listener; cluster spawn; season reset
+ -  What: Spawn/capture/consume; five species items, outcomes, art;
+    reaction status listener; cluster spawn; season reset
  -  Read first: experience
  -  Used by: inventory, inventory plugin, assets, events
 
@@ -272,7 +272,7 @@ Scheduled tags (`bot.scheduler`)
     poll; close the vote. Sunday 00:00.
  -  `modlog` — mod — mute/tempban expiry (state-backed projection). Per action.
  -  `counter` — counter — baka-button expiry. Per action.
- -  `effect.converge` — effects — external-seam convergence at `expires_at`.
+ -  `status.converge` — statuses — external-seam convergence at `expires_at`.
     Per publish.
 
 
@@ -290,9 +290,9 @@ Key flows
     `quarterly` freezes stacks, `daily.frog` resyncs captures.
  -  **Board weekly:** `board_weekly` scrapes the week, opens a `poll` vote and
     posts grid + banner (`misc`) — Sunday 00:00, re-armed on every fire.
- -  **Effects:** `experience.award_exp` pulls the message-exp multiplier
-    (`EffectSeam`); nothing publishes yet — that side is the future badges/shop
-    seam. External seams apply on publish and revert via `effect.converge`.
+ -  **Statuses:** `experience.award_exp` pulls the message-exp multiplier
+    (`StatusSeam`); nothing publishes yet — that side is the future badges/shop
+    seam. External statuses apply on publish and revert via `status.converge`.
  -  **Manifest drift:** `roles`/`channels` plugins only warn at boot;
     enforcement is manual through `cazzubot-cli`
     (export/diff/check/apply/restore).

@@ -105,6 +105,7 @@ def test_registry_is_ordered_and_ids_unique() -> None:
         "004_asset_kind",
         "005_frog_species_key",
         "006_effect_contributions",
+        "007_status_contribution",
     ]
 
 

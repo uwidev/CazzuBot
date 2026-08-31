@@ -20,7 +20,7 @@ from cazzubot.models import FrogState, FrogItemKey
 from cazzubot.settings import Settings
 from cazzubot.utils import rank_rows, season_bounds
 
-from .effects import frog_item_key
+from .outcomes import frog_item_key
 from .species import SPECIES
 
 SCHEMA = [

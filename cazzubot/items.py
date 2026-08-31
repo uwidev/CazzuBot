@@ -9,7 +9,7 @@ name, icon) and how it behaves (its consume handler), keyed by the immutable
 Separation of concerns across the game's two players-visible concepts:
 
 - **Entity** (e.g. a frog) — a world/spawn object with its own behavior
-  (spawn cadence, catch effect). Catching one may grant items.
+  (spawn cadence, catch outcome). Catching one may grant items.
 - **Item** — a stackable inventory object (display name, icon, consume
   behavior), owned by the plugin(s) that define it.
 

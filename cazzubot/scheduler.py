@@ -19,7 +19,7 @@ Replaces v1's per-plugin ``@tasks.loop(seconds=1)`` polling of the same
 table.
 
 Depends on: ``db`` (the ``tasks`` table) and ``timeparse``. Depended on by:
-``bot`` (registers plugin tags), ``effects`` (the ``effect.converge`` tag)
+``bot`` (registers plugin tags), ``statuses`` (the ``status.converge`` tag)
 and every plugin's scheduled handlers.
 """
 

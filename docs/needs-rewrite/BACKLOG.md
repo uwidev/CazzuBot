@@ -295,3 +295,15 @@ the port-time notes).
 Moved to `docs/DONE.md`: the wrapper plugins are deleted; the `daily` reset
 lives in experience and the `daily.frog` resync + `quarterly` freeze live
 in frogs, each armed by its owning plugin's `on_load`.
+
+## 2026-08-31 — Species compose outcomes (rename follow-up)
+
+Frog species should operate like items: compose their own outcomes
+within the species (entity) declaration itself — or call a helper
+function when the outcome is complex — rather than today's split
+(species carry `catch_outcome`/`spawn_outcome` payload fields; items
+carry `_SPECIES_OUTCOMES`). The status/outcome boundary needs a
+cleaner implementation: a **status** is persistent scope-aware state in
+the status store; an **outcome** is the consequence of an action and
+may invoke statuses (never the reverse). Tracked from the 2026-08-31
+rename plan (D5).

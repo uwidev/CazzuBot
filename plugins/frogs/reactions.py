@@ -24,7 +24,7 @@ import hikari
 import lightbulb
 
 from cazzubot.bot import CazzuBot
-from cazzubot.effects import Scope
+from cazzubot.statuses import Scope
 from cazzubot.listeners import guild_listener
 
 from .assets import FrogAsset
@@ -55,9 +55,9 @@ async def on_message(event: hikari.MessageCreateEvent) -> None:
         return
     bot = cast(CazzuBot, event.app)
     uid = author.id
-    # one row by construction (the reaction effect is keyed by effect
+    # one row by construction (the reaction status is keyed by status
     # identity, not by item) — read it directly, no fold
-    contribs = await bot.effects.list(
+    contribs = await bot.statuses.list(
         Scope.member(uid), FrogSeam.FROG_REACTION
     )
     if not contribs:
