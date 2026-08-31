@@ -21,7 +21,7 @@ from cazzubot.models import FrogItemKey
 from tests.driver import press_button, run_slash, wait_for_menu
 from tests.fakes import rest_of
 
-from plugins.frogs.seams import FrogSeam, FrogStatus
+from plugins.frogs.seams import FrogSeam
 
 # the dev-guild classy role (FROG.md); tests run guild_kind=development
 _CLASSY_ROLE_DEV = 1542294599358353430
@@ -178,7 +178,8 @@ async def test_consume_pog_via_driver_publishes_reaction_seam(
         Scope.member(424242), FrogSeam.FROG_REACTION
     )
     assert len(contribs) == 1
-    assert contribs[0].payload["chance"] == 0.01  # strongest value wins
+    assert contribs[0].source == "frog:blessing:pog"  # the status class
+    assert contribs[0].payload == {"from": "frog:pog:normal"}
 
 
 async def test_consume_classy_via_driver_grants_role(
@@ -222,7 +223,7 @@ async def test_consume_classy_via_driver_grants_role(
         "scope_kind": "member",
         "scope_id": 424242,
         "seam": FrogSeam.CLASSY_ROLE.key,
-        "source": FrogStatus.CLASSY_ROLE.key,
+        "source": "frog:blessing:classy",
     }
     await full_bot.scheduler.handlers[STATUS_CONVERGE_TAG](
         full_bot, payload
@@ -239,7 +240,8 @@ async def test_capture_cluster_explodes_no_catchable_frog(
     """/frog fake species=cluster bursts basics; no catchable frog message."""
     from tests.fakes import FakeChannel
 
-    from plugins.frogs.outcomes import OutcomeKey
+    from plugins.frogs.behaviors import ClusterBurst
+    from plugins.frogs.species import by_key
 
     # seed text channels around 99 (the driver's default channel)
     gid = full_bot.config.guild_id
@@ -260,9 +262,10 @@ async def test_capture_cluster_explodes_no_catchable_frog(
         spawned.append((cid or 0, species_key))
         return False
 
-    cluster = OutcomeKey.CLUSTER.value
-    original = cluster.spawn_impl
-    cluster.spawn_impl = recording_spawn
+    cluster = by_key(FrogItemKey.CLUSTER)
+    assert cluster is not None and isinstance(cluster.spawn, ClusterBurst)
+    original = cluster.spawn.spawn_impl
+    cluster.spawn.spawn_impl = recording_spawn
     try:
         await run_slash(
             full_bot,
@@ -273,7 +276,7 @@ async def test_capture_cluster_explodes_no_catchable_frog(
             timeout=10.0,
         )
     finally:
-        cluster.spawn_impl = original
+        cluster.spawn.spawn_impl = original
     # no catchable frog message was posted for the cluster itself (the
     # slash response carries nothing — the explosion never posts a frog)
     assert rest_of(full_bot).created == []
