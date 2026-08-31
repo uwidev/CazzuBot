@@ -1,57 +1,57 @@
 """Frog species catalog — defined entirely in code.
 
 The ``SPECIES`` registry is the single source of truth: names, rarity,
-weights and art all live here (no catalog table — a DB row would create a
-proxy interface for tuning and balancing, which is exactly the friction we
-want to avoid). Tuning a species = editing this file and restarting
-(``/plugin reload frogs`` picks it up too).
+weights and art live here (no catalog table). A species is a **mob**: its
+declaration composes its own behavior as code — the ``catch`` hook (what
+happens when the frog is caught; nothing by default) and the ``spawn`` hook
+(what replaces the catchable frog at spawn time). Capturing a frog grants
+the item ONLY when the catch behavior does it; the species itself is never
+an inventory item (items live in ``items.py``).
 
-Keys and references are **typed, never strings**: ``SpeciesKey`` is the
-enum of valid species (the LSP completes it; a typo cannot compile), and
-a species' ``art`` is a :class:`FrogAsset` member when it has visible art
-(``None`` for an uncatchable species like Cluster) — the declaration IS
-the reference, so an undeclared asset cannot be spelled. Strings exist only
-at the data boundary (DB columns, slash options, custom ids), converted
-to/from the enums there.
+Keys and references are **typed, never strings**: ``FrogItemKey`` is the
+enum of valid species; a species' ``art`` is a :class:`FrogAsset` member
+when it has visible art (``None`` for an uncatchable species like Cluster)
+— the declaration IS the reference, so an undeclared asset cannot be
+spelled. Strings exist only at the data boundary (DB columns, slash
+options, custom ids), converted to/from the enums there.
 
-Outcomes are referenced by **payload instance**, not by key string: a
-species carries its configured ``catch_outcome`` payload (see
-``outcomes.py``), so the same outcome class is reusable with different
-values and a species never carries fields for outcomes it doesn't use.
-Consumption is *item-owned* — see ``items.py`` — so the entity carries
-no consume fields.
+Behavior helpers live beside the species that uses them
+(``plugins/frogs/behaviors.py``): the four catchable frogs compose the
+shared ``grant_catch``; Cluster composes ``ClusterBurst`` and declares no
+``catch`` (it cannot be caught — the spawn hook replaces it).
 """
 
 from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from typing import Any, Awaitable, Callable
 
 from cazzubot.models import FrogItemKey
 
 from .assets import FrogAsset
-from .outcomes import ClusterPayload, OutcomePayload
+from .behaviors import ClusterBurst, grant_catch
 
 DEFAULT_SPECIES_KEY = FrogItemKey.BASIC
+
+# the one shape every species behavior has: async code running with the bot
+# plus whatever context it needs (the behavior picks its own kwargs)
+Behavior = Callable[..., Awaitable[Any]]
 
 
 @dataclass(frozen=True, slots=True)
 class Species:
-    """One species — values are code, swappable only by editing them.
+    """One mob — its behavior is the code it references.
 
-    The **entity**: what a frog *is* as a world/spawn object (its name,
-    rarity, spawn weight, art, and what happens on catch). What consuming
-    a caught frog does is deliberately NOT here: consumption is
-    **item-owned** (owner 2026-08-28 — the item composes, outcomes
-    invoke). The matching :class:`Item` in ``items.py`` grants exp from
-    its oracle and composes the outcomes it applies
-    (``items.py::_SPECIES_OUTCOMES``), so a species carries no consume
-    declaration. What a caught frog becomes as an inventory object (its
-    item_id, icon, consume behavior) lives on that item, not here.
+    ``catch`` is the capture hook (None: nothing happens on capture —
+    explicit per design; the catchable species compose :func:`grant_catch`).
+    ``spawn`` is the spawn hook (None: the normal catchable path; Cluster
+    composes :class:`ClusterBurst`). Helpers a behavior needs live beside
+    that behavior (see ``behaviors.py``).
 
-    ``art`` is optional — an uncatchable species (Cluster) has no visible
-    art. ``catch_outcome`` handles the catch side; ``spawn_outcome``
-    replaces the catchable frog at spawn time (Cluster's explosion).
+    What a caught frog becomes as an inventory object (its item_id, icon,
+    consume behavior) lives on the matching :class:`Item` in ``items.py``,
+    not here — consumption is item-owned.
     """
 
     key: FrogItemKey
@@ -59,8 +59,8 @@ class Species:
     rarity: str
     description: str
     spawn_weight: float
-    catch_outcome: OutcomePayload | None
-    spawn_outcome: OutcomePayload | None
+    catch: Behavior | None
+    spawn: Behavior | None
     art: FrogAsset | None
 
 
@@ -71,8 +71,8 @@ SPECIES: tuple[Species, ...] = (
         rarity="common",
         description="The most normalest frog of them all.",
         spawn_weight=1000.0,
-        catch_outcome=None,
-        spawn_outcome=None,
+        catch=grant_catch,
+        spawn=None,
         art=FrogAsset.FROG_BASIC,
     ),
     Species(
@@ -81,8 +81,8 @@ SPECIES: tuple[Species, ...] = (
         rarity="uncommon",
         description="A frog with a pog.",
         spawn_weight=200.0,
-        catch_outcome=None,
-        spawn_outcome=None,
+        catch=grant_catch,
+        spawn=None,
         art=FrogAsset.FROG_POG,
     ),
     Species(
@@ -91,8 +91,8 @@ SPECIES: tuple[Species, ...] = (
         rarity="rare",
         description="A frog with a poggers.",
         spawn_weight=50.0,
-        catch_outcome=None,
-        spawn_outcome=None,
+        catch=grant_catch,
+        spawn=None,
         art=FrogAsset.FROG_FROGGERS,
     ),
     Species(
@@ -101,8 +101,8 @@ SPECIES: tuple[Species, ...] = (
         rarity="rare",
         description="A frog with rather refined tastes.",
         spawn_weight=200.0,
-        catch_outcome=None,
-        spawn_outcome=None,
+        catch=grant_catch,
+        spawn=None,
         art=FrogAsset.FROG_CLASSY,
     ),
     Species(
@@ -111,8 +111,8 @@ SPECIES: tuple[Species, ...] = (
         rarity="special",
         description="Be careful with this one… she's… spawning!",
         spawn_weight=300.0,
-        catch_outcome=None,
-        spawn_outcome=ClusterPayload(),
+        catch=None,  # cannot be caught — the spawn hook replaces it
+        spawn=ClusterBurst(),
         art=None,
     ),
 )

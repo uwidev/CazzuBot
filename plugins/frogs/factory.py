@@ -21,23 +21,19 @@ import hikari
 import lightbulb
 import pendulum
 
-from cazzubot import templates, utils
+from cazzubot import utils
 from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogState, MemberSnapshot, FrogItemKey
+from cazzubot.models import MemberSnapshot, FrogItemKey
 from cazzubot.scheduler import InChaotic
 
 from . import db as frog_db
-from .assets import FrogAsset
 from .events import FrogCapturedEvent
-from .species import Species, by_key, roll_species
+from .species import by_key, roll_species
 
 _log = logging.getLogger(__name__)
 
 FROG_EMOJI = "<:cirnoFrog:695126166301835304>"
 FROG_NET_EMOJI = "<:cirnoNet:752290769712316506>"
-
-# the built-in capture embed (used when no frog.message template is set)
-_CAPTURE_COLOR = hikari.Color.from_hex_code("#a2dcf7")
 
 # the catch button custom_id prefix: frog:catch:<cid>:<species_key>
 _CATCH_PREFIX = "frog:catch:"
@@ -101,20 +97,16 @@ async def spawn_and_wait(
     if species_key is None:
         species_key = roll_species().key
     species = by_key(species_key)
-    if species is not None and species.spawn_outcome is not None:
-        # spawn-outcome species (Cluster) never post a catchable frog —
+    if species is not None and species.spawn is not None:
+        # spawn-behavior species (Cluster) never post a catchable frog —
         # their hook runs instead and this function returns immediately
-        payload = species.spawn_outcome
-        handler = getattr(payload.key.value, "spawn", None)
-        if handler is not None:
-            await handler(
-                bot,
-                payload,
-                cid=cid,
-                guild_id=bot.config.guild_id,
-                persist=persist,
-                now=pendulum.now("UTC"),
-            )
+        await species.spawn(
+            bot,
+            cid=cid,
+            guild_id=bot.config.guild_id,
+            persist=persist,
+            now=pendulum.now("UTC"),
+        )
         return False
     menu = FrogCatchMenu(bot, cid, species_key)
     content = await _frog_content(bot, species_key)
@@ -164,81 +156,6 @@ async def _frog_content(bot: CazzuBot, species_key: FrogItemKey) -> str:
         else None
     )
     return art or (species.name if species is not None else "Frog")
-
-
-async def grant_catch_frog(
-    bot: CazzuBot,
-    *,
-    uid: int,
-    member: MemberSnapshot,
-    species: Species,
-    now: pendulum.DateTime,
-    cid: int,
-) -> hikari.Message:
-    """The default frog catch — +1 to inventory plus the capture embed.
-
-    Species with no ``catch_outcome`` take this path: the caught frog is
-    granted to the catcher's inventory (``bot.inventory``, +1 on the
-    ``frog:<species>:normal`` stack) and a capture embed is posted to the
-    spawn channel with the catcher's mention and the pre/post capture
-    counts. The embed comes from the configured ``frog.message`` template
-    when one is set, else the built-in :func:`_default_capture_embed`.
-    Returns the announcement message the caller can forward or inspect.
-    """
-    item_id = frog_db.FrogItem(species.key, FrogState.NORMAL).key
-    await bot.inventory.add(uid, item_id)
-
-    frog_cnt_total = await frog_db.total_inventory(bot.db, uid)
-    seasonal = await frog_db.seasonal_captures(
-        bot.db, uid, now.year, utils.month2season(now.month)
-    )
-    msg_json = await frog_db.get_message(bot.settings) or {}
-    if msg_json:
-        utils.deep_map(
-            msg_json,
-            formatter,
-            member=member,
-            frog_cnt_old=frog_cnt_total - 1,
-            frog_cnt_new=frog_cnt_total,
-            seasonal_cap_old=seasonal - 1,
-            seasonal_cap_new=seasonal,
-            species=species.name,
-            species_art=(
-                (await bot.assets.get(species.art) or "")
-                if species.art is not None
-                else ""
-            ),
-        )
-        payload = templates.build_payload(msg_json)
-    else:
-        # no configured capture message — fall back to the built-in capture
-        # embed rather than sending a blank message
-        payload: dict[str, Any] = {
-            "embed": await _default_capture_embed(
-                bot, member, species, frog_cnt_total, seasonal
-            )
-        }
-    # Least-permissive mention policy: explicitly allow mention of exactly
-    # the catcher we're pinging (``user_mentions=[uid]``), never a blanket
-    # "all users" / "all roles". The template's ``allowed_mentions`` flag can
-    # only suppress (``false`` = ping nothing); it cannot broaden the ping
-    # beyond the catcher. Unlike ``templates.send``, the factory sends via
-    # ``rest.create_message`` directly, so it must pass the mention kwargs
-    # itself — otherwise hikari's allowed_mentions defaults to ``{parse:[]}``
-    # and the catcher would never be pinged, even with ``{mention}`` present.
-    sent = await bot.rest.create_message(
-        cid,
-        **payload,
-        user_mentions=(
-            [uid]
-            if msg_json.get("allowed_mentions") is not False
-            else hikari.UNDEFINED
-        ),
-        role_mentions=hikari.UNDEFINED,
-        mentions_everyone=hikari.UNDEFINED,
-    )
-    utils.schedule_delete(bot, cid, int(sent.id), 7)
-    return sent
 
 
 class FrogCatchMenu(lightbulb.components.Menu):
@@ -295,7 +212,7 @@ class FrogCatchMenu(lightbulb.components.Menu):
                     uid,
                 )
                 return
-            if species.spawn_outcome is not None:
+            if species.spawn is not None:
                 await mctx.respond(
                     "This frog cannot be caught — it already burst "
                     "into its children!",
@@ -311,22 +228,12 @@ class FrogCatchMenu(lightbulb.components.Menu):
             )
             await frog_db.modify_capture(self.bot.db, uid, modify=1)
 
-            if species.catch_outcome is not None:
-                payload = species.catch_outcome
-                # the enum member's value IS the handler — no lookup; a
-                # custom catch outcome owns whatever it grants
-                await payload.key.value.catch(
-                    self.bot,
-                    payload,
-                    uid=uid,
-                    species_key=species.key,
-                    now=now,
-                )
-            else:
-                # the default: +1 to inventory and the capture embed (the
-                # generic catch path shared by every species without a
-                # custom outcome — see grant_catch_frog)
-                await grant_catch_frog(
+            if species.catch is not None:
+                # the species composes its own catch behavior (the
+                # catchable frogs compose grant_catch; ``catch is None``
+                # means no species behavior on capture — the accounting
+                # above is the flow's own ledger, not species behavior)
+                await species.catch(
                     self.bot,
                     uid=uid,
                     member=utils.member_snapshot(mctx.interaction.user),
@@ -434,31 +341,3 @@ def formatter(
         species=species,
         species_art=species_art,
     )
-
-
-async def _default_capture_embed(
-    bot: CazzuBot,
-    member: MemberSnapshot,
-    species: Species,
-    frog_cnt_total: int,
-    seasonal: int,
-) -> hikari.Embed:
-    """The built-in capture embed, used when no ``frog.message`` is set.
-
-    Shows the catcher's mention, the species, and the post-capture counts
-    (total inventory + this season's captures), with the :data:`FrogAsset`
-    ``CATCH_BANNER`` media image as the thumbnail when it's published.
-    """
-    banner = await bot.assets.get(FrogAsset.CATCH_BANNER)
-    embed = hikari.Embed(
-        color=_CAPTURE_COLOR,
-        title="Frog caught!",
-        description=(
-            f"{member.mention} caught a **{species.name}**!\n"
-            f"Inventory: **`{frog_cnt_total}`** frog(s) • "
-            f"This season: **`{seasonal}`** capture(s)"
-        ),
-    )
-    if banner:
-        embed.set_thumbnail(banner)
-    return embed
