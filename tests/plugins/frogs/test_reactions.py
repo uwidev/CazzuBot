@@ -1,7 +1,9 @@
 """Frog reactions — the message-time listener for FrogSeam.FROG_REACTION.
 
 A user with an active reaction contribution (Pog/Froggers consumed) has a
-per-message chance the bot reacts with the froggers emoji; the cooldown
+per-message chance the bot reacts with the froggers emoji; the fold reads
+each contribution's source back to its status class and picks by priority
+(expiry of the winner falls back to the next live sibling). The cooldown
 and the unpublished-emoji no-op are listener behavior.
 """
 # driving the typed guild-scoped listener with a fake event (same as the
@@ -10,13 +12,16 @@ and the unpublished-emoji no-op are listener behavior.
 
 from __future__ import annotations
 
+import pendulum
 import pytest
 
 from cazzubot.assets import asset_key
-from cazzubot.statuses import Scope
+from cazzubot.statuses import Scope, StatusContribution, ScopeKind
 from plugins.frogs import reactions
 from plugins.frogs.assets import FrogAsset
-from plugins.frogs.seams import FrogSeam, FrogStatus
+from plugins.frogs.reactions import _best_reaction
+from plugins.frogs.seams import FrogSeam
+from plugins.frogs.statuses import FROGGERS_REACTION, POG_REACTION
 
 _EMOJI = "<:frog_froggers:9001>"
 _ASSET_KEY = asset_key(FrogAsset.FROG_FROGGERS)
@@ -52,14 +57,10 @@ async def _publish_froggers_emoji(bot) -> None:
     )
 
 
-async def _seed_reaction(bot, uid: int, chance: float) -> None:
-    await bot.statuses.publish(
-        Scope.member(uid),
-        FrogSeam.FROG_REACTION,
-        source=FrogStatus.REACTION.key,
-        payload={"chance": chance},
-        duration=None,
-        now=None,
+async def _seed_reaction(bot, uid: int) -> None:
+    """Grant the Pog reaction status (1% — the fold reads it off the class)."""
+    await POG_REACTION.apply(
+        bot, scope=Scope.member(uid), provenance="frog:pog:normal"
     )
 
 
@@ -87,7 +88,7 @@ async def test_message_with_reaction_contribution_reacts(
 ) -> None:
     bot = full_bot
     await _publish_froggers_emoji(bot)
-    await _seed_reaction(bot, 123, 1.0)
+    await _seed_reaction(bot, 123)
     before = len(bot.rest.reactions)
     await _dispatch_message(bot, uid=123)
     assert len(bot.rest.reactions) == before + 1
@@ -98,7 +99,7 @@ async def test_message_with_reaction_contribution_reacts(
 async def test_cooldown_blocks_second_react(full_bot, seeded_roll) -> None:
     bot = full_bot
     await _publish_froggers_emoji(bot)
-    await _seed_reaction(bot, 123, 1.0)
+    await _seed_reaction(bot, 123)
     await _dispatch_message(bot, uid=123)
     n_after_first = len(bot.rest.reactions)
     await _dispatch_message(bot, uid=123)  # within 10s
@@ -109,3 +110,55 @@ async def test_no_contribution_never_reacts(full_bot, seeded_roll) -> None:
     bot = full_bot
     await _dispatch_message(bot, uid=999)
     assert bot.rest.reactions == []
+
+
+def _contrib(source: str) -> StatusContribution:
+    """One in-memory reaction contribution row (no DB needed)."""
+    return StatusContribution(
+        scope_kind=ScopeKind.MEMBER,
+        scope_id=1,
+        seam=FrogSeam.FROG_REACTION.key,
+        source=source,
+        payload={},
+        expires_at=None,
+    )
+
+
+def test_fold_picks_highest_priority() -> None:
+    """The fold maps source→class and picks by (priority, source key)."""
+    # both live: Froggers (priority 2) wins over Pog (priority 1)
+    both = [_contrib("frog:blessing:pog"), _contrib("frog:blessing:froggers")]
+    assert _best_reaction(both) is FROGGERS_REACTION
+    # only Pog live: Pog wins
+    assert _best_reaction([_contrib("frog:blessing:pog")]) is POG_REACTION
+    # unknown sources (a retired status) are skipped; no known → None
+    assert _best_reaction([_contrib("frog_reaction")]) is None
+    assert _best_reaction([]) is None
+
+
+async def test_fold_falls_back_to_pog_after_froggers_expiry(
+    full_bot,
+) -> None:
+    """Expiry of the winner reveals the next live sibling — no merge logic."""
+    bot = full_bot
+    now = pendulum.now("UTC")
+    await FROGGERS_REACTION.apply(
+        bot,
+        scope=Scope.member(1),
+        provenance="frog:froggers:normal",
+        now=now,
+    )
+    await POG_REACTION.apply(
+        bot,
+        scope=Scope.member(1),
+        provenance="frog:pog:normal",
+        now=now.add(minutes=10),
+    )
+    # T+1h+ε: Froggers (expires T+1h) is pruned; Pog (expires T+1h10m) lives
+    contribs = await bot.statuses.list(
+        Scope.member(1),
+        FrogSeam.FROG_REACTION,
+        now=now.add(hours=1, minutes=1),
+    )
+    assert {c.source for c in contribs} == {"frog:blessing:pog"}
+    assert _best_reaction(contribs) is POG_REACTION

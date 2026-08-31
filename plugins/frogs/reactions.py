@@ -2,11 +2,13 @@
 
 A user with an active reaction contribution (Pog/Froggers consumed) has
 a per-message chance the bot reacts to their message with the froggers
-emoji. The seam only stores the chance; this listener is the consumer:
+emoji. The seam stores only provenance; the status **classes** own the
+chance — this listener is the consumer:
 
-- fold: the **strongest** active contribution decides the chance (max —
-  stacking reaction frogs never strengthens, mirroring the "duration
-  only, never stronger" rule).
+- fold: each contribution's ``source`` maps back to its registered
+  :class:`ReactionStatus`; the **highest-priority** live class decides the
+  chance (ties → lowest source key). Sibling statuses stay separate rows,
+  so expiry of the winner falls back to the next automatically.
 - throttle: one reaction per user per ``_REACT_COOLDOWN`` seconds
   (10s per FROG.md). The cooldown is in-memory by design: a restart at
   worst allows one extra reaction; no table is worth that.
@@ -24,11 +26,12 @@ import hikari
 import lightbulb
 
 from cazzubot.bot import CazzuBot
-from cazzubot.statuses import Scope
+from cazzubot.statuses import Scope, StatusContribution
 from cazzubot.listeners import guild_listener
 
 from .assets import FrogAsset
 from .seams import FrogSeam
+from .statuses import ReactionStatus, status_by_source
 
 _log = logging.getLogger(__name__)
 
@@ -55,17 +58,13 @@ async def on_message(event: hikari.MessageCreateEvent) -> None:
         return
     bot = cast(CazzuBot, event.app)
     uid = author.id
-    # one row by construction (the reaction status is keyed by status
-    # identity, not by item) — read it directly, no fold
     contribs = await bot.statuses.list(
         Scope.member(uid), FrogSeam.FROG_REACTION
     )
-    if not contribs:
+    best = _best_reaction(contribs)
+    if best is None:
         return
-    raw_chance = contribs[0].payload.get("chance", 0.0)
-    chance = (
-        float(raw_chance) if isinstance(raw_chance, (int, float)) else 0.0
-    )
+    chance = best.chance  # from the class, never the row
     if chance <= 0.0 or random.random() >= chance:
         return
     if time.time() - _last_react.get(uid, 0.0) < _REACT_COOLDOWN:
@@ -80,3 +79,22 @@ async def on_message(event: hikari.MessageCreateEvent) -> None:
         pass  # message or emoji vanished between pull and react — fine
     # hikari's REST client already sleeps through 429s internally, so a
     # rate-limited react cannot raise — there is no RateLimitError to catch
+
+
+def _best_reaction(
+    contribs: list[StatusContribution],
+) -> ReactionStatus | None:
+    """The highest-priority live reaction status (ties → lowest source key).
+
+    Reads each contribution's ``source`` back to its registered class;
+    unknown sources (a status removed from the registry) are skipped and
+    eventually pruned at expiry.
+    """
+    statuses = [status_by_source(contrib.source) for contrib in contribs]
+    reaction = [s for s in statuses if isinstance(s, ReactionStatus)]
+    if not reaction:
+        return None
+    return max(
+        reaction,
+        key=lambda s: (s.priority, s.key),
+    )
