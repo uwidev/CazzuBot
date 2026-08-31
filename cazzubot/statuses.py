@@ -21,10 +21,12 @@ immediately on publish, revert idempotently on fire; ``StatusesClearedEvent``
 for the instant revert on explicit clear/clear_scope). The store stays
 dumb; convergence logic is feature code.
 
-Naming note: this core module is the *persistent status store*;
-``plugins/frogs/outcomes.py`` is the species-side *instant catch/consume
-outcome library*. Outcomes may **invoke statuses** (never the reverse);
-an item's consume composes its own **outcome** from that library.
+Naming note: this core module owns BOTH the *persistent status store*
+(the seam/contribution/pull machinery above) AND the *status classes
+registry* (:class:`Status` + :func:`register_status`/:func:`status_by_source`
+below) — a status class owns its values; the store records the contribution
+and a feature's pull maps a row's ``source`` back to its class. Feature
+plugins declare their own :class:`Status` subclasses and register them.
 
 Call graph (per the self-documenting rule): features' pulls call
 :func:`product`/:func:`total`/:func:`list` (experience's ``award_exp`` is
@@ -151,6 +153,91 @@ class ReapplyPolicy(Enum):
         "replace"  # overwrite payload + expiry (legacy set() semantics)
     )
     STACK = "stack"  # parked: future "stronger" stacking arrives as this member
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Status:
+    """One status effect — the class owns its values.
+
+    The store records the contribution; the class decides what it means.
+    ``key`` is the source identity stored in ``status_contribution.source``
+    (and in convergence job payloads). ``scope_kind`` pins where the status
+    applies (member vs guild) and is enforced at :meth:`apply` time.
+
+    Subclasses (in feature plugins) add their own value fields (chance,
+    role ids, …) and override :meth:`describe`; the store never interprets
+    them — a feature's pull maps a contribution's ``source`` back to its
+    class via :func:`status_by_source` and reads the values off the class.
+    """
+
+    key: str
+    name: str
+    seam: SeamKey
+    scope_kind: ScopeKind = ScopeKind.MEMBER
+    priority: int = 0  # fold order on a shared seam (higher wins)
+    duration: timedelta | None = None
+    policy: ReapplyPolicy = ReapplyPolicy.EXTEND
+
+    def describe(self) -> str:
+        """Human summary for info cards (subclasses enrich)."""
+        return self.name
+
+    async def apply(
+        self,
+        bot: "CazzuBot",
+        *,
+        scope: Scope,
+        provenance: str,
+        now: pendulum.DateTime | None = None,
+    ) -> None:
+        """Invoke this status for ``scope``, granted by ``provenance``.
+
+        The only payload the store sees is provenance: the granting item id.
+        All other data (chance, window, role ids) lives on this class and is
+        resolved at pull time via :func:`status_by_source`.
+        """
+        if scope.kind is not self.scope_kind:
+            raise TypeError(
+                f"status {self.key!r} is {self.scope_kind.value}-scoped, "
+                + f"got {scope.kind.value} scope"
+            )
+        await bot.statuses.publish(
+            scope,
+            self.seam,
+            self.key,
+            {"from": provenance},
+            duration=self.duration,
+            policy=self.policy,
+            now=now,
+        )
+
+
+# -- status classes registry -----------------------------------------------
+# The store (above) records contributions; this registry maps a
+# contribution's ``source`` back to the :class:`Status` class that owns its
+# values, so a feature's pull reads values off the class (single source of
+# truth) instead of out of the row's payload. Reload-safe: re-registering a
+# key replaces the entry.
+_STATUSES: dict[str, Status] = {}
+
+
+def register_status(status: Status) -> None:
+    """Register a status class by its ``key`` (idempotent; reload-safe)."""
+    _STATUSES[status.key] = status
+
+
+def status_by_source(source: str) -> Status | None:
+    """The registered status for a contribution ``source`` (None when gone)."""
+    return _STATUSES.get(source)
+
+
+def statuses_for_seam(seam: str | SeamKey) -> builtins.list[Status]:
+    """Every registered status feeding ``seam`` (sorted by source)."""
+    seam_key = _key(seam)
+    return sorted(
+        (s for s in _STATUSES.values() if _key(s.seam) == seam_key),
+        key=lambda s: s.key,
+    )
 
 
 @dataclass(frozen=True, slots=True)

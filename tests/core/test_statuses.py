@@ -29,6 +29,11 @@ from cazzubot.statuses import (
     ReapplyPolicy,
     SCHEMA,
     Scope,
+    ScopeKind,
+    Status,
+    register_status,
+    status_by_source,
+    statuses_for_seam,
 )
 
 # the fake external seam's consequence: scope.id -> world flag
@@ -723,3 +728,66 @@ async def converge_placeholder(
 ) -> None:
     """A never-invoked stand-in for the rejected registration test."""
     raise AssertionError("internal seams must never converge")
+
+
+# -- the Status class + registry ------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _DummyStatus(Status):
+    """A test Status subclass carrying an extra value field."""
+
+    duty: int = 1
+
+
+_DUMMY_SEAM = FakeSeam(key="dummy", external=False)
+
+
+async def test_status_apply_publishes_provenance_only(bot: CazzuBot) -> None:
+    """apply() records one row: source = the class key, payload = provenance."""
+    status = _DummyStatus(
+        key="k.1",
+        name="x",
+        seam=_DUMMY_SEAM,
+        duration=timedelta(hours=1),
+    )
+    await status.apply(
+        bot, scope=Scope.member(1), provenance="frog:pog:normal"
+    )
+    contribs = await bot.statuses.list(Scope.member(1), _DUMMY_SEAM)
+    assert contribs and contribs[0].payload == {"from": "frog:pog:normal"}
+    assert contribs[0].source == "k.1"
+
+
+async def test_status_apply_enforces_scope_kind(bot: CazzuBot) -> None:
+    """A member-scoped status refuses a guild scope (and vice versa)."""
+    status = _DummyStatus(
+        key="k.2", name="x", seam=_DUMMY_SEAM, scope_kind=ScopeKind.MEMBER
+    )
+    with pytest.raises(TypeError, match="member-scoped"):
+        await status.apply(
+            bot, scope=Scope.guild(2), provenance="p"
+        )
+
+
+def test_registry_roundtrip_by_source() -> None:
+    """register_status / status_by_source are idempotent and key-keyed."""
+    s1 = _DummyStatus(key="k.rt", name="rt", seam=_DUMMY_SEAM)
+    register_status(s1)
+    assert status_by_source("k.rt") is s1
+    # re-register replaces (reload-safe)
+    s2 = _DummyStatus(key="k.rt", name="rt2", seam=_DUMMY_SEAM)
+    register_status(s2)
+    assert status_by_source("k.rt") is s2
+    assert status_by_source("nope") is None
+
+
+def test_statuses_for_seam_filters_by_key() -> None:
+    """statuses_for_seam returns only the statuses feeding that seam."""
+    a = _DummyStatus(key="k.a", name="a", seam=_DUMMY_SEAM)
+    other_seam = FakeSeam(key="other", external=False)
+    b = _DummyStatus(key="k.b", name="b", seam=other_seam)
+    register_status(a)
+    register_status(b)
+    keys = {s.key for s in statuses_for_seam(_DUMMY_SEAM)}
+    assert "k.a" in keys and "k.b" not in keys
