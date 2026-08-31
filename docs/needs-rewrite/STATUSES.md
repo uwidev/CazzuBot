@@ -82,31 +82,27 @@ The frog-species plan's Phase 1 (the separation; the four frogs themselves
 and their wiring are Phase 2) fixed the ownership model and the
 identity rule, recorded here so the code and the store contract agree:
 
- -  **The ITEM composes, outcomes invoke statuses (D11).** What consuming
-    an item does is the item's decision: it grants exp (a formula over its
-    own `frog_exp` oracle) and composes the outcome applications it
-    applies — `plugins/frogs/items.py::_SPECIES_OUTCOMES`, beside the
-    oracle. Species carry no consume declaration. The outcome library
-    (`plugins/frogs/outcomes.py::OutcomeKey`) is a **generic, scope-aware
-    primitive library**: each consume outcome takes a `Scope` (member or
-    guild) plus the granting item id as provenance, so any caller — item
-    glue today, an admin command tomorrow — composes it. `ExpOutcome`/
-    `EXP` is **vestigial**: exp is item-owned behavior, not an outcome —
-    it stays in the codebase, composed into nothing, slated for removal
-    in a follow-up.
- -  **Identity is the status, not the item (D3).** The contribution
-    `source` is the **status identity** — “re-publishing the same source”
-    means “re-applying the same status”. Several items that publish the
-    same status (Pog and Froggers = reaction chance) share one `source`
-    (the `FrogStatus` identity), never per-item sources, and the granting
-    item rides in the payload as `"from"` provenance. The value merge is
-    **feature-side** (the store never interprets payloads): while a
-    contribution is live the strongest value wins, a weaker re-publish
-    keeps the value, every re-publish extends the window additively,
-    expiry is a fresh start. The publisher decides its reapply policy
-    against the engine's `(scope, seam, source)` key
-    (`ReactionOutcome.consume`: REPLACE with the stronger value + the
-    remaining window, else EXTEND).
+ -  **The ITEM composes statuses (D11, revised 2026-08-31).** What
+    consuming an item does is the item's decision, written as code: it
+    grants exp (a formula over its own `frog_exp` oracle) and applies the
+    **status classes** it names — `plugins/frogs/items.py::_ITEM_STATUSES`
+    + the per-item consume glue, beside the oracle. Species carry no
+    consume declaration. The old generic outcome-library
+    (`plugins/frogs/outcomes.py::OutcomeKey`, payload dataclasses,
+    `ExpOutcome`) is **gone**: a status is now a unique class owning its
+    own values, invoked via `bot.statuses` + its `apply()`; the item just
+    *names* the ones it triggers (no outbound payload objects, no registry
+    indirection).
+ -  **Identity is the status class, not the item (D3, revised 2026-08-31).**
+    The contribution `source` is the status class's `key` — each declared
+    status is one `plugins/frogs/statuses.py` class (Pog and Froggers are
+    *separate sibling* classes on the same seam, kept as separate rows so
+    expiry of the winner falls back to the next). The granting item rides
+    in the payload as `"from"` provenance. The **pull folds by priority**:
+    a feature's pull maps each row's `source` back to its class via
+    `status_by_source` and reads values off the class — never off the row.
+    Reapply policy (`EXTEND`/`REPLACE`) is a **per-status** choice on the
+    class, not value-merge logic at the publish site.
  -  Frog consumers: `FrogSeam.FROG_REACTION` (internal) and
     `FrogSeam.CLASSY_ROLE` (external, with `RoleConverger`) ship
     **tested but unwired** — no publishers, no converger registration, no
@@ -117,33 +113,36 @@ Phase-2 record — the species consume the store (owner 2026-08-28)
 -----------------------------------------------------------------
 
 The frog-species plan's Phase 2 (the five FROG.md species) is **implemented
-and wired**. The Phase-1 record above stays true; this adds what shipped:
+and wired**; the 2026-08-31 statuses compose-behaviors plan then revised
+the publisher model. The Phase-1 record above stays true; this adds what
+shipped:
 
- -  **Publishers live.** Pog/Froggers compose `ReactionPayload` and Classy
-    composes `RolePayload` in `plugins/frogs/items.py::_SPECIES_OUTCOMES`
-    (item-owned; species carry no consume declaration). The plugin's
+ -  **Publishers live as status classes.** Pog/Froggers are sibling
+    `ReactionStatus` classes (`plugins/frogs/statuses.py::POG_REACTION`,
+    `FROGGERS_REACTION`) and Classy is a `RoleStatus` (`CLASSY_ROLE`) —
+    each owns its chance/duration/role ids/priority, and the items that
+    trigger them (`_ITEM_STATUSES`) are the only publishers. The plugin's
     `on_load` registers the `RoleConverger` for `CLASSY_ROLE` (so the
     external publish converges synchronously and schedules the expiry job)
     and subscribes `StatusesClearedEvent` for instant role revert;
-    `on_unload` withdraws both. Cluster's spawn outcome
-    (`ClusterOutcome`) is not a contribution at all — instant handlers
-    never touch this store.
- -  **The listener is the consumer.** `plugins/frogs/reactions.py` reads
-    the single `FROG_REACTION` row per member (one row by construction —
-    identity is the status, not the item), rolls the chance per message
-    with a 10s in-memory cooldown, and no-ops while the froggers emoji is
-    unpublished.
- -  **The feature-side merge is live, not hypothetical.** While a
-    contribution is live the strongest chance wins, a weaker re-publish
-    keeps the value, every re-publish extends the window additively, and
-    expiry is a fresh start — `ReactionOutcome.consume` decides its own
-    reapply policy (REPLACE with the stronger value + the remaining
-    window, else EXTEND) against the engine's `(scope, seam, source)` key.
- -  **`ExpOutcome`/`EXP` remains vestigial.** Exp grant is item-owned
-    behavior (the `frog_exp` oracle); the fossil stays in the registry,
-    composed into nothing, slated for removal in a follow-up. The POG/
-    FROGGERS/CLASSY oracle rows (30/15, 300/150, 200/100) live beside the
-    composition, not here.
+    `on_unload` withdraws both. Cluster's spawn behavior (`ClusterBurst`)
+    is not a contribution at all — instant handlers never touch this store.
+ -  **The listener is the consumer.** `plugins/frogs/reactions.py` pulls
+    the member's `FROG_REACTION` rows and folds them by priority
+    (`_best_reaction`: source → class → highest priority, ties → lowest
+    source key), rolls the chance per message with a 10s in-memory
+    cooldown, and no-ops while the froggers emoji is unpublished. Sibling
+    rows both live; expiry of the winner falls back to the next.
+ -  **The class owns the values; the pull reads them off the class.**
+    Reapply policy is per-status on the class (reaction statuses EXTEND
+    duration-only); there is no value-merge at publish time. The visible
+    reaction odds per moment are the same as before in the common cases;
+    the difference shows only at expiry-transition edges, which now fall
+    back instead of dropping.
+ -  **Exp grant is item-owned behavior only** (the `frog_exp` oracle); the
+    old `ExpOutcome`/`EXP` outcome fossil is deleted with the rest of the
+    outcome library. The POG/FROGGERS/CLASSY oracle rows (30/15, 300/150,
+    200/100) live beside the composition, not here.
 
 
 Schema
@@ -392,11 +391,15 @@ Acceptance
 Naming note
 -----------
 
-`cazzubot/statuses.py` deliberately coexists with
-`plugins/frogs/outcomes.py`: the core module is the **persistent status
-store**; the frogs module is the **instant catch/consume outcome library**
-(species-side `OutcomeKey` → handler). Outcomes may invoke statuses,
-never the reverse; neither is the generic catch-all “effect” anymore (see
+`cazzubot/statuses.py` is the single statuses module: the **persistent
+status store** (seam/contribution/pull) AND the **status classes
+registry** (`Status` + `register_status`/`status_by_source`) — a status
+class owns its values; the store records the contribution; a feature's
+pull maps a row's `source` back to its class. Feature plugins declare
+their own `Status` subclasses (`plugins/frogs/statuses.py`) and species
+compose behaviors (`plugins/frogs/behaviors.py`). The old
+`plugins/frogs/outcomes.py` outcome library is retired; neither “outcome”
+nor the generic catch-all “effect” is a concept anymore (see
 `docs/CONTEXT.md`).
 
 

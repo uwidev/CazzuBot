@@ -669,3 +669,37 @@ oracle, display name/icon, **item-owned consume**). Notes:
  -  Docs: `docs/ITEMS.md` (the model + two-flag story), `docs/PLUGINS.md`
     (`bot.items`/`item_decl`/`/inventory`), BACKLOG/ROADMAP updated. Full
     suite green.
+
+
+Species / items compose behaviors (2026-08-31)
+----------------------------------------------
+
+Backlog item "Species compose outcomes (rename follow-up)" (D5 of the
+2026-08-31 effects→statuses/outcomes rename). **Done (2026-08-31) — the
+2026-08-31-species-compose-behaviors plan.** Frog species and items
+compose their own behavior by writing **code**, not by declaring payload
+dataclasses in a registry:
+
+ -  A species is a **mob**: `catch`/`spawn` are callables
+    (`plugins/frogs/species.py`); `catch=None` means nothing happens on
+    capture. The four catchable frogs compose the shared `grant_catch`
+    helper; Cluster composes `ClusterBurst` (both in the new
+    `plugins/frogs/behaviors.py`).
+ -  An item's `consume` glue is its own written composition: exp from the
+    `frog_exp` oracle + the status classes it names
+    (`plugins/frogs/items.py::_ITEM_STATUSES`).
+ -  A **status** is a core class owning all its values (key, seam,
+    scope, priority, duration, policy, subclass values) in
+    `cazzubot/statuses.py::Status`, invoked via `bot.statuses` + its
+    `apply()`; feature classes live in `plugins/frogs/statuses.py`. The
+    registry (`register_status`/`status_by_source`/`statuses_for_seam`)
+    maps a contribution's source back to its class; the feature's pull
+    reads values off the class, never off the row.
+ -  Sibling reaction statuses (Pog/Froggers) stay **separate rows**; the
+    reactions fold maps source→class→priority and falls back to the next
+    live sibling on expiry — no merge logic at write time.
+ -  The `plugins/frogs/outcomes.py` outcome library (OutcomeKey, payload
+    dataclasses, `ExpOutcome` fossil) is **deleted**; the `FrogStatus`
+    identity enum is gone (the status class IS the identity). No schema
+    change, no migration; old `frog_reaction`/`classy_role` source rows
+    are orphaned and lazily pruned.

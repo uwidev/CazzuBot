@@ -7,14 +7,19 @@
      guild (user status, guild status, frog spawn status). Canonical
      owner of the concept: the status store (`cazzubot/statuses.py`,
      `bot.statuses`).
-  -  **outcome** — the consequence of an action (consuming an item,
-     catching a frog, a spawn hook). An outcome *may invoke statuses*,
-     never the reverse — that is the boundary. Items compose their own
-     outcomes (`_SPECIES_OUTCOMES`); the frog species-side outcome
-     library is `plugins/frogs/outcomes.py::OutcomeKey`. (Species
-     themselves composing outcomes like items do is a backlog item —
-     see `docs/aegis/plans/2026-08-31-effects-to-statuses-outcomes.md`
-     D5.)
+  -  **outcome** — retired 2026-08-31 as a concept name: the frog
+     outcome library (`plugins/frogs/outcomes.py::OutcomeKey`, payload
+     dataclasses) dissolved into the status classes
+     (`plugins/frogs/statuses.py`) and the species behaviors
+     (`plugins/frogs/behaviors.py`). What consuming an item does is the
+     **item's own written glue** over status classes; what catching or
+     spawning a frog does is the **species' composed behavior**. Items
+     compose statuses (invoked via `bot.statuses`), never the reverse —
+     that boundary survives.
+  -  **behavior** — code a species or item composes: a plain async
+     callable owning what happens on an action (a species' `catch` /
+     `spawn` hook, an item's `consume` glue). Values live on the status
+     classes, not in payload objects.
   -  **seam** — a feature-declared input point on its own calculator;
      typed seams (`SeamKey`) address the status store. Unchanged by the
      2026-08-31 rename.
@@ -28,7 +33,9 @@
 
 ## Relationships
 
-  -  an item **composes** its **outcome**; an outcome **invokes**
-     **statuses** through the status store
+  -  an item **composes** its **statuses** (its consume glue applies
+     them via the status store); a species **composes behaviors**
+     (`catch` / `spawn` callables)
   -  a status is **applied to** a Scope (member or guild) and **pulled**
-     by the feature that owns its seam
+     by the feature that owns its seam; the pull folds contributions by
+     priority
