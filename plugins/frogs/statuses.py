@@ -68,7 +68,11 @@ class RoleStatus(Status):
 
     def role_id_for(self, guild_kind: str) -> int:
         """The concrete role id for the guild side (FROG.md's two ids)."""
-        return self.role_dev if guild_kind == "development" else self.role_prod
+        return (
+            self.role_dev
+            if guild_kind == "development"
+            else self.role_prod
+        )
 
     @override
     def describe(self) -> str:
@@ -151,7 +155,9 @@ class RoleConverger:
         """The roles this seam may remove — derived from :func:`classy_role_ids`."""
         self._known = known_role_ids
 
-    async def __call__(self, bot: "CazzuBot", scope: Scope, seam: str) -> None:
+    async def __call__(
+        self, bot: "CazzuBot", scope: Scope, seam: str
+    ) -> None:
         if scope.kind is not ScopeKind.MEMBER:
             return
         contribs = await bot.statuses.list(scope, FrogSeam.CLASSY_ROLE)

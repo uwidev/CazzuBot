@@ -25,7 +25,6 @@ SERVICE_FILENAMES = (
     "factory.py",
     "db.py",
     "species.py",
-    "outcomes.py",
 )
 
 # Permanent controller-shaped carve-out (documented in docs/DONE.md).

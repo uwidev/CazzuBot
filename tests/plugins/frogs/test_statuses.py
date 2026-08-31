@@ -4,6 +4,10 @@ The status class IS the identity (``Status.key`` = the contribution
 ``source``); the store records only provenance. Sibling reaction statuses
 (Pog/Froggers) stay separate rows so expiry of the winner falls back to
 the next — the fold in ``reactions.py`` picks by priority.
+
+The frog modules are resolved at call time (``tests/plugins/frogs/_current.py``):
+the plugin-reload tests purge and re-import ``plugins.frogs.*`` mid-suite,
+so collection-time references would go stale against the registry.
 """
 
 from __future__ import annotations
@@ -15,16 +19,8 @@ from cazzubot.bot import CazzuBot
 from cazzubot.statuses import Scope, status_by_source
 
 from plugins.frogs.seams import FrogSeam
-from plugins.frogs.statuses import (
-    CLASSY_ROLE,
-    FROGGERS_REACTION,
-    POG_REACTION,
-    ReactionStatus,
-    RoleConverger,
-    RoleStatus,
-    classy_role_ids,
-    register_frog_statuses,
-)
+
+from tests.plugins.frogs._current import statuses
 from tests.fakes import FakeMember, rest_of
 
 _CLASSY_ROLE_DEV = 1542294599358353430
@@ -33,19 +29,23 @@ _CLASSY_ROLE_PROD = 1542293782588952696
 
 def test_frog_statuses_registered_by_source() -> None:
     """Module import registers each status under its key (reload-safe)."""
-    register_frog_statuses()  # idempotent re-register
-    assert status_by_source("frog:blessing:pog") is POG_REACTION
-    assert status_by_source("frog:blessing:froggers") is FROGGERS_REACTION
-    assert status_by_source("frog:blessing:classy") is CLASSY_ROLE
+    st = statuses()
+    st.register_frog_statuses()  # idempotent re-register
+    assert status_by_source("frog:blessing:pog") is st.POG_REACTION
+    assert (
+        status_by_source("frog:blessing:froggers") is st.FROGGERS_REACTION
+    )
+    assert status_by_source("frog:blessing:classy") is st.CLASSY_ROLE
     assert status_by_source("nope") is None
 
 
 def test_reaction_describe_reads_class_values() -> None:
-    assert POG_REACTION.describe() == (
+    st = statuses()
+    assert st.POG_REACTION.describe() == (
         "For 1 hour, a **1%** chance the bot reacts to your messages "
         + "with the froggers emoji (10s cooldown)."
     )
-    assert FROGGERS_REACTION.describe() == (
+    assert st.FROGGERS_REACTION.describe() == (
         "For 1 hour, a **7%** chance the bot reacts to your messages "
         + "with the froggers emoji (10s cooldown)."
     )
@@ -53,31 +53,36 @@ def test_reaction_describe_reads_class_values() -> None:
 
 def test_role_describe_reads_class_values() -> None:
     assert (
-        CLASSY_ROLE.describe() == "Grants the **Classy** role for 3 hours."
+        statuses().CLASSY_ROLE.describe()
+        == "Grants the **Classy** role for 3 hours."
     )
 
 
 def test_role_status_resolves_guild_role() -> None:
-    assert CLASSY_ROLE.role_id_for("development") == _CLASSY_ROLE_DEV
-    assert CLASSY_ROLE.role_id_for("production") == _CLASSY_ROLE_PROD
+    st = statuses()
+    assert st.CLASSY_ROLE.role_id_for("development") == _CLASSY_ROLE_DEV
+    assert st.CLASSY_ROLE.role_id_for("production") == _CLASSY_ROLE_PROD
 
 
 def test_classy_role_ids_is_the_bound_set() -> None:
-    ids = classy_role_ids()
+    ids = statuses().classy_role_ids()
     assert ids == frozenset({_CLASSY_ROLE_DEV, _CLASSY_ROLE_PROD})
 
 
-async def test_reaction_statuses_are_separate_rows(full_bot: CazzuBot) -> None:
+async def test_reaction_statuses_are_separate_rows(
+    full_bot: CazzuBot,
+) -> None:
     """Pog and Froggers publish separate rows (sibling statuses, not merged)."""
     bot = full_bot
+    st = statuses()
     now = pendulum.now("UTC")
-    await POG_REACTION.apply(
+    await st.POG_REACTION.apply(
         bot,
         scope=Scope.member(1),
         provenance="frog:pog:normal",
         now=now,
     )
-    await FROGGERS_REACTION.apply(
+    await st.FROGGERS_REACTION.apply(
         bot,
         scope=Scope.member(1),
         provenance="frog:froggers:normal",
@@ -95,18 +100,17 @@ async def test_reaction_statuses_are_separate_rows(full_bot: CazzuBot) -> None:
 async def test_reaction_apply_provenance_only(full_bot: CazzuBot) -> None:
     """apply() stores only provenance; the chance lives on the class."""
     bot = full_bot
-    await POG_REACTION.apply(
+    st = statuses()
+    await st.POG_REACTION.apply(
         bot, scope=Scope.member(2), provenance="frog:pog:normal"
     )
-    rows = await bot.statuses.list(
-        Scope.member(2), FrogSeam.FROG_REACTION
-    )
+    rows = await bot.statuses.list(Scope.member(2), FrogSeam.FROG_REACTION)
     assert rows and rows[0].source == "frog:blessing:pog"
     assert rows[0].payload == {"from": "frog:pog:normal"}
     # the chance is read off the class, never the row
-    status = status_by_source(rows[0].source)
-    assert isinstance(status, ReactionStatus)
-    assert status.chance == 0.01
+    klass = status_by_source(rows[0].source)
+    assert isinstance(klass, st.ReactionStatus)
+    assert klass.chance == 0.01
 
 
 async def test_classy_role_apply_publishes_and_converges(
@@ -114,13 +118,14 @@ async def test_classy_role_apply_publishes_and_converges(
 ) -> None:
     """Classy apply publishes the role seam and the converger grants the role."""
     bot = full_bot
-    converger = RoleConverger(classy_role_ids())
+    st = statuses()
+    converger = st.RoleConverger(st.classy_role_ids())
     bot.statuses.register_converger(FrogSeam.CLASSY_ROLE, converger)
     rest = rest_of(bot)
     target = FakeMember(id=123, name="tester")
     rest.members[(bot.config.guild_id, 123)] = target
 
-    await CLASSY_ROLE.apply(
+    await st.CLASSY_ROLE.apply(
         bot,
         scope=Scope.member(123),
         provenance="frog:classy:normal",
@@ -142,14 +147,15 @@ async def test_role_converger_removes_role_on_expiry(
 ) -> None:
     """After the contribution expires, converging reverts (idempotent)."""
     bot = full_bot
-    converger = RoleConverger(classy_role_ids())
+    st = statuses()
+    converger = st.RoleConverger(st.classy_role_ids())
     bot.statuses.register_converger(FrogSeam.CLASSY_ROLE, converger)
     rest = rest_of(bot)
     target = FakeMember(id=123, name="tester")
     rest.members[(bot.config.guild_id, 123)] = target
 
     now = pendulum.now("UTC")
-    await CLASSY_ROLE.apply(
+    await st.CLASSY_ROLE.apply(
         bot,
         scope=Scope.member(123),
         provenance="frog:classy:normal",
@@ -179,14 +185,15 @@ async def test_role_converger_only_removes_known_roles(
     from tests.fakes import FakeRole
 
     bot = full_bot
-    converger = RoleConverger(classy_role_ids())
+    st = statuses()
+    converger = st.RoleConverger(st.classy_role_ids())
     bot.statuses.register_converger(FrogSeam.CLASSY_ROLE, converger)
     rest = rest_of(bot)
     foreign = FakeRole(id=987654, name="some other role")
     target = FakeMember(id=123, name="tester", roles=[foreign])
     rest.members[(bot.config.guild_id, 123)] = target
 
-    await CLASSY_ROLE.apply(
+    await st.CLASSY_ROLE.apply(
         bot,
         scope=Scope.member(123),
         provenance="frog:classy:normal",
@@ -196,19 +203,23 @@ async def test_role_converger_only_removes_known_roles(
     assert member.role_ids == {_CLASSY_ROLE_DEV, 987654}
 
 
-@pytest.mark.parametrize("status", [POG_REACTION, FROGGERS_REACTION])
+@pytest.mark.parametrize(
+    "key", ["frog:blessing:pog", "frog:blessing:froggers"]
+)
 async def test_reaction_status_is_member_scoped(
-    full_bot: CazzuBot, status: ReactionStatus
+    full_bot: CazzuBot, key: str
 ) -> None:
     """A member-scoped reaction status refuses a guild scope."""
+    st = statuses()
+    klass = status_by_source(key)
+    assert isinstance(klass, st.ReactionStatus)
     with pytest.raises(TypeError, match="member-scoped"):
-        await status.apply(
-            full_bot, scope=Scope.guild(1), provenance="p"
-        )
+        await klass.apply(full_bot, scope=Scope.guild(1), provenance="p")
 
 
 def test_status_classes_are_distinct_types() -> None:
-    assert isinstance(POG_REACTION, ReactionStatus)
-    assert isinstance(CLASSY_ROLE, RoleStatus)
-    assert not isinstance(POG_REACTION, RoleStatus)
-    assert not isinstance(CLASSY_ROLE, ReactionStatus)
+    st = statuses()
+    assert isinstance(st.POG_REACTION, st.ReactionStatus)
+    assert isinstance(st.CLASSY_ROLE, st.RoleStatus)
+    assert not isinstance(st.POG_REACTION, st.RoleStatus)
+    assert not isinstance(st.CLASSY_ROLE, st.ReactionStatus)

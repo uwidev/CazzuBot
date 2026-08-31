@@ -23,10 +23,10 @@ from cazzubot.models import FrogState, FrogItemKey
 
 @dataclass(frozen=True, slots=True)
 class FrogCapturedEvent:
-    """A capture completed: inventory +1, log written, catch outcome ran.
+    """A capture completed: inventory +1, log written, catch behavior ran.
 
     Sole emitter: ``plugins/frogs/factory.py`` ``FrogCatchMenu.catch``,
-    right after the capture transaction (post-outcome, post-message).
+    right after the capture transaction (post-behavior, post-message).
     """
 
     uid: int
@@ -36,10 +36,10 @@ class FrogCapturedEvent:
 
 @dataclass(frozen=True, slots=True)
 class FrogConsumedEvent:
-    """A consume completed: outcome ran, inventory decremented.
+    """A consume completed: exp + statuses applied, inventory decremented.
 
-    Sole emitter: ``plugins/frogs/extension.py`` ``Consume.invoke``, right after
-    the inventory decrement (post-outcome, post-confirm).
+    Sole emitter: ``plugins/frogs/items.py`` ``_consume_item``, right after
+    the item-owned consume (post-statuses, post-exp).
     """
 
     uid: int

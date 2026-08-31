@@ -5,6 +5,10 @@ per-message chance the bot reacts with the froggers emoji; the fold reads
 each contribution's source back to its status class and picks by priority
 (expiry of the winner falls back to the next live sibling). The cooldown
 and the unpublished-emoji no-op are listener behavior.
+
+The frog modules are resolved at call time (``tests/plugins/frogs/_current.py``):
+the plugin-reload tests purge and re-import ``plugins.frogs.*`` mid-suite,
+so collection-time references would go stale against the registry.
 """
 # driving the typed guild-scoped listener with a fake event (same as the
 # experience listener's tests)
@@ -17,11 +21,10 @@ import pytest
 
 from cazzubot.assets import asset_key
 from cazzubot.statuses import Scope, StatusContribution, ScopeKind
-from plugins.frogs import reactions
 from plugins.frogs.assets import FrogAsset
-from plugins.frogs.reactions import _best_reaction
 from plugins.frogs.seams import FrogSeam
-from plugins.frogs.statuses import FROGGERS_REACTION, POG_REACTION
+
+from tests.plugins.frogs._current import reactions, statuses
 
 _EMOJI = "<:frog_froggers:9001>"
 _ASSET_KEY = asset_key(FrogAsset.FROG_FROGGERS)
@@ -40,9 +43,10 @@ def seeded_roll(monkeypatch):
             store["v"] = v
 
     fixed = _Fixed()  # type: ignore[attr-defined]
-    monkeypatch.setattr(reactions.random, "random", fixed.random)
-    reactions._last_react.clear()
-    monkeypatch.setattr(reactions, "_last_react", {})
+    rx = reactions()
+    monkeypatch.setattr(rx.random, "random", fixed.random)
+    rx._last_react.clear()
+    monkeypatch.setattr(rx, "_last_react", {})
     return fixed
 
 
@@ -59,7 +63,7 @@ async def _publish_froggers_emoji(bot) -> None:
 
 async def _seed_reaction(bot, uid: int) -> None:
     """Grant the Pog reaction status (1% — the fold reads it off the class)."""
-    await POG_REACTION.apply(
+    await statuses().POG_REACTION.apply(
         bot, scope=Scope.member(uid), provenance="frog:pog:normal"
     )
 
@@ -79,7 +83,7 @@ async def _dispatch_message(bot, uid: int) -> None:
         id=222, channel_id=111, author=author, guild_id=bot.config.guild_id
     )
     event = FakeMessageCreateEvent(message=message, app=bot)
-    await reactions.on_message(event)
+    await reactions().on_message(event)
 
 
 async def test_message_with_reaction_contribution_reacts(
@@ -126,14 +130,21 @@ def _contrib(source: str) -> StatusContribution:
 
 def test_fold_picks_highest_priority() -> None:
     """The fold maps source→class and picks by (priority, source key)."""
+    rx, st = reactions(), statuses()
     # both live: Froggers (priority 2) wins over Pog (priority 1)
-    both = [_contrib("frog:blessing:pog"), _contrib("frog:blessing:froggers")]
-    assert _best_reaction(both) is FROGGERS_REACTION
+    both = [
+        _contrib("frog:blessing:pog"),
+        _contrib("frog:blessing:froggers"),
+    ]
+    assert rx._best_reaction(both) is st.FROGGERS_REACTION
     # only Pog live: Pog wins
-    assert _best_reaction([_contrib("frog:blessing:pog")]) is POG_REACTION
+    assert (
+        rx._best_reaction([_contrib("frog:blessing:pog")])
+        is st.POG_REACTION
+    )
     # unknown sources (a retired status) are skipped; no known → None
-    assert _best_reaction([_contrib("frog_reaction")]) is None
-    assert _best_reaction([]) is None
+    assert rx._best_reaction([_contrib("frog_reaction")]) is None
+    assert rx._best_reaction([]) is None
 
 
 async def test_fold_falls_back_to_pog_after_froggers_expiry(
@@ -141,14 +152,15 @@ async def test_fold_falls_back_to_pog_after_froggers_expiry(
 ) -> None:
     """Expiry of the winner reveals the next live sibling — no merge logic."""
     bot = full_bot
+    rx, st = reactions(), statuses()
     now = pendulum.now("UTC")
-    await FROGGERS_REACTION.apply(
+    await st.FROGGERS_REACTION.apply(
         bot,
         scope=Scope.member(1),
         provenance="frog:froggers:normal",
         now=now,
     )
-    await POG_REACTION.apply(
+    await st.POG_REACTION.apply(
         bot,
         scope=Scope.member(1),
         provenance="frog:pog:normal",
@@ -161,4 +173,4 @@ async def test_fold_falls_back_to_pog_after_froggers_expiry(
         now=now.add(hours=1, minutes=1),
     )
     assert {c.source for c in contribs} == {"frog:blessing:pog"}
-    assert _best_reaction(contribs) is POG_REACTION
+    assert rx._best_reaction(contribs) is st.POG_REACTION

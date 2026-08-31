@@ -743,7 +743,9 @@ class _DummyStatus(Status):
 _DUMMY_SEAM = FakeSeam(key="dummy", external=False)
 
 
-async def test_status_apply_publishes_provenance_only(bot: CazzuBot) -> None:
+async def test_status_apply_publishes_provenance_only(
+    bot: CazzuBot,
+) -> None:
     """apply() records one row: source = the class key, payload = provenance."""
     status = _DummyStatus(
         key="k.1",
@@ -765,9 +767,7 @@ async def test_status_apply_enforces_scope_kind(bot: CazzuBot) -> None:
         key="k.2", name="x", seam=_DUMMY_SEAM, scope_kind=ScopeKind.MEMBER
     )
     with pytest.raises(TypeError, match="member-scoped"):
-        await status.apply(
-            bot, scope=Scope.guild(2), provenance="p"
-        )
+        await status.apply(bot, scope=Scope.guild(2), provenance="p")
 
 
 def test_registry_roundtrip_by_source() -> None:

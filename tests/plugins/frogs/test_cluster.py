@@ -1,5 +1,5 @@
-"""Cluster Frog — the spawn hook: burst child Basic frogs into nearby text
-channels; never a catchable cluster frog.
+"""Cluster Frog — the spawn behavior: burst child Basic frogs into nearby
+text channels; never a catchable cluster frog.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ import asyncio
 import pendulum
 
 from cazzubot.models import FrogItemKey
-from plugins.frogs.outcomes import ClusterOutcome, ClusterPayload
+from plugins.frogs.behaviors import ClusterBurst
 from tests.fakes import FakeChannel
 
 
@@ -38,16 +38,15 @@ async def test_cluster_spawn_bursts_basics_into_zone(
         spawned.append((cid or 0, species_key or FrogItemKey.BASIC))
         return False
 
-    outcome = ClusterOutcome()
-    outcome.spawn_impl = fake_spawn
+    burst = ClusterBurst()
+    burst.spawn_impl = fake_spawn
     monkeypatch.setattr(
-        "plugins.frogs.outcomes.random",
+        "plugins.frogs.behaviors.random",
         __import__("random").Random(7),
     )
 
-    await outcome.spawn(
+    await burst(
         bot,
-        ClusterPayload(),
         cid=10,
         guild_id=gid,
         persist=30,
@@ -59,7 +58,7 @@ async def test_cluster_spawn_bursts_basics_into_zone(
             break
         await asyncio.sleep(0.01)
 
-    assert 4 <= len(spawned) <= 10
+    assert 4 <= len(spawned) <= 6
     assert {key for _, key in spawned} == {FrogItemKey.BASIC}
     assert {cid_ for cid_, _ in spawned} <= {9, 10, 11}
 
@@ -78,6 +77,6 @@ async def test_cluster_zone_ignores_non_text_and_outside_channels(
             channel.type = None  # not a text channel
         guild.channels[cid_] = channel
 
-    outcome = ClusterOutcome()
-    zone = await outcome._zone(bot, gid, cid=10, radius=2)  # type: ignore[attr-defined]
+    burst = ClusterBurst()
+    zone = await burst._zone(bot, gid, 10)  # type: ignore[attr-defined]
     assert [entry[0] for entry in zone] == [1, 9, 10, 11]  # 99 excluded

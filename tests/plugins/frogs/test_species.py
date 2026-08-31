@@ -173,7 +173,9 @@ async def test_catch_none_grants_nothing(full_bot, monkeypatch) -> None:
 
     menu = factory.FrogCatchMenu(full_bot, 99, FrogItemKey.BASIC)
     mctx = FakeMenuContext(
-        FakeInteraction(id=1, member=FakeMember(id=424242, name="t"), channel_id=99)
+        FakeInteraction(
+            id=1, member=FakeMember(id=424242, name="t"), channel_id=99
+        )
     )
     await menu_button(menu).callback(mctx)
 

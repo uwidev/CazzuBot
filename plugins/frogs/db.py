@@ -20,7 +20,6 @@ from cazzubot.models import FrogState, FrogItemKey
 from cazzubot.settings import Settings
 from cazzubot.utils import rank_rows, season_bounds
 
-from .outcomes import frog_item_key
 from .species import SPECIES
 
 SCHEMA = [
@@ -113,7 +112,7 @@ class FrogItem:
     @property
     def key(self) -> str:
         """The derived inventory storage string for this frog stack."""
-        return frog_item_key(self.species, self.state)
+        return f"frog:{self.species.value}:{self.state.value}"
 
     @classmethod
     def parse(cls, key: str) -> FrogItem:

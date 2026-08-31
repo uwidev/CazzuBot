@@ -13,7 +13,7 @@ Two behaviors ship:
 - ``ClusterBurst`` — the spawn hook for Cluster Frog: replaces the
   catchable frog at spawn time by bursting 4–6 Basic frogs into the
   channels around the spawn channel. Its child-spawning implementation is
-  injected at plugin load (outcomes → factory would cycle; the plugin
+  injected at plugin load (behaviors → factory would cycle; the plugin
   bridges), so this module never imports the factory.
 
 This module is controller-shaped (like ``factory.py``): it imports hikari
@@ -211,7 +211,9 @@ class ClusterBurst:
     ) -> None:
         """Explode: 4–6 Basic frogs into the text channels around ``cid``."""
         if self.spawn_impl is None:
-            _log.error("ClusterBurst has no spawn_impl — plugin on_load missed")
+            _log.error(
+                "ClusterBurst has no spawn_impl — plugin on_load missed"
+            )
             return
         zone = await self._zone(bot, guild_id, cid)
         if not zone:
@@ -256,7 +258,9 @@ class ClusterBurst:
         """Fire one child Basic-frog spawn as a tracked background task."""
         impl = self.spawn_impl
         if impl is None:
-            _log.error("ClusterBurst has no spawn_impl — plugin on_load missed")
+            _log.error(
+                "ClusterBurst has no spawn_impl — plugin on_load missed"
+            )
             return
         task = asyncio.create_task(
             cast(
