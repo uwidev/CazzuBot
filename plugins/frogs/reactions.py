@@ -26,12 +26,12 @@ import hikari
 import lightbulb
 
 from cazzubot.bot import CazzuBot
-from cazzubot.statuses import Scope, StatusContribution
+from cazzubot.statuses import Scope, StatusContribution, status_by_source
 from cazzubot.listeners import guild_listener
 
 from .assets import FrogAsset
 from .seams import FrogSeam
-from .statuses import ReactionStatus, status_by_source
+from .statuses import ReactionStatus
 
 _log = logging.getLogger(__name__)
 
