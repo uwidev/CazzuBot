@@ -410,7 +410,7 @@ def test_emoji_cdn_url_derives_embed_thumbnails() -> None:
 
 
 async def test_thumbnail_for_converts_emoji_and_passes_media(
-    asset_db: Database, tmp_path: Path
+    asset_db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """thumbnail_for: emoji refs → CDN URL, media URLs pass through, None
     while unpublished."""
@@ -422,6 +422,11 @@ async def test_thumbnail_for_converts_emoji_and_passes_media(
         return _FakeEmoji(555)
 
     cast(Any, fake).rest = SimpleNamespace(create_emoji=_create)
+
+    async def _fake_sleep(seconds: float) -> None:
+        pass  # the throttle timing is pinned by test_emoji_creates_are_throttled
+
+    monkeypatch.setattr("cazzubot.assets.asyncio.sleep", _fake_sleep)
     assets = Assets(
         cast(Any, fake),
         cast(
@@ -461,7 +466,7 @@ def test_emoji_name_is_derived_from_asset_key() -> None:
 
 
 async def test_emoji_asset_publishes_as_guild_emoji(
-    asset_db: Database, tmp_path: Path
+    asset_db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An EMOJI asset creates a guild emoji and stores its ``<:name:id>``."""
     _write_glyphs(tmp_path)
@@ -476,6 +481,11 @@ async def test_emoji_asset_publishes_as_guild_emoji(
         return _FakeEmoji(555 if name == "frog_glyph" else 777)
 
     cast(Any, fake).rest = SimpleNamespace(create_emoji=_create)
+
+    async def _fake_sleep(seconds: float) -> None:
+        pass  # the throttle timing is pinned by test_emoji_creates_are_throttled
+
+    monkeypatch.setattr("cazzubot.assets.asyncio.sleep", _fake_sleep)
     assets = Assets(
         cast(Any, fake),
         cast(
@@ -566,7 +576,7 @@ async def test_emoji_file_too_large_is_skipped(
 
 
 async def test_emoji_hash_change_deletes_and_recreates(
-    asset_db: Database, tmp_path: Path
+    asset_db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A changed emoji file deletes the old guild emoji and creates a new one."""
     _write_glyphs(tmp_path)
@@ -583,6 +593,11 @@ async def test_emoji_hash_change_deletes_and_recreates(
         delete_emoji=lambda guild, emoji: deleted.append(emoji),
         fetch_emoji=lambda guild, emoji: _FakeEmoji(emoji),
     )
+
+    async def _fake_sleep(seconds: float) -> None:
+        pass  # the throttle timing is pinned by test_emoji_creates_are_throttled
+
+    monkeypatch.setattr("cazzubot.assets.asyncio.sleep", _fake_sleep)
     assets = Assets(
         cast(Any, fake),
         cast(
@@ -607,7 +622,7 @@ async def test_emoji_hash_change_deletes_and_recreates(
 
 
 async def test_dead_guild_emoji_republishes(
-    asset_db: Database, tmp_path: Path
+    asset_db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A guild emoji deleted by hand re-publishes on the next sync."""
     _write_glyphs(tmp_path)
@@ -627,6 +642,11 @@ async def test_dead_guild_emoji_republishes(
         create_emoji=_create,
         fetch_emoji=_raise_not_found,
     )
+
+    async def _fake_sleep(seconds: float) -> None:
+        pass  # the throttle timing is pinned by test_emoji_creates_are_throttled
+
+    monkeypatch.setattr("cazzubot.assets.asyncio.sleep", _fake_sleep)
     assets = Assets(
         cast(Any, fake),
         cast(
