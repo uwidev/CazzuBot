@@ -11,35 +11,26 @@ ids, reapply policy, priority); the store records only the contribution
 ``source`` back to its class via :func:`status_by_source` and reads the
 values off the class — single source of truth, no payload drift.
 
-The :class:`RoleConverger` reconciles the CLASSY_ROLE seam's active
-contributions against the member's actual roles; it is registered on the
-plugin at load (``plugins/frogs/__init__.py``).
+Role-granting statuses (:class:`RoleStatus`) implement the core role-grant
+contract (``role_id_for(guild_kind)``), so the generic core
+:class:`~cazzubot.statuses.RoleConverger` reconciles the CLASSY_ROLE
+seam's world state; it is registered on the plugin at load
+(``plugins/frogs/__init__.py``).
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import TYPE_CHECKING
 
 from typing_extensions import override
 
 from cazzubot.statuses import (
-    Scope,
-    ScopeKind,
     Status,
     register_status,
-    status_by_source,
-    statuses_for_seam,
 )
 
 from .seams import FrogSeam
-
-if TYPE_CHECKING:
-    from cazzubot.bot import CazzuBot
-
-_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -61,7 +52,12 @@ class ReactionStatus(Status):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RoleStatus(Status):
-    """A role-grant status: the classy frog's external world consequence."""
+    """A role-grant status: the classy frog's external world consequence.
+
+    Exposes ``role_id_for(guild_kind)`` — the structural role-grant
+    contract the core :class:`~cazzubot.statuses.RoleConverger` reads, so
+    no frog-side converger is needed for this seam.
+    """
 
     role_dev: int
     role_prod: int
@@ -129,63 +125,6 @@ def register_frog_statuses() -> None:
     """Register every frog status (idempotent; called at module bottom)."""
     for status in _FROG_STATUSES:
         register_status(status)
-
-
-def classy_role_ids() -> frozenset[int]:
-    """Every role id the classy statuses may grant (the converger's bound set)."""
-    return frozenset(
-        role_id
-        for status in statuses_for_seam(FrogSeam.CLASSY_ROLE)
-        if isinstance(status, RoleStatus)
-        for role_id in (status.role_dev, status.role_prod)
-    )
-
-
-class RoleConverger:
-    """World-reconciliation for the CLASSY_ROLE seam (roles on members).
-
-    Registered via ``bot.statuses.register_converger`` at plugin load. The
-    seam's active contributions are read as facts; each contribution's
-    ``source`` is mapped back to its :class:`RoleStatus` to derive the
-    concrete role id for the current guild kind. Idempotent by construction:
-    adds missing, removes only the bound role ids that are no longer wanted.
-    """
-
-    def __init__(self, known_role_ids: frozenset[int]) -> None:
-        """The roles this seam may remove — derived from :func:`classy_role_ids`."""
-        self._known = known_role_ids
-
-    async def __call__(
-        self, bot: "CazzuBot", scope: Scope, seam: str
-    ) -> None:
-        if scope.kind is not ScopeKind.MEMBER:
-            return
-        contribs = await bot.statuses.list(scope, FrogSeam.CLASSY_ROLE)
-        wanted: set[int] = set()
-        for contrib in contribs:
-            status = status_by_source(contrib.source)
-            if not isinstance(status, RoleStatus):
-                continue  # unknown/retired source — ignore, keep peace
-            wanted.add(status.role_id_for(bot.config.guild_kind))
-        try:
-            member = await bot.rest.fetch_member(
-                bot.config.guild_id, scope.id
-            )
-            current = set(member.role_ids)
-        except Exception:
-            _log.exception(
-                "classy role converge: cannot fetch member %s", scope.id
-            )
-            return
-        reason = "classy frog role status"
-        for role_id in wanted - current:
-            await bot.rest.add_role_to_member(
-                bot.config.guild_id, scope.id, role_id, reason=reason
-            )
-        for role_id in (current & self._known) - wanted:
-            await bot.rest.remove_role_from_member(
-                bot.config.guild_id, scope.id, role_id, reason=reason
-            )
 
 
 register_frog_statuses()

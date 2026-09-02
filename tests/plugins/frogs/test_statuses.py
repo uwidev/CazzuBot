@@ -16,7 +16,11 @@ import pendulum
 import pytest
 
 from cazzubot.bot import CazzuBot
-from cazzubot.statuses import Scope, status_by_source
+from cazzubot.statuses import (
+    RoleConverger,
+    Scope,
+    status_by_source,
+)
 
 from plugins.frogs.seams import FrogSeam
 
@@ -62,11 +66,10 @@ def test_role_status_resolves_guild_role() -> None:
     st = statuses()
     assert st.CLASSY_ROLE.role_id_for("development") == _CLASSY_ROLE_DEV
     assert st.CLASSY_ROLE.role_id_for("production") == _CLASSY_ROLE_PROD
-
-
-def test_classy_role_ids_is_the_bound_set() -> None:
-    ids = statuses().classy_role_ids()
-    assert ids == frozenset({_CLASSY_ROLE_DEV, _CLASSY_ROLE_PROD})
+    # the structural role-grant contract the core RoleConverger reads:
+    # only role-granting statuses expose role_id_for
+    assert hasattr(st.CLASSY_ROLE, "role_id_for")
+    assert not hasattr(st.POG_REACTION, "role_id_for")
 
 
 async def test_reaction_statuses_are_separate_rows(
@@ -119,7 +122,7 @@ async def test_classy_role_apply_publishes_and_converges(
     """Classy apply publishes the role seam and the converger grants the role."""
     bot = full_bot
     st = statuses()
-    converger = st.RoleConverger(st.classy_role_ids())
+    converger = RoleConverger(reason="classy frog role status")
     bot.statuses.register_converger(FrogSeam.CLASSY_ROLE, converger)
     rest = rest_of(bot)
     target = FakeMember(id=123, name="tester")
@@ -148,7 +151,7 @@ async def test_role_converger_removes_role_on_expiry(
     """After the contribution expires, converging reverts (idempotent)."""
     bot = full_bot
     st = statuses()
-    converger = st.RoleConverger(st.classy_role_ids())
+    converger = RoleConverger(reason="classy frog role status")
     bot.statuses.register_converger(FrogSeam.CLASSY_ROLE, converger)
     rest = rest_of(bot)
     target = FakeMember(id=123, name="tester")
@@ -186,7 +189,7 @@ async def test_role_converger_only_removes_known_roles(
 
     bot = full_bot
     st = statuses()
-    converger = st.RoleConverger(st.classy_role_ids())
+    converger = RoleConverger(reason="classy frog role status")
     bot.statuses.register_converger(FrogSeam.CLASSY_ROLE, converger)
     rest = rest_of(bot)
     foreign = FakeRole(id=987654, name="some other role")

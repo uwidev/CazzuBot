@@ -5,7 +5,11 @@ from collections.abc import Callable
 from cazzubot import Plugin
 from cazzubot.bot import CazzuBot
 from cazzubot.models import FrogItemKey
-from cazzubot.statuses import ScopeKind, StatusesClearedEvent
+from cazzubot.statuses import (
+    RoleConverger,
+    ScopeKind,
+    StatusesClearedEvent,
+)
 from cazzubot.scheduler import At
 from typing_extensions import override
 
@@ -15,7 +19,6 @@ from .behaviors import ClusterBurst
 from .items import FrogItems
 from .seams import FrogSeam
 from .species import by_key
-from .statuses import RoleConverger, classy_role_ids
 
 # the season rollover: first instant of Jan/Apr/Jul/Oct — folds every
 # frog into a Basic Frog (the quarterly "use it or lose it" reset)
@@ -26,10 +29,6 @@ DAILY_CADENCE = At(time="00:00")
 
 DAILY_FROG_TAG = "daily.frog"
 QUARTERLY_TAG = "quarterly"
-
-# the role ids the classy statuses may grant — the single set the
-# RoleConverger may remove (derived from the status classes, never drifted)
-_ROLE_IDS: frozenset[int] = classy_role_ids()
 
 
 async def on_daily_frog_due(
@@ -101,7 +100,7 @@ class FrogsPlugin(Plugin):
         # register the classy-role converger (the external seam fails fast
         # on publish until one is registered) + revert instantly on clear
         self._bot = bot
-        self._converger = RoleConverger(_ROLE_IDS)
+        self._converger = RoleConverger(reason="classy frog role status")
         bot.statuses.register_converger(
             FrogSeam.CLASSY_ROLE, self._converger
         )

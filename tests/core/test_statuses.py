@@ -27,6 +27,7 @@ from cazzubot.statuses import (
     STATUS_CONVERGE_TAG,
     StatusesClearedEvent,
     ReapplyPolicy,
+    RoleConverger,
     SCHEMA,
     Scope,
     ScopeKind,
@@ -35,6 +36,8 @@ from cazzubot.statuses import (
     status_by_source,
     statuses_for_seam,
 )
+
+from tests.fakes import FakeMember, FakeRest, seed_bot
 
 # the fake external seam's consequence: scope.id -> world flag
 RoleState = dict[int, bool]
@@ -728,6 +731,165 @@ async def converge_placeholder(
 ) -> None:
     """A never-invoked stand-in for the rejected registration test."""
     raise AssertionError("internal seams must never converge")
+
+
+# -- stock RoleConverger (role-granting seams) -----------------------------
+# The generic role-seam converger is exercised with fake statuses so the
+# core contract (structural ``role_id_for(guild_kind)``) is pinned without
+# depending on the frogs plugin's RoleStatus.
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _RoleGrantStatus(Status):
+    """A role-granting status: exposes ``role_id_for`` (the core contract)."""
+
+    role_dev: int
+    role_prod: int
+
+    def role_id_for(self, guild_kind: str) -> int:
+        """The concrete role id for the guild side (dev/prod pair)."""
+        return (
+            self.role_dev
+            if guild_kind == "development"
+            else self.role_prod
+        )
+
+
+def _role_status(
+    key: str, seam: FakeSeam, role_dev: int
+) -> _RoleGrantStatus:
+    """A registered role-granting status on ``seam`` for the dev guild."""
+    status = _RoleGrantStatus(
+        key=key,
+        name=key,
+        seam=seam,
+        role_dev=role_dev,
+        role_prod=role_dev + 1,
+    )
+    register_status(status)
+    return status
+
+
+async def _role_member_bot(
+    bot: CazzuBot,
+) -> tuple[FakeRest, FakeMember]:
+    """Seed the bot's rest fakes with one fetchable member (scope id 123)."""
+    rest = FakeRest()
+    seed_bot(bot, rest=rest)
+    member = FakeMember(id=123, name="tester")
+    rest.members[(bot.config.guild_id, 123)] = member
+    return rest, member
+
+
+async def test_role_converger_grants_the_wanted_role(
+    bot: CazzuBot,
+) -> None:
+    """An external publish runs the stock converger; the member gets the role."""
+    rest, member = await _role_member_bot(bot)
+    seam = FakeSeam(key="prize_role_grant", external=True)
+    _role_status("prize:role:gold", seam, 9001)
+    converger = RoleConverger(reason="prize role status")
+    bot.statuses.register_converger(seam, converger)
+
+    await bot.statuses.publish(
+        Scope.member(123),
+        seam,
+        "prize:role:gold",
+        {"from": "prize:gold"},
+    )
+
+    assert member.role_ids == {9001}
+    assert rest.added_roles == [(123, 9001, "prize role status")]
+
+
+async def test_role_converger_removes_only_its_own_roles_on_expiry(
+    bot: CazzuBot,
+) -> None:
+    """Revert is idempotent and never touches a foreign role on the member."""
+    rest, member = await _role_member_bot(bot)
+    member.role_ids.add(987654)  # a role this seam does not own
+    seam = FakeSeam(key="prize_role_expiry", external=True)
+    role = _role_status("prize:role:gold", seam, 9001)
+    converger = RoleConverger(reason="prize role status")
+    bot.statuses.register_converger(seam, converger)
+    await bot.statuses.publish(
+        Scope.member(123),
+        seam,
+        role.key,
+        {"from": "prize:gold"},
+    )
+    assert member.role_ids == {9001, 987654}
+
+    # the contribution dies (lazy expiry prune, like a read past the window)
+    await bot.db.execute(
+        "DELETE FROM status_contribution"
+        + " WHERE scope_kind = 'member' AND scope_id = 123"
+        + " AND seam = ? AND source = ?",
+        seam.key,
+        role.key,
+    )
+    await converger(bot, Scope.member(123), seam.key)
+    assert member.role_ids == {987654}  # foreign role untouched
+    assert rest.removed_roles == [(123, 9001, "prize role status")]
+    # idempotent: a stale duplicate run changes nothing
+    await converger(bot, Scope.member(123), seam.key)
+    assert rest.removed_roles == [(123, 9001, "prize role status")]
+
+
+async def test_role_converger_folds_siblings_and_ignores_other_statuses(
+    bot: CazzuBot,
+) -> None:
+    """Each active role status is wanted; non-granting statuses never matter."""
+    rest, member = await _role_member_bot(bot)
+    member.role_ids.add(987654)
+    seam = FakeSeam(key="prize_role_siblings", external=True)
+    gold = _role_status("prize:role:gold", seam, 9001)
+    silver = _role_status("prize:role:silver", seam, 9002)
+    not_a_role = _DummyStatus(
+        key="prize:role:nope", name="nope", seam=seam
+    )  # registered on the seam but not role-granting
+    register_status(not_a_role)
+    converger = RoleConverger(reason="prize role status")
+    bot.statuses.register_converger(seam, converger)
+
+    for role in (gold, silver, not_a_role):
+        await bot.statuses.publish(
+            Scope.member(123),
+            seam,
+            role.key,
+            {"from": "prize:item"},
+        )
+    # only the role-granting siblings are wanted — not_a_role grants nothing
+    assert member.role_ids == {9001, 9002, 987654}
+
+    # the gold contribution expires: only gold's role is removed — silver
+    # stays wanted and the foreign role is untouched
+    await bot.db.execute(
+        "DELETE FROM status_contribution"
+        + " WHERE scope_kind = 'member' AND scope_id = 123"
+        + " AND seam = ? AND source = ?",
+        seam.key,
+        gold.key,
+    )
+    await converger(bot, Scope.member(123), seam.key)
+    assert member.role_ids == {9002, 987654}
+    assert rest.removed_roles == [(123, 9001, "prize role status")]
+
+    # everything role-granting gone (not_a_role still active): both roles
+    # revert, nothing else is touched
+    await bot.db.execute(
+        "DELETE FROM status_contribution"
+        + " WHERE scope_kind = 'member' AND scope_id = 123"
+        + " AND seam = ? AND source = ?",
+        seam.key,
+        silver.key,
+    )
+    await converger(bot, Scope.member(123), seam.key)
+    assert member.role_ids == {987654}
+    assert rest.removed_roles == [
+        (123, 9001, "prize role status"),
+        (123, 9002, "prize role status"),
+    ]
 
 
 # -- the Status class + registry ------------------------------------------

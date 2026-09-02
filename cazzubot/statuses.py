@@ -19,7 +19,9 @@ consequence touches Discord carry ``external=True`` and get a scheduled
 **convergence job** at ``expires_at`` through ``bot.statuses`` (apply
 immediately on publish, revert idempotently on fire; ``StatusesClearedEvent``
 for the instant revert on explicit clear/clear_scope). The store stays
-dumb; convergence logic is feature code.
+dumb; convergence logic is pluggable — features write their own
+converger, or reuse the stock :class:`RoleConverger` below when the seam
+grants Discord roles (the common external shape).
 
 Naming note: this core module owns BOTH the *persistent status store*
 (the seam/contribution/pull machinery above) AND the *status classes
@@ -563,8 +565,10 @@ class Statuses:
         Called by the feature that owns ``seam`` during its ``on_load``.
         The handler is **feature code**: it reads the seam's active
         contributions itself, diffs against the member's actual world
-        state, and applies/reverts idempotently. Internal seams (no world
-        consequence) are meaningless to register — rejected.
+        state, and applies/reverts idempotently — role-granting seams can
+        register the stock :class:`RoleConverger` instead of writing one.
+        Internal seams (no world consequence) are meaningless to register
+        — rejected.
         """
         if not seam.external:
             raise ValueError(
@@ -766,6 +770,101 @@ def _job_payload(
         "seam": seam,
         "source": source,
     }
+
+
+# -- stock role-seam converger --------------------------------------------
+# The most common external seam is a role grant: while a contribution is
+# active, the member holds the role its status chose for the running guild
+# kind. One generic converger covers every such seam — a feature declares
+# role-granting statuses (status classes exposing ``role_id_for``, e.g.
+# frogs' ``RoleStatus``), registers one of these per role seam, and is
+# done; anything more bespoke stays feature-written converger code.
+
+
+def _role_id_of(status: Status | None, guild_kind: str) -> int | None:
+    """The role id a role-granting status wants in ``guild_kind``.
+
+    The role-granting contract is structural: a status whose seam
+    consequence is a role grant exposes ``role_id_for(guild_kind)``
+    (frogs' ``RoleStatus`` is the shipped example). Everything else —
+    reaction statuses, unknown/retired sources — grants no role, so
+    :class:`RoleConverger` ignores it (keeps the peace).
+    """
+    role_of = getattr(status, "role_id_for", None)
+    if role_of is None:
+        return None
+    return role_of(guild_kind)
+
+
+class RoleConverger:
+    """World-reconciliation for a role seam (roles on members).
+
+    The stock converger for external seams whose statuses grant Discord
+    roles. Register one per role seam via :meth:`Statuses.register_converger`
+    (the engine invokes it with the seam on publish, at ``expires_at`` and
+    on :class:`StatusesClearedEvent` — see the module docstring's call
+    graph). It reads the seam's active contributions as facts, maps each
+    ``source`` back to its status class, and asks role-granting statuses
+    (those exposing ``role_id_for(guild_kind)``) for the wanted role in
+    the current guild kind. Removal is limited to role ids the seam's
+    registered role-granting statuses can grant in that kind — a foreign
+    role on the member is never touched. Idempotent by construction: adds
+    missing wanted roles, removes only bound-but-no-longer-wanted ones;
+    a stale job is a no-op.
+
+    ``reason`` is the Discord audit-log text recorded for the role edits —
+    each feature picks its own wording (frogs: "classy frog role status").
+    """
+
+    def __init__(self, reason: str = "role status") -> None:
+        """``reason``: the audit-log reason for the role edits."""
+        self._reason = reason
+
+    async def __call__(
+        self, bot: "CazzuBot", scope: Scope, seam: str
+    ) -> None:
+        if scope.kind is not ScopeKind.MEMBER:
+            return
+        guild_kind = bot.config.guild_kind
+        contribs = await list(bot.db, scope, seam)
+        wanted: set[int] = set()
+        for contrib in contribs:
+            role_id = _role_id_of(
+                status_by_source(contrib.source), guild_kind
+            )
+            if role_id is not None:
+                wanted.add(role_id)
+        # the bound set: role ids the seam's registered role statuses can
+        # grant in this guild kind — the only roles this converger removes
+        known = {
+            role_id
+            for status in statuses_for_seam(seam)
+            if (role_id := _role_id_of(status, guild_kind)) is not None
+        }
+        try:
+            member = await bot.rest.fetch_member(
+                bot.config.guild_id, scope.id
+            )
+            current = set(member.role_ids)
+        except Exception:
+            _log.exception(
+                "role converge: cannot fetch member %s", scope.id
+            )
+            return
+        for role_id in wanted - current:
+            await bot.rest.add_role_to_member(
+                bot.config.guild_id,
+                scope.id,
+                role_id,
+                reason=self._reason,
+            )
+        for role_id in (current & known) - wanted:
+            await bot.rest.remove_role_from_member(
+                bot.config.guild_id,
+                scope.id,
+                role_id,
+                reason=self._reason,
+            )
 
 
 if TYPE_CHECKING:
