@@ -510,6 +510,9 @@ class Scheduler:
         self.policies: dict[str, TaskPolicy] = {}
         self._ready = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
+        # set when stop() is requested so a sleeping tick exits between
+        # sleeps instead of burning the full 1s cadence (clear on start)
+        self._stop_requested = asyncio.Event()
         self._stopping = False
         self._concurrency = concurrency
         self._sem: asyncio.Semaphore | None = None
@@ -525,6 +528,7 @@ class Scheduler:
         if self._task is not None:
             return
         self._stopping = False
+        self._stop_requested.clear()
         self._sem = asyncio.Semaphore(self._concurrency)
         self._task = asyncio.create_task(self._run(), name="scheduler")
 
@@ -541,6 +545,7 @@ class Scheduler:
         if self._task is None:
             return
         self._stopping = True
+        self._stop_requested.set()
         if not self._ready.is_set():
             # never ticked — the loop task is parked on _ready.wait(), which
             # is safe to cancel (no db op in flight)
@@ -592,7 +597,13 @@ class Scheduler:
                 raise
             except Exception:
                 _log.exception("scheduler tick failed")
-            await asyncio.sleep(1.0)
+            # sleep the 1s cadence, but wake early when stop() is requested
+            try:
+                await asyncio.wait_for(
+                    self._stop_requested.wait(), timeout=1.0
+                )
+            except asyncio.TimeoutError:
+                pass
 
     def register(
         self,
