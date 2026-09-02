@@ -9,8 +9,9 @@ import asyncio
 import pendulum
 
 from cazzubot.models import FrogItemKey
+import plugins.frogs.behaviors as behaviors_mod
 from plugins.frogs.behaviors import ClusterBurst
-from tests.fakes import FakeChannel
+from tests.fakes import FakeChannel, InstantAsyncio
 
 
 async def test_cluster_spawn_bursts_basics_into_zone(
@@ -43,6 +44,12 @@ async def test_cluster_spawn_bursts_basics_into_zone(
     monkeypatch.setattr(
         "plugins.frogs.behaviors.random",
         __import__("random").Random(7),
+    )
+    # the burst sleeps 0.75s between children (Discord rate-limit guard);
+    # that timing isn't what this test asserts — stub the module binding,
+    # never the global asyncio (the driver harness polls on it)
+    monkeypatch.setattr(
+        behaviors_mod, "asyncio", InstantAsyncio()
     )
 
     await burst(

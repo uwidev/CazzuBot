@@ -30,6 +30,27 @@ import hikari
 from cazzubot import utils
 
 
+class InstantAsyncio:
+    """An ``asyncio`` stand-in whose ``sleep`` never waits.
+
+    Tests patch ``plugins.frogs.behaviors.asyncio`` with this so the
+    cluster burst's 0.75s inter-child rate-limit guard doesn't burn real
+    clock; ``create_task`` delegates to the real loop so the tracked
+    background children still run. Never patch the global ``asyncio`` —
+    the driver harness polls on the real ``asyncio.sleep``.
+    """
+
+    async def sleep(self, _seconds: float) -> None:
+        """No-op: the guard's timing is not what the burst tests assert."""
+
+    def create_task(
+        self, coro: Any, *, name: str | None = None
+    ) -> Any:
+        import asyncio
+
+        return asyncio.create_task(coro, name=name)
+
+
 def _avatar_url(uid: int) -> str:
     return f"https://example.com/avatar/{uid}.png"
 

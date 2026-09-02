@@ -14,12 +14,13 @@ import asyncio
 
 import hikari
 import pendulum
+import pytest
 
 from cazzubot.bot import CazzuBot
 from cazzubot.statuses import STATUS_CONVERGE_TAG, Scope
 from cazzubot.models import FrogItemKey
 from tests.driver import press_button, run_slash, wait_for_menu
-from tests.fakes import rest_of
+from tests.fakes import InstantAsyncio, rest_of
 
 from plugins.frogs.seams import FrogSeam
 
@@ -235,13 +236,14 @@ async def test_consume_classy_via_driver_grants_role(
 
 
 async def test_capture_cluster_explodes_no_catchable_frog(
-    full_bot: CazzuBot,
+    full_bot: CazzuBot, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """/frog fake species=cluster bursts basics; no catchable frog message."""
     from tests.fakes import FakeChannel
 
     from plugins.frogs.behaviors import ClusterBurst
     from plugins.frogs.species import by_key
+    import plugins.frogs.behaviors as behaviors_mod
 
     # seed text channels around 99 (the driver's default channel)
     gid = full_bot.config.guild_id
@@ -266,6 +268,12 @@ async def test_capture_cluster_explodes_no_catchable_frog(
     assert cluster is not None and isinstance(cluster.spawn, ClusterBurst)
     original = cluster.spawn.spawn_impl
     cluster.spawn.spawn_impl = recording_spawn
+    # the burst sleeps 0.75s between children (Discord rate-limit guard);
+    # that timing isn't what this test asserts — stub the module binding,
+    # never the global asyncio (the driver harness polls on it)
+    monkeypatch.setattr(
+        behaviors_mod, "asyncio", InstantAsyncio()
+    )
     try:
         await run_slash(
             full_bot,
