@@ -1,24 +1,29 @@
-"""Cluster Frog — the spawn behavior: burst child Basic frogs into nearby
-text channels; never a catchable cluster frog.
+"""Cluster Frog — the catch behavior: catching it never grants an item;
+instead one catch bursts 4–6 child Basic frogs into nearby text channels.
 """
+# driving hikari-typed helpers (member_snapshot) with FakeMember fakes
+# pyright: reportArgumentType=false
 
 from __future__ import annotations
 
 import asyncio
 
+import hikari
 import pendulum
 
 from cazzubot.models import FrogItemKey
+from cazzubot.utils import member_snapshot
 import plugins.frogs.behaviors as behaviors_mod
 from plugins.frogs.behaviors import ClusterBurst
-from tests.fakes import FakeChannel, InstantAsyncio
+from plugins.frogs.species import by_key
+from tests.fakes import FakeChannel, FakeMember, InstantAsyncio
 
 
-async def test_cluster_spawn_bursts_basics_into_zone(
+async def test_cluster_catch_bursts_basics_into_zone(
     full_bot,
     monkeypatch,
 ) -> None:
-    """A cluster spawn posts N child Basic frogs, never a cluster frog."""
+    """A cluster catch posts the announcement + N child Basic frogs."""
     bot = full_bot
     # three text channels: id 9 (down), 10 (center), 11 (up)
     gid = bot.config.guild_id
@@ -48,16 +53,18 @@ async def test_cluster_spawn_bursts_basics_into_zone(
     # the burst sleeps 0.75s between children (Discord rate-limit guard);
     # that timing isn't what this test asserts — stub the module binding,
     # never the global asyncio (the driver harness polls on it)
-    monkeypatch.setattr(
-        behaviors_mod, "asyncio", InstantAsyncio()
-    )
+    monkeypatch.setattr(behaviors_mod, "asyncio", InstantAsyncio())
 
-    await burst(
+    cluster = by_key(FrogItemKey.CLUSTER)
+    assert cluster is not None
+    sent = await burst(
         bot,
-        cid=10,
-        guild_id=gid,
-        persist=30,
+        uid=123,
+        member=member_snapshot(FakeMember(id=123, name="t")),
+        species=cluster,
         now=pendulum.now("UTC"),
+        cid=10,
+        persist=30,
     )
     # children are tracked background tasks — drain the loop
     for _ in range(100):
@@ -68,6 +75,19 @@ async def test_cluster_spawn_bursts_basics_into_zone(
     assert 4 <= len(spawned) <= 6
     assert {key for _, key in spawned} == {FrogItemKey.BASIC}
     assert {cid_ for cid_, _ in spawned} <= {9, 10, 11}
+    # the announcement names the catcher and is the one standalone message
+    assert sent is not None
+    created = bot.rest.created
+    assert len(created) == 1
+    embed = created[0].embeds[0]
+    assert embed.title == "Cluster Frog burst!"
+    assert f"<@{123}>" in embed.description
+    # least-permissive: only the catcher is pinged — no role/@everyone
+    assert created[0].create_kwargs["user_mentions"] == [123]
+    assert created[0].create_kwargs["role_mentions"] is hikari.UNDEFINED
+    assert (
+        created[0].create_kwargs["mentions_everyone"] is hikari.UNDEFINED
+    )
 
 
 async def test_cluster_zone_ignores_non_text_and_outside_channels(

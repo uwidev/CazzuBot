@@ -23,8 +23,10 @@ from cazzubot.models import FrogState, FrogItemKey
 
 @dataclass(frozen=True, slots=True)
 class FrogCapturedEvent:
-    """A capture completed: inventory +1, log written, catch behavior ran.
+    """A capture completed: log written, catch behavior ran.
 
+    An item is granted only when the species' catch behavior does it
+    (``grant_catch``); a Cluster capture runs its burst and grants nothing.
     Sole emitter: ``plugins/frogs/factory.py`` ``FrogCatchMenu.catch``,
     right after the capture transaction (post-behavior, post-message).
     """

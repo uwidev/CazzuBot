@@ -42,8 +42,8 @@ async def test_frog_spawn_then_catch(full_bot: CazzuBot) -> None:
         run_slash(
             full_bot,
             "frog spawn",
-            # five species roll by weight now — pin Basic (a rolled Cluster
-            # posts no catchable frog and so no menu to press)
+            # five species roll by weight now — pin Basic so the rolled
+            # species key (and the catch button) is deterministic
             options={"species": "basic"},
             user_id=1,
             username="owner",
@@ -235,10 +235,16 @@ async def test_consume_classy_via_driver_grants_role(
     assert _CLASSY_ROLE_DEV not in member.role_ids
 
 
-async def test_capture_cluster_explodes_no_catchable_frog(
+async def test_capture_cluster_bursts_basics_no_item(
     full_bot: CazzuBot, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """/frog fake species=cluster bursts basics; no catchable frog message."""
+    """Catching a Cluster Frog bursts Basics; the catcher gets no item.
+
+    The cluster frog spawns like any catchable frog, and the catch runs
+    the whole pipeline: silent ack, ledger (log + counter), the burst
+    announcement + child Basic frogs, the captured event — but no
+    inventory grant (``frog:cluster:*`` does not exist).
+    """
     from tests.fakes import FakeChannel
 
     from plugins.frogs.behaviors import ClusterBurst
@@ -265,29 +271,75 @@ async def test_capture_cluster_explodes_no_catchable_frog(
         return False
 
     cluster = by_key(FrogItemKey.CLUSTER)
-    assert cluster is not None and isinstance(cluster.spawn, ClusterBurst)
-    original = cluster.spawn.spawn_impl
-    cluster.spawn.spawn_impl = recording_spawn
+    assert cluster is not None and isinstance(cluster.catch, ClusterBurst)
+    original = cluster.catch.spawn_impl
+    cluster.catch.spawn_impl = recording_spawn
     # the burst sleeps 0.75s between children (Discord rate-limit guard);
     # that timing isn't what this test asserts — stub the module binding,
     # never the global asyncio (the driver harness polls on it)
-    monkeypatch.setattr(
-        behaviors_mod, "asyncio", InstantAsyncio()
-    )
+    monkeypatch.setattr(behaviors_mod, "asyncio", InstantAsyncio())
     try:
-        await run_slash(
-            full_bot,
-            "frog fake",
-            options={"species": "cluster"},
-            user_id=1,
-            username="owner",
-            timeout=10.0,
+        task = asyncio.create_task(
+            run_slash(
+                full_bot,
+                "frog fake",
+                options={"species": "cluster"},
+                user_id=1,
+                username="owner",
+                timeout=10.0,
+            )
         )
+        buttons = await wait_for_menu(full_bot)
+        catch_id = _catch_button(buttons)
+        press = await press_button(
+            full_bot,
+            custom_id=catch_id,
+            message_id=555,
+            user_id=424242,
+        )
+        spawn = await task
     finally:
-        cluster.spawn.spawn_impl = original
-    # no catchable frog message was posted for the cluster itself (the
-    # slash response carries nothing — the explosion never posts a frog)
-    assert rest_of(full_bot).created == []
-    assert 4 <= len(spawned) <= 10
+        cluster.catch.spawn_impl = original
+    assert press.exceptions == [] and spawn.exceptions == []
+    # the click is acked silently — DEFERRED_MESSAGE_UPDATE; the frog
+    # message is deleted on the spot
+    assert (
+        press.response_type == hikari.ResponseType.DEFERRED_MESSAGE_UPDATE
+    )
+    frog_mid = spawn.response_message_id
+    assert frog_mid is not None
+    assert (99, frog_mid) in rest_of(full_bot).deleted
+    # the burst announcement is the one standalone channel message (the
+    # frog itself was the slash response, webhook-minted)
+    created = rest_of(full_bot).created
+    assert len(created) == 1
+    assert created[0].channel_id == 99
+    assert created[0].embeds[0].title == "Cluster Frog burst!"
+    # children fired as Basic frogs into the zone
+    for _ in range(100):
+        if len(spawned) >= 4:
+            break
+        await asyncio.sleep(0.01)
+    assert 4 <= len(spawned) <= 6
     assert all(key == FrogItemKey.BASIC for _cid, key in spawned)
     assert all(cid_ in {98, 99, 100} for cid_, _key in spawned)
+    # the capture is recorded in the ledger (log + counter) but never
+    # grants an item — the inventory stays empty
+    assert (
+        await full_bot.db.fetchval(
+            "SELECT type FROM member_frog_log WHERE uid = 424242"
+        )
+        == "cluster"
+    )
+    assert (
+        await full_bot.db.fetchval(
+            "SELECT capture FROM member_frog WHERE uid = 424242"
+        )
+        == 1
+    )
+    assert (
+        await full_bot.db.fetchval(
+            "SELECT COUNT(*) FROM inventory WHERE uid = 424242"
+        )
+        == 0
+    )

@@ -57,7 +57,9 @@ def test_top_menu_builds() -> None:
 
 def test_frog_catch_menu_builds() -> None:
     _assert_builds(
-        factory.FrogCatchMenu(cast(Any, object()), 99, FrogItemKey.BASIC)
+        factory.FrogCatchMenu(
+            cast(Any, object()), 99, FrogItemKey.BASIC, persist=30
+        )
     )
 
 

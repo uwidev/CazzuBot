@@ -30,6 +30,7 @@ expect them to be cleaned up and re-indexed here as they land.
 | `docs/needs-rewrite/PLUGINS.md`                                   | plugin structure, conventions, dependencies    |
 | `docs/needs-rewrite/PLUGIN_ARCHITECTURE.md`                       | plugin lifecycle, scheduling, event bus        |
 | `docs/SYSTEMS.md`                                                 | one-page systems map (core, manifest, plugins) |
+| `docs/GLOSSARY.md`                                                | stabilized vocabulary (status, outcome, seam)  |
 | `docs/needs-rewrite/TESTING.md`                                   | layered test approach, live-verification gaps  |
 | `docs/needs-rewrite/ASSETS.md`                                    | asset pipeline design record                   |
 | `docs/needs-rewrite/MIGRATION.md`                                 | v1 → v2 data migration                         |

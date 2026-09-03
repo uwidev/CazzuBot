@@ -91,12 +91,12 @@ class FrogsPlugin(Plugin):
         await bot.scheduler.arm_if_rowless(
             QUARTERLY_TAG, QUARTERLY_CADENCE
         )
-        # inject the cluster spawn implementation on the ClusterBurst instance the
+        # inject the cluster catch implementation on the ClusterBurst instance the
         # species registry holds (behaviors → factory would cycle through
         # species; the plugin bridges them at load)
         burst = by_key(FrogItemKey.CLUSTER)
-        if burst is not None and isinstance(burst.spawn, ClusterBurst):
-            burst.spawn.spawn_impl = factory.spawn_and_wait  # pyright: ignore
+        if burst is not None and isinstance(burst.catch, ClusterBurst):
+            burst.catch.spawn_impl = factory.spawn_and_wait  # pyright: ignore
         # register the classy-role converger (the external seam fails fast
         # on publish until one is registered) + revert instantly on clear
         self._bot = bot
@@ -111,8 +111,8 @@ class FrogsPlugin(Plugin):
     @override
     async def on_unload(self, bot: CazzuBot) -> None:
         burst = by_key(FrogItemKey.CLUSTER)
-        if burst is not None and isinstance(burst.spawn, ClusterBurst):
-            burst.spawn.spawn_impl = None  # pyright: ignore
+        if burst is not None and isinstance(burst.catch, ClusterBurst):
+            burst.catch.spawn_impl = None  # pyright: ignore
         bot.statuses.unregister_converger(FrogSeam.CLASSY_ROLE)
         self._unsub_cleared()
 

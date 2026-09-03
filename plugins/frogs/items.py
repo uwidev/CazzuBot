@@ -50,6 +50,8 @@ if TYPE_CHECKING:
 
 # species × state -> exp per unit (D1/D2 defaults; owner-tunable). The
 # single source for both the consume grant and the catalog's display.
+# Cluster is deliberately absent: catching it never grants an item, so no
+# exp exists for it.
 _SPECIES_EXP: dict[FrogItemKey, dict[FrogState, int]] = {
     FrogItemKey.BASIC: {
         FrogState.NORMAL: 10,
@@ -73,6 +75,16 @@ _SPECIES_EXP: dict[FrogItemKey, dict[FrogState, int]] = {
 def frog_exp(species_key: FrogItemKey, state: FrogState) -> int:
     """Seasonal exp granted by one unit of a species' item in ``state``."""
     return _SPECIES_EXP[species_key][state]
+
+
+def has_item(species_key: FrogItemKey) -> bool:
+    """Whether a capture of the species ever grants an inventory item.
+
+    The single oracle for "does the item exist": Cluster deliberately has
+    no item (its catch bursts instead), so the catalog skips the consume
+    line here and the inventory never holds it.
+    """
+    return species_key in _SPECIES_EXP
 
 
 # item-owned consume statuses: the status class instances each item triggers.
@@ -219,8 +231,8 @@ class FrogItems(Enum):
     item is one bare ``Item`` literal: the description prose plus the
     consumption field derived from the oracle and the status classes.
     Frozen items reuse the normal-species art (D8); Cluster deliberately
-    has no item — it can never be caught, so it can never be held or
-    consumed.
+    has no item — catching it never grants one (the burst is the catch),
+    so it can never be held or consumed.
     """
 
     BASIC = Item(

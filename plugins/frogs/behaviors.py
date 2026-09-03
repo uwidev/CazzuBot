@@ -5,16 +5,17 @@ are the helpers a species may compose. Each is written next to its local
 helpers (the Cluster burst keeps its zone math + child-spawn tracking here).
 
 Two behaviors ship:
-- ``grant_catch`` — the default catch of every catchable species: +1 of the
-  species' item to the catcher's inventory + the capture announcement embed.
-  Species that just grant their item on capture compose *exactly this*
-  (``catch=grant_catch``). A species that wants a custom catch writes its
-  own behavior beside itself (nothing here forces a shape on it).
-- ``ClusterBurst`` — the spawn hook for Cluster Frog: replaces the
-  catchable frog at spawn time by bursting 4–6 Basic frogs into the
-  channels around the spawn channel. Its child-spawning implementation is
-  injected at plugin load (behaviors → factory would cycle; the plugin
-  bridges), so this module never imports the factory.
+- ``grant_catch`` — the default catch of every item-granting species: +1 of
+  the species' item to the catcher's inventory + the capture announcement
+  embed. Species that just grant their item on capture compose *exactly
+  this* (``catch=grant_catch``). A species that wants a custom catch writes
+  its own behavior beside itself (nothing here forces a shape on it).
+- ``ClusterBurst`` — the catch hook for Cluster Frog: catching the frog
+  never grants an item (Cluster deliberately has no item) — instead the
+  frog bursts 4–6 Basic frogs into the channels around the caught one.
+  Its child-spawning implementation is injected at plugin load
+  (behaviors → factory would cycle; the plugin bridges), so this module
+  never imports the factory.
 
 This module is controller-shaped (like ``factory.py``): it imports hikari
 and owns the spawn/capture + embed edge. ``species.py`` imports only the
@@ -62,15 +63,19 @@ async def grant_catch(
     species: "Species",
     now: Any,  # pendulum.DateTime
     cid: int,
+    persist: int | None = None,
 ) -> hikari.Message:
-    """The every-catchable-species catch: +1 item and the capture embed.
+    """The every-item-granting-species catch: +1 item and the capture embed.
 
-    Composed by each catchable species (``species.catch = grant_catch``).
-    The granted item is derived from the species key (``frog:<key>:normal``
-    — the frozen state is only reachable by season rollover, so a fresh
-    capture always grants the normal item). The embed comes from the
-    configured ``frog.message`` template when set, else the built-in
-    :func:`_default_capture_embed`.
+    Composed by each species that grants its item on capture
+    (``species.catch = grant_catch``). The granted item is derived from the
+    species key (``frog:<key>:normal`` — the frozen state is only
+    reachable by season rollover, so a fresh capture always grants the
+    normal item). The embed comes from the configured ``frog.message``
+    template when set, else the built-in :func:`_default_capture_embed`.
+    ``persist`` is part of the catch-hook contract (the frog's lifetime);
+    the grant doesn't use it — behaviors like :class:`ClusterBurst` need it
+    to size the children they spawn.
     """
     item_id = frog_db.FrogItem(species.key, FrogState.NORMAL).key
     await bot.inventory.add(uid, item_id)
@@ -182,17 +187,16 @@ def formatter(
     )
 
 
-# -- spawn behaviors ------------------------------------------------------
-
-
 class ClusterBurst:
-    """The Cluster species' spawn behavior: burst Basic frogs nearby.
+    """The Cluster species' catch behavior: burst Basic frogs nearby.
 
-    An instance is composed into ``SPECIES`` (Cluster's ``spawn``). The
+    An instance is composed into ``SPECIES`` (Cluster's ``catch``): the
+    frog spawns like any catchable frog, but catching it never grants an
+    item (Cluster deliberately has no item) — the burst IS the catch. The
     child-spawning implementation is injected by the plugin at load
     (``spawn_impl = factory.spawn_and_wait``); this module never imports
     the factory, keeping the graph acyclic. Children run as tracked
-    background tasks so the scheduled spawn fires immediately.
+    background tasks so the burst returns immediately.
     """
 
     def __init__(self) -> None:
@@ -204,23 +208,34 @@ class ClusterBurst:
         self,
         bot: "CazzuBot",
         *,
+        uid: int,
+        member: MemberSnapshot,
+        species: "Species",
+        now: Any,  # pendulum.DateTime — catch-hook contract, unused here
         cid: int,
-        guild_id: int,
         persist: int,
-        now: Any,
-    ) -> None:
-        """Explode: 4–6 Basic frogs into the text channels around ``cid``."""
+    ) -> hikari.Message | None:
+        """Burst: no item — 4–6 Basic frogs into the channels around ``cid``.
+
+        The capture ledger (log, counter, event) already ran before this
+        behavior; the burst is the whole species behavior and never grants
+        an item (``frog:cluster:*`` does not exist). The announcement embed
+        pings the catcher, then children spawn as real Basic frogs living
+        ``persist`` seconds, staggered 0.75s apart (the rate-limit guard).
+        Returns the announcement message — None when the burst can't fire
+        (no child implementation injected, or no zone to burst into).
+        """
         if self.spawn_impl is None:
             _log.error(
                 "ClusterBurst has no spawn_impl — plugin on_load missed"
             )
-            return
-        zone = await self._zone(bot, guild_id, cid)
+            return None
+        zone = await self._zone(bot, bot.config.guild_id, cid)
         if not zone:
             _log.warning(
-                "cluster spawn channel %s outside text channels", cid
+                "cluster catch channel %s outside text channels", cid
             )
-            return
+            return None
         count = random.randint(4, 6)
         targets = [random.choice(zone) for _ in range(count)]
         _log.info(
@@ -228,9 +243,18 @@ class ClusterBurst:
             count,
             len(zone),
         )
+        sent = await bot.rest.create_message(
+            cid,
+            embed=await _burst_embed(bot, member, species, count),
+            user_mentions=[uid],
+            role_mentions=hikari.UNDEFINED,
+            mentions_everyone=hikari.UNDEFINED,
+        )
+        utils.schedule_delete(bot, cid, int(sent.id), 7)
         for target in targets:
             self._start_child(bot, persist, target)
             await asyncio.sleep(0.75)  # the rate-limit guard
+        return sent
 
     async def _zone(
         self, bot: "CazzuBot", guild_id: int, cid: int
@@ -275,3 +299,30 @@ class ClusterBurst:
         )
         self._background.add(task)
         task.add_done_callback(self._background.discard)
+
+
+async def _burst_embed(
+    bot: "CazzuBot",
+    member: MemberSnapshot,
+    species: "Species",
+    count: int,
+) -> hikari.Embed:
+    """The burst announcement: who caught it and what happened.
+
+    The catcher's mention is included in the text (and the send pings them
+    explicitly); the ``CATCH_BANNER`` media asset becomes the thumbnail
+    when it's published, like the grant capture embed.
+    """
+    banner = await bot.assets.get(FrogAsset.CATCH_BANNER)
+    embed = hikari.Embed(
+        color=_CAPTURE_COLOR,
+        title="Cluster Frog burst!",
+        description=(
+            f"{member.mention} caught a **{species.name}**!\n"
+            f"It burst into **`{count}`** Basic Frogs in the nearby "
+            "channels!"
+        ),
+    )
+    if banner:
+        embed.set_thumbnail(banner)
+    return embed

@@ -297,7 +297,7 @@ class Assets:
         """
         channel_id = self.config.asset_channel_id
         guild_id = getattr(self.config, "asset_guild_id", None)
-        if channel_id is None and guild_id is None:
+        if not channel_id and not guild_id:
             _log.warning(
                 "no asset channel/guild configured; skipping asset sync"
             )
@@ -310,7 +310,7 @@ class Assets:
         )
         for row in rows_to(AssetRow, rows):
             if row.kind is AssetKind.EMOJI:
-                if guild_id is None:
+                if not guild_id:
                     _log.warning(
                         "asset %s is emoji but ASSET_GUILD_ID unset; skipping",
                         row.key,
@@ -318,7 +318,7 @@ class Assets:
                     continue
                 await self._publish_emoji(guild_id, row)
                 continue
-            if channel_id is None:
+            if not channel_id:
                 _log.warning(
                     "asset %s is media but ASSET_CHANNEL_ID unset; skipping",
                     row.key,
@@ -399,7 +399,7 @@ class Assets:
             if row.url is None:
                 continue  # the query excludes NULLs; defensive narrowing
             if row.kind is AssetKind.EMOJI:
-                if guild_id is None:
+                if not guild_id:
                     _log.warning(
                         "asset %s is emoji but ASSET_GUILD_ID unset; "
                         + "skipping verification",
@@ -430,7 +430,7 @@ class Assets:
                         "failed to verify asset %s emoji", row.key
                     )
                 continue
-            if channel_id is None:
+            if not channel_id:
                 _log.warning(
                     "asset %s is media but ASSET_CHANNEL_ID unset; "
                     + "skipping verification",
@@ -476,7 +476,7 @@ class Assets:
         for ref in pending:
             if _is_emoji_ref(ref):
                 emoji_id = _emoji_id_from_ref(ref)
-                if guild_id is None or emoji_id is None:
+                if not guild_id or emoji_id is None:
                     continue
                 try:
                     await self.bot.rest.delete_emoji(guild_id, emoji_id)
@@ -487,7 +487,7 @@ class Assets:
                         "failed to delete orphaned emoji %s", ref
                     )
                 continue
-            if channel_id is None:
+            if not channel_id:
                 continue
             message_id = _message_id(ref)
             if message_id is None:

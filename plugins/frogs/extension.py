@@ -16,7 +16,7 @@ from cazzubot.window import command_window, window_success
 
 from . import db as frog_db
 from . import factory
-from .items import frog_exp
+from .items import frog_exp, has_item
 from .species import SPECIES, by_key
 
 loader = lightbulb.Loader()
@@ -110,11 +110,13 @@ class Catalog(
                 thumbnail_art = await bot.assets.get(species.art)
                 if thumbnail_art is not None:
                     embed.set_thumbnail(thumbnail_art)
-            if species.spawn is not None:
-                # uncatchable: never a consume line (no item/exp exists)
+            if not has_item(species.key):
+                # no item exists (Cluster): never a consume line — the
+                # catalog says what catching it does instead
                 value = (
                     f"{species.description}\nRarity: {species.rarity}\n"
-                    "Cannot be caught — it bursts into Basic Frogs nearby!"
+                    "Catching it yields no item — it bursts into Basic "
+                    "Frogs nearby!"
                 )
             else:
                 # consumption is item-owned — the catalog reports each

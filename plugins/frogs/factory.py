@@ -96,19 +96,7 @@ async def spawn_and_wait(
     """
     if species_key is None:
         species_key = roll_species().key
-    species = by_key(species_key)
-    if species is not None and species.spawn is not None:
-        # spawn-behavior species (Cluster) never post a catchable frog —
-        # their hook runs instead and this function returns immediately
-        await species.spawn(
-            bot,
-            cid=cid,
-            guild_id=bot.config.guild_id,
-            persist=persist,
-            now=pendulum.now("UTC"),
-        )
-        return False
-    menu = FrogCatchMenu(bot, cid, species_key)
+    menu = FrogCatchMenu(bot, cid, species_key, persist)
     content = await _frog_content(bot, species_key)
     if ctx is not None:
         response_id = await ctx.respond(
@@ -167,14 +155,24 @@ class FrogCatchMenu(lightbulb.components.Menu):
     """
 
     def __init__(
-        self, bot: CazzuBot, cid: int, species_key: FrogItemKey
+        self,
+        bot: CazzuBot,
+        cid: int,
+        species_key: FrogItemKey,
+        persist: int,
     ) -> None:
-        """Build the capture button and remember the catch target."""
+        """Build the capture button and remember the catch target.
+
+        ``persist`` is the frog's lifetime (the same value handed to
+        ``attach``); the catch behavior reads it to size its own work —
+        ClusterBurst spawns children living ``persist`` seconds.
+        """
         super().__init__()
         self.bot = bot
         self.captured = False
         self._spawned_at = time.time()
         self.species_key = species_key
+        self.persist = persist
         self.add_interactive_button(
             hikari.ButtonStyle.SUCCESS,
             self.catch,
@@ -212,13 +210,6 @@ class FrogCatchMenu(lightbulb.components.Menu):
                     uid,
                 )
                 return
-            if species.spawn is not None:
-                await mctx.respond(
-                    "This frog cannot be caught — it already burst "
-                    "into its children!",
-                    flags=hikari.MessageFlag.EPHEMERAL,
-                )
-                return
             await frog_db.add_capture_log(
                 self.bot.db,
                 uid,
@@ -230,7 +221,8 @@ class FrogCatchMenu(lightbulb.components.Menu):
 
             if species.catch is not None:
                 # the species composes its own catch behavior (the
-                # catchable frogs compose grant_catch; ``catch is None``
+                # item-granting frogs compose grant_catch; Cluster composes
+                # ClusterBurst — no item, it bursts; ``catch is None``
                 # means no species behavior on capture — the accounting
                 # above is the flow's own ledger, not species behavior)
                 await species.catch(
@@ -240,6 +232,7 @@ class FrogCatchMenu(lightbulb.components.Menu):
                     species=species,
                     now=now,
                     cid=mctx.channel_id,
+                    persist=self.persist,
                 )
             # the sole FrogCapturedEvent emitter: observers subscribed via
             # bot.events.on (badges etc.) see the completed capture here;

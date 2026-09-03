@@ -287,6 +287,89 @@ async def test_pruned_asset_cdn_message_is_deleted(
     )
 
 
+async def test_second_boot_does_not_reupload(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """Already-published, unchanged assets are NOT re-uploaded on a second boot.
+
+    Regression: the reconcile must not clear the url for a row whose file
+    hash, kind and path match the DB, and the sync's publish pass
+    (``WHERE url IS NULL``) must not include rows whose url is still set
+    from a previous boot.
+    """
+    _write_art(tmp_path, "leaf_frog.png", b"leaf bytes")
+    _write_art(tmp_path, "classy_frog.webp", b"classy bytes")
+    assets = _assets(asset_db, str(tmp_path), channel_id=777)
+    await assets.reconcile()
+
+    # simulate a previous boot's publish step
+    await asset_db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        _url(777, 111, "leaf_frog.png"),
+        asset_key(_FrogAsset.LEAF_FROG),
+    )
+    await asset_db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        _url(777, 222, "classy_frog.webp"),
+        asset_key(_FrogAsset.CLASSY_FROG),
+    )
+
+    # ---- second boot: reconcile must NOT clear published URLs ----
+    assets2 = _assets(asset_db, str(tmp_path), channel_id=777)
+    await assets2.reconcile()
+
+    leaf_url = await asset_db.fetchval(
+        "SELECT url FROM asset WHERE key = ?",
+        asset_key(_FrogAsset.LEAF_FROG),
+    )
+    assert leaf_url == _url(777, 111, "leaf_frog.png"), (
+        f"reconcile cleared leaf url: {leaf_url}"
+    )
+    classy_url = await asset_db.fetchval(
+        "SELECT url FROM asset WHERE key = ?",
+        asset_key(_FrogAsset.CLASSY_FROG),
+    )
+    assert classy_url == _url(777, 222, "classy_frog.webp"), (
+        f"reconcile cleared classy url: {classy_url}"
+    )
+
+    # ---- second boot: sync_cdn must NOT re-upload live assets ----
+    rest = FakeRest()
+    rest.messages[(777, 111)] = FakeMessage(id=111, channel_id=777)
+    rest.messages[(777, 222)] = FakeMessage(id=222, channel_id=777)
+
+    created: list[FakeMessage] = []
+
+    async def _upload(_channel_id: int, **_: object) -> FakeMessage:
+        message = FakeMessage(
+            id=next(iter(FakeRest()._FakeRest__mint)) if hasattr(FakeRest, "_FakeRest__mint") else 999,  # pyright: ignore[reportAttributeAccessIssue]
+            channel_id=_channel_id,
+        )
+        created.append(message)
+        return message
+
+    # wire rest so fetch_message delegates to the live-message store
+    cast(Any, assets2.bot).rest = SimpleNamespace(
+        create_message=_upload,
+        fetch_message=rest.fetch_message,
+        delete_message=rest.delete_message,
+    )
+    await assets2.sync_cdn(cast(Any, None))
+
+    assert len(created) == 0, (
+        f"sync_cdn re-uploaded {len(created)} live assets"
+    )
+    # URLs still intact after sync
+    assert await asset_db.fetchval(
+        "SELECT url FROM asset WHERE key = ?",
+        asset_key(_FrogAsset.LEAF_FROG),
+    ) == _url(777, 111, "leaf_frog.png")
+    assert await asset_db.fetchval(
+        "SELECT url FROM asset WHERE key = ?",
+        asset_key(_FrogAsset.CLASSY_FROG),
+    ) == _url(777, 222, "classy_frog.webp")
+
+
 async def test_deleted_cdn_message_republishes(
     asset_db: Database, tmp_path: Path
 ) -> None:
@@ -619,6 +702,68 @@ async def test_emoji_hash_change_deletes_and_recreates(
     await assets.sync_cdn(cast(Any, None))
     assert deleted == [999]  # old emoji gone
     assert await assets.get(_EmojiAsset.FROG_GLYPH) == "<:frog_glyph:555>"
+
+
+async def test_emoji_second_boot_does_not_reupload(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """Already-published, unchanged emoji assets are NOT re-uploaded.
+
+    Regression: same as the IMAGE second-boot test but for emoji-kind assets,
+    which go through ``_publish_emoji`` and verify via ``fetch_emoji``.
+    """
+    _write_glyphs(tmp_path)
+    fake = _FakeBot(asset_db, str(tmp_path))
+    fake.plugins = [_EmojiPlugin()]
+
+    async def _create(guild: int, **_: object) -> _FakeEmoji:
+        return _FakeEmoji(555)
+
+    cast(Any, fake).rest = SimpleNamespace(
+        create_emoji=_create,
+        fetch_emoji=lambda g, e: _FakeEmoji(e),  # always live
+    )
+    assets = Assets(
+        cast(Any, fake),
+        cast(Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)),
+        str(tmp_path),
+    )
+    await assets.reconcile()
+    await assets.sync_cdn(cast(Any, None))
+
+    frog_ref = await assets.get(_EmojiAsset.FROG_GLYPH)
+    classy_ref = await assets.get(_EmojiAsset.CLASSY_GLYPH)
+    assert frog_ref is not None
+    assert classy_ref is not None
+
+    # ---- second boot ----
+    created: list[object] = []
+
+    async def _create_capture(guild: int, **_: object) -> object:
+        created.append(guild)
+        return _FakeEmoji(999)
+
+    fake2 = _FakeBot(asset_db, str(tmp_path))
+    fake2.plugins = [_EmojiPlugin()]
+    cast(Any, fake2).rest = SimpleNamespace(
+        create_emoji=_create_capture,
+        fetch_emoji=lambda g, e: _FakeEmoji(e),
+        delete_emoji=lambda g, e: None,
+    )
+    assets2 = Assets(
+        cast(Any, fake2),
+        cast(Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)),
+        str(tmp_path),
+    )
+
+    await assets2.reconcile()
+    await assets2.sync_cdn(cast(Any, None))
+
+    assert len(created) == 0, (
+        f"second boot re-created {len(created)} emoji assets"
+    )
+    assert await assets2.get(_EmojiAsset.FROG_GLYPH) == frog_ref
+    assert await assets2.get(_EmojiAsset.CLASSY_GLYPH) == classy_ref
 
 
 async def test_dead_guild_emoji_republishes(

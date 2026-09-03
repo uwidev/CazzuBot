@@ -99,7 +99,7 @@ async def test_frog_catalog_lists_all_frogmd_species(
     cluster_field = next(
         field for field in embed.fields if "Cluster Frog" in field.name
     )
-    assert "Cannot be caught" in cluster_field.value
+    assert "yields no item" in cluster_field.value
     assert "Consume:" not in cluster_field.value
     # classy: exp line renders the oracle value (D1 default: 200)
     classy_field = next(
@@ -117,7 +117,9 @@ async def test_frog_catch_captures_once(
     await frog_db.set_message(
         seeded_bot.settings, {"content": "caught {species} by {name}"}
     )
-    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
+    menu = factory.FrogCatchMenu(
+        seeded_bot, 99, FrogItemKey.BASIC, persist=30
+    )
     interaction = FakeInteraction(id=1, member=author, channel_id=99)
     mctx = FakeMenuContext(interaction)
 
@@ -167,7 +169,9 @@ async def test_frog_catch_default_embed_when_no_message(
 ) -> None:
     """No ``frog.message`` template: the built-in capture embed is sent,
     never a blank message."""
-    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
+    menu = factory.FrogCatchMenu(
+        seeded_bot, 99, FrogItemKey.BASIC, persist=30
+    )
     mctx = FakeMenuContext(
         FakeInteraction(id=1, member=author, channel_id=99)
     )
@@ -200,7 +204,9 @@ async def test_frog_catch_message_allowed_mentions_false_never_pings(
         seeded_bot.settings,
         {"content": "caught {mention}", "allowed_mentions": False},
     )
-    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
+    menu = factory.FrogCatchMenu(
+        seeded_bot, 99, FrogItemKey.BASIC, persist=30
+    )
     mctx = FakeMenuContext(
         FakeInteraction(id=1, member=author, channel_id=99)
     )
@@ -227,7 +233,9 @@ async def test_frog_catch_default_embed_uses_banner_thumbnail(
         "https://cdn.example/catch_banner.png",
         "FrogAsset.CATCH_BANNER",
     )
-    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
+    menu = factory.FrogCatchMenu(
+        seeded_bot, 99, FrogItemKey.BASIC, persist=30
+    )
     mctx = FakeMenuContext(
         FakeInteraction(id=1, member=author, channel_id=99)
     )
@@ -250,7 +258,9 @@ async def test_frog_catch_emits_captured_event(
     seeded_bot.events.on(FrogCapturedEvent, on_captured)
     await frog_db.set_message(seeded_bot.settings, {"content": "ok"})
 
-    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
+    menu = factory.FrogCatchMenu(
+        seeded_bot, 99, FrogItemKey.BASIC, persist=30
+    )
     mctx = FakeMenuContext(
         FakeInteraction(id=1, member=author, channel_id=99)
     )
@@ -265,9 +275,14 @@ async def test_frog_catch_button_carries_species(
     seeded_bot: CazzuBot, author: FakeMember
 ) -> None:
     """The custom_id embeds the species so the boot sweep still matches."""
-    menu = factory.FrogCatchMenu(seeded_bot, 99, FrogItemKey.BASIC)
+    menu = factory.FrogCatchMenu(
+        seeded_bot, 99, FrogItemKey.BASIC, persist=30
+    )
     button = menu_button(menu)
     assert button.custom_id == "frog:catch:99:basic"
+    # the frog's lifetime is carried for catch behaviors (the cluster
+    # burst spawns children living the same persist)
+    assert menu.persist == 30
     assert factory._is_frog_message(  # pyright: ignore[reportPrivateUsage]
         _frog_message(99, 1, "frog:catch:99:basic"), 99
     )
@@ -289,8 +304,8 @@ async def test_on_frog_due_reschedules_and_despawns(
         "persist": 1,
         "fuzzy": 0.5,
     }
-    # five species roll by weight now — pin Basic so the spawn is
-    # deterministic (a rolled Cluster never posts a catchable frog)
+    # five species roll by weight now — pin Basic so the spawn (and its
+    # deleted message) is deterministic
     monkeypatch.setattr(
         factory, "roll_species", lambda: by_key(FrogItemKey.BASIC)
     )

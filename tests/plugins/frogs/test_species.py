@@ -53,19 +53,21 @@ def test_species_registry_has_frogmd_five() -> None:
     assert weights[FrogItemKey.FROGGERS] == 50.0
     assert weights[FrogItemKey.CLASSY] == 200.0
     assert weights[FrogItemKey.CLUSTER] == 300.0
-    # cluster is uncatchable-by-design: no art, a spawn behavior that
-    # replaces the catchable frog at spawn time, and no catch behavior
+    # cluster is catchable-by-design: it spawns like any frog, but its
+    # catch bursts into Basics instead of granting an item — no art
+    from plugins.frogs.behaviors import ClusterBurst
+
     cluster = by_key(FrogItemKey.CLUSTER)
     assert cluster is not None and cluster.art is None
-    assert cluster.spawn is not None
-    assert cluster.catch is None
+    assert isinstance(cluster.catch, ClusterBurst)
+    assert not hasattr(cluster, "spawn")  # the spawn-hook shape is gone
 
 
 def test_species_art_is_a_declared_asset_member_or_none() -> None:
     """The reference is the declaration: an asset cannot be misspelled.
 
-    A species with visible art carries a :class:`FrogAsset` member; an
-    uncatchable species (Cluster) deliberately carries ``None``.
+    A species with visible art carries a :class:`FrogAsset` member; a
+    species without visible art (Cluster) deliberately carries ``None``.
     """
     for species in SPECIES:
         if species.art is not None:
@@ -154,7 +156,6 @@ async def test_catch_none_grants_nothing(full_bot, monkeypatch) -> None:
         description="Won't let you keep it.",
         spawn_weight=1.0,
         catch=None,
-        spawn=None,
         art=None,
     )
     monkeypatch.setattr(
@@ -171,7 +172,9 @@ async def test_catch_none_grants_nothing(full_bot, monkeypatch) -> None:
 
     full_bot.events.on(FrogCapturedEvent, on_captured)
 
-    menu = factory.FrogCatchMenu(full_bot, 99, FrogItemKey.BASIC)
+    menu = factory.FrogCatchMenu(
+        full_bot, 99, FrogItemKey.BASIC, persist=30
+    )
     mctx = FakeMenuContext(
         FakeInteraction(
             id=1, member=FakeMember(id=424242, name="t"), channel_id=99
