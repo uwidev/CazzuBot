@@ -11,12 +11,11 @@ import pendulum
 from cazzubot import leaderboard, templates, timeparse, utils
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
-from cazzubot.models import FrogState, FrogItemKey
+from cazzubot.models import FrogItemKey
 from cazzubot.window import command_window, window_success
 
 from . import db as frog_db
 from . import factory
-from .items import frog_exp, has_item
 from .species import SPECIES, by_key
 
 loader = lightbulb.Loader()
@@ -97,41 +96,29 @@ class Catalog(
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Render the species catalog embed."""
+        """Render the species catalog embed — name, art, description.
+
+        Each field shows the species' published art (emoji reference when
+        published) and its description only — what catching or consuming
+        the frog does belongs to the item's own info card, not here.
+        """
         bot = utils.bot_from(ctx)
         if not SPECIES:
             await ctx.respond("The frog catalog is empty.")
             return
         embed = hikari.Embed(title="Frog Species Catalog", color=_COLOR)
-        # thumbnail: the first species with published art wins the slot
-        thumbnail_art: str | None = None
         for species in SPECIES:
-            if thumbnail_art is None and species.art is not None:
-                thumbnail_art = await bot.assets.get(species.art)
-                if thumbnail_art is not None:
-                    embed.set_thumbnail(thumbnail_art)
-            if not has_item(species.key):
-                # no item exists (Cluster): never a consume line — the
-                # catalog says what catching it does instead
-                value = (
-                    f"{species.description}\nRarity: {species.rarity}\n"
-                    "Catching it yields no item — it bursts into Basic "
-                    "Frogs nearby!"
-                )
-            else:
-                # consumption is item-owned — the catalog reports each
-                # species' consume value from its item definitions
-                # (per-state), so display and grant cannot drift
-                value = f"{species.description}\nRarity: {species.rarity}"
-                normal_exp = frog_exp(species.key, FrogState.NORMAL)
-                frozen_exp = frog_exp(species.key, FrogState.FROZEN)
-                value += (
-                    f"\nConsume: **`{normal_exp}`** exp (normal) / "
-                    f"**`{frozen_exp}`** exp (frozen)"
-                )
-            embed.add_field(
-                name=f"{species.name} (`{species.key.value}`)", value=value
+            art = (
+                await bot.assets.get(species.art)
+                if species.art is not None
+                else None
             )
+            value = (
+                f"{art} {species.description}"
+                if art
+                else species.description
+            )
+            embed.add_field(name=species.name, value=value)
         await ctx.respond(embed=embed)
 
 

@@ -31,8 +31,8 @@ _SCOREBOARD_STAMP = (
 )
 _COLOR = hikari.Color.from_hex_code("#a2dcf7")
 
-exp = lightbulb.Group(
-    "exp", "Experience, the membership card and leaderboards."
+experience = lightbulb.Group(
+    "experience", "Experience, the membership card and leaderboards."
 )
 
 
@@ -85,57 +85,49 @@ async def _award_exp(bot: CazzuBot, message: hikari.Message) -> None:
 # -- commands --------------------------------------------------------------
 
 
-@exp.register
-class Card(
+@experience.register
+class View(
     lightbulb.SlashCommand,
-    name="card",
-    description="Show this season's experience and membership card.",
+    name="view",
+    description="Show a member's experience and membership card.",
 ):
-    """Show this season's experience and membership card."""
+    """Show a member's seasonal or lifetime membership card."""
 
     user = lightbulb.user("user", "The member to show", default=None)
+    mode = lightbulb.string(
+        "mode",
+        "The card window",
+        default="seasonal",
+        choices=[
+            lightbulb.Choice("Seasonal", "seasonal"),
+            lightbulb.Choice("Lifetime", "lifetime"),
+        ],
+    )
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Render the seasonal membership card embed."""
+        """Render the membership card embed for the chosen window."""
         bot = utils.bot_from(ctx)
         target = self.user or ctx.member or ctx.user
-        now = pendulum.now("UTC")
-        rows = await exp_db.seasonal_ranked(
-            bot.db, now.year, utils.month2season(now.month)
-        )
-        await ctx.respond(
-            embed=await _prepare_personal_summary(bot, ctx, target, rows)
-        )
-
-
-@exp.register
-class Lifetime(
-    lightbulb.SlashCommand,
-    name="lifetime",
-    description="Lifetime experience variant of the membership card.",
-):
-    """Show lifetime experience as a membership card."""
-
-    user = lightbulb.user("user", "The member to show", default=None)
-
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Render the lifetime membership card embed."""
-        bot = utils.bot_from(ctx)
-        target = self.user or ctx.member or ctx.user
-        rows = await exp_db.lifetime_ranked(bot.db)
+        lifetime = self.mode == "lifetime"
+        if lifetime:
+            rows = await exp_db.lifetime_ranked(bot.db)
+        else:
+            now = pendulum.now("UTC")
+            rows = await exp_db.seasonal_ranked(
+                bot.db, now.year, utils.month2season(now.month)
+            )
         await ctx.respond(
             embed=await _prepare_personal_summary(
-                bot, ctx, target, rows, lifetime=True
+                bot, ctx, target, rows, lifetime=lifetime
             )
         )
 
 
-@exp.register
-class Top(
+@experience.register
+class Leaderboard(
     lightbulb.SlashCommand,
-    name="top",
+    name="leaderboard",
     description="Display the seasonal experience leaderboard (button-paged).",
 ):
     """Display the seasonal experience leaderboard (button-paged)."""
@@ -187,7 +179,7 @@ class Top(
             )
 
 
-@exp.register
+@experience.register
 class Resync(
     lightbulb.SlashCommand,
     name="resync",
@@ -209,12 +201,12 @@ class Resync(
             window.success("Lifetime exp synced.")
 
 
-exp_quiet = exp.subgroup(
+experience_quiet = experience.subgroup(
     "quiet", "Channels where level-up messages are suppressed."
 )
 
 
-@exp_quiet.register
+@experience_quiet.register
 class Quiet(
     lightbulb.SlashCommand,
     name="list",
@@ -230,7 +222,7 @@ class Quiet(
         await ctx.respond(str(quiets))
 
 
-@exp_quiet.register
+@experience_quiet.register
 class QuietAdd(
     lightbulb.SlashCommand,
     name="add",
@@ -260,7 +252,7 @@ class QuietAdd(
         )
 
 
-@exp_quiet.register
+@experience_quiet.register
 class QuietDel(
     lightbulb.SlashCommand,
     name="del",
@@ -290,7 +282,7 @@ class QuietDel(
         )
 
 
-loader.command(exp)
+loader.command(experience)
 
 
 # -- membership card / leaderboard embeds ----------------------------------

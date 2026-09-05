@@ -95,17 +95,20 @@ async def test_frog_catalog_lists_all_frogmd_species(
     assert any("Froggers Frog" in name for name in names)
     assert any("Classy Frog" in name for name in names)
     assert any("Cluster Frog" in name for name in names)
-    # cluster: burst note, no "Consume:" line (no item/exp exists)
-    cluster_field = next(
-        field for field in embed.fields if "Cluster Frog" in field.name
-    )
-    assert "yields no item" in cluster_field.value
-    assert "Consume:" not in cluster_field.value
-    # classy: exp line renders the oracle value (D1 default: 200)
-    classy_field = next(
-        field for field in embed.fields if "Classy Frog" in field.name
-    )
-    assert "**`200`** exp" in classy_field.value
+    # name + art + description only — no rarity, and the item's own
+    # effects (exp/consume) belong to `/inventory info`, not the catalog
+    descriptions = {
+        "Basic Frog": "The most normalest frog of them all.",
+        "Pog Frog": "A frog with a pog.",
+        "Froggers Frog": "A frog with a poggers.",
+        "Classy Frog": "A frog with rather refined tastes.",
+        "Cluster Frog": "Be careful with this one… she's… spawning!",
+    }
+    for field in embed.fields:
+        assert field.name in descriptions
+        assert "Rarity" not in field.value
+        assert "Consume:" not in field.value
+        assert "exp" not in field.value
 
 
 # -- capture menu -----------------------------------------------------------

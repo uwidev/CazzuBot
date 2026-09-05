@@ -2,7 +2,9 @@ Quick start
 ===========
 
 Get from a fresh clone to running code in a few minutes. Skim it, then dig
-into a **How do I…** page when you hit a specific task.
+into a **How do I…** page when you hit a specific task. If you are writing or
+reviewing player-facing behavior instead, the member command guide lives in
+[USER_GUIDE.md](./USER_GUIDE.md).
 
 
 How do I…

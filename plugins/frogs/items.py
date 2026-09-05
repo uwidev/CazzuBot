@@ -77,16 +77,6 @@ def frog_exp(species_key: FrogItemKey, state: FrogState) -> int:
     return _SPECIES_EXP[species_key][state]
 
 
-def has_item(species_key: FrogItemKey) -> bool:
-    """Whether a capture of the species ever grants an inventory item.
-
-    The single oracle for "does the item exist": Cluster deliberately has
-    no item (its catch bursts instead), so the catalog skips the consume
-    line here and the inventory never holds it.
-    """
-    return species_key in _SPECIES_EXP
-
-
 # item-owned consume statuses: the status class instances each item triggers.
 # This is the item's composition, written as code (no payload objects).
 # Pog/Froggers trigger their reaction status; Classy its role status; Basic

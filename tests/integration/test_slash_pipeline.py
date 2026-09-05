@@ -4,7 +4,7 @@ These tests exercise what direct ``invoke``-based unit tests cannot: option
 solving (including defaults and channel resolution), the CHECKS step
 (debug gate, admin/owner hooks), UserInputError translation into ephemeral
 replies, the window reporting flow, and menu-backed commands like
-``exp top``.
+``experience leaderboard``.
 """
 
 from __future__ import annotations
@@ -24,12 +24,12 @@ async def test_debug_gate_blocks_non_owner(tmp_path: Path) -> None:
     """Manual B2: in -d mode only the owner/debug users run commands."""
     bot = await boot_full_bot(tmp_path, debug=True)
     try:
-        blocked = await run_slash(bot, "exp quiet list", user_id=424242)
+        blocked = await run_slash(bot, "experience quiet list", user_id=424242)
         assert not blocked.responded
         assert blocked.exceptions == []
 
         allowed = await run_slash(
-            bot, "exp quiet list", user_id=1, username="owner"
+            bot, "experience quiet list", user_id=1, username="owner"
         )
         assert allowed.response_type == hikari.ResponseType.MESSAGE_CREATE
         assert allowed.exceptions == []
@@ -103,7 +103,7 @@ async def test_exp_top_paging(full_bot: CazzuBot) -> None:
         )
 
     task = asyncio.create_task(
-        run_slash(full_bot, "exp top", user_id=424242, timeout=10.0)
+        run_slash(full_bot, "experience leaderboard", user_id=424242, timeout=10.0)
     )
     buttons = await wait_for_menu(full_bot)
 
@@ -128,7 +128,7 @@ async def test_exp_top_paging(full_bot: CazzuBot) -> None:
 
 async def test_exp_top_wrong_user_denied(full_bot: CazzuBot) -> None:
     task = asyncio.create_task(
-        run_slash(full_bot, "exp top", user_id=424242, timeout=10.0)
+        run_slash(full_bot, "experience leaderboard", user_id=424242, timeout=10.0)
     )
     buttons = await wait_for_menu(full_bot)
     try:

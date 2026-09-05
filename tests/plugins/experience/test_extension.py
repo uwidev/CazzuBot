@@ -15,7 +15,7 @@ import pytest
 
 from cazzubot.bot import CazzuBot
 from plugins.experience import db as exp_db
-from plugins.experience.extension import Card, QuietAdd, TopMenu
+from plugins.experience.extension import QuietAdd, TopMenu, View
 from tests.fakes import (
     invoke_command,
     FakeChannel,
@@ -53,12 +53,30 @@ def _stub_user_lookup(
 async def test_exp_no_experience_embed(
     bot: CazzuBot, ctx: FakeContext, author: FakeMember
 ) -> None:
-    await invoke_command(Card(), ctx, user=author)
+    await invoke_command(View(), ctx, user=author)
     embed = ctx.sent[0].embed
     assert embed is not None and embed.author is not None
     assert embed.author.name == "cirno's Club Membership Card"
     assert embed.description is not None
     assert "has no experience yet." in embed.description
+
+
+async def test_exp_lifetime_mode(
+    bot: CazzuBot,
+    ctx: FakeContext,
+    author: FakeMember,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_user_lookup(monkeypatch, {author.id: author})
+    await _seed_exp(bot, author.id, 100)
+
+    await invoke_command(View(), ctx, user=author, mode="lifetime")
+
+    embed = ctx.sent[0].embed
+    assert embed is not None and embed.author is not None
+    assert embed.author.name == "cirno's Club Membership Card"
+    assert embed.description is not None
+    assert "Experience: **`100`**" in embed.description
 
 
 async def test_exp_membership_card(
@@ -72,7 +90,7 @@ async def test_exp_membership_card(
     await _seed_exp(bot, author.id, 100)
     await _seed_exp(bot, other.id, 50)
 
-    await invoke_command(Card(), ctx, user=author)
+    await invoke_command(View(), ctx, user=author)
 
     embed = ctx.sent[0].embed
     assert embed is not None and embed.author is not None
