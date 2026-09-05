@@ -9,6 +9,7 @@ data/
 archives/
 story/
 /board/
+/.sigstick-crayon-cirno/
 download/
 emojis/
 *.db
