@@ -20,8 +20,8 @@ from .items import FrogItems
 from .seams import FrogSeam
 from .species import by_key
 
-# the season rollover: first instant of Jan/Apr/Jul/Oct — folds every
-# frog into a Basic Frog (the quarterly "use it or lose it" reset)
+# the season rollover: first instant of Jan/Apr/Jul/Oct — freezes every
+# frog in place under its own species (frozen trophies; thaw is a gamble)
 QUARTERLY_CADENCE = At(day=1, months=(1, 4, 7, 10), time="00:00")
 # the frog half of the midnight reset: lifetime captures resync from the
 # logs (the exp half lives in the experience plugin under tag ``daily``)

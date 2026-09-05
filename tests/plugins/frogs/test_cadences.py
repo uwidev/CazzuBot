@@ -101,38 +101,49 @@ async def test_quarterly_on_load_leaves_existing_row(
     assert rows[0].run_at == run_at  # untouched
 
 
-async def test_quarterly_reset_converts_every_species_to_basic(
+async def test_quarterly_reset_freezes_each_species_in_place(
     bot: CazzuBot,
 ) -> None:
-    """Use it or lose it: pog/froggers/classy stacks become Basic."""
-    for key in (FrogItemKey.POG, FrogItemKey.FROGGERS, FrogItemKey.CLASSY):
+    """Season rollover: every normal stack freezes under its own species.
+
+    The 2026 redesign replaces the fold-to-basic "use it or lose it" rule:
+    species identity survives as frozen trophies — nothing collapses into
+    Basic anymore, and Frog Remains (not a frog) is untouched.
+    """
+    for key in (
+        FrogItemKey.BASIC,
+        FrogItemKey.POG,
+        FrogItemKey.FROGGERS,
+        FrogItemKey.CLASSY,
+    ):
         await frog_db.modify_inventory(bot.db, 1, key, FrogState.NORMAL, 2)
     await frog_db.modify_inventory(
         bot.db, 1, FrogItemKey.POG, FrogState.FROZEN, 1
     )
+    await bot.inventory.add(1, "remains", 4)
 
     await on_quarterly_due(bot, {})
 
-    for key in (FrogItemKey.POG, FrogItemKey.FROGGERS, FrogItemKey.CLASSY):
+    # every normal stack froze in place; the pre-frozen Pog merged to 3
+    for key in (
+        FrogItemKey.BASIC,
+        FrogItemKey.FROGGERS,
+        FrogItemKey.CLASSY,
+    ):
         assert await frog_db.get_inventory(bot.db, 1, key) == 0
         assert (
             await frog_db.get_inventory(bot.db, 1, key, FrogState.FROZEN)
-            == 0
+            == 2
         )
-    # 2+2+2 (normal) + 1 (pog frozen) = 7 basics — all frozen after the
-    # basic devaluation step
+    assert await frog_db.get_inventory(bot.db, 1, FrogItemKey.POG) == 0
     assert (
         await frog_db.get_inventory(
-            bot.db, 1, FrogItemKey.BASIC, FrogState.NORMAL
+            bot.db, 1, FrogItemKey.POG, FrogState.FROZEN
         )
-        == 0
+        == 3
     )
-    assert (
-        await frog_db.get_inventory(
-            bot.db, 1, FrogItemKey.BASIC, FrogState.FROZEN
-        )
-        == 7
-    )
+    # Frog Remains is not a frog — the rollover leaves it alone
+    assert await bot.inventory.get(1, "remains") == 4
 
 
 async def test_daily_frog_due_resyncs_and_rearms(bot: CazzuBot) -> None:

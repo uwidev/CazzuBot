@@ -9,11 +9,14 @@ commands end-to-end via ``run_slash``, and assert the rendered embeds.
 
 from __future__ import annotations
 
+import asyncio
+
 import hikari
+import pytest
 
 from cazzubot.bot import CazzuBot
 from cazzubot.models import FrogState, FrogItemKey
-from tests.driver import run_slash
+from tests.driver import press_button, run_slash, wait_for_menu
 
 
 async def _seed_frogs(bot: CazzuBot, uid: int) -> None:
@@ -214,11 +217,13 @@ async def test_inventory_info_shows_item_card(full_bot: CazzuBot) -> None:
         and embed.thumbnail.url
         == "https://cdn.discordapp.com/emojis/123456789012345678.png"
     )
-    # the consumption field reads the same frog_exp oracle as the grant
+    # a frozen frog is a trophy: the info card describes the thaw gamble,
+    # not consumption
+    assert [field.name for field in embed.fields] == ["On thaw"]
     assert [field.value for field in embed.fields] == [
-        "Grants **3** seasonal exp."
+        "Frozen and non-consumable. Thawing this frog has a 50% chance "
+        "to restore it, and 50% to leave Frog Remains (3 exp)."
     ]
-    assert [field.name for field in embed.fields] == ["On consumption"]
 
 
 async def test_inventory_info_unpublished_asset_has_no_thumbnail(
@@ -231,9 +236,7 @@ async def test_inventory_info_unpublished_asset_has_no_thumbnail(
 
     assert embed.title == "Basic Frog (Frozen)"
     assert embed.thumbnail is None
-    assert [field.value for field in embed.fields] == [
-        "Grants **3** seasonal exp."
-    ]
+    assert [field.name for field in embed.fields] == ["On thaw"]
 
 
 async def test_inventory_info_unknown_slot_is_an_error(
@@ -253,3 +256,70 @@ async def test_inventory_info_unknown_slot_is_an_error(
     assert "No item in slot **5**." in str(
         first_response.get("content", "")
     )
+
+
+# -- /inventory thaw ---------------------------------------------------------
+
+
+async def test_inventory_consume_refuses_frozen_frogs(
+    full_bot: CazzuBot,
+) -> None:
+    """Frozen frogs are trophies — consume refuses before any confirm."""
+    await full_bot.inventory.add(424242, "frog:basic:frozen", 2)
+
+    result = await run_slash(
+        full_bot, "inventory consume", options={"slot": 1}, user_id=424242
+    )
+
+    assert result.exceptions == []
+    first_response = result.first_response
+    assert first_response is not None
+    assert first_response.get("flags", 0) & hikari.MessageFlag.EPHEMERAL
+    assert "Frozen frogs cannot be consumed" in str(
+        first_response.get("content", "")
+    )
+    # nothing was consumed
+    assert await full_bot.inventory.get(424242, "frog:basic:frozen") == 2
+
+
+async def test_inventory_thaw_confirms_and_rolls(
+    full_bot: CazzuBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """thaw confirms first, then rolls each unit (deterministic 1:1 here)."""
+    from plugins.frogs import thaw as thaw_mod
+
+    await full_bot.inventory.add(424242, "frog:pog:frozen", 3)
+    seq = iter([0.1, 0.9])
+
+    class _Fixed:
+        def random(self) -> float:
+            return next(seq)
+
+    monkeypatch.setattr(thaw_mod.random, "random", _Fixed().random)
+
+    task = asyncio.create_task(
+        run_slash(
+            full_bot,
+            "inventory thaw",
+            options={"slot": 1, "amount": 2},
+            user_id=424242,
+            timeout=10.0,
+        )
+    )
+    buttons = await wait_for_menu(full_bot)
+    press = await press_button(
+        full_bot,
+        custom_id=buttons["Yes"],
+        message_id=555,
+        user_id=424242,
+    )
+    result = await task
+
+    assert press.exceptions == []
+    assert result.exceptions == []
+    # 2 thawed: one survived as normal Pog, one became Frog Remains
+    assert await full_bot.inventory.get(424242, "frog:pog:frozen") == 1
+    assert await full_bot.inventory.get(424242, "frog:pog:normal") == 1
+    assert await full_bot.inventory.get(424242, "remains") == 1
+    # the post-thaw tally edits the prompt message
+    assert any("embed" in payload for _mid, payload in result.edits)

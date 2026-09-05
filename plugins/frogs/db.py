@@ -202,27 +202,24 @@ async def sync_with_frog_logs(db: Database) -> None:
 
 
 async def season_reset_frogs(db: Database) -> None:
-    """Quarterly: every frog becomes a Basic Frog ("use it or lose it").
+    """Quarterly: every frog freezes in place — species survive, value doesn't.
 
-    Owner rule (2026-08-28): at season end species identity and buffs
-    do not carry over. Every non-basic stack (normal OR frozen) folds
-    into ``frog:basic:normal``, then Basic's own soft reset folds the
-    normal stack into frozen (10->3 exp). After a reset a member holds
-    ``frog:basic:frozen`` only. Idempotent: a second run finds no
-    non-basic stacks and no basic-normal stacks to fold.
+    Owner rule (2026 redesign): at season end every non-frozen stack
+    freezes under its own species (``species:normal -> species:frozen``),
+    merging into existing frozen stacks. Species identity and buffs
+    persist as frozen trophies — non-consumable, thawable with risk
+    (``thaw.py``). Idempotent: a second run finds no normal stacks to
+    freeze. "Frog Remains" (id ``remains``) is not a frog and is
+    untouched — nothing collapses into Basic anymore.
     """
-    basic_normal = FrogItem(FrogItemKey.BASIC, FrogState.NORMAL)
-    basic_frozen = FrogItem(FrogItemKey.BASIC, FrogState.FROZEN)
     for species in SPECIES:
-        if species.key is FrogItemKey.BASIC:
-            continue
+        if species.key is FrogItemKey.CLUSTER:
+            continue  # Cluster has no item — catching one bursts, nothing freezes
         await inventory.move_all(
-            db, FrogItem(species.key, FrogState.NORMAL), basic_normal
+            db,
+            FrogItem(species.key, FrogState.NORMAL),
+            FrogItem(species.key, FrogState.FROZEN),
         )
-        await inventory.move_all(
-            db, FrogItem(species.key, FrogState.FROZEN), basic_normal
-        )
-    await inventory.move_all(db, basic_normal, basic_frozen)
 
 
 # -- member_frog_log -------------------------------------------------------

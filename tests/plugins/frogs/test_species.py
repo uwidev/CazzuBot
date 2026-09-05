@@ -29,11 +29,11 @@ def test_default_species_is_basic() -> None:
     basic = by_key(FrogItemKey.BASIC)
     assert basic is not None and basic.name == "Basic Frog"
     # the entity sheds consume data — the legacy 10/3 values moved to the
-    # item definitions (basic normal/frozen give 10/3)
+    # item definitions (basic normal gives 10; frozen is a non-consumable
+    # trophy thawed via the gamble, so it has no exp of its own)
     assert not hasattr(basic, "consume_outcome")
     assert not hasattr(basic, "consumable")
     assert frog_exp(basic.key, FrogState.NORMAL) == 10
-    assert frog_exp(basic.key, FrogState.FROZEN) == 3
 
 
 def test_species_registry_has_frogmd_five() -> None:

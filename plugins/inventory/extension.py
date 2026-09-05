@@ -87,6 +87,14 @@ class Consume(
             raise UserInputError(
                 f"**{item.display_name or 'That item'}** cannot be consumed."
             )
+        # frozen frogs are trophies — refuse before the confirm (the item's
+        # own consume glue raises too; this keeps the refusal one step up)
+        from plugins.frogs.thaw import frozen_species_of
+
+        if frozen_species_of(item_id) is not None:
+            raise UserInputError(
+                "Frozen frogs cannot be consumed — thaw them first."
+            )
         if balance < self.amount:
             raise UserInputError(
                 f"You only have **{balance}** of that item to consume."
@@ -124,6 +132,92 @@ class Consume(
         embed_post = utils.prepare_embed(
             f"Consumed **`{self.amount}` {name}**!",
             f"Resulting {name}\n**`{balance}`** -> **`{balance - self.amount}`**",
+        )
+        await ctx.edit_response(
+            utils.INITIAL_RESPONSE_IDENTIFIER, embed=embed_post
+        )
+
+
+@inventory.register
+class Thaw(
+    lightbulb.SlashCommand,
+    name="thaw",
+    description="Thaw a frozen frog: 50% survives, 50% becomes Frog Remains.",
+):
+    """Thaw a frozen frog with a 50/50 gamble (slot addressing like consume).
+
+    Same shape as ``consume``: resolve a slot, confirm the gamble, re-check
+    the balance, then roll each unit through the frogs thaw service. The
+    tally ("x survived, y became Frog Remains") is edited into the prompt.
+    """
+
+    slot = lightbulb.integer(
+        "slot", "The inventory slot to thaw", min_value=1
+    )
+    amount = lightbulb.integer(
+        "amount", "How many to thaw", default=1, min_value=1
+    )
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Resolve the slot, confirm the gamble, roll, and report the tally."""
+        # deferred: the thaw service imports the frogs package — loaded
+        # lazily so the inventory extension never hard-couples to it
+        from plugins.frogs.thaw import frozen_species_of, thaw_frogs
+
+        bot = utils.bot_from(ctx)
+        uid = (ctx.member or ctx.user).id
+
+        entry = await _slot_entry(bot, uid, self.slot)
+        if entry is None:
+            raise UserInputError(f"No item in slot **{self.slot}**.")
+        _slot, item_id, balance = entry
+
+        item = bot.items.item_for(item_id)
+        if not bot.items.resolved(item_id):
+            raise UserInputError("That item is no longer available.")
+        species_key = frozen_species_of(item_id)
+        if species_key is None:
+            raise UserInputError(
+                f"**{item.display_name or 'That item'}** is not a frozen "
+                "frog — only frozen frogs can be thawed."
+            )
+        if balance < self.amount:
+            raise UserInputError(
+                f"You only have **{balance}** frozen frog(s) in that slot."
+            )
+
+        name = item.display_name or item_id
+        desc = (
+            f"You are about to thaw **`{self.amount}` {name}**.\n\n"
+            f"Each has a **50%** chance to survive as a {name}, and "
+            "**50%** to become **Frog Remains** (3 exp).\n\n"
+            f"Resulting {name}\n**`{balance}`** -> "
+            f"**`{balance - self.amount}`**\n\n"
+            "Please confirm."
+        )
+        embed = utils.prepare_embed("**Confirmation**", desc)
+        menu = utils.ConfirmMenu(uid, delete_after=False)
+        await ctx.respond(embed=embed, components=cast(Any, menu))
+        try:
+            await menu.attach(ctx.client, timeout=120)
+        except asyncio.TimeoutError:
+            await ctx.delete_response(utils.INITIAL_RESPONSE_IDENTIFIER)
+            return
+        if not menu.value:
+            await ctx.delete_response(utils.INITIAL_RESPONSE_IDENTIFIER)
+            return
+
+        # re-check the balance at the very moment of thawing
+        bal_now = await _slot_balance(bot, uid, self.slot)
+        if bal_now < self.amount:
+            raise UserInputError("Not enough frozen frogs to thaw.")
+
+        outcome = await thaw_frogs(bot, uid, species_key, self.amount)
+        embed_post = utils.prepare_embed(
+            "Thawed!",
+            f"**`{outcome.survived}`** survived as **{name}**, "
+            f"**`{outcome.remains}`** became **Frog Remains**.",
         )
         await ctx.edit_response(
             utils.INITIAL_RESPONSE_IDENTIFIER, embed=embed_post
