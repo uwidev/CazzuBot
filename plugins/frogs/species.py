@@ -105,7 +105,7 @@ SPECIES: tuple[Species, ...] = (
         description="Be careful with this one… she's… spawning!",
         spawn_weight=300.0,
         catch=ClusterBurst(),  # the burst IS the catch — no item is granted
-        art=None,
+        art=FrogAsset.FROG_CLUSTER,
     ),
 )
 
