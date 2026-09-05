@@ -3,9 +3,11 @@
 ``view`` renders the shared ledger as a numbered inline-emoji grid, resolving
 each stack's icon through the item-definitions registry (``bot.items``) —
 an item with an ``icon_asset`` uses its published custom-emoji reference
-(``bot.assets.get``), falling back to the static ``icon`` while unpublished;
-unresolved ids (a provider that was unregistered/removed) are hidden rather
-than shown as garbage. ``consume <slot>`` resolves a stack by its derived slot
+(``bot.assets.get``), falling back to the static ``icon`` while unpublished.
+Stacks whose id no longer resolves (a provider removing/renaming an item)
+are hidden AND compacted away: slots are re-derived over the *visible*
+stacks only (see :func:`_indexed_resolved`), so the grid never shows a gap
+like "1, 2, 4". ``consume <slot>`` resolves a stack by its derived slot
 number, then runs the item's own consume handler and decrements the stack.
 ``info <slot>`` shows the invoker's item in that slot as a description card —
 thumbnail from the item's asset, title the item name, the description prose,
@@ -47,7 +49,7 @@ class View(
         """Render the inventory grid embed."""
         bot = utils.bot_from(ctx)
         target = self.user or ctx.member or ctx.user
-        indexed = await bot.inventory.rows_indexed(target.id)
+        indexed = await _indexed_resolved(bot, target.id)
         embed = await _build_grid(bot, indexed, target)
         await ctx.respond(embed=embed)
 
@@ -184,21 +186,20 @@ loader.command(inventory)
 
 async def _build_grid(
     bot: CazzuBot,
-    indexed: list[tuple[int, str, int]],
+    visible: list[tuple[int, str, int]],
     target: hikari.PartialUser,
 ) -> hikari.Embed:
-    """The inventory embed: numbered inline-emoji grid across namespaces.
+    """The inventory embed: numbered inline-emoji grid of visible stacks.
 
-    Each non-empty stack resolves its icon through ``bot.items.item_for``;
-    an item whose ``icon_asset`` points at an EMOJI-kind asset uses the
-    published ``<:name:id>`` reference (falling back to the static ``icon``
-    while the asset is unpublished). Stacks whose id no longer resolves (a
-    provider that was removed from the registry) are hidden instead of
-    shown as raw keys.
+    ``visible`` is the caller's compacted slot list (see
+    :func:`_indexed_resolved` — every id resolves, slots are contiguous).
+    Each stack resolves its icon through ``bot.items.item_for``; an item
+    whose ``icon_asset`` points at an EMOJI-kind asset uses the published
+    ``<:name:id>`` reference (falling back to the static ``icon`` while
+    the asset is unpublished).
     """
     embed = hikari.Embed(color=_COLOR)
     embed.set_author(name=f"{target.display_name}'s Inventory")
-    visible = [row for row in indexed if bot.items.resolved(row[1])]
     if not visible:
         embed.description = "Your inventory is empty."
         return embed
@@ -231,11 +232,44 @@ async def _grid_icon(bot: CazzuBot, item: Item) -> str:
     return item.icon
 
 
+async def _indexed_resolved(
+    bot: CazzuBot, uid: int
+) -> list[tuple[int, str, int]]:
+    """A member's *visible* stacks as contiguous 1-based slots.
+
+    Slots are derived, not stored: the ledger numbers every non-empty stack
+    in ``ORDER BY item`` order (``bot.inventory.rows``), and the grid hides
+    stacks whose id no longer resolves — a provider removing/renaming an
+    item degrades the holding to hidden, non-consumable
+    (``bot.items.resolved``). Filtering those out *before* numbering keeps
+    the visible slots at 1, 2, 3, … with no gaps (an unresolved stack can
+    never leave a hole like "1, 2, 4"). ``view``, ``info`` and ``consume``
+    all resolve through this one order, so a rendered slot always addresses
+    the same item everywhere.
+    """
+    return [
+        (slot, item_id, qty)
+        for slot, (item_id, qty) in enumerate(
+            (
+                row
+                for row in await bot.inventory.rows(uid)
+                if bot.items.resolved(row[0])
+            ),
+            start=1,
+        )
+    ]
+
+
 async def _slot_entry(
     bot: CazzuBot, uid: int, slot: int
 ) -> tuple[int, str, int] | None:
-    """The ``(slot, item_id, qty)`` row for ``slot``, or None."""
-    indexed = await bot.inventory.rows_indexed(uid)
+    """The visible ``(slot, item_id, qty)`` row for ``slot``, or None.
+
+    Uses the same compacted numbering as the grid (:func:`_indexed_resolved`),
+    so a slot that renders always resolves to the same item here — hidden
+    (unresolved) stacks are unreachable instead of addressable-but-empty.
+    """
+    indexed = await _indexed_resolved(bot, uid)
     return next((row for row in indexed if row[0] == slot), None)
 
 

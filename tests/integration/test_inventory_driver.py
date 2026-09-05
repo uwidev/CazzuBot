@@ -54,6 +54,69 @@ async def test_inventory_grid_shows_numbered_slots(
     assert slot_names == ["1", "2"]
 
 
+async def _seed_dev_like_inventory(bot: CazzuBot, uid: int) -> None:
+    """Five stacks mirroring the reported dev DB: four resolved frogs plus
+    one ``frog:classy_frog:*`` stack left over from the pre-rename species
+    key (retired — no longer resolves in the item registry)."""
+    for item, qty in (
+        ("frog:basic:normal", 40),
+        ("frog:classy:normal", 1),
+        (
+            "frog:classy_frog:normal",
+            4,
+        ),  # stale: sorts between classy/froggers
+        ("frog:froggers:normal", 1),
+        ("frog:pog:normal", 2),
+    ):
+        await bot.inventory.add(uid, item, qty)
+
+
+async def test_inventory_grid_compacts_stale_slot_away(
+    full_bot: CazzuBot,
+) -> None:
+    """A stale stack is hidden AND compacted: slots read 1..n, never gapped.
+
+    Reproduces the reported bug: ``frog:classy_frog:normal`` sorted between
+    classy and froggers and rendered the grid as slots 1, 2, 4, 5.
+    """
+    await _seed_dev_like_inventory(full_bot, 424242)
+
+    result = await run_slash(full_bot, "inventory view", user_id=424242)
+
+    assert result.exceptions == []
+    first_response = result.first_response
+    assert first_response is not None
+    embed = first_response.get("embed")
+    assert embed is not None
+    # the hidden stack never renders a slot number — no gap between 2 and 3
+    slot_names = [field.name for field in embed.fields if field.name]
+    assert slot_names == ["1", "2", "3", "4"]
+
+
+async def test_inventory_info_cannot_reach_hidden_stack(
+    full_bot: CazzuBot,
+) -> None:
+    """Slots compact for info too: the stale stack's would-be slot is gone."""
+    await _seed_dev_like_inventory(full_bot, 424242)
+
+    # 4 visible slots: 1=basic, 2=classy, 3=froggers, 4=pog — the Pog Frog
+    # sits at 4 (it was slot 5 before compaction) ...
+    embed = await _info_embed(full_bot, 424242, 4)
+    assert embed.title == "Pog Frog"
+
+    # ... and a slot past the compacted end is out of bounds (previously
+    # slot 5 addressed the hidden stack's neighbourhood)
+    result = await run_slash(
+        full_bot, "inventory info", options={"slot": 5}, user_id=424242
+    )
+    assert result.exceptions == []
+    first_response = result.first_response
+    assert first_response is not None
+    assert "No item in slot **5**." in str(
+        first_response.get("content", "")
+    )
+
+
 async def test_inventory_grid_uses_published_asset_emoji(
     full_bot: CazzuBot,
 ) -> None:
