@@ -53,24 +53,37 @@ def _species_key(value: str | None) -> FrogItemKey | None:
 
 
 @frog.register
-class Profile(
+class View(
     lightbulb.SlashCommand,
-    name="profile",
-    description="Show this user's current frog profile.",
+    name="view",
+    description="Show a user's frog capture permit.",
 ):
-    """Show a user's current frog profile."""
+    """Show a user's seasonal or lifetime frog capture permit."""
 
     member = lightbulb.user("member", "The member to show", default=None)
+    mode = lightbulb.string(
+        "mode",
+        "The permit window",
+        default="seasonal",
+        choices=[
+            lightbulb.Choice("Seasonal", "seasonal"),
+            lightbulb.Choice("Lifetime", "lifetime"),
+        ],
+    )
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Render the seasonal frog profile embed."""
+        """Render the frog capture permit for the chosen window."""
         bot = utils.bot_from(ctx)
         target = self.member or ctx.member or ctx.user
-        now = pendulum.now("UTC")
-        rows = await frog_db.seasonal_ranked(
-            bot.db, now.year, utils.month2season(now.month)
-        )
+        lifetime = self.mode == "lifetime"
+        if lifetime:
+            rows = await frog_db.lifetime_ranked(bot.db)
+        else:
+            now = pendulum.now("UTC")
+            rows = await frog_db.seasonal_ranked(
+                bot.db, now.year, utils.month2season(now.month)
+            )
         if not rows:
             await ctx.respond(
                 "No one has yet captured frogs in this server!"
@@ -78,11 +91,15 @@ class Profile(
             return
         if target.id not in [r[1] for r in rows]:
             await ctx.respond(
-                "You have not yet captured any frogs this season!"
+                "You have not yet captured any frogs!"
+                if lifetime
+                else "You have not yet captured any frogs this season!"
             )
             return
         await ctx.respond(
-            embed=await _prepare_personal_summary(bot, ctx, target, rows)
+            embed=await _prepare_personal_summary(
+                bot, ctx, target, rows, lifetime=lifetime
+            )
         )
 
 
@@ -120,37 +137,6 @@ class Catalog(
             )
             embed.add_field(name=species.name, value=value)
         await ctx.respond(embed=embed)
-
-
-@frog.register
-class Lifetime(
-    lightbulb.SlashCommand,
-    name="lifetime",
-    description="Lifetime frog profile variant.",
-):
-    """Lifetime frog profile variant."""
-
-    user = lightbulb.user("user", "The member to show", default=None)
-
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Render the lifetime frog profile embed."""
-        bot = utils.bot_from(ctx)
-        target = self.user or ctx.member or ctx.user
-        rows = await frog_db.lifetime_ranked(bot.db)
-        if not rows:
-            await ctx.respond(
-                "No one has yet captured frogs in this server!"
-            )
-            return
-        if target.id not in [r[1] for r in rows]:
-            await ctx.respond("You have not yet captured any frogs!")
-            return
-        await ctx.respond(
-            embed=await _prepare_personal_summary(
-                bot, ctx, target, rows, lifetime=True
-            )
-        )
 
 
 @frog.register
@@ -433,7 +419,7 @@ async def _prepare_personal_summary(
         align=["<", ">", ">"],
         max_padding=[0, 0, 16],
     )
-    # the callers (Profile/Lifetime) verified membership first
+    # the callers (View's seasonal/lifetime modes) verified membership first
     assert board is not None
     scoreboard_s = board.text
     user_frog_cnt = board.value

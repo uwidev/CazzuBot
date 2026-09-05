@@ -18,8 +18,8 @@ At a glance
 | `/inventory info <slot>` | An item's description card (from a slot you own) |
 | `/inventory consume <slot> [amount]` | Consume an item for its outcome (with confirm) |
 | `/frog catalog` | All catchable frog species that spawn |
-| `/frog profile [member]` | This season's frog capture permit |
-| `/frog lifetime [user]` | All-time frog capture permit |
+| `/frog view [member] [mode]` | Frog capture permit (`seasonal` default, or `lifetime`) |
+| `/frog catalog` | All catchable frog species that spawn |
 
 
 1. Exp profile
@@ -105,10 +105,10 @@ the message is deleted.
  -  `/frog catalog` — every catchable species with its name, art, and
     description. What catching or consuming a frog does is not part of the
     catalog — an item's own effects live on its `/inventory info` card.
- -  `/frog profile [member]` — your seasonal capture permit: total captures,
+ -  `/frog view [member] [mode]` — your capture permit: total captures,
     rank and percentile, plus a per-species breakdown of the frogs you hold
-    (normal vs frozen). Defaults to you.
- -  `/frog lifetime [user]` — the same permit against all-time totals.
+    (normal vs frozen). `mode` picks the window, `seasonal` (default) or
+    `lifetime`; defaults to you, pass a member to look at theirs.
 
 **The quarterly freeze.** On the 1st of Jan/Apr/Jul/Oct at 00:00 UTC every
 frog in the server folds down: all non-Basic frogs (normal *and* frozen)

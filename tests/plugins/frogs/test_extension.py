@@ -14,7 +14,7 @@ from cazzubot.models import FrogItemKey
 from plugins.frogs import db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.events import FrogCapturedEvent
-from plugins.frogs.extension import Catalog, Profile, Register
+from plugins.frogs.extension import Catalog, Register, View
 from plugins.frogs.species import by_key
 from tests.fakes import (
     FakeCache,
@@ -36,10 +36,30 @@ _UID = 424242
 # -- profile / register / catalog ------------------------------------------
 
 
-async def test_frog_profile_no_captures_yet(
+async def test_frog_view_no_captures_yet(
     bot: CazzuBot, ctx: FakeContext, author: FakeMember
 ) -> None:
-    await invoke_command(Profile(), ctx, member=author)
+    await invoke_command(View(), ctx, member=author)
+    assert (
+        ctx.sent[-1].content
+        == "No one has yet captured frogs in this server!"
+    )
+
+
+async def test_frog_view_lifetime_mode_uses_lifetime_ranked(
+    bot: CazzuBot, ctx: FakeContext, author: FakeMember
+) -> None:
+    # a seasonal capture log makes the seasonal board non-empty, but the
+    # lifetime counter is only rebuilt by sync_with_frog_logs — so mode=
+    # "lifetime" falling back to the empty-board message proves the branch
+    # read lifetime_ranked, not seasonal_ranked
+    now = pendulum.now("UTC")
+    await frog_db.add_capture_log(
+        bot.db, author.id, now, waited_for=3.0, species_key=FrogItemKey.BASIC
+    )
+
+    await invoke_command(View(), ctx, member=author, mode="lifetime")
+
     assert (
         ctx.sent[-1].content
         == "No one has yet captured frogs in this server!"
