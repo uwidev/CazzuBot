@@ -54,11 +54,11 @@ def test_species_registry_has_frogmd_five() -> None:
     assert weights[FrogItemKey.CLASSY] == 200.0
     assert weights[FrogItemKey.CLUSTER] == 300.0
     # cluster is catchable-by-design: it spawns like any frog, but its
-    # catch bursts into Basics instead of granting an item — no art
+    # catch bursts into Basics instead of granting an item
     from plugins.frogs.behaviors import ClusterBurst
 
     cluster = by_key(FrogItemKey.CLUSTER)
-    assert cluster is not None and cluster.art is None
+    assert cluster is not None and cluster.art is FrogAsset.FROG_CLUSTER
     assert isinstance(cluster.catch, ClusterBurst)
     assert not hasattr(cluster, "spawn")  # the spawn-hook shape is gone
 
