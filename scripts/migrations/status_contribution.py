@@ -9,6 +9,17 @@ stored seam/source string stay byte-identical) and rewrites the
 scheduler's convergence tag ``effect.converge`` → ``status.converge``
 (a ``tasks`` projection update, idempotent for rows that already fired).
 
+Two legacy shapes are reconciled, because the current code boots and
+creates ``status_contribution`` itself:
+
+- **target missing** — the store was never touched by the new code: plain
+  ``ALTER TABLE ... RENAME``;
+- **target already exists** — the new code booted while the legacy table
+  was still present (e.g. prod pulled the statuses refactor, booted, and
+  ``run_schema`` created the new table): fold any legacy rows into the
+  existing table (they are byte-identical in shape; ``INSERT OR IGNORE``
+  skips keys the new table already holds), then ``DROP`` the legacy one.
+
 Idempotent: ``needs_migration`` is False once ``effect_contribution`` is
 gone. Run through ``scripts/migrate.py`` (all pending) or
 ``--only 007_status_contribution``; dry-run by default, ``--commit`` to
@@ -27,7 +38,7 @@ from scripts.migrations.common import Migration
 class MigrationPlan:
     """What the migration found — the dry-run report."""
 
-    tables: int  # effect_contribution tables to rename (0 or 1)
+    tables: int  # effected contribution tables (0 or 1)
     converger_rows: int  # tasks rows still tagged effect.converge
 
 
@@ -46,7 +57,7 @@ def needs_migration(conn: sqlite3.Connection) -> bool:
 
 
 def plan(conn: sqlite3.Connection) -> MigrationPlan:
-    """Read-only report of what :func:`migrate` would rename."""
+    """Read-only report of what :func:`migrate` would reconcile."""
     converger_rows = 0
     if "tasks" in _table_names(conn):
         (converger_rows,) = conn.execute(
@@ -61,8 +72,12 @@ def plan(conn: sqlite3.Connection) -> MigrationPlan:
 def migrate(conn: sqlite3.Connection) -> MigrationPlan:
     """Apply in one transaction; returns what it did.
 
-    ``ALTER TABLE ... RENAME`` preserves row data, the PK and indexes;
-    no FK references the table. The tag rewrite touches only the
+    When the target is absent, ``ALTER TABLE ... RENAME`` preserves row
+    data, the PK and indexes; no FK references the table. When the target
+    already exists (the current code booted and created it), fold the
+    legacy rows in with ``INSERT OR IGNORE`` — the two tables share the
+    same shape and PK, so a key the new table already holds is left as-is
+    — then drop the legacy table. The tag rewrite touches only the
     scheduler's ``tasks`` projection for the status store's converge
     jobs (no-op when the scheduler table does not exist yet), leaving
     every other tag untouched.
@@ -71,10 +86,17 @@ def migrate(conn: sqlite3.Connection) -> MigrationPlan:
     conn.execute("BEGIN")
     try:
         if "effect_contribution" in _table_names(conn):
-            conn.execute(
-                "ALTER TABLE effect_contribution RENAME TO"
-                + " status_contribution"
-            )
+            if "status_contribution" in _table_names(conn):
+                conn.execute(
+                    "INSERT OR IGNORE INTO status_contribution "
+                    + "SELECT * FROM effect_contribution"
+                )
+                conn.execute("DROP TABLE effect_contribution")
+            else:
+                conn.execute(
+                    "ALTER TABLE effect_contribution RENAME TO"
+                    + " status_contribution"
+                )
         if "tasks" in _table_names(conn):
             conn.execute(
                 "UPDATE tasks SET tag = 'status.converge'"
@@ -105,7 +127,7 @@ MIGRATION = Migration(
     needs=needs_migration,
     plan=plan,
     summary=lambda p: (
-        f"rename {p.tables} table(s), re-tag {p.converger_rows} task"
+        f"reconcile {p.tables} table(s), re-tag {p.converger_rows} task"
         + " row(s)"
     ),
     migrate=migrate,

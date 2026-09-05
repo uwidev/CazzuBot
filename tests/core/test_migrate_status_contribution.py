@@ -85,3 +85,61 @@ def test_migrate_renames_table_and_rewrites_tag(tmp_path) -> None:
         assert tags == 1
     finally:
         conn.close()
+
+
+def test_migrate_folds_when_target_already_exists(tmp_path) -> None:
+    """The current code can boot and create the new table while the legacy
+    one still exists (e.g. prod pulled the refactor mid-flight). The
+    migration must fold legacy rows into the existing table and drop the
+    legacy one instead of attempting a rename."""
+    conn = _conn(str(tmp_path / "both.db"))
+    try:
+        conn.execute(
+            "CREATE TABLE status_contribution ("
+            " scope_kind TEXT NOT NULL,"
+            " scope_id   INTEGER NOT NULL,"
+            " seam       TEXT NOT NULL,"
+            " source     TEXT NOT NULL,"
+            " payload    TEXT NOT NULL,"
+            " expires_at TEXT,"
+            " PRIMARY KEY (scope_kind, scope_id, seam, source)"
+            ")"
+        )
+        # legacy rows: one that the new table already holds (ignored), one new
+        conn.execute(
+            "INSERT INTO effect_contribution VALUES"
+            " ('member', 1, 'frog', 'frog:pog:normal', '{}', NULL),"
+            " ('member', 2, 'frog', 'frog:classy:normal', '{}', NULL)"
+        )
+        conn.execute(
+            "INSERT INTO status_contribution VALUES"
+            " ('member', 1, 'frog', 'frog:pog:normal', 'old', NULL)"
+        )
+        conn.commit()
+
+        assert needs_migration(conn) is True
+        migrate(conn)
+        verify(conn)
+
+        # the conflicting key stayed (the existing row wins), the new key folded in
+        rows = [
+            (r["source"], r["payload"])
+            for r in conn.execute(
+                "SELECT source, payload FROM status_contribution"
+                + " ORDER BY source"
+            )
+        ]
+        assert rows == [
+            ("frog:classy:normal", "{}"),
+            ("frog:pog:normal", "old"),
+        ]
+        tables = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert "effect_contribution" not in tables
+        assert needs_migration(conn) is False
+    finally:
+        conn.close()
