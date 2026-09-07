@@ -16,6 +16,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from typing_extensions import override
@@ -110,7 +111,11 @@ def main() -> None:
 
 
 def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
-    """Write INFO to console and DEBUG to a log file (truncated each boot)."""
+    """Write INFO to console and DEBUG to a per-boot, timestamped log file.
+
+    Each boot gets its own ``discord-<stamp>.log`` (UTC boot time), so a
+    later run never truncates an earlier run's log.
+    """
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
 
@@ -122,8 +127,9 @@ def setup_logging(log_dir: str | Path, *, debug: bool = False) -> None:
     console.setLevel(logging.DEBUG if debug else logging.INFO)
 
     Path(log_dir).mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     file_handler = logging.FileHandler(
-        filename=f"{log_dir}/discord.log", encoding="utf-8", mode="w+"
+        filename=Path(log_dir) / f"discord-{stamp}.log", encoding="utf-8"
     )
     file_handler.setLevel(logging.DEBUG)
 

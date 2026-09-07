@@ -89,4 +89,7 @@ def test_main_flags_reach_config(
 
 def test_setup_logging_writes_file(tmp_path: Path) -> None:
     main_module.setup_logging(tmp_path)
-    assert (tmp_path / "discord.log").exists()
+    logs = sorted(tmp_path.glob("discord-*.log"))
+    assert len(logs) == 1
+    assert logs[0].name != "discord.log"
+    assert logs[0].name.startswith("discord-")
