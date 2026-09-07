@@ -1,18 +1,20 @@
 """Frogs plugin extension — profile, register/configure spawns, catalog,
 owner commands."""
 
-import json
 from math import trunc
 
 import hikari
 import lightbulb
 import pendulum
 
-from cazzubot import leaderboard, templates, timeparse, utils
+from cazzubot import leaderboard, timeparse, utils
 from cazzubot.bot import CazzuBot
 from cazzubot.errors import UserInputError
-from cazzubot.models import FrogItemKey
+from cazzubot.models import FrogItemKey, FrogState
+from cazzubot.tips import get_tip
 from cazzubot.window import command_window, window_success
+
+from plugins.misc.asset import random_footer_icon
 
 from . import db as frog_db
 from . import factory
@@ -20,10 +22,6 @@ from .species import SPECIES, by_key
 
 loader = lightbulb.Loader()
 
-_SCOREBOARD_STAMP = (
-    "https://cdn.discordapp.com/emojis/752290769712316506.webp"
-    "?size=160&quality=lossless"
-)
 _COLOR = hikari.Color.from_hex_code("#a2dcf7")
 
 _SPECIES_CHOICES = [
@@ -117,7 +115,8 @@ class Catalog(
 
         Each field shows the species' published art (emoji reference when
         published) and its description only — what catching or consuming
-        the frog does belongs to the item's own info card, not here.
+        the frog does belongs to the item's own info card, not here. The
+        footer cycles a random frog tip, like /frog view's.
         """
         bot = utils.bot_from(ctx)
         if not SPECIES:
@@ -135,7 +134,18 @@ class Catalog(
                 if art
                 else species.description
             )
-            embed.add_field(name=species.name, value=value)
+            # species name is bolded as the field label — the catalog is a
+            # recap of owned frogs, so names read as entries, not nav links
+            embed.add_field(name=f"**{species.name}**", value=value)
+        # cycle one random frog tip through the footer per render — the tip
+        # sets live in this plugin's own tip_sets (context "frog"), shared
+        # with /frog view, and the footer icon pulls a random cirno emoji
+        # from the shared misc assets (plugins.misc.asset — the tip surfaces'
+        # icon provider)
+        embed.set_footer(
+            text=get_tip("frog"),
+            icon=await random_footer_icon(bot),
+        )
         await ctx.respond(embed=embed)
 
 
@@ -235,30 +245,6 @@ frog_set = frog.subgroup("set", "Configure frog spawns.")
 
 
 @frog_set.register
-class SetMessage(
-    lightbulb.SlashCommand,
-    name="message",
-    description="Set the capture message JSON.",
-    hooks=[utils.ADMIN_ONLY],
-):
-    """Set the capture message JSON."""
-
-    message = lightbulb.string("message", "The capture message JSON")
-
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Validate and persist the capture message JSON."""
-        bot = utils.bot_from(ctx)
-        decoded = templates.verify(
-            self.message,
-            factory.formatter,
-            member=utils.member_snapshot(ctx.member or ctx.user),
-        )
-        await frog_db.set_message(bot.settings, decoded)
-        await window_success(ctx, "Capture message set")
-
-
-@frog_set.register
 class SetEnabled(
     lightbulb.SlashCommand,
     name="enabled",
@@ -283,52 +269,10 @@ class SetEnabled(
         )
 
 
-@frog.register
-class Demo(
-    lightbulb.SlashCommand,
-    name="demo",
-    description="Preview the capture message as yourself.",
-    hooks=[utils.ADMIN_ONLY],
-):
-    """Preview the capture message as the invoker."""
-
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Render the stored capture message as a preview."""
-        bot = utils.bot_from(ctx)
-        msg_json = await frog_db.get_message(bot.settings)
-        if not msg_json:
-            await ctx.respond("No capture message has been set.")
-            return
-        utils.deep_map(
-            msg_json,
-            factory.formatter,
-            member=utils.member_snapshot(ctx.member or ctx.user),
-        )
-        await templates.send(ctx, msg_json)
-
-
-@frog.register
-class Raw(
-    lightbulb.SlashCommand,
-    name="raw",
-    description="Dump the raw stored capture message JSON.",
-    hooks=[utils.ADMIN_ONLY],
-):
-    """Dump the raw stored capture message JSON."""
-
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Echo the stored capture message JSON verbatim."""
-        bot = utils.bot_from(ctx)
-        msg_json = await frog_db.get_message(bot.settings)
-        await ctx.respond(f"```{json.dumps(msg_json, indent=2)}```")
-
-
 async def _spawn_and_wait(
     bot: CazzuBot, ctx: lightbulb.Context, species_value: str | None
 ) -> None:
-    """Force-post a frog with its capture button (shared by spawn/fake)."""
+    """Force-post a frog with its capture button (the spawn command)."""
     await factory.spawn_and_wait(
         bot,
         30,
@@ -359,25 +303,6 @@ class Spawn(
 
 
 @frog.register
-class Fake(
-    lightbulb.SlashCommand,
-    name="fake",
-    description="Post a fake frog with its capture button.",
-    hooks=[utils.OWNER_ONLY],
-):
-    """Post a fake frog with its capture button."""
-
-    species = _species_option(
-        "species", "The species to fake (default: rolled)"
-    )
-
-    @lightbulb.invoke
-    async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Post a fake frog with its capture button."""
-        await _spawn_and_wait(utils.bot_from(ctx), ctx, self.species)
-
-
-@frog.register
 class Resync(
     lightbulb.SlashCommand,
     name="resync",
@@ -399,6 +324,47 @@ class Resync(
             window.success("Lifetime captures synced.")
 
 
+frog_debug = frog.subgroup("debug", "Owner debug helpers.")
+
+
+@frog_debug.register
+class DebugFreeze(
+    lightbulb.SlashCommand,
+    name="freeze",
+    description="Run the quarterly rollover (freeze) for one user.",
+    hooks=[utils.OWNER_ONLY],
+):
+    """Freeze one user's frogs in place — a dry-run of the season reset.
+
+    The debug counterpart to the scheduler's global
+    ``db.season_reset_frogs`` (which freezes EVERY user): this scopes the
+    same per-species ``normal -> frozen`` move to one member via
+    ``db.freeze_frogs_for_user``, so the owner can inspect the frozen
+    state on the frog + inventory surfaces without waiting for the real
+    rollover.
+    """
+
+    member = lightbulb.user("member", "The member to freeze")
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Freeze the member's frogs and report what moved."""
+        bot = utils.bot_from(ctx)
+        moved = await frog_db.freeze_frogs_for_user(bot.db, self.member.id)
+        if not moved:
+            await window_success(
+                ctx,
+                f"{self.member.display_name} has no normal frogs to freeze.",
+            )
+            return
+        names = {species.key: species.name for species in SPECIES}
+        detail = ", ".join(f"{names[key]} ×{qty}" for key, qty in moved)
+        await window_success(
+            ctx,
+            f"Froze {self.member.display_name}'s frogs: {detail}",
+        )
+
+
 loader.command(frog)
 
 
@@ -410,7 +376,14 @@ async def _prepare_personal_summary(
     *,
     lifetime: bool = False,
 ) -> hikari.Embed:
-    """The "Frog Capture Permit" embed."""
+    """The "Frog Capture Permit" embed — the permit title carries the
+    member's name (no author field), the pfp is the thumbnail, and the
+    footer cycles a random frog tip.
+
+    Its Inventory section is a snippet of the member's season-active
+    (normal) frogs only, sorted by quantity ascending (frozen trophies and
+    any future non-frog items are excluded) — see the inline build below.
+    """
     board = await leaderboard.focus_board(
         bot,
         rows,
@@ -425,12 +398,25 @@ async def _prepare_personal_summary(
     user_frog_cnt = board.value
     rank = board.rank
 
+    # Inventory snippet: only normal (season-active) frogs, quantity
+    # ascending, frog-type only. ``inventory_rows`` already narrows to the
+    # "frog:" namespace (future non-frog items stay out), so the explicit
+    # state filter below is the remaining frog-type guard. Frozen frogs are
+    # trophies, not frogs the member "currently has", so they stay out of
+    # the snippet and do not suppress the "No frogs yet." empty state.
     inv = await frog_db.inventory_rows(bot.db, user.id)
     inv_lines = []
-    for species_key, state, qty in inv:
+    for species_key, state, qty in sorted(
+        (
+            (species_key, state, qty)
+            for species_key, state, qty in inv
+            if state is FrogState.NORMAL
+        ),
+        key=lambda row: row[2],
+    ):
         species = by_key(species_key)
         label = species.name if species is not None else species_key.value
-        inv_lines.append(f"{label} ({state.value}): **`{qty}`**")
+        inv_lines.append(f"• {label} ×`{qty}`")
     inv_text = "\n".join(inv_lines) if inv_lines else "No frogs yet."
 
     now = pendulum.now("UTC")
@@ -443,12 +429,18 @@ async def _prepare_personal_summary(
 
     percentile = utils.calc_percentile(rank, total)
 
-    embed = hikari.Embed(color=_COLOR)
-    embed.set_author(
-        name=f"{user.display_name}'s Frog Capture Permit",
-        icon=_SCOREBOARD_STAMP,
+    embed = hikari.Embed(
+        title=f"{user.display_name}'s Frog Capture Permit", color=_COLOR
     )
     embed.set_thumbnail(str(user.display_avatar_url))
+    # cycle one random frog tip through the footer per render — the tip
+    # sets live in this plugin's own tip_sets (context "frog"), shared with
+    # /frog catalog, and the footer icon pulls a random cirno emoji from the
+    # shared misc assets (plugins.misc.asset — the tip surfaces' icon provider)
+    embed.set_footer(
+        text=get_tip("frog"),
+        icon=await random_footer_icon(bot),
+    )
     embed.description = f"""
 		Total Frogs Captured: **`{user_frog_cnt}`**
 

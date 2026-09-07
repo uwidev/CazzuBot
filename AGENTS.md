@@ -21,7 +21,7 @@ Entry point & running
 Layout
 ------
 
-```
+~~~~
 main.py                    entry point
 cazzubot/                  core package (bot, config, db, errors, …)
 cazzubot/{items,inventory,statuses,assets,events,lifecycle,…}  game stores + lifecycle
@@ -39,7 +39,7 @@ docs/FROG.md               frog system design
 docs/needs-rewrite/        older in-depth docs (being reworked)
 docs/aegis/                Aegis workspace
 CONTEXT.md                 canonical project terms
-```
+~~~~
 
 
 Commands
@@ -94,7 +94,7 @@ Architecture
     `item_id`). Consumption gated by per-provider flag.
  -  **`cazzubot/statuses.py`** — generic seam/contribution/pull store:
     scope-aware persistent contributions, feature-owned convergers (stock
-    `RoleConverger`), lazy expiry (no sweeper). Replaces old member_effect.
+    `RoleConverger`), lazy expiry (no sweeper). Replaces old member\_effect.
  -  **`cazzubot/events.py`** — domain event bus (fastapi-style
     `@subscribe`/`emit`), typed event classes.
  -  **`cazzubot/scheduler.py`** — one loop over `tasks(tag, run_at, payload)`;
@@ -117,7 +117,8 @@ Architecture
     `levels` (thresholds→roles), `misc` (banner/welcome/week),
     `mod` (modlog + mute/tempban; **ships disabled**),
     `poll` (app commands + modal), `ranks` (seasonal/lifetime),
-    `roles` + `channels` (warn-only boot drift-check), `welcome` (join messages).
+    `roles` + `channels` (warn-only boot drift-check), `welcome` (join
+    messages).
  -  **Cross-plugin flow:** `experience.on_message` → `award_exp` →
     `levels.presenter.present_level_up` → `ranks.presenter.present_ranks`;
     items/statuses flow through `bot.items` / `bot.statuses` / inventory.
@@ -128,6 +129,9 @@ Conventions
 
  -  **Spaces**, double quotes, line-length 75 (`ruff format`). Ruff select
     `["E4", "E7", "E9", "F"]`.
+ -  **Markdown files** — this is a personal project, and prefers markdown files
+    meant to be touched bu humans to follow hongdown conventions. Use
+    `hongdown -w <file>` to finalize markdown files.
  -  Variable naming: common noun first, variant suffix last —
     `SCRAPE_CHANNEL_DEV`/`SCRAPE_CHANNEL_PROD`, never the reverse.
  -  Scripts/CLI modules: top-down by abstraction (docstring → imports →
@@ -165,7 +169,7 @@ Design principles
     reasonable. Least friction wins over cleverness.
  -  **Self-documenting code.** When the call graph is ambiguous — event
     emitters state subscribers, bus handlers state callers, entry points
-    state callers. If a reader has to hunt for "what pulls this", the code
+    state callers. If a reader has to hunt for “what pulls this”, the code
     is missing a comment.
 
 

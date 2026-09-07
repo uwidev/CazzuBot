@@ -154,18 +154,31 @@ def calc_percentile(rank: int, total: int) -> float:
     return (total - rank + 1) / total * 100 if total else 0.0
 
 
+# The bot's avatar (the dev bot "Cazzubot-Dev", as documented in
+# docs/FRONTEND_CHECKLIST.md), used as the footer icon on the consume
+# confirmation and result embeds.
+BOT_AVATAR_URL = (
+    "https://cdn.discordapp.com/avatars/1424584066295922710/"
+    "d058ff5a2383ae511bc9bbb60d81dac5.webp?size=2048"
+)
+
+
 def prepare_embed(
     title: str | None = None,
     description: str | None = None,
     *,
     color: int = 0x9EDBF7,
+    footer_text: str = "-sarono",
+    footer_icon: str = "https://files.catbox.moe/3cy0by.webp",
 ) -> hikari.Embed:
-    """Standard embed with the -sarono footer."""
+    """Standard embed; footer icon defaults to the -sarono signature.
+
+    ``footer_text``/``footer_icon`` override the footer — the consume
+    confirmation and result embeds swap in the bot avatar via
+    ``footer_icon=BOT_AVATAR_URL``.
+    """
     embed = hikari.Embed(title=title, description=description, color=color)
-    embed.set_footer(
-        text="-sarono",
-        icon="https://files.catbox.moe/3cy0by.webp",
-    )
+    embed.set_footer(text=footer_text, icon=footer_icon)
     return embed
 
 

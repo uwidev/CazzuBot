@@ -291,7 +291,7 @@ class FrogItems(Enum):
     BASIC_FROZEN = Item(
         item_id="frog:basic:frozen",
         display_name="Basic Frog (Frozen)",
-        icon="🐸",
+        icon="🧊",
         description="A basic frog frozen solid by the seasonal freeze.",
         icon_asset=FrogAsset.FROG_BASIC_FROZEN,
         consume=_consume_basic_frozen,
@@ -309,9 +309,9 @@ class FrogItems(Enum):
     POG_FROZEN = Item(
         item_id="frog:pog:frozen",
         display_name="Pog Frog (Frozen)",
-        icon="🐸",
+        icon="🧊",
         description="A pog frog frozen solid by the seasonal freeze.",
-        icon_asset=FrogAsset.FROG_POG,
+        icon_asset=None,
         consume=_consume_pog_frozen,
         fields=(_thaw_field(),),
     )
@@ -329,9 +329,9 @@ class FrogItems(Enum):
     FROGGERS_FROZEN = Item(
         item_id="frog:froggers:frozen",
         display_name="Froggers Frog (Frozen)",
-        icon="🐸",
+        icon="🧊",
         description="A froggers frog frozen solid by the seasonal freeze.",
-        icon_asset=FrogAsset.FROG_FROGGERS,
+        icon_asset=None,
         consume=_consume_froggers_frozen,
         fields=(_thaw_field(),),
     )
@@ -347,9 +347,9 @@ class FrogItems(Enum):
     CLASSY_FROZEN = Item(
         item_id="frog:classy:frozen",
         display_name="Classy Frog (Frozen)",
-        icon="🐸",
+        icon="🧊",
         description="A classy frog frozen solid by the seasonal freeze.",
-        icon_asset=FrogAsset.FROG_CLASSY,
+        icon_asset=None,
         consume=_consume_classy_frozen,
         fields=(_thaw_field(),),
     )
@@ -360,6 +360,7 @@ class FrogItems(Enum):
         description=(
             "The leftovers of a frozen frog that didn't survive the thaw."
         ),
+        icon_asset=None,
         consume=_consume_remains,
         fields=(
             (

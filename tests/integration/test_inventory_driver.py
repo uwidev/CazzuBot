@@ -1,22 +1,81 @@
 """Generic /inventory through the offline driver.
 
-The commands read the shared ledger and render embeds: ``view`` as a numbered
-inline-emoji grid through the item registry, ``info`` as a description card
-(thumbnail from the item's asset, title the name, the description prose, then
-one field per item ``field``). These tests seed real inventory rows, run the
-commands end-to-end via ``run_slash``, and assert the rendered embeds.
+The commands read the shared ledger and render embeds: ``view`` as a paged
+inline-field grid (one inline embed field per slot — the name a backticked
+``[ N ]`` token, the value the item's display name with ``×<qty>`` —
+Discord wraps 3 per row; 25 slots per page under a ◀/▶ button pager, and
+the title names the member), ``info`` as a description card (thumbnail
+from the item's asset, title the name, the description prose, then one
+field per item ``field``). These tests seed real inventory rows, run the
+commands end-to-end via ``run_slash``/``press_button``, and assert the
+rendered embeds.
 """
 
 from __future__ import annotations
 
 import asyncio
+import re
+from collections.abc import Sequence
+from enum import Enum
+from typing import cast
 
 import hikari
+import pendulum
 import pytest
 
 from cazzubot.bot import CazzuBot
 from cazzubot.models import FrogState, FrogItemKey
+from cazzubot.tips import TIP_SETS
 from tests.driver import press_button, run_slash, wait_for_menu
+from tests.fakes import rest_of
+
+# a grid slot field's name is the backticked bracket token ``[ N ]``;
+# used to verify slots stay contiguous across the rendered fields
+_SLOT_NAME_RE = re.compile(r"^`\[ (\d+) \]`$")
+
+
+def _rendered_slots(fields: Sequence[hikari.EmbedField]) -> list[str]:
+    """The slot numbers the grid rendered as field names, in order."""
+    slots: list[str] = []
+    for field in fields:
+        match = _SLOT_NAME_RE.match(field.name or "")
+        if match is not None:
+            slots.append(match.group(1))
+    return slots
+
+
+async def _view_embed(bot: CazzuBot, *, user_id: int) -> hikari.Embed:
+    """Run ``inventory view`` and return the initial grid embed.
+
+    The view blocks on its pager's 30s attach window, so the driver's 3s
+    response budget can't outlast it — the command runs as a background
+    task that gets cancelled once the menu is attached, and the initial
+    embed is read back from the fake REST log (the response is minted
+    before the attach begins).
+    """
+    rest = rest_of(bot)
+    snapshot = len(rest.interaction_log["responses"])
+    task = asyncio.create_task(
+        run_slash(bot, "inventory view", user_id=user_id, timeout=10.0)
+    )
+    try:
+        await wait_for_menu(bot)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    new = [
+        (rtype, payload)
+        for _token, rtype, payload in rest.interaction_log["responses"][
+            snapshot:
+        ]
+    ]
+    assert new, "no inventory view response recorded"
+    rtype, payload = new[0]
+    assert rtype == hikari.ResponseType.MESSAGE_CREATE
+    embed = payload.get("embed")
+    assert embed is not None
+    return embed
 
 
 async def _seed_frogs(bot: CazzuBot, uid: int) -> None:
@@ -30,31 +89,42 @@ async def _seed_frogs(bot: CazzuBot, uid: int) -> None:
     )
 
 
-async def test_inventory_grid_shows_numbered_slots(
+async def test_inventory_view_renders_inline_field_grid(
     full_bot: CazzuBot,
 ) -> None:
-    """Seeded frogs render as numbered inline-emoji grid slots."""
+    """Seeded frogs render as an inline-field grid titled with the name."""
     await _seed_frogs(full_bot, 424242)
 
-    result = await run_slash(full_bot, "inventory view", user_id=424242)
+    embed = await _view_embed(full_bot, user_id=424242)
 
-    assert result.exceptions == []
-    assert result.response_type == hikari.ResponseType.MESSAGE_CREATE
-    first_response = result.first_response
-    assert first_response is not None
-    embed = first_response.get("embed")
-    assert embed is not None
-
-    # namespace header + one field per stack (ORDER BY item → frozen first);
-    # each slot shows the item's own emoji icon (no label — the grid is
-    # emoji-only via the item registry)
-    values = [field.value for field in embed.fields]
-    assert "**FROG**" in values
-    assert "🐸 ×1" in values
-    assert "🐸 ×3" in values
-    # deterministic slot numbers on the item fields (blank = header)
-    slot_names = [field.name for field in embed.fields if field.name]
-    assert slot_names == ["1", "2"]
+    # inline-field grid: one field per visible stack (qty descending —
+    # normal ×3 leads, frozen ×1 follows), name the backticked slot token,
+    # value the item emoji with ×qty — no prose description
+    assert [field.name for field in embed.fields] == [
+        "`[ 1 ]`",
+        "`[ 2 ]`",
+    ]
+    assert [field.value for field in embed.fields] == [
+        "🐸 ×3",
+        "🧊 ×1",
+    ]
+    # inline layout — Discord wraps 3 per row automatically
+    assert all(field.is_inline for field in embed.fields)
+    assert (embed.description or "") == ""
+    # no author field — the title names the member instead, with the real
+    # display name (the driver's off-the-wire member is "tester")
+    assert embed.author is None
+    assert embed.title == "tester's Inventory"
+    assert embed.thumbnail is not None
+    assert embed.thumbnail.url == (
+        "https://cdn.discordapp.com/embed/avatars/"
+        f"{(424242 >> 22) % 6}.png"
+    )
+    # the footer cycles one random item tip (how to check/use/thaw a slot)
+    assert embed.footer is not None
+    assert embed.footer.text in TIP_SETS["item"]
+    # no footer icon while the shared cirno emojis are unpublished
+    assert embed.footer.icon is None
 
 
 async def _seed_dev_like_inventory(bot: CazzuBot, uid: int) -> None:
@@ -74,7 +144,7 @@ async def _seed_dev_like_inventory(bot: CazzuBot, uid: int) -> None:
         await bot.inventory.add(uid, item, qty)
 
 
-async def test_inventory_grid_compacts_stale_slot_away(
+async def test_inventory_view_compacts_stale_slot_away(
     full_bot: CazzuBot,
 ) -> None:
     """A stale stack is hidden AND compacted: slots read 1..n, never gapped.
@@ -84,16 +154,19 @@ async def test_inventory_grid_compacts_stale_slot_away(
     """
     await _seed_dev_like_inventory(full_bot, 424242)
 
-    result = await run_slash(full_bot, "inventory view", user_id=424242)
+    embed = await _view_embed(full_bot, user_id=424242)
 
-    assert result.exceptions == []
-    first_response = result.first_response
-    assert first_response is not None
-    embed = first_response.get("embed")
-    assert embed is not None
-    # the hidden stack never renders a slot number — no gap between 2 and 3
-    slot_names = [field.name for field in embed.fields if field.name]
-    assert slot_names == ["1", "2", "3", "4"]
+    # grid framework: one inline field per visible stack; the hidden stack
+    # never renders a slot number — no gap between 2 and 3
+    assert _rendered_slots(embed.fields) == ["1", "2", "3", "4"]
+    # qty descending: the biggest stack (basic 40) leads the grid, then
+    # pog 2 — the qty-1 stacks (classy/froggers, item order) close it out
+    assert [field.value for field in embed.fields] == [
+        "🐸 ×40",
+        "🐸 ×2",
+        "🐸 ×1",
+        "🐸 ×1",
+    ]
 
 
 async def test_inventory_info_cannot_reach_hidden_stack(
@@ -102,9 +175,10 @@ async def test_inventory_info_cannot_reach_hidden_stack(
     """Slots compact for info too: the stale stack's would-be slot is gone."""
     await _seed_dev_like_inventory(full_bot, 424242)
 
-    # 4 visible slots: 1=basic, 2=classy, 3=froggers, 4=pog — the Pog Frog
-    # sits at 4 (it was slot 5 before compaction) ...
-    embed = await _info_embed(full_bot, 424242, 4)
+    # 4 visible slots by qty desc: 1=basic(40), 2=pog(2), 3=classy(1),
+    # 4=froggers(1) — the Pog Frog sits at 2 (it was at 4 under item
+    # order / slot 5 before compaction) ...
+    embed = await _info_embed(full_bot, 424242, 2)
     assert embed.title == "Pog Frog"
 
     # ... and a slot past the compacted end is out of bounds (previously
@@ -123,7 +197,12 @@ async def test_inventory_info_cannot_reach_hidden_stack(
 async def test_inventory_grid_uses_published_asset_emoji(
     full_bot: CazzuBot,
 ) -> None:
-    """Published EMOJI-kind icon_assets replace the static item icons."""
+    """Published EMOJI-kind icon_assets replace the static item emoji.
+
+    Each frog state has its own emoji asset; when published, the grid
+    value shows the custom ``<:name:id>`` emoji instead of the static
+    ``🐸`` icon.
+    """
     from cazzubot.assets import asset_key
     from plugins.frogs.assets import FrogAsset
 
@@ -145,29 +224,187 @@ async def test_inventory_grid_uses_published_asset_emoji(
         ],
     )
 
-    result = await run_slash(full_bot, "inventory view", user_id=424242)
+    embed = await _view_embed(full_bot, user_id=424242)
 
-    assert result.exceptions == []
-    first_response = result.first_response
-    assert first_response is not None
-    embed = first_response.get("embed")
-    assert embed is not None
-    values = [field.value for field in embed.fields]
-    assert "<:frog_basic:123456789012345678> ×3" in values
-    assert "<:frog_frozen:123456789012345678> ×1" in values
+    # qty desc: the ×3 normal stack leads, the ×1 frozen stack follows —
+    # both as the published custom emoji, not the static 🐸
+    assert [field.value for field in embed.fields] == [
+        "<:frog_basic:123456789012345678> ×3",
+        "<:frog_frozen:123456789012345678> ×1",
+    ]
+
+
+async def test_inventory_view_sorts_frozen_items_last(
+    full_bot: CazzuBot,
+) -> None:
+    """Frozen-frog trophies sort after every live item, even when largest.
+
+    The frozen-last rule wins over quantity: a frozen stack of 50 still
+    trails a live stack of 1. Live items keep quantity-descending order.
+    """
+    await full_bot.inventory.add(424242, "frog:basic:normal", 1)
+    await full_bot.inventory.add(424242, "frog:basic:frozen", 50)
+    await full_bot.inventory.add(424242, "remains", 2)
+
+    embed = await _view_embed(full_bot, user_id=424242)
+
+    assert [field.name for field in embed.fields] == [
+        "`[ 1 ]`",
+        "`[ 2 ]`",
+        "`[ 3 ]`",
+    ]
+    # live items first (qty desc: remains 2, then basic 1), frozen last
+    assert [field.value for field in embed.fields] == [
+        "💀 ×2",
+        "🐸 ×1",
+        "🧊 ×50",
+    ]
 
 
 async def test_inventory_empty_state(full_bot: CazzuBot) -> None:
     """A member with no holdings sees the empty state, not an error."""
-    result = await run_slash(full_bot, "inventory view", user_id=424242)
+    embed = await _view_embed(full_bot, user_id=424242)
 
-    assert result.exceptions == []
-    first_response = result.first_response
+    assert embed.description == "Your inventory is empty."
+    assert embed.fields == []
+
+
+# -- the ◀/▶ pager ---------------------------------------------------------
+
+
+async def _register_page_items(bot: CazzuBot, count: int) -> str:
+    """Register ``count`` test items (provider name ``test.pager``).
+
+    The games' real item sets are small (the frog species), so the paging
+    tests register their own unique items to exceed the 25-field embed
+    cap. Returns the provider name for a finally-guarded unregister.
+    """
+    from cazzubot.items import Item
+
+    items = cast(
+        type[Enum],
+        Enum(
+            "PageItems",
+            {
+                f"PAGE_{i}": Item(
+                    item_id=f"page:{i}",
+                    display_name=f"Page Item {i}",
+                    icon="🐸",
+                    description="",
+                )
+                for i in range(1, count + 1)
+            },
+        ),
+    )
+    provider = f"test.pager.{count}"
+    bot.items.register(provider, items)
+    return provider
+
+
+async def _press_page(
+    bot: CazzuBot, buttons: dict[str, str], emoji: str
+) -> hikari.Embed:
+    """Press ``emoji`` as the invoker and return the edited grid embed."""
+    press = await press_button(
+        bot, custom_id=buttons[emoji], message_id=555, user_id=424242
+    )
+    assert press.exceptions == []
+    # respond(edit=True) is the atomic ack+edit — no "thinking" bubble
+    assert press.response_type == hikari.ResponseType.MESSAGE_UPDATE
+    first_response = press.first_response
     assert first_response is not None
     embed = first_response.get("embed")
     assert embed is not None
-    assert embed.description is not None
-    assert "empty" in embed.description
+    return embed
+
+
+async def test_inventory_view_pages_over_25_slots(
+    full_bot: CazzuBot,
+) -> None:
+    """26+ stacks page at 25 fields: ◀/▶ move between pages and clamp.
+
+    The embed caps at 25 fields, so slot 26 starts page 2. The pager
+    mirrors /experience leaderboard's TopMenu: attach always, page from
+    the invoker only, clamp at both ends.
+    """
+    provider = await _register_page_items(full_bot, 30)
+    try:
+        for i in range(1, 31):
+            await full_bot.inventory.add(424242, f"page:{i}", i)
+        # 30 stacks, qty descending: slot 1 = page:30 (×30) … slot 30 =
+        # page:1 (×1) → page 1 holds slots 1-25, page 2 holds slots 26-30
+        task = asyncio.create_task(
+            run_slash(
+                full_bot, "inventory view", user_id=424242, timeout=10.0
+            )
+        )
+        buttons = await wait_for_menu(full_bot)
+        try:
+            # page 1: 25 fields, slots 1-25 — and ◀ clamps here
+            page1 = await _press_page(full_bot, buttons, "◀")
+            assert _rendered_slots(page1.fields) == [
+                str(n) for n in range(1, 26)
+            ]
+            assert page1.fields[0].value == "🐸 ×30"
+
+            # ▶ opens page 2: the trailing 5 slots
+            page2 = await _press_page(full_bot, buttons, "▶")
+            assert _rendered_slots(page2.fields) == [
+                str(n) for n in range(26, 31)
+            ]
+            assert [field.value for field in page2.fields] == [
+                "🐸 ×5",
+                "🐸 ×4",
+                "🐸 ×3",
+                "🐸 ×2",
+                "🐸 ×1",
+            ]
+
+            # ▶ again clamps at page 2 (no empty page 3)
+            clamped = await _press_page(full_bot, buttons, "▶")
+            assert _rendered_slots(clamped.fields) == [
+                str(n) for n in range(26, 31)
+            ]
+
+            # ◀ returns to page 1
+            back = await _press_page(full_bot, buttons, "◀")
+            assert _rendered_slots(back.fields) == [
+                str(n) for n in range(1, 26)
+            ]
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+    finally:
+        full_bot.items.unregister(provider)
+
+
+async def test_inventory_view_pager_refuses_foreign_user(
+    full_bot: CazzuBot,
+) -> None:
+    """A non-invoker click gets the ephemeral "not yours to page" denial."""
+    await _seed_frogs(full_bot, 424242)
+
+    task = asyncio.create_task(
+        run_slash(full_bot, "inventory view", user_id=424242, timeout=10.0)
+    )
+    buttons = await wait_for_menu(full_bot)
+    try:
+        press = await press_button(
+            full_bot, custom_id=buttons["▶"], message_id=555, user_id=7
+        )
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert press.exceptions == []
+    assert press.response_type == hikari.ResponseType.MESSAGE_CREATE
+    assert press.first_response is not None
+    assert (
+        press.first_response.get("flags", 0) & hikari.MessageFlag.EPHEMERAL
+    )
+    assert "This inventory is not yours to page." in str(
+        press.first_response.get("content", "")
+    )
 
 
 # -- /inventory info ---------------------------------------------------------
@@ -193,7 +430,8 @@ async def test_inventory_info_shows_item_card(full_bot: CazzuBot) -> None:
     from plugins.frogs.assets import FrogAsset
 
     await _seed_frogs(full_bot, 424242)
-    # publish the frozen frog's emoji asset (slot 1 = frozen, ORDER BY item)
+    # publish the frozen frog's emoji asset (slot 2 = frozen now: the ×3
+    # normal stack leads slot 1 under qty desc)
     await full_bot.db.executemany(
         "UPDATE asset SET url = ? WHERE key = ?",
         [
@@ -208,7 +446,7 @@ async def test_inventory_info_shows_item_card(full_bot: CazzuBot) -> None:
         ],
     )
 
-    embed = await _info_embed(full_bot, 424242, 1)
+    embed = await _info_embed(full_bot, 424242, 2)
 
     assert embed.title == "Basic Frog (Frozen)"
     assert "frozen solid" in (embed.description or "")
@@ -224,6 +462,11 @@ async def test_inventory_info_shows_item_card(full_bot: CazzuBot) -> None:
         "Frozen and non-consumable. Thawing this frog has a 50% chance "
         "to restore it, and 50% to leave Frog Remains (3 exp)."
     ]
+    # the footer cycles one random item tip (the /inventory view set)
+    assert embed.footer is not None
+    assert embed.footer.text in TIP_SETS["item"]
+    # no footer icon while the shared cirno emojis are unpublished
+    assert embed.footer.icon is None
 
 
 async def test_inventory_info_unpublished_asset_has_no_thumbnail(
@@ -232,11 +475,14 @@ async def test_inventory_info_unpublished_asset_has_no_thumbnail(
     """An unpublished icon asset renders the card without a thumbnail."""
     await _seed_frogs(full_bot, 424242)
 
-    embed = await _info_embed(full_bot, 424242, 1)
+    embed = await _info_embed(full_bot, 424242, 2)
 
     assert embed.title == "Basic Frog (Frozen)"
     assert embed.thumbnail is None
     assert [field.name for field in embed.fields] == ["On thaw"]
+    # the tip footer renders regardless of the asset's publish state
+    assert embed.footer is not None
+    assert embed.footer.text in TIP_SETS["item"]
 
 
 async def test_inventory_info_unknown_slot_is_an_error(
@@ -323,3 +569,294 @@ async def test_inventory_thaw_confirms_and_rolls(
     assert await full_bot.inventory.get(424242, "remains") == 1
     # the post-thaw tally edits the prompt message
     assert any("embed" in payload for _mid, payload in result.edits)
+
+
+def _footer_icon(embed: hikari.Embed) -> str:
+    """The embed's footer icon URL ('' when absent)."""
+    if embed.footer is None or embed.footer.icon is None:
+        return ""
+    return str(embed.footer.icon.url)
+
+
+async def test_inventory_consume_embeds_use_bot_avatar_footer(
+    full_bot: CazzuBot,
+) -> None:
+    """Both consume embeds (confirmation + final) stamp the bot avatar
+    as the footer icon, not the -sarono catbox icon."""
+    from cazzubot.utils import BOT_AVATAR_URL
+
+    await full_bot.inventory.add(424242, "frog:basic:normal", 2)
+
+    task = asyncio.create_task(
+        run_slash(
+            full_bot,
+            "inventory consume",
+            options={"slot": 1},
+            user_id=424242,
+            timeout=10.0,
+        )
+    )
+    buttons = await wait_for_menu(full_bot)
+    press = await press_button(
+        full_bot,
+        custom_id=buttons["Yes"],
+        message_id=555,
+        user_id=424242,
+    )
+    result = await task
+    assert press.exceptions == []
+    assert result.exceptions == []
+
+    # confirmation embed: the initial slash response
+    first_response = result.first_response
+    assert first_response is not None
+    confirm_embed = first_response.get("embed")
+    assert confirm_embed is not None
+    assert confirm_embed.title == "**Confirmation**"
+    assert _footer_icon(confirm_embed) == BOT_AVATAR_URL
+    assert "catbox" not in _footer_icon(confirm_embed)
+
+    # final embed: edited into the prompt message
+    final_payloads = [
+        payload
+        for _mid, payload in result.edits
+        if isinstance(payload.get("embed"), hikari.Embed)
+    ]
+    assert final_payloads
+    final_embed = final_payloads[0]["embed"]
+    assert (
+        final_embed.title is not None and "Consumed" in final_embed.title
+    )
+    assert _footer_icon(final_embed) == BOT_AVATAR_URL
+    assert "catbox" not in _footer_icon(final_embed)
+
+
+async def _consume_confirmation_and_final_embeds(
+    full_bot: CazzuBot,
+) -> tuple[hikari.Embed, hikari.Embed]:
+    """Run a yes-confirmed consume of slot 1 and return ``(confirm, final)``."""
+    task = asyncio.create_task(
+        run_slash(
+            full_bot,
+            "inventory consume",
+            options={"slot": 1},
+            user_id=424242,
+            timeout=10.0,
+        )
+    )
+    buttons = await wait_for_menu(full_bot)
+    press = await press_button(
+        full_bot,
+        custom_id=buttons["Yes"],
+        message_id=555,
+        user_id=424242,
+    )
+    result = await task
+    assert press.exceptions == []
+    assert result.exceptions == []
+
+    first_response = result.first_response
+    assert first_response is not None
+    confirm_embed = first_response.get("embed")
+    assert confirm_embed is not None
+    assert confirm_embed.title == "**Confirmation**"
+
+    final_payloads = [
+        payload
+        for _mid, payload in result.edits
+        if isinstance(payload.get("embed"), hikari.Embed)
+    ]
+    assert final_payloads
+    final_embed = final_payloads[0]["embed"]
+    assert (
+        final_embed.title is not None and "Consumed" in final_embed.title
+    )
+    return confirm_embed, final_embed
+
+
+async def test_inventory_consume_embeds_use_item_thumbnail_when_published(
+    full_bot: CazzuBot,
+) -> None:
+    """When the art asset is published, both consume embeds (confirmation +
+    final) set the thumbnail to the item's CDN image URL."""
+    from cazzubot.assets import asset_key
+    from plugins.frogs.assets import FrogAsset
+
+    await full_bot.inventory.add(424242, "frog:basic:normal", 2)
+    # publish the basic frog's emoji asset
+    await full_bot.db.executemany(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        [
+            (
+                "<:frog_basic:123456789012345678>",
+                asset_key(FrogAsset.FROG_BASIC),
+            ),
+        ],
+    )
+
+    (
+        confirm_embed,
+        final_embed,
+    ) = await _consume_confirmation_and_final_embeds(full_bot)
+
+    thumbnail_url = (
+        "https://cdn.discordapp.com/emojis/123456789012345678.png"
+    )
+    assert (
+        confirm_embed.thumbnail is not None
+        and confirm_embed.thumbnail.url == thumbnail_url
+    )
+    assert (
+        final_embed.thumbnail is not None
+        and final_embed.thumbnail.url == thumbnail_url
+    )
+
+
+async def test_inventory_consume_embeds_have_no_thumbnail_when_unpublished(
+    full_bot: CazzuBot,
+) -> None:
+    """An unpublished art asset (NULL url) leaves both consume embeds
+    without a thumbnail — no "None" leaks."""
+    await full_bot.inventory.add(424242, "frog:basic:normal", 2)
+
+    (
+        confirm_embed,
+        final_embed,
+    ) = await _consume_confirmation_and_final_embeds(full_bot)
+
+    assert confirm_embed.thumbnail is None
+    assert final_embed.thumbnail is None
+
+
+async def test_inventory_consume_final_embed_shows_effects_and_result(
+    full_bot: CazzuBot,
+) -> None:
+    """The "Consumed!" embed shows the item's effects (description prose +
+    the "On consumption" field), the seasonal exp before/after (exp items
+    only), the resulting status when one was granted, and the
+    stack-consumption result."""
+    await full_bot.inventory.add(424242, "frog:pog:normal", 2)
+
+    (
+        _confirm_embed,
+        final_embed,
+    ) = await _consume_confirmation_and_final_embeds(full_bot)
+
+    # the item's effect prose: the description and the "On consumption" blurb
+    assert (final_embed.description or "") == "A frog with a pog."
+    assert [field.name for field in final_embed.fields] == [
+        "On consumption",
+        "Seasonal Exp",
+        "Status",
+        "Resulting Pog Frog",
+    ]
+    consumption = next(
+        field
+        for field in final_embed.fields
+        if field.name == "On consumption"
+    )
+    assert "Grants **30** seasonal exp." in consumption.value
+    # the exp outcome (fresh member: 0 before, 30 after one pog) sits before
+    # the status and the stack-consumption result —
+    exp_field = next(
+        field
+        for field in final_embed.fields
+        if field.name == "Seasonal Exp"
+    )
+    assert exp_field.value == "**`0`** -> **`30`**"
+    # the resulting status (the pog reaction status, read back from the live
+    # contribution) — the describe() prose, not just the prospective blurb
+    status_field = next(
+        field for field in final_embed.fields if field.name == "Status"
+    )
+    assert status_field.value == (
+        "For 1 hour, a **1%** chance the bot reacts to your messages "
+        "with the froggers emoji (10s cooldown)."
+    )
+    # the stack-consumption result (what consuming them did): the qty line
+    result_field = next(
+        field
+        for field in final_embed.fields
+        if field.name == "Resulting Pog Frog"
+    )
+    assert result_field.value == "**`2`** -> **`1`**"
+
+
+async def test_inventory_consume_exp_item_shows_exp_before_after(
+    full_bot: CazzuBot,
+) -> None:
+    """Consuming an exp-granting item reports seasonal exp before/after.
+
+    The "Seasonal Exp" field shows the member's seasonal exp summed from
+    the exp logs (the metric the consume glue writes) before and after —
+    read both sides in the test to avoid hardcoding the season. A fresh
+    member consuming one pog (30 exp) goes 0 -> 30.
+    """
+    from cazzubot.utils import month2season
+    from plugins.experience import db as exp_db
+
+    now = pendulum.now("UTC")
+    before = await exp_db.seasonal_exp(
+        full_bot.db, 424242, now.year, month2season(now.month)
+    )
+    await full_bot.inventory.add(424242, "frog:pog:normal", 2)
+
+    (
+        _confirm_embed,
+        final_embed,
+    ) = await _consume_confirmation_and_final_embeds(full_bot)
+
+    after = await exp_db.seasonal_exp(
+        full_bot.db, 424242, now.year, month2season(now.month)
+    )
+    assert after == before + 30
+    exp_field = next(
+        field
+        for field in final_embed.fields
+        if field.name == "Seasonal Exp"
+    )
+    assert exp_field.value == f"**`{before}`** -> **`{after}`**"
+
+
+async def test_inventory_consume_classy_final_embed_shows_role_status(
+    full_bot: CazzuBot,
+) -> None:
+    """A classy consume shows the role-grant status's prose in the final
+    embed (the resulting status read back from the live contribution)."""
+    await full_bot.inventory.add(424242, "frog:classy:normal", 1)
+
+    (
+        _confirm_embed,
+        final_embed,
+    ) = await _consume_confirmation_and_final_embeds(full_bot)
+
+    status_field = next(
+        field for field in final_embed.fields if field.name == "Status"
+    )
+    assert status_field.value == "Grants the **Classy** role for 3 hours."
+
+
+async def test_inventory_consume_remains_final_embed_has_no_status(
+    full_bot: CazzuBot,
+) -> None:
+    """An item that grants no status (Frog Remains) shows no Status field —
+    the "if any" guard keeps the effects + exp + result fields only."""
+    await full_bot.inventory.add(424242, "remains", 3)
+
+    (
+        _confirm_embed,
+        final_embed,
+    ) = await _consume_confirmation_and_final_embeds(full_bot)
+
+    assert [field.name for field in final_embed.fields] == [
+        "On consumption",
+        "Seasonal Exp",
+        "Resulting Frog Remains",
+    ]
+    # the remains' own flat exp still reports (3 per unit, fresh member)
+    exp_field = next(
+        field
+        for field in final_embed.fields
+        if field.name == "Seasonal Exp"
+    )
+    assert exp_field.value == "**`0`** -> **`3`**"

@@ -10,7 +10,6 @@ counter, and ``member_frog_log.type`` stores the species key. The species
 """
 
 from dataclasses import dataclass
-from typing import Any
 
 import pendulum
 
@@ -55,7 +54,6 @@ SCHEMA = [
 	""",
 ]
 
-MESSAGE_KEY = "frog.message"
 ENABLED_KEY = "frog.enabled"
 
 
@@ -70,16 +68,6 @@ class Spawn:
 
 
 # -- settings --------------------------------------------------------------
-
-
-async def get_message(settings: Settings) -> dict[str, Any] | None:
-    """The frog spawn/capture message template, or None."""
-    return await settings.get(MESSAGE_KEY)
-
-
-async def set_message(settings: Settings, message: dict[str, Any]) -> None:
-    """Persist the frog message template."""
-    await settings.set(MESSAGE_KEY, message)
 
 
 async def get_enabled(settings: Settings) -> bool:
@@ -220,6 +208,36 @@ async def season_reset_frogs(db: Database) -> None:
             FrogItem(species.key, FrogState.NORMAL),
             FrogItem(species.key, FrogState.FROZEN),
         )
+
+
+async def freeze_frogs_for_user(
+    db: Database, uid: int
+) -> list[tuple[FrogItemKey, int]]:
+    """Quarterly rollover for ONE user: their normal frogs freeze in place.
+
+    Same freeze semantics as :func:`season_reset_frogs` (the scheduler's
+    global rollover) but scoped to ``uid`` — the debug owner command uses
+    this to inspect a single user's frozen state ahead of the real
+    rollover. ``species:normal -> species:frozen`` per species, merging
+    into existing frozen stacks; Cluster is skipped (no item), "Frog
+    Remains" (not a frog) is left alone, and a re-run is a no-op (no
+    normal stacks left). Returns ``[(species_key, qty)]`` for the
+    per-species summary, in ``SPECIES`` order.
+    """
+    frozen: list[tuple[FrogItemKey, int]] = []
+    for species in SPECIES:
+        if species.key is FrogItemKey.CLUSTER:
+            continue  # Cluster has no item — nothing freezes for the user
+        src = FrogItem(species.key, FrogState.NORMAL)
+        qty = await inventory.get(db, uid, src)
+        if qty <= 0:
+            continue
+        await inventory.modify(db, uid, src, -qty)
+        await inventory.modify(
+            db, uid, FrogItem(species.key, FrogState.FROZEN), qty
+        )
+        frozen.append((species.key, qty))
+    return frozen
 
 
 # -- member_frog_log -------------------------------------------------------

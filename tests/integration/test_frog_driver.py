@@ -17,8 +17,9 @@ import pendulum
 import pytest
 
 from cazzubot.bot import CazzuBot
-from cazzubot.statuses import STATUS_CONVERGE_TAG, Scope
 from cazzubot.models import FrogItemKey
+from cazzubot.statuses import STATUS_CONVERGE_TAG, Scope
+from cazzubot.tips import TIP_SETS
 from tests.driver import press_button, run_slash, wait_for_menu
 from tests.fakes import InstantAsyncio, rest_of
 
@@ -78,6 +79,29 @@ async def test_frog_spawn_then_catch(full_bot: CazzuBot) -> None:
     created = rest_of(full_bot).created
     assert len(created) == 1
     assert created[0].channel_id == 99
+    # the capture announcement is the hardcoded built-in embed — the
+    # /frog set message template path is gone, so no template is involved
+    assert created[0].embeds[0].title == "Congrats on your catch!"
+    # the catcher's mention + ping live on the message content (Discord
+    # does not resolve pings inside embeds) — and nothing else does; the
+    # counts ride in the embed below
+    assert created[0].content == "<@424242>"
+    assert "None" not in created[0].content
+    embed = created[0].embeds[0]
+    assert embed.description is not None
+    assert "+1 to froggies" in embed.description
+    # the rolled-species catch states the caught item's old->new stack — a
+    # first catch is `0` -> `1` in its fresh species stack — plus the
+    # season's captures and the total froggies old->new
+    assert "**Basic Frog**: `0` -> `1`" in embed.description
+    assert "**Seasonal Captures**: `0` -> `1`" in embed.description
+    assert "**Total Froggies**: `0` -> `1`" in embed.description
+    # the thumbnail references the CATCH_BANNER media asset (unpublished
+    # in offline boots → no thumbnail) + a cycling footer tip from the
+    # shared frog set
+    assert embed.thumbnail is None
+    assert embed.footer is not None
+    assert embed.footer.text in TIP_SETS["frog"]
     # capture recorded: inventory row for the rolled species + capture
     # counter; the log row stores the species key
     row = await full_bot.db.fetchone(
@@ -282,7 +306,7 @@ async def test_capture_cluster_bursts_basics_no_item(
         task = asyncio.create_task(
             run_slash(
                 full_bot,
-                "frog fake",
+                "frog spawn",
                 options={"species": "cluster"},
                 user_id=1,
                 username="owner",
@@ -313,8 +337,25 @@ async def test_capture_cluster_bursts_basics_no_item(
     # frog itself was the slash response, webhook-minted)
     created = rest_of(full_bot).created
     assert len(created) == 1
-    assert created[0].channel_id == 99
-    assert created[0].embeds[0].title == "Cluster Frog burst!"
+    msg = created[0]
+    assert msg.channel_id == 99
+    embed = msg.embeds[0]
+    assert embed.title == "Cluster Frog burst!"
+    # the catcher's mention + ping live on the message content (Discord
+    # does not resolve pings inside embeds), not in the embed
+    assert "<@424242>" in msg.content
+    # cluster frogs are never caught — the copy says the catch failed
+    # and the frog burst instead; the burst outcome count is the "new
+    # count" line, and the embed stays thumbnail-free
+    assert "burst" in msg.content
+    assert "Basic Frogs" in msg.content
+    assert "caught a" not in msg.content
+    assert "None" not in msg.content
+    assert embed.thumbnail is None
+    assert "<@424242>" not in (embed.description or "")
+    assert "burst" in (embed.description or "")
+    assert msg.create_kwargs is not None
+    assert msg.create_kwargs["user_mentions"] == [424242]
     # children fired as Basic frogs into the zone
     for _ in range(100):
         if len(spawned) >= 4:

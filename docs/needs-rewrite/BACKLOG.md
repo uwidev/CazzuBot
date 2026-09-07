@@ -1,42 +1,86 @@
 Backlog
 =======
 
-Deferred work, parked by request (“we will work on it later when I request it”).
-Pick these up when the owner asks; each item links to the discussion that
-motivated it. Completed items are archived in `docs/DONE.md`.
+Deferred work, parked by request (“we will work on it later when I request
+it”). Pick these up when the owner asks; each item links to the discussion
+that motivated it. Open items are unchecked checklists below; completed
+items are marked `[x]`, grouped in **Done**, and archived in
+`docs/needs-rewrite/DONE.md`.
 
 
-dev friendly timestamp to sqlite compatible format time
--------------------------------------------------------
+Open
+----
 
-Right now, this is how it looks to add a timestamp to the database.
+### Developer experience
 
-> pendulum.now(“UTC”).to\_iso8601\_string()
+ -  [ ] Provide a named helper that writes sqlite-friendly timestamps.
+    Right now a timestamp is written as
+    `pendulum.now("UTC").to_iso8601_string()`: ugly, and it doesn't hint
+    “use this to encode to sqlite friendly time”. Either refactor or rename,
+    something so the call site reads more elegantly.
 
-Looks very ugly, and doesn't really hint “use this to encode to sqlite friendly
-time”. Either refactor or rename, something so it reads more elegantly.
+ -  [ ] Review whether `bot.settings` still earns its keep as a runtime store.
+    This was originally a per-guild settings key:value pair; now that gid's
+    are no more, it exists as the bot's runtime-configurable settings for how
+    to do specific operations. In practice, as a one-guild specialization,
+    this seems to(?) create some odd friction when developing: every choice
+    needs a “is this something that needs to be dynamically set at runtime
+    rather than mostly set in stone” decision. Most if not all messages are
+    more-or-less locked in stone for now — if ever changed, it would best be
+    done through code, not some json file. Enabling/disabling frog spawns…
+    probably fine. Need a full review of this.
 
+ -  [ ] Sweep the codebase for self-documenting / low-friction conformance.
+    Per the design principles in `AGENTS.md`, sweep the codebase so it
+    conforms to: (1) **self-documenting code** — where the call graph is
+    ambiguous, add a comment naming the caller/emitter/subscriber at the
+    point of ambiguity (who calls this method, who emits this event, who
+    invokes this handler, who consumes these rows), so a reader never has to
+    hunt for “what pulls this”; and (2) **minimum friction to build on** —
+    spot-check that infrastructure shapes don't force awkward workarounds on
+    their consumers (isolation / atomicity / modularity kept, no needless
+    indirection). The event system is the annotated reference case:
+    `cazzubot/events.py` states who calls `on`/`emit`,
+    `plugins/frogs/events.py` names the sole emitter of each event, and the
+    emit call sites in `factory.py`/`extension.py` state the same. Extend
+    that pattern to the rest of the codebase (scheduler handlers, service
+    entry points, listeners, template formatters).
 
-bot.settings, surely there's more elegant way…
-----------------------------------------------
+ -  [ ] Add `bot.get_plugin(name)` plus an optional-dependency degrade pattern.
+    Public accessor for loaded plugins (today callers reach into
+    `bot._plugin_by_name`, e.g. `plugins/dev/__init__.py`). Plus a degrade
+    pattern for optional dependencies: if a dependency is unloaded /
+    hotswapped, dependents skip their call instead of crashing.
 
-This was originally some per-guild settings key:value pair. But now that gid's
-are no more, this now exists as, well, the bot settings on how to do specific
-operations that can be configured at runtime on the admin side.
+ -  [ ] Add a `[project.scripts]` entry so the bot runs as `uv run cazzubot`.
+    `main.py` is run as `uv run python main.py [-d|-p|-s]`. Add a
+    console-script entry (e.g. `cazzubot = "…:main"`) so the bot runs as
+    `uv run cazzubot -d`, consistent with the `cazzubot-cli` entry added for
+    the role CLI. Requires moving main()'s logic into the package (e.g.
+    `cazzubot/__main__.py` or a small run module) so it is importable as a
+    script target; keep the existing `python main.py` path working.
 
-In practice, as a one-guild specialization, this seems to(?) create some odd
-friction when developing, as I have to consider if a setting is something that
-needs to be dynamically set at runtime rather than mostly set in stone.
+ -  [ ] Document how to add a test for a feature.
+    A step-by-step how-to in the docs: where per-feature tests live
+    (`tests/plugins/<feature>/`), the test-first rule (pin behavior at the
+    highest layer that can express it), how to fake the framework surface
+    (`tests/fakes.py`, `FakeContext`, `invoke_command`), when a layer-1 unit
+    test suffices vs the offline interaction driver (`tests/driver.py`
+    `run_slash`/`press_button`/`submit_modal`), and how to run the suite
+    (`uv run pytest`). `docs/TESTING.md` covers the *strategy* and layers;
+    the “add a test for your new feature” recipe is what's missing.
 
-For example, most if not all messages are more-or-less locked in stone for now.
-If I ever change it, it would probably best be done through code, not through
-some json file.
+ -  [ ] Document how hikari works.
+    Developer-facing doc on the framework itself: gateway vs REST, the event
+    system (listeners, `event_factory` deserialization, the event manager),
+    caches, components (buttons/menus/modals), and how lightbulb layers on
+    (loader, commands, checks, error handling) — enough that a contributor
+    new to hikari can orient without reading upstream docs cover-to-cover.
+    The existing hikari documentation may already be enough; the work is to
+    read it and distill what's relevant here (`docs/HIKARI_MIGRATION.md` has
+    the port-time notes).
 
-Enabling/disabling frog spawns… probably fine. Need a full review of this.
-
-
-Game features — the app is becoming a game
-------------------------------------------
+### Game features
 
 Design discussion (2026-08): the bot has evolved into a casual
 collection/progression game hosted in Discord (message exp → levels/ranks,
@@ -49,266 +93,172 @@ per-feature tables, shapes that repeat across features earn a generic
 store, history stays in append-only logs, and the “whole member” is a
 derived profile view composed on read (never stored).
 
-### Badge / achievement system (earned)
+ -  [ ] Add one real consumer to validate the event bus end-to-end.
+    The planned badge / achievement system is the natural candidate — its
+    triggers subscribe to the bus (and gateway events) exactly like the
+    effects registry's enum-key → typed-config → handler convention, over
+    events instead of species fields.
 
-The event bus's first real consumer demo. Badge definitions in code (like
-species), a **trigger registry reusing the effects convention**
-(`TriggerKey` enum → typed config → predicate) over `bot.events` (and
-gateway events for message-content triggers), and a
-`member_badge(uid, badge_key, earned_at)` table — **earned** records
-(criteria-based, one-time), distinct from owned vanity items below.
+ -  [ ] Build the badge / achievement system (earned).
+    The event bus's first real consumer demo. Badge definitions in code
+    (like species), a **trigger registry reusing the effects convention**
+    (`TriggerKey` enum → typed config → predicate) over `bot.events` (and
+    gateway events for message-content triggers), and a
+    `member_badge(uid, badge_key, earned_at)` table — **earned** records
+    (criteria-based, one-time), distinct from owned vanity items below.
 
-### Vanity collectables (owned)
+ -  [ ] Add vanity collectables (pins/frames/titles) as owned inventory items.
+    Pins/frames/titles as **inventory items** — the generic `inventory`
+    store with typed keys + assets for art + a display/equip mechanism.
+    **Owned** (countable, tradeable later). The earned-vs-owned split is
+    the design principle: achievements record, inventory owns.
 
-Pins/frames/titles as **inventory items** — the generic `inventory` store
+ -  [ ] Add classes / activity tracks / professions.
+    A **track** = per-activity progression (uniform xp/level/leaderboard per
+    activity — the message-exp pattern generalized). Frog catcher ↔ capture
+    track, alchemist ↔ combine track, etc. A `member_track(uid, track_key, xp)`
+    table only once a second track exists (first track can be a narrow
+    per-feature table); a “class” = a named track bundle; role-bound variants
+    need no table (derived from roles). Hard RPG classes (exclusive abilities,
+    per-class leveling) are out of scope.
 
- -  typed keys + assets for art + a display/equip mechanism. **Owned**
-    (countable, tradeable later). The earned-vs-owned split is the design
-    principle: achievements record, inventory owns.
+ -  [ ] Add a combining / recipes system (chef · alchemist).
+    Code-defined **recipe registry** (inputs `{species: qty}` → output
+    species) — “a dish is just a crafted species” (roadmap). Combine = the
+    inventory ledger as the mechanism (consume input stacks, grant the
+    output) — a new economy sink; the alchemist profession is the combine
+    track.
 
-### Classes / activity tracks / professions
+ -  [ ] Declare and publish per-species emoji glyphs for frog items.
+    Real per-species emoji glyphs for the frog *items* (and the `/inventory`
+    grid + `/frog catalog` that render them) — declared as `AssetKind.EMOJI`
+    in the asset child-guild instead of the current 🐸 placeholder. The
+    emoji-kind asset sync is built (`docs/ASSETS.md`); what's left is
+    declaring and publishing per-species glyphs and pointing the item icons
+    at them.
 
-A **track** = per-activity progression (uniform xp/level/leaderboard per
-activity — the message-exp pattern generalized). Frog catcher ↔ capture
-track, alchemist ↔ combine track, etc. A `member_track(uid, track_key, xp)`
-table only once a second track exists (first track can be a narrow
-per-feature table); a “class” = a named track bundle; role-bound variants
-need no table (derived from roles). Hard RPG classes (exclusive abilities,
-per-class leveling) are out of scope.
+ -  [ ] Write the game-patterns lexicon (docs).
+    Name the patterns and map each to its code home so “new feature” =
+    “which pattern is this?”: loot tables → `roll_species`, inventory ledger
+    → `inventory`, buffs/modifiers → `member_effect`, seasonal resets →
+    quarterly, achievements → badges, event spine → `bot.events`, faucets /
+    sinks → capture / consume. Include the emergent-dynamics vocabulary
+    (hold-vs-spend, conversion + decay, the daily/weekly/quarterly tempo
+    layers). The **entity↔item lexicon and the two-flag “deprecate behavior,
+    keep items” story** now live in `docs/ITEMS.md` (entity = world/spawn
+    object with behavior; item = ledger object with an immutable `item_id`
+    oracle and item-owned consume; `enabled` gates behavior while
+    `items_consumable` gates consumption, independently).
 
-### Combining / recipes (chef · alchemist)
+ -  [ ] Implement the dynamic admin-upload path for assets.
+    Full design written up in `docs/ASSETS.md` from the gamification
+    planning discussion — parked here for later review and potential
+    implementation. The static half is implemented (2026-08-14, see Done);
+    what stays deferred is the dynamic admin-upload path.
 
-Code-defined **recipe registry** (inputs `{species: qty}` → output
-species) — “a dish is just a crafted species” (roadmap). Combine = the
-inventory ledger as the mechanism (consume input stacks, grant the output)
-— a new economy sink; the alchemist profession is the combine track.
+### Plugins & features
 
-### `/inventory consume` — **DONE (2026-08-19); the emoji glyphs remain**
+ -  [ ] Finish the mod plugin and clear its manual test backlog.
+    Manual testing of the whole `mod` feature (warn/mute/kick/ban/unmute/
+    unban/set/slowmode) is parked by the owner: it is not core, not
+    finalized, and “in progress” in terms of development. The E1–E5 items in
+    `docs/MANUAL_TEST.md` stay untested until the feature is declared done.
+    (Fixed along the way: the `mod set` group was defined but never
+    registered — `loader.command(mod_set)` was missing, so `/mod set` didn't
+    exist.)
 
-The index-based `/inventory consume (INDEX) [AMOUNT]` half is **done and
-archived** (see `docs/DONE.md`): it replaces `/frog consume` — `INDEX`
-resolves through the derived `bot.inventory.rows_indexed` slots, then runs
-the item's **item-owned** consume and decrements the stack (item-vs-entity
-model + “deprecate behavior, keep items” story in `docs/ITEMS.md`).
-`/inventory` is now a group (`/inventory view`, `/inventory consume`) and
-rides on `bot.items`, not the old renderer registry (removed as redundant;
-unresolved ids are hidden in the grid).
+ -  [ ] Improve resync command UX for long ops after a confirm click.
+    `exp resync` and `frog resync` confirm with a Yes/No menu, then run a
+    long DB rebuild. The click is now properly acked (menu fix, 2026-08-08),
+    but the owner wants a better flow than “click Yes, prompt vanishes, a few
+    status followups, done” — ideas to evaluate later: defer with a progress
+    message that gets edited as phases complete, or a single final summary
+    edit. Owner's words: “I think optimally we want better UX here. Will
+    think of a proper flow later. Backlog this.”
 
-Still open: **real per-species emoji glyphs** for the frog *items* (and the
-`/inventory` grid + `/frog catalog` that render them) — declared as
-`AssetKind.EMOJI` in the asset child-guild instead of the current 🐸
-placeholder. The emoji-kind asset sync is built (`docs/ASSETS.md`); what's
-left is declaring and publishing per-species glyphs and pointing the item
-icons at them.
+### Mod
 
-### Game-patterns lexicon (docs)
+ -  [ ] Modlog system - should try best-effort to mingle with discord's
+    internal audit
 
-Name the patterns and map each to its code home so “new feature” = “which
-pattern is this?”: loot tables → `roll_species`, inventory ledger →
-`inventory`, buffs/modifiers → `member_effect`, seasonal resets →
-quarterly, achievements → badges, event spine → `bot.events`, faucets /
-sinks → capture / consume. Include the emergent-dynamics vocabulary
-(hold-vs-spend, conversion + decay, the daily/weekly/quarterly tempo
-layers). The **entity↔item lexicon and the two-flag “deprecate behavior,
-keep items” story** now live in `docs/ITEMS.md` (entity = world/spawn
-object with behavior; item = ledger object with an immutable `item_id`
-oracle and item-owned consume; `enabled` gates behavior while
-`items_consumable` gates consumption, independently).
-
-
-Self-documenting / low-friction sweep
--------------------------------------
-
-Per the design principles in `AGENTS.md`: sweep the codebase so it conforms
-to (1) **self-documenting code** — where the call graph is ambiguous, add a
-comment naming the caller/emitter/subscriber at the point of ambiguity
-(who calls this method, who emits this event, who invokes this handler,
-who consumes these rows), so a reader never has to hunt for “what pulls
-this”; and (2) **minimum friction to build on** — spot-check that
-infrastructure shapes don't force awkward workarounds on their consumers
-(isolation/atomicity/modularity kept, no needless indirection). The event
-system is the annotated reference case: `cazzubot/events.py` states who
-calls `on`/`emit`, `plugins/frogs/events.py` names the sole emitter of
-each event, and the emit call sites in `factory.py`/`extension.py` state the
-same. Extend that pattern to the rest of the codebase (scheduler
-handlers, service entry points, listeners, template formatters).
-
-
-`bot.get_plugin(name)` + optional-dependency degrade
-----------------------------------------------------
-
-Public accessor for loaded plugins (today callers reach into
-`bot._plugin_by_name`, e.g. `plugins/dev/__init__.py`). Plus a degrade pattern
-for optional dependencies: if a dependency is unloaded/hotswapped, dependents
-skip their call instead of crashing.
+ -  [ ] Mute quarantine - mute members and move them to a temporary thread to
+    isolate talks and calm people down
 
 
-Core event bus — `bot.events`
------------------------------
+Done
+----
 
-**IMPLEMENTED (2026-08-14)** — `cazzubot/events.py`: typed `emit`/`on`,
-subscribers awaited in registration order with failures isolated (an
-observer can never break the emitter). The frogs plugin emits
-`FrogCapturedEvent`/`FrogConsumedEvent` after its transactional work. The
-bus is for **observations** only; entity-bound behavior (species effects)
-stays inline with the flow that owns the entity.
+Completed items, grouped here for reference; most are archived with full
+detail in `docs/needs-rewrite/DONE.md` (noted per item).
 
+ -  [x] Species compose their own behaviors — DONE (2026-08-31).
 
-Event-bus consumer demo
------------------------
+    Moved to `docs/needs-rewrite/DONE.md`: the 2026-08-31 species-compose-
+    `catch`/`spawn` behaviors as code, items compose status classes by
+    glue, statuses own their values as classes, and the reactions fold
+    falls back on expiry.
 
-One real consumer to validate the bus end-to-end. The planned badge /
-achievement system is the natural candidate — its triggers subscribe to
-the bus (and gateway events) exactly like the effects registry's
-enum-key → typed-config → handler convention, over events instead of
-species fields.
+ -  [x] `/inventory consume` — index-based half — DONE (2026-08-19).
+    Done and archived (see `docs/needs-rewrite/DONE.md`): it replaces
+    `/frog consume` — `INDEX` resolves through the derived
+    `bot.inventory.rows_indexed` slots, then runs the item's **item-owned**
+    consume and decrements the stack (item-vs-entity model + “deprecate
+    behavior, keep items” story in `docs/ITEMS.md`). `/inventory` is now a
+    group (`/inventory view`, `/inventory consume`) and rides on
+    `bot.items`, not the old renderer registry (removed as redundant;
+    unresolved ids are hidden in the grid). The emoji-glyph half stays open
+    (see Open → Game features).
 
+ -  [x] Core event bus — `bot.events` — IMPLEMENTED (2026-08-14).
+    `cazzubot/events.py`: typed `emit`/`on`, subscribers awaited in
+    registration order with failures isolated (an observer can never break
+    the emitter). The frogs plugin emits `FrogCapturedEvent`/
+    `FrogConsumedEvent` after its transactional work. The bus is for
+    **observations** only; entity-bound behavior (species effects) stays
+    inline with the flow that owns the entity.
 
-Core asset management (design in docs/ASSETS.md)
-------------------------------------------------
+ -  [x] Fold the `daily`/`quarterly` scheduler plugins into their owners — DONE
+    Moved to `docs/needs-rewrite/DONE.md`: the wrapper plugins are deleted;
+    the `daily` reset lives in experience and the `daily.frog` resync +
+    `quarterly` freeze live in frogs, each armed by its owning plugin's
+    `on_load`.
 
-Full design written up in `docs/ASSETS.md` from the gamification planning
-discussion — parked here for later review and potential implementation.
-The static half is implemented (2026-08-14): `Plugin.assets` declarations,
-the content-addressed registry, boot reconcile, and CDN sync to a private
-asset channel (the dynamic admin-upload path stays deferred).
+ -  [x] Asset management — static half — DONE (2026-08-14).
+    `Plugin.assets` declarations, the content-addressed registry, boot
+    reconcile, and CDN sync to a private asset channel. The dynamic
+    admin-upload path stays open (see Open → Game features).
 
+ -  [x] Board plugin — weekly image scrape + grid — DONE (2026-08-09/13).
+    `plugins/board/`: `/board scrape [channel] [week]` collects a week's
+    image attachments (static only — animated uploads are skipped by frame
+    count; content-hash dedup within the week) into a `board` table row per
+    image (`ts` ISO-8601 UTC, `image_url` CDN url, `msg_url` message link,
+    `sha256`), defaulting to last week; `/board post [columns] [cell_size]`
+    stitches the most recent week's rows into a numbered grid
+    (`plugins/board/stitcher.py`, defaults 9 cols / 768px cells), pruning
+    rows whose image no longer downloads (message deleted), and posts the
+    grid with per-image message links in an embed. `plugins/misc/` holds the
+    server utilities split out of the original plan:
+    `/misc banner [image] [msg]`, `/misc welcome`, and
+    `/misc week [start] [msg]` (the shared week math lives in `cazzubot.utils`).
 
-Run the bot via a [project.scripts] entry
------------------------------------------
-
-`main.py` is run as `uv run python main.py [-d|-p|-s]`. Add a
-console-script entry (e.g. `cazzubot = "…:main"`) so the bot runs as
-`uv run cazzubot -d`, consistent with the `cazzubot-cli` entry added for
-the role CLI. Requires moving main()'s logic into the package (e.g.
-`cazzubot/__main__.py` or a small run module) so it is importable as a
-script target; keep the existing `python main.py` path working.
-
-
-Mod plugin — deferred, in development (manual test backlog)
------------------------------------------------------------
-
-Manual testing of the whole `mod` feature (warn/mute/kick/ban/unmute/unban/
-set/slowmode) is parked by the owner: it is not core, not finalized, and
-“in progress” in terms of development. The E1–E5 items in
-`docs/MANUAL_TEST.md` stay untested until the feature is declared done.
-(Fixed along the way: the `mod set` group was defined but never registered
-— `loader.command(mod_set)` was missing, so `/mod set` didn't exist.)
-
-
-Resync command UX — long ops after a confirm click
---------------------------------------------------
-
-`exp resync` and `frog resync` confirm with a Yes/No menu, then run a long
-DB rebuild. The click is now properly acked (menu fix, 2026-08-08), but the
-owner wants a better flow than “click Yes, prompt vanishes, a few status
-followups, done” — ideas to evaluate later: defer with a progress message
-that gets edited as phases complete, or a single final summary edit.
-Owner's words: “I think optimally we want better UX here. Will think of a
-proper flow later. Backlog this.”
-
-
-Board plugin — weekly image scrape + numbered grid
---------------------------------------------------
-
-**Core DONE (2026-08-09):** `plugins/board/` — `/board scrape [channel] [week]`
-collects a week's image attachments (static only — animated uploads are skipped
-by frame count; content-hash dedup within the week) into a `board` table row
-per image (`ts` ISO-8601 UTC, `image_url` CDN url, `msg_url` message link,
-`sha256`), defaulting to last week (this week − 1);
-`/board post [columns] [cell_size]` stitches the most recent week's rows into a
-numbered grid (the `stich.py` script, absorbed as `plugins/board/stitcher.py`;
-defaults 9 cols / 768px cells, adjustable), pruning rows whose image no longer
-downloads (message deleted), and posts the grid with per-image message links in
-an embed. `plugins/misc/` holds the server utilities split out of the original
-plan: `/misc banner [image] [msg]` (16:9 guild banner, or from the first image
-attachment of a message link), `/misc welcome` (API-editable parts — the
-welcome-screen *background image* is client-side only and cannot be set via the
-API), and `/misc week [start] [msg]` (current week with Sunday/Monday start, or
-a message link placed in its week via snowflake decoding; the shared week math
-lives in `cazzubot.utils`).
-
-**Weekly automation DONE (2026-08-13):** the `board_weekly` scheduler tag
-(`At(weekday=(6,), time="00:00")` — Sunday 00:00 UTC, catch-up on boot
-for weeks missed while down) runs the scrape → poll → grid flow every
-Sunday: scrape the just-ended week (production = last week via
-`SCRAPE_CHANNEL_PROD`, development guild = current week via
-`SCRAPE_CHANNEL_DEV`; targets picked by `Config.guild_kind`, the
-`.env`-loaded guild side), register + open a poll (“Week X of just-cirno
-Voting”, `max_vote = n // 20 + 1`, items = grid cells — a random sample
-of 50 when a week overflows MAX\_IMAGES), then sends ONE combined message:
-role-ping “voting has opened” announcement (`MESSAGE_OPEN` →
-`<@&VOTE_ROLE_ID>`) + numbered grid links in the content, the stitched
-grid as the attachment, and the poll embed + vote button as the
-embed/component — all in `POST_CHANNEL_*`. A `board.weekly.done` settings
-claim-guard makes
-retries safe, and `/board weekly` (owner) runs the flow manually
-(`force=True`, bypassing the guard) for testing. The service extraction
-prerequisite was folded in: `logic.scrape_week`/`logic.build_grid` are
-shared by the commands and the automation, and `poll`'s embed+button
-construction is the shared `build_send_payload`.
-
-Remaining — none for the weekly pipeline: the close + winner flow is
-implemented too (2026-08-13):
-
- -  Every weekly poll auto-closes 24h after opening (a `board_weekly_close`
-    scheduler row → Monday 00:00 UTC). Closing removes the vote button and
-    the vote flow refuses closed polls; `/poll open`/`/poll close` sync the
-    button on the poll's message. The poll table stores the message's
-    channel (`cid`) for that — migrated by `scripts/migrate_poll_cid.py`
-    (run while the bot is stopped, before booting the new code).
- -  At close, the highest-voted image becomes the guild banner (16:9 prep
-    via `plugins/misc.logic.prepare_banner`) and a winner announcement with
-    the original message link is posted in the poll channel; a no-votes
-    week just announces that (no banner change).
-
-
-Document how to add a test for a feature
-----------------------------------------
-
-A step-by-step how-to in the docs: where per-feature tests live
-(`tests/plugins/<feature>/`), the test-first rule (pin behavior at the
-highest layer that can express it), how to fake the framework surface
-(`tests/fakes.py`, `FakeContext`, `invoke_command`), when a layer-1 unit
-test suffices vs the offline interaction driver (`tests/driver.py`
-`run_slash`/`press_button`/`submit_modal`), and how to run the suite
-(`uv run pytest`). `docs/TESTING.md` covers the *strategy* and layers; the
-“add a test for your new feature” recipe is what's missing.
-
-
-Document how hikari works
--------------------------
-
-Developer-facing doc on the framework itself: gateway vs REST, the event
-system (listeners, `event_factory` deserialization, the event manager),
-caches, components (buttons/menus/modals), and how lightbulb layers on
-(loader, commands, checks, error handling) — enough that a contributor
-new to hikari can orient without reading upstream docs cover-to-cover.
-The existing hikari documentation may already be enough; the work is to
-read it and distill what's relevant here (`docs/HIKARI_MIGRATION.md` has
-the port-time notes).
-
-
-~~Fold the `daily`/`quarterly` scheduler plugins into their owning plugins~~ — DONE (2026-08-14)
-------------------------------------------------------------------------------------------------
-
-Moved to `docs/DONE.md`: the wrapper plugins are deleted; the `daily` reset
-lives in experience and the `daily.frog` resync + `quarterly` freeze live
-in frogs, each armed by its owning plugin's `on_load`.
-
-## 2026-08-31 — Species compose outcomes (rename follow-up) — DONE
-
-Frog species should operate like items: compose their own outcomes
-within the species (entity) declaration itself — or call a helper
-function when the outcome is complex — rather than today's split
-(species carry `catch_outcome`/`spawn_outcome` payload fields; items
-carry `_SPECIES_OUTCOMES`). The status/outcome boundary needs a
-cleaner implementation: a **status** is persistent scope-aware state in
-the status store; an **outcome** is the consequence of an action and
-may invoke statuses (never the reverse). Tracked from the 2026-08-31
-rename plan (D5).
-
-Moved to `docs/needs-rewrite/DONE.md`: the 2026-08-31 species-compose-
-behaviors plan dissolved the outcome library — species compose `catch`/
-`spawn` behaviors as code, items compose status classes by glue, statuses
-own their values as classes, and the reactions fold falls back on expiry.
+    The weekly automation + close/winner flows are done too (2026-08-13):
+    the `board_weekly` scheduler tag (Sunday 00:00 UTC, catch-up on boot)
+    runs the scrape → poll → grid flow every Sunday — scraping the just-ended
+    week (target picked by `Config.guild_kind`), registering + opening a poll
+    (items = grid cells, random sample of 50 on overflow), then sending ONE
+    combined message (role-ping announcement + numbered grid links + stitched
+    grid attachment + poll embed/button in `POST_CHANNEL_*`), with a
+    `board.weekly.done` settings claim-guard for safe retries and
+    `/board weekly` (owner) for manual runs. Service extraction was folded in:
+    `logic.scrape_week`/`logic.build_grid` are shared by the commands and the
+    automation, and `poll`'s embed+button construction is the shared
+    `build_send_payload`. Every weekly poll auto-closes 24h after opening (a
+    `board_weekly_close` scheduler row → Monday 00:00 UTC); closing removes the
+    vote button, the vote flow refuses closed polls, and `/poll open`/
+    `/poll close` sync the button on the poll's message (poll `cid` migrated by
+    `scripts/migrate_poll_cid.py`, run while the bot is stopped). At close, the
+    highest-voted image becomes the guild banner (16:9 prep via
+    `plugins/misc.logic.prepare_banner`) and a winner announcement with the
+    original message link is posted in the poll channel; a no-votes week just
+    announces that (no banner change).

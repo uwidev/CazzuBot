@@ -67,6 +67,10 @@ class Plugin:
                         durable oracle stored in the inventory ledger;
                         registered with ``bot.items`` at load, independent
                         of the ``enabled`` behavior flag
+            tip_sets    the plugin's footer-tip sets — ``{context: tuple of
+                        tip strings}`` — registered with ``bot.tips`` at
+                        load and unregistered at unload, so the feature
+                        owns its tips and the core only queries them
             items_consumable
                         whether this plugin's items may be consumed (the
                         second, independent gate from ``enabled``): a
@@ -87,6 +91,7 @@ class Plugin:
     scheduled: dict[str, ScheduledEntry] = {}
     asset_decl: type[Enum] | None = None
     item_decl: type[Enum] | None = None
+    tip_sets: dict[str, tuple[str, ...]] = {}
     items_consumable: bool = True
     depends_on: tuple[str, ...] = ()
     enabled: bool = True

@@ -73,6 +73,16 @@ class FrogsPlugin(Plugin):
     asset_decl = FrogAsset
     item_decl = FrogItems
 
+    # footer tips owned by this plugin (context -> strings); registered with
+    # bot.tips at load, so both /frog surfaces draw from the "frog" set
+    tip_sets = {
+        "frog": (
+            "Check what a frog does with /inventory info <slot>!",
+            "Consume frogs with /inventory consume <slot> [amount]!",
+            "Thaw frozen frogs with /inventory thaw <slot>!",
+        ),
+    }
+
     # load-time wiring (set in on_load, withdrawn in on_unload): the
     # captured bot for the statuses-cleared revert, the classy-role
     # converger, and the event-bus unsubscribe token

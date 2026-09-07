@@ -23,7 +23,7 @@ import pendulum
 
 from cazzubot import utils
 from cazzubot.bot import CazzuBot
-from cazzubot.models import MemberSnapshot, FrogItemKey
+from cazzubot.models import FrogItemKey
 from cazzubot.scheduler import InChaotic
 
 from . import db as frog_db
@@ -83,16 +83,16 @@ async def spawn_and_wait(
 ) -> bool:
     """Spawn a frog and wait for someone to capture it.
 
-    The species is rolled when ``species_key`` is None (the owner spawn/
-    fake commands can force one for testing). The frog is a fresh message
+    The species is rolled when ``species_key`` is None (the owner spawn
+    commands can force one for testing). The frog is a fresh message
     (species name + art + Catch button) sent to ``cid`` in a single
     payload. It lives ``persist`` seconds: pressing the button catches it
     and the message is deleted on the spot, otherwise the frog gets bored
     and the message is removed. Returns True if it was caught.
 
-    ``ctx`` is the lightbulb context for the owner ``spawn``/``fake``
-    commands (the frog becomes the slash response); without it the frog is
-    sent to the channel directly.
+    ``ctx`` is the lightbulb context for the owner ``spawn`` command (the
+    frog becomes the slash response); without it the frog is sent to the
+    channel directly.
     """
     if species_key is None:
         species_key = roll_species().key
@@ -308,29 +308,3 @@ def _is_frog_message(message: Any, cid: int) -> bool:
             if isinstance(custom_id, str) and custom_id.startswith(wanted):
                 return True
     return False
-
-
-def formatter(
-    s: str,
-    *,
-    member: MemberSnapshot,
-    frog_cnt_old: int | None = None,
-    frog_cnt_new: int | None = None,
-    seasonal_cap_old: int | None = None,
-    seasonal_cap_new: int | None = None,
-    species: str | None = None,
-    species_art: str | None = None,
-) -> str:
-    """Placeholders: {avatar} {name} {mention} {id} {frog_cnt_old}
-    {frog_cnt_new} {seasonal_cap_old} {seasonal_cap_new} {species}
-    {species_art}"""
-    return utils.format_member(
-        s,
-        member,
-        frog_cnt_old=frog_cnt_old,
-        frog_cnt_new=frog_cnt_new,
-        seasonal_cap_old=seasonal_cap_old,
-        seasonal_cap_new=seasonal_cap_new,
-        species=species,
-        species_art=species_art,
-    )

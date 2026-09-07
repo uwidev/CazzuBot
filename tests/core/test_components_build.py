@@ -21,6 +21,7 @@ from cazzubot import utils
 from cazzubot.models import FrogItemKey
 from plugins.experience.extension import TopMenu
 from plugins.frogs import factory
+from plugins.inventory.extension import InventoryPager
 from plugins.poll.extension import PollModal
 from tests.fakes import FakeChannel, FakeContext, FakeGuild, FakeMember
 
@@ -51,6 +52,19 @@ def test_top_menu_builds() -> None:
         cast(Any, ctx),
         pendulum.datetime(2026, 1, 1),
         [(1, 1, 100)],
+    )
+    _assert_builds(menu)
+
+
+def test_inventory_pager_builds() -> None:
+    ctx = FakeContext(
+        bot=object(), member=_MEMBER, guild=_GUILD, channel=_CHANNEL
+    )
+    menu = InventoryPager(
+        cast(Any, object()),
+        cast(Any, ctx),
+        [(1, "frog:basic:normal", 3)],
+        cast(Any, _MEMBER),
     )
     _assert_builds(menu)
 

@@ -1,6 +1,8 @@
-"""Misc plugin package — small server utilities."""
+"""Misc plugin package — small server utilities + shared brand emojis."""
 
 from cazzubot import Plugin
+
+from .asset import MiscAsset
 
 
 class MiscPlugin(Plugin):
@@ -8,6 +10,8 @@ class MiscPlugin(Plugin):
 
     name = "misc"
     extensions = ["plugins.misc.extension"]
+    # the shared cirno emojis (the footer-icon provider for tip surfaces)
+    asset_decl = MiscAsset
 
 
 plugin = MiscPlugin()

@@ -23,6 +23,7 @@ from cazzubot.errors import UserInputError
 from cazzubot.events import EventBus
 from cazzubot.inventory import Inventory
 from cazzubot.items import Items
+from cazzubot.tips import Tips
 from cazzubot.lifecycle import Lifecycle
 from cazzubot.plugin import (
     Plugin,
@@ -69,6 +70,7 @@ class CazzuBot(hikari.GatewayBot):
         self.inventory = Inventory(self)
         self.items = Items(self)
         self.statuses = Statuses(self)
+        self.tips = Tips(self)
         self.lifecycle = Lifecycle(self)
 
         self.plugins: list[Plugin] = []
@@ -328,6 +330,10 @@ class CazzuBot(hikari.GatewayBot):
             # behavior-disable still leaves holdings visible/consumable
             self.items.register(plugin.name, plugin.item_decl)
             self.items.set_consumable(plugin.name, plugin.items_consumable)
+        if plugin.tip_sets:
+            # the plugin owns its footer tips; register them for the core's
+            # get_tip queries (and unregister the same way they went in)
+            self.tips.register(plugin.name, plugin.tip_sets)
         if run_hooks:
             await plugin.on_load(self)
         _log.info("loaded plugin: %s", plugin.name)
@@ -355,6 +361,8 @@ class CazzuBot(hikari.GatewayBot):
         await plugin.on_unload(self)
         if plugin.item_decl is not None:
             self.items.unregister(plugin.name)
+        if plugin.tip_sets:
+            self.tips.unregister(plugin.name)
         self.plugins.remove(plugin)
         self._plugin_by_name.pop(plugin.name, None)
         _log.info("unloaded plugin: %s", plugin.name)
