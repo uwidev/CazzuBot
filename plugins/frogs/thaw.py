@@ -19,14 +19,14 @@ import random
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from cazzubot import inventory
-from cazzubot.errors import UserInputError
-from cazzubot.models import FrogItemKey, FrogState
+from core import inventory
+from core.errors import UserInputError
+from core.models import FrogItemKey, FrogState
 
 from . import db as frog_db
 
 if TYPE_CHECKING:
-    from cazzubot.bot import CazzuBot
+    from core.bot import CazzuBot
 
 
 class _RandomLike(Protocol):

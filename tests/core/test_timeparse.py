@@ -5,7 +5,7 @@ from __future__ import annotations
 import pendulum
 import pytest
 
-from cazzubot import timeparse
+from core import timeparse
 
 
 def test_normalize_time_str() -> None:

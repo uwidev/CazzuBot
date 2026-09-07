@@ -14,10 +14,10 @@ from typing import Any, cast
 import hikari
 import lightbulb
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
-from cazzubot.listeners import guild_listener
-from cazzubot.window import window_error, window_success
+from core import utils
+from core.bot import CazzuBot
+from core.listeners import guild_listener
+from core.window import window_error, window_success
 
 loader = lightbulb.Loader()
 

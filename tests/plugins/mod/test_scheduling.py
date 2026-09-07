@@ -11,8 +11,8 @@ from typing import Any, cast
 
 import pendulum
 
-from cazzubot import CazzuBot
-from cazzubot.models import ModlogStatusEnum, ModlogTypeEnum
+from core import CazzuBot
+from core.models import ModlogStatusEnum, ModlogTypeEnum
 from plugins.mod import db as mod_db
 from plugins.mod.extension import on_modlog_due
 from tests.fakes import FakeMember, FakeRole, rest_of

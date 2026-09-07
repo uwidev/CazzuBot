@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from cazzubot.errors import UserInputError
+from core.errors import UserInputError
 from plugins.board.stitcher import ImageGridStitcher
 
 

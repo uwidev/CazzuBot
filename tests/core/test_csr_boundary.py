@@ -4,7 +4,7 @@ Service modules (``logic.py``/``factory.py``) and repository modules
 (``db.py``) take ``db``/``settings`` + plain values (+ injected ``now``);
 importing the stateful ``discord`` package couples them to the
 ConnectionState-requiring layer and forces fakes into their unit tests.
-Validation failures raise ``cazzubot.errors.UserInputError`` (never
+Validation failures raise ``core.errors.UserInputError`` (never
 ``commands.BadArgument``); the command edge translates them back.
 
 One permanent carve-out: ``plugins/frogs/factory.py`` stays
@@ -92,10 +92,10 @@ def test_fakes_do_not_import_discord() -> None:
 
 
 def test_core_modules_do_not_import_discord() -> None:
-    """cazzubot core is discord-free since the hikari port (CLI included)."""
+    """The core package is discord-free since the hikari port (CLI included)."""
     offenders = [
         path
-        for path in Path("cazzubot").rglob("*.py")
+        for path in Path("core").rglob("*.py")
         if _imports_discord(path)
     ]
     assert offenders == [], (

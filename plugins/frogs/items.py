@@ -33,10 +33,10 @@ from typing import TYPE_CHECKING
 
 import pendulum
 
-from cazzubot import Item
-from cazzubot.errors import UserInputError
-from cazzubot.statuses import Scope, Status
-from cazzubot.models import (
+from core import Item
+from core.errors import UserInputError
+from core.statuses import Scope, Status
+from core.models import (
     FrogState,
     MemberExpLogSourceEnum,
     FrogItemKey,
@@ -53,7 +53,7 @@ from .statuses import (
 )
 
 if TYPE_CHECKING:
-    from cazzubot.bot import CazzuBot
+    from core.bot import CazzuBot
 
 # species -> normal-exp per unit (D1/D2 defaults; owner-tunable). The
 # single source for both the consume grant and the info card's consume
@@ -79,6 +79,30 @@ _SPECIES_EXP: dict[FrogItemKey, dict[FrogState, int]] = {
 def frog_exp(species_key: FrogItemKey, state: FrogState) -> int:
     """Seasonal exp granted by one unit of a species' item in ``state``."""
     return _SPECIES_EXP[species_key][state]
+
+
+def exp_grant_for(item_id: str, amount: int) -> int | None:
+    """Seasonal exp that consuming ``amount`` of ``item_id`` will grant.
+
+    Reads the same oracle the consume glues grant (``frog_exp`` for the
+    ``frog:<species>:normal`` items, the flat ``remains`` value for Frog
+    Remains) so a *confirmation-step preview* and the actual consume
+    cannot drift — the value is derived from the id, never parsed from
+    display prose. Returns None when the item grants no exp (frozen
+    trophies — never consumed — and anything unknown), so callers render
+    nothing for non-exp items.
+    """
+    if item_id == "remains":
+        return _REMAINS_EXP * amount
+    try:
+        _prefix, species_str, state_str = item_id.split(":")
+        species_key = FrogItemKey(species_str)
+        state = FrogState(state_str)
+    except ValueError, KeyError:
+        return None
+    if state is not FrogState.NORMAL:
+        return None
+    return frog_exp(species_key, state) * amount
 
 
 # item-owned consume statuses: the status class instances each item triggers.
@@ -147,34 +171,11 @@ async def _consume_basic_normal(
     await _consume_item(bot, uid, amount, "frog:basic:normal")
 
 
-async def _consume_basic_frozen(
-    bot: "CazzuBot", uid: int, amount: int
-) -> None:
-    """Consume glue for ``frog:basic:frozen`` — frozen frogs are trophies.
-
-    The seasonal freeze preserves species identity; the only way out is
-    the thaw gamble (``thaw.py``). /inventory consume checks this before
-    the confirm, so the glue refusal is defense in depth.
-    """
-    raise UserInputError(
-        "Frozen frogs cannot be consumed — thaw them first."
-    )
-
-
 async def _consume_pog_normal(
     bot: "CazzuBot", uid: int, amount: int
 ) -> None:
     """Consume glue for ``frog:pog:normal`` (its own exp, per the id)."""
     await _consume_item(bot, uid, amount, "frog:pog:normal")
-
-
-async def _consume_pog_frozen(
-    bot: "CazzuBot", uid: int, amount: int
-) -> None:
-    """Consume glue for ``frog:pog:frozen`` — frozen frogs are trophies."""
-    raise UserInputError(
-        "Frozen frogs cannot be consumed — thaw them first."
-    )
 
 
 async def _consume_froggers_normal(
@@ -184,15 +185,6 @@ async def _consume_froggers_normal(
     await _consume_item(bot, uid, amount, "frog:froggers:normal")
 
 
-async def _consume_froggers_frozen(
-    bot: "CazzuBot", uid: int, amount: int
-) -> None:
-    """Consume glue for ``frog:froggers:frozen`` — frozen frogs are trophies."""
-    raise UserInputError(
-        "Frozen frogs cannot be consumed — thaw them first."
-    )
-
-
 async def _consume_classy_normal(
     bot: "CazzuBot", uid: int, amount: int
 ) -> None:
@@ -200,10 +192,16 @@ async def _consume_classy_normal(
     await _consume_item(bot, uid, amount, "frog:classy:normal")
 
 
-async def _consume_classy_frozen(
-    bot: "CazzuBot", uid: int, amount: int
-) -> None:
-    """Consume glue for ``frog:classy:frozen`` — frozen frogs are trophies."""
+async def _consume_frozen(bot: "CazzuBot", uid: int, amount: int) -> None:
+    """One shared consume glue for every frozen frog — a trophy refusal.
+
+    All four species frozen items (``frog:<species>:frozen``) point
+    at this single function: consuming any frozen frog is refused with
+    the same message (the seasonal freeze preserves species identity;
+    the only way out is the thaw gamble, ``thaw.py``). The
+    /inventory consume command also checks this before the confirm, so
+    the glue refusal is defense in depth.
+    """
     raise UserInputError(
         "Frozen frogs cannot be consumed — thaw them first."
     )
@@ -294,7 +292,7 @@ class FrogItems(Enum):
         icon="🧊",
         description="A basic frog frozen solid by the seasonal freeze.",
         icon_asset=FrogAsset.FROG_BASIC_FROZEN,
-        consume=_consume_basic_frozen,
+        consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
     POG = Item(
@@ -312,7 +310,7 @@ class FrogItems(Enum):
         icon="🧊",
         description="A pog frog frozen solid by the seasonal freeze.",
         icon_asset=None,
-        consume=_consume_pog_frozen,
+        consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
     FROGGERS = Item(
@@ -332,7 +330,7 @@ class FrogItems(Enum):
         icon="🧊",
         description="A froggers frog frozen solid by the seasonal freeze.",
         icon_asset=None,
-        consume=_consume_froggers_frozen,
+        consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
     CLASSY = Item(
@@ -350,7 +348,7 @@ class FrogItems(Enum):
         icon="🧊",
         description="A classy frog frozen solid by the seasonal freeze.",
         icon_asset=None,
-        consume=_consume_classy_frozen,
+        consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
     REMAINS = Item(

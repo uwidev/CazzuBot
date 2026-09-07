@@ -33,9 +33,9 @@ import asyncpg
 from dotenv import load_dotenv
 
 # -- schema: import the real v2 DDL lists ----------------------------------
-from cazzubot.db import dump_json
-from cazzubot.scheduler import SCHEMA as _TASKS_SCHEMA
-from cazzubot.settings import SCHEMA as _SETTINGS_SCHEMA
+from core.db import dump_json
+from core.scheduler import SCHEMA as _TASKS_SCHEMA
+from core.settings import SCHEMA as _SETTINGS_SCHEMA
 from plugins.counter.db import SCHEMA as _COUNTER_SCHEMA
 from plugins.experience.db import SCHEMA as _EXP_SCHEMA
 from plugins.frogs.db import SCHEMA as _FROGS_SCHEMA

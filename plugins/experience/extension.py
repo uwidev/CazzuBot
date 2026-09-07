@@ -10,13 +10,13 @@ import hikari
 import lightbulb
 import pendulum
 
-from cazzubot import leaderboard, levels, utils
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
-from cazzubot.listeners import guild_listener
-from cazzubot.utils import INITIAL_RESPONSE_IDENTIFIER
+from core import leaderboard, levels, utils
+from core.bot import CazzuBot
+from core.errors import UserInputError
+from core.listeners import guild_listener
+from core.utils import INITIAL_RESPONSE_IDENTIFIER
 
-from cazzubot.window import command_window, window_success, window_warn
+from core.window import command_window, window_success, window_warn
 
 from . import db as exp_db
 from .logic import award_exp
@@ -323,7 +323,7 @@ async def _prepare_personal_summary(
     rank = board.rank
 
     # member stats
-    from cazzubot.models import WindowEnum
+    from core.models import WindowEnum
     from plugins.ranks.db import of_member
 
     rid = await of_member(

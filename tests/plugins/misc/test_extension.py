@@ -8,7 +8,7 @@ import io
 import hikari
 from PIL import Image
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from tests.fakes import (
     FakeAttachment,
     FakeChannel,

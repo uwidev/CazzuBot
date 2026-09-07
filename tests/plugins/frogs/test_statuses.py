@@ -15,8 +15,8 @@ from __future__ import annotations
 import pendulum
 import pytest
 
-from cazzubot.bot import CazzuBot
-from cazzubot.statuses import (
+from core.bot import CazzuBot
+from core.statuses import (
     RoleConverger,
     Scope,
     status_by_source,

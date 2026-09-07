@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pendulum
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from plugins.experience import CADENCE, ExperiencePlugin, on_daily_due
 from plugins.experience import db as exp_db
 

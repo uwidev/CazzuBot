@@ -1,6 +1,6 @@
 """Board plugin — repository tests: dedup, week windows, pruning."""
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from plugins.board import db as board_db
 
 _WEEK_START = "2026-08-02T00:00:00+00:00"

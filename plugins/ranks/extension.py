@@ -5,10 +5,10 @@ import json
 import hikari
 import lightbulb
 
-from cazzubot import templates, utils
-from cazzubot.models import WindowEnum
+from core import templates, utils
+from core.models import WindowEnum
 
-from cazzubot.window import window_error, window_success
+from core.window import window_error, window_success
 
 from . import db as ranks_db
 from .logic import formatter

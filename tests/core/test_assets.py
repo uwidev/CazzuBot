@@ -13,8 +13,8 @@ import pytest
 
 import hikari
 
-from cazzubot import AssetKind, AssetSpec, Assets, Plugin
-from cazzubot.assets import (
+from core import AssetKind, AssetSpec, Assets, Plugin
+from core.assets import (
     SCHEMA,
     AssetError,
     _EMOJI_CREATE_DELAY,
@@ -25,7 +25,7 @@ from cazzubot.assets import (
     asset_key,
     emoji_cdn_url,
 )
-from cazzubot.db import Database
+from core.db import Database
 from tests.fakes import FakeAttachment, FakeMessage, FakeRest
 
 
@@ -180,7 +180,7 @@ async def test_sync_without_channel_skips(
     assets = _assets(asset_db, str(tmp_path), channel_id=None)
     await assets.reconcile()
 
-    with caplog.at_level(logging.WARNING, logger="cazzubot.assets"):
+    with caplog.at_level(logging.WARNING, logger="core.assets"):
         await assets.sync_cdn(cast(Any, None))
 
     assert any(
@@ -271,8 +271,17 @@ async def test_pruned_asset_cdn_message_is_deleted(
         _url(777, 222, "classy.webp"),
         asset_key(_FrogAsset.CLASSY_FROG),
     )
-    # leaf's publication is alive; classy's is about to be orphaned
-    rest.messages[(777, 111)] = FakeMessage(id=111, channel_id=777)
+    # leaf's publication is alive (message + attachment); classy's is
+    # about to be orphaned
+    rest.messages[(777, 111)] = FakeMessage(
+        id=111,
+        channel_id=777,
+        attachments=[
+            FakeAttachment(
+                id=1, filename="leaf.png", url=_url(777, 111, "leaf.png")
+            )
+        ],
+    )
 
     assets.bot.plugins[0].asset_decl = _LeafOnly
     await assets.reconcile()
@@ -335,14 +344,36 @@ async def test_second_boot_does_not_reupload(
 
     # ---- second boot: sync_cdn must NOT re-upload live assets ----
     rest = FakeRest()
-    rest.messages[(777, 111)] = FakeMessage(id=111, channel_id=777)
-    rest.messages[(777, 222)] = FakeMessage(id=222, channel_id=777)
+    rest.messages[(777, 111)] = FakeMessage(
+        id=111,
+        channel_id=777,
+        attachments=[
+            FakeAttachment(
+                id=1,
+                filename="leaf_frog.png",
+                url=_url(777, 111, "leaf_frog.png"),
+            )
+        ],
+    )
+    rest.messages[(777, 222)] = FakeMessage(
+        id=222,
+        channel_id=777,
+        attachments=[
+            FakeAttachment(
+                id=1,
+                filename="classy_frog.webp",
+                url=_url(777, 222, "classy_frog.webp"),
+            )
+        ],
+    )
 
     created: list[FakeMessage] = []
 
     async def _upload(_channel_id: int, **_: object) -> FakeMessage:
         message = FakeMessage(
-            id=next(iter(FakeRest()._FakeRest__mint)) if hasattr(FakeRest, "_FakeRest__mint") else 999,  # pyright: ignore[reportAttributeAccessIssue]
+            id=next(iter(FakeRest()._FakeRest__mint))
+            if hasattr(FakeRest, "_FakeRest__mint")
+            else 999,  # pyright: ignore[reportAttributeAccessIssue]
             channel_id=_channel_id,
         )
         created.append(message)
@@ -390,7 +421,15 @@ async def test_deleted_cdn_message_republishes(
         _url(777, 222, "classy.webp"),
         asset_key(_FrogAsset.CLASSY_FROG),
     )
-    rest.messages[(777, 111)] = FakeMessage(id=111, channel_id=777)
+    rest.messages[(777, 111)] = FakeMessage(
+        id=111,
+        channel_id=777,
+        attachments=[
+            FakeAttachment(
+                id=1, filename="leaf.png", url=_url(777, 111, "leaf.png")
+            )
+        ],
+    )
     # classy's message is NOT recorded — someone deleted it
 
     created: list[FakeMessage] = []
@@ -419,6 +458,149 @@ async def test_deleted_cdn_message_republishes(
         "SELECT url FROM asset WHERE key = ?",
         asset_key(_FrogAsset.CLASSY_FROG),
     ) == _url(777, 333, "classy.webp")
+
+
+async def test_live_message_refreshes_rotten_cdn_url(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """A live message whose stored CDN URL has rotted refreshes in place.
+
+    Regression for the reported flow: Discord's attachment CDN URLs are
+    signed and short-lived (``?ex=...&is=...&hm=...`` rot after ~a day),
+    so a row that stored one keeps serving a dead link — or, when the
+    message lookup 404s, re-uploads the media on every boot. The verify
+    pass must pull the pre-existing CDN reference instead: fetch the live
+    message and refresh the row's URL from its current attachment URL,
+    uploading nothing.
+    """
+    _write_art(tmp_path, "leaf_frog.png", b"leaf bytes")
+    _write_art(tmp_path, "classy_frog.webp", b"classy bytes")
+    assets = _assets(asset_db, str(tmp_path), channel_id=777)
+    await assets.reconcile()
+    # a previous boot stored a signed URL whose signature has since
+    # expired — the CDN message itself is still alive
+    rotten = (
+        "https://cdn.example.com/attachments/777/111/leaf_frog.png"
+        "?ex=00000000&is=00000000&hm=deadbeef"
+    )
+    await asset_db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        rotten,
+        asset_key(_FrogAsset.LEAF_FROG),
+    )
+    await asset_db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        _url(777, 222, "classy_frog.webp"),
+        asset_key(_FrogAsset.CLASSY_FROG),
+    )
+    fresh = (
+        "https://cdn.example.com/attachments/777/111/leaf_frog.png"
+        "?ex=11111111&is=11111111&hm=cafebabe"
+    )
+    rest = FakeRest()
+    rest.messages[(777, 111)] = FakeMessage(
+        id=111,
+        channel_id=777,
+        attachments=[
+            FakeAttachment(id=1, filename="leaf_frog.png", url=fresh)
+        ],
+    )
+    rest.messages[(777, 222)] = FakeMessage(
+        id=222,
+        channel_id=777,
+        attachments=[
+            FakeAttachment(
+                id=1,
+                filename="classy_frog.webp",
+                url=_url(777, 222, "classy_frog.webp"),
+            )
+        ],
+    )
+    cast(Any, assets.bot).rest = rest
+    await assets.sync_cdn(cast(Any, None))
+
+    assert rest.created == [], (
+        f"sync re-uploaded live assets: {len(rest.created)}"
+    )
+    assert (
+        await asset_db.fetchval(
+            "SELECT url FROM asset WHERE key = ?",
+            asset_key(_FrogAsset.LEAF_FROG),
+        )
+        == fresh  # refreshed from the live message, nothing uploaded
+    )
+
+
+async def test_message_that_lost_attachment_republishes(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """A live message whose attachment was removed re-publishes the media.
+
+    The message (the durable anchor) still exists but no longer carries
+    the asset's attachment — the stored reference is dead, so the row
+    re-queues and the next sync uploads the media fresh.
+    """
+    _write_art(tmp_path, "leaf_frog.png", b"leaf")
+    _write_art(tmp_path, "classy_frog.webp", b"classy v2")
+    assets = _assets(asset_db, str(tmp_path), channel_id=777)
+    rest = FakeRest()
+    cast(Any, assets.bot).rest = rest
+    await assets.reconcile()
+    await asset_db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        _url(777, 111, "leaf.png"),
+        asset_key(_FrogAsset.LEAF_FROG),
+    )
+    await asset_db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        _url(777, 222, "classy.webp"),
+        asset_key(_FrogAsset.CLASSY_FROG),
+    )
+    # leaf's message is alive but its attachment was removed; classy's
+    # message carries its attachment as normal
+    rest.messages[(777, 111)] = FakeMessage(id=111, channel_id=777)
+    rest.messages[(777, 222)] = FakeMessage(
+        id=222,
+        channel_id=777,
+        attachments=[
+            FakeAttachment(
+                id=1,
+                filename="classy.webp",
+                url=_url(777, 222, "classy.webp"),
+            )
+        ],
+    )
+
+    created: list[FakeMessage] = []
+
+    async def _upload(_channel_id: int, **_: object) -> FakeMessage:
+        message = FakeMessage(id=333, channel_id=_channel_id)
+        message.attachments = [
+            FakeAttachment(
+                id=9,
+                filename="leaf.png",
+                url=_url(777, 333, "leaf.png"),
+            )
+        ]
+        created.append(message)
+        return message
+
+    cast(Any, assets.bot).rest = SimpleNamespace(
+        create_message=_upload,
+        fetch_message=rest.fetch_message,
+        delete_message=rest.delete_message,
+    )
+    await assets.sync_cdn(cast(Any, None))
+
+    assert len(created) == 1  # only the attachment-less one re-uploaded
+    assert await asset_db.fetchval(
+        "SELECT url FROM asset WHERE key = ?",
+        asset_key(_FrogAsset.LEAF_FROG),
+    ) == _url(777, 333, "leaf.png")
+    assert await asset_db.fetchval(
+        "SELECT url FROM asset WHERE key = ?",
+        asset_key(_FrogAsset.CLASSY_FROG),
+    ) == _url(777, 222, "classy.webp")
 
 
 def test_message_id_parses_attachment_url() -> None:
@@ -509,7 +691,7 @@ async def test_thumbnail_for_converts_emoji_and_passes_media(
     async def _fake_sleep(seconds: float) -> None:
         pass  # the throttle timing is pinned by test_emoji_creates_are_throttled
 
-    monkeypatch.setattr("cazzubot.assets.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("core.assets.asyncio.sleep", _fake_sleep)
     assets = Assets(
         cast(Any, fake),
         cast(
@@ -568,7 +750,7 @@ async def test_emoji_asset_publishes_as_guild_emoji(
     async def _fake_sleep(seconds: float) -> None:
         pass  # the throttle timing is pinned by test_emoji_creates_are_throttled
 
-    monkeypatch.setattr("cazzubot.assets.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("core.assets.asyncio.sleep", _fake_sleep)
     assets = Assets(
         cast(Any, fake),
         cast(
@@ -604,7 +786,7 @@ async def test_emoji_asset_skips_when_guild_unset(
     )
     await assets.reconcile()
 
-    with caplog.at_level(logging.WARNING, logger="cazzubot.assets"):
+    with caplog.at_level(logging.WARNING, logger="core.assets"):
         await assets.sync_cdn(cast(Any, None))
 
     assert any(
@@ -680,7 +862,7 @@ async def test_emoji_hash_change_deletes_and_recreates(
     async def _fake_sleep(seconds: float) -> None:
         pass  # the throttle timing is pinned by test_emoji_creates_are_throttled
 
-    monkeypatch.setattr("cazzubot.assets.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("core.assets.asyncio.sleep", _fake_sleep)
     assets = Assets(
         cast(Any, fake),
         cast(
@@ -725,7 +907,9 @@ async def test_emoji_second_boot_does_not_reupload(
     )
     assets = Assets(
         cast(Any, fake),
-        cast(Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)),
+        cast(
+            Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)
+        ),
         str(tmp_path),
     )
     await assets.reconcile()
@@ -752,7 +936,9 @@ async def test_emoji_second_boot_does_not_reupload(
     )
     assets2 = Assets(
         cast(Any, fake2),
-        cast(Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)),
+        cast(
+            Any, SimpleNamespace(asset_channel_id=None, asset_guild_id=888)
+        ),
         str(tmp_path),
     )
 
@@ -791,7 +977,7 @@ async def test_dead_guild_emoji_republishes(
     async def _fake_sleep(seconds: float) -> None:
         pass  # the throttle timing is pinned by test_emoji_creates_are_throttled
 
-    monkeypatch.setattr("cazzubot.assets.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("core.assets.asyncio.sleep", _fake_sleep)
     assets = Assets(
         cast(Any, fake),
         cast(
@@ -827,7 +1013,7 @@ async def test_emoji_creates_are_throttled(
     async def _fake_sleep(seconds: float) -> None:
         slept.append(seconds)
 
-    monkeypatch.setattr("cazzubot.assets.asyncio.sleep", _fake_sleep)
+    monkeypatch.setattr("core.assets.asyncio.sleep", _fake_sleep)
     assets = Assets(
         cast(Any, fake),
         cast(

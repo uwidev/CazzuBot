@@ -12,9 +12,9 @@ from __future__ import annotations
 import pytest
 from typing import Any, cast
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
-from cazzubot.models import WindowEnum
+from core import utils
+from core.bot import CazzuBot
+from core.models import WindowEnum
 from plugins.levels.logic import LevelUpAction, decide_level_up
 from plugins.levels.presenter import present_level_up
 from plugins.ranks import db as ranks_db
@@ -215,7 +215,7 @@ async def test_level_up_sends_formatted_message(
     scheduled: list[tuple[int, int, float]] = []
     monkeypatch.setattr(
         # templates binds schedule_delete at import, so patch it there
-        "cazzubot.templates.schedule_delete",
+        "core.templates.schedule_delete",
         lambda _bot, cid, mid, delay: scheduled.append((cid, mid, delay)),
     )
     await present_level_up(

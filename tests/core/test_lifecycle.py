@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 
-from cazzubot.lifecycle import Lifecycle
+from core.lifecycle import Lifecycle
 
 
 def _lifecycle() -> Lifecycle:

@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from cazzubot import CazzuBot, Config
-from cazzubot.db import Database
+from core import CazzuBot, Config
+from core.db import Database
 from tests.fakes import (
     FakeCache,
     FakeChannel,
@@ -45,7 +45,7 @@ async def bot(tmp_path: Path) -> AsyncGenerator[CazzuBot, None]:
     """A booted CazzuBot with plugin schemas but no extensions or hooks."""
     import hikari
 
-    from cazzubot.plugin import discover_plugins
+    from core.plugin import discover_plugins
 
     instance = CazzuBot(
         Config(
@@ -143,8 +143,8 @@ async def seed_asset_registry(bot: CazzuBot) -> None:
     production boot without a configured asset channel ends up in — while
     unknown members still raise like they would in production.
     """
-    from cazzubot.assets import asset_key
-    from cazzubot.plugin import discover_plugins
+    from core.assets import asset_key
+    from core.plugin import discover_plugins
 
     for plugin in discover_plugins("plugins"):
         decl = plugin.asset_decl

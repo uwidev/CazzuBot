@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from cazzubot.roles.export import render_manifest
-from cazzubot.roles.parser import VALID_FLAGS
-from cazzubot.roles.snapshot import RoleSnapshot
+from core.roles.export import render_manifest
+from core.roles.parser import VALID_FLAGS
+from core.roles.snapshot import RoleSnapshot
 
 SNAPSHOT: list[RoleSnapshot] = [
     {

@@ -7,12 +7,12 @@ from dataclasses import dataclass
 
 import pendulum
 
-from cazzubot.db import Database
-from cazzubot.models import (
+from core.db import Database
+from core.models import (
     ModlogStatusEnum,
     ModlogTypeEnum,
 )
-from cazzubot.settings import Settings
+from core.settings import Settings
 
 SCHEMA = [
     """

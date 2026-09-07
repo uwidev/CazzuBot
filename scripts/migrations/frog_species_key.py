@@ -28,7 +28,7 @@ from scripts.migrations.common import Migration
 LEGACY_KEY = "leaf_frog"
 CURRENT_KEY = "basic"
 
-# The generic inventory DDL, mirroring cazzubot/inventory.py exactly: the
+# The generic inventory DDL, mirroring core/inventory.py exactly: the
 # boot-time schema guard compares column order and defaults, so migrated
 # tables must match the Python DDL. Frog stacks are items derived from
 # FrogItem.key (plugins/frogs/db.py): "frog:<species>:<state>".

@@ -13,8 +13,8 @@ import hikari
 import lightbulb
 import pendulum
 
-from cazzubot import utils
-from cazzubot.window import window_error, window_success
+from core import utils
+from core.window import window_error, window_success
 
 from .logic import parse_message_link, prepare_banner, snowflake_time
 

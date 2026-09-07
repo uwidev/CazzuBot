@@ -11,7 +11,7 @@ import asyncio
 
 import hikari
 
-from cazzubot.config import Config, parse_side
+from core.config import Config, parse_side
 
 _SIDES = ("production", "p", "develop", "d")
 

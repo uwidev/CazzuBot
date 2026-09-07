@@ -22,10 +22,10 @@ import lightbulb
 import pendulum
 from lightbulb.prefab import checks as prefab_checks
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
-from cazzubot.window import command_window, window_error
+from core import utils
+from core.bot import CazzuBot
+from core.errors import UserInputError
+from core.window import command_window, window_error
 
 from . import db
 from .logic import MAX_IMAGES, build_grid, scrape_week

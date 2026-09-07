@@ -11,9 +11,9 @@ manually for testing.
 
 import logging
 
-from cazzubot import Plugin
-from cazzubot.bot import CazzuBot
-from cazzubot.scheduler import At
+from core import Plugin
+from core.bot import CazzuBot
+from core.scheduler import At
 from typing_extensions import override
 
 from . import db

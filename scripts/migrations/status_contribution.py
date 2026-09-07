@@ -1,7 +1,7 @@
 """Migration: rename the effects store to statuses.
 
 Part of the 2026-08-31 terminology rename: the generic persistent
-modifier store is now **statuses** (``cazzubot/statuses.py``,
+modifier store is now **statuses** (``core/statuses.py``,
 ``bot.statuses``). This migration renames the store's table
 ``effect_contribution`` → ``status_contribution`` (no column or value
 changes: scope_kind/scope_id/seam/source/payload/expires_at and every

@@ -13,10 +13,10 @@ from enum import Enum
 
 import pendulum
 
-from cazzubot import statuses, levels
-from cazzubot.db import Database
-from cazzubot.statuses import Scope
-from cazzubot.utils import OldNew, month2season
+from core import statuses, levels
+from core.db import Database
+from core.statuses import Scope
+from core.utils import OldNew, month2season
 
 from . import db as exp_db
 
@@ -33,7 +33,7 @@ class StatusSeam(Enum):
     """Experience's seams — typed keys, never bare strings (SeamKey pattern).
 
     Each member's ``key`` is the stored seam string; the core ships zero
-    seams, so features declare their own (see ``cazzubot/statuses.py``).
+    seams, so features declare their own (see ``core/statuses.py``).
     """
 
     MESSAGE_EXP_MULTIPLIER = "message_exp_multiplier"

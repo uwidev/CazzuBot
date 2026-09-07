@@ -10,9 +10,9 @@ import pendulum
 import pytest
 from PIL import Image
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
+from core import utils
+from core.bot import CazzuBot
+from core.errors import UserInputError
 from plugins.board import db
 from tests.fakes import (
     FakeAttachment,

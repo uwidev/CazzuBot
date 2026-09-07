@@ -8,7 +8,7 @@ callback that edits/deletes via the webhook without acking first dies with
 from __future__ import annotations
 
 
-from cazzubot import utils
+from core import utils
 from tests.fakes import (
     FakeInteraction,
     FakeMenuContext,

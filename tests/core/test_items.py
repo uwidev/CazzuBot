@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from cazzubot.items import (
+from core.items import (
     NOOP,
     consumable,
     item_for,
@@ -19,7 +19,7 @@ from cazzubot.items import (
 )
 
 if TYPE_CHECKING:
-    from cazzubot.bot import CazzuBot
+    from core.bot import CazzuBot
 
 
 async def _goop(_bot: "CazzuBot", _uid: int, _amount: int) -> None:

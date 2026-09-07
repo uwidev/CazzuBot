@@ -18,9 +18,9 @@ from typing import Any, cast
 
 import pytest
 
-from cazzubot.bot import CazzuBot
-from cazzubot.items import Item
-from cazzubot.tips import TIP_SETS
+from core.bot import CazzuBot
+from core.items import Item
+from core.tips import TIP_SETS
 from plugins.inventory import InventoryPlugin
 from plugins.inventory.extension import InventoryPager, _build_grid
 from tests.fakes import (
@@ -38,7 +38,7 @@ def _register_inventory_tips() -> None:
     but these tests render the grid on a plugin-less fixture bot.
     Register the plugin's own sets explicitly (and restore after, since the
     registry is module-global across tests)."""
-    from cazzubot.tips import register_tips, unregister_tips
+    from core.tips import register_tips, unregister_tips
 
     register_tips("inventory", InventoryPlugin.tip_sets)
     yield

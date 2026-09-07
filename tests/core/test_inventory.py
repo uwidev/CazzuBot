@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from cazzubot.db import Database
-from cazzubot.inventory import (
+from core.db import Database
+from core.inventory import (
     SCHEMA,
     add,
     get,

@@ -8,8 +8,8 @@ with ``/plugin enable mod`` (persisted) or by setting
 
 import pendulum
 
-from cazzubot import Plugin
-from cazzubot.bot import CazzuBot
+from core import Plugin
+from core.bot import CazzuBot
 from typing_extensions import override
 
 from . import db

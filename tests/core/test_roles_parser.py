@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from cazzubot.manifest.lines import rewrite_renames
-from cazzubot.roles.parser import (
+from core.manifest.lines import rewrite_renames
+from core.roles.parser import (
     Issue,
     Manifest,
     ManifestError,
@@ -341,7 +341,7 @@ X : preset:legacy +manage_permissions -create_polls
 
 
 def test_legacy_flag_bits() -> None:
-    from cazzubot.roles.parser import flag_bit
+    from core.roles.parser import flag_bit
 
     assert flag_bit("read_messages") == 1 << 10  # view_channel
     assert flag_bit("external_emojis") == 1 << 18

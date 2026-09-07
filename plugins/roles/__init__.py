@@ -1,7 +1,7 @@
 """Roles plugin — warn-only boot-time drift check for the role manifest.
 
-Enforcement is manual (the CLI: ``uv run python -m cazzubot.roles``); the
-check itself lives in ``cazzubot.manifest.drift``, this module wires the
+Enforcement is manual (the CLI: ``uv run python -m core.roles``); the
+check itself lives in ``core.manifest.drift``, this module wires the
 roles domain.
 
 Setting: ``roles.manifest.path`` (default ``roles.manifest``).
@@ -11,13 +11,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cazzubot.manifest.drift import ManifestDriftPlugin
-from cazzubot.roles import executor
-from cazzubot.roles.parser import Manifest, parse
-from cazzubot.roles.plan import build_plan
+from core.manifest.drift import ManifestDriftPlugin
+from core.roles import executor
+from core.roles.parser import Manifest, parse
+from core.roles.plan import build_plan
 
 if TYPE_CHECKING:
-    from cazzubot.bot import CazzuBot
+    from core.bot import CazzuBot
 
 
 class RolesPlugin(ManifestDriftPlugin):

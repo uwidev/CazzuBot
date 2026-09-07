@@ -14,7 +14,7 @@ import asyncio
 import hikari
 import pytest
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from tests.driver import press_button, run_slash, wait_for_menu
 
 

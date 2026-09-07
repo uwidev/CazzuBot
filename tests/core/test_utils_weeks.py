@@ -1,10 +1,10 @@
-"""cazzubot.utils week math — Sunday/Monday starts, numbers, round-trips."""
+"""core.utils week math — Sunday/Monday starts, numbers, round-trips."""
 
 import pendulum
 import pytest
 
-from cazzubot.errors import UserInputError
-from cazzubot.utils import week_number, week_start, week_start_of
+from core.errors import UserInputError
+from core.utils import week_number, week_start, week_start_of
 
 
 def test_week_start_monday() -> None:

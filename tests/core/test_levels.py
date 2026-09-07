@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cazzubot import levels
+from core import levels
 
 
 def test_level_from_exp_edges() -> None:

@@ -29,14 +29,14 @@ migration = [
 ]
 
 [project.scripts]
-cazzubot-cli = "cazzubot.cli:main"
+cazzubot-cli = "core.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["cazzubot", "plugins"]
+packages = ["core", "plugins"]
 
 [tool.ruff]
 exclude = [
@@ -81,7 +81,7 @@ allowedUntypedLibraries = ["parsedatetime", "asyncpg"]
 # await db.execute(...) / ctx.send(...) and ignoring the result is the
 # discord.py idiom; "_ = await ..." everywhere would hurt readability.
 reportUnusedCallResult = "none"
-# TYPE_CHECKING guards (cazzubot core referencing CazzuBot) and plugin
+# TYPE_CHECKING guards (core referencing CazzuBot) and plugin
 # packages importing their own submodules are deliberate and safe; the rule
 # can't distinguish them from accidental cycles. See docs/ARCHITECTURE.md.
 reportImportCycles = "none"

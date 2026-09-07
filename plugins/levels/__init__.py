@@ -1,6 +1,6 @@
 """Levels plugin package."""
 
-from cazzubot import Plugin
+from core import Plugin
 
 
 class LevelsPlugin(Plugin):

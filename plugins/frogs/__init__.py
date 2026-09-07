@@ -2,15 +2,15 @@
 
 from collections.abc import Callable
 
-from cazzubot import Plugin
-from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogItemKey
-from cazzubot.statuses import (
+from core import Plugin
+from core.bot import CazzuBot
+from core.models import FrogItemKey
+from core.statuses import (
     RoleConverger,
     ScopeKind,
     StatusesClearedEvent,
 )
-from cazzubot.scheduler import At
+from core.scheduler import At
 from typing_extensions import override
 
 from . import db, factory

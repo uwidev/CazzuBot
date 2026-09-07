@@ -9,7 +9,7 @@ row. The count is *derived* — ``COUNT(*)`` over the events — never stored.
 
 from dataclasses import dataclass
 
-from cazzubot.db import Database
+from core.db import Database
 
 SCHEMA = [
     """

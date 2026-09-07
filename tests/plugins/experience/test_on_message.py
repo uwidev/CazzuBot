@@ -15,7 +15,7 @@ import importlib
 import pendulum
 import pytest
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from plugins.experience import extension as exp_ext
 from plugins.experience import db as exp_db
 from tests.fakes import (
@@ -78,8 +78,8 @@ async def test_exp_multiplier_scales_award(
     """A member contribution to the message-exp seam scales the award."""
     from datetime import timedelta
 
-    from cazzubot import statuses
-    from cazzubot.statuses import Scope
+    from core import statuses
+    from core.statuses import Scope
     from plugins.experience.logic import StatusSeam
 
     await statuses.publish(

@@ -7,18 +7,18 @@ import hikari
 import lightbulb
 import pendulum
 
-from cazzubot import leaderboard, timeparse, utils
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
-from cazzubot.models import FrogItemKey, FrogState
-from cazzubot.tips import get_tip
-from cazzubot.window import command_window, window_success
+from core import leaderboard, timeparse, utils
+from core.bot import CazzuBot
+from core.errors import UserInputError
+from core.models import FrogItemKey, FrogState
+from core.tips import get_tip
+from core.window import command_window, window_success
 
 from plugins.misc.asset import random_footer_icon
 
 from . import db as frog_db
 from . import factory
-from .species import SPECIES, by_key
+from .species import SPECIES
 
 loader = lightbulb.Loader()
 
@@ -113,30 +113,38 @@ class Catalog(
     async def invoke(self, ctx: lightbulb.Context) -> None:
         """Render the species catalog embed — name, art, description.
 
-        Each field shows the species' published art (emoji reference when
-        published) and its description only — what catching or consuming
-        the frog does belongs to the item's own info card, not here. The
-        footer cycles a random frog tip, like /frog view's.
+        Each species renders as its own description section: an H3 markdown
+        header carrying the species name, then the species' published art
+        (emoji reference when published) and its description. Headers are
+        description text because Discord renders markdown headings only in
+        the description (not in field names/values) — and H3 headers give
+        each entry a visible break from the next. Content stays limited to
+        name/art/description — what catching or consuming the frog does
+        belongs to the item's own info card, not here. The footer cycles a
+        random frog tip, like /frog view's.
         """
         bot = utils.bot_from(ctx)
         if not SPECIES:
             await ctx.respond("The frog catalog is empty.")
             return
-        embed = hikari.Embed(title="Frog Species Catalog", color=_COLOR)
+        sections: list[str] = []
         for species in SPECIES:
             art = (
                 await bot.assets.get(species.art)
                 if species.art is not None
                 else None
             )
-            value = (
+            body = (
                 f"{art} {species.description}"
                 if art
                 else species.description
             )
-            # species name is bolded as the field label — the catalog is a
-            # recap of owned frogs, so names read as entries, not nav links
-            embed.add_field(name=f"**{species.name}**", value=value)
+            sections.append(f"### {species.name}\n{body}")
+        embed = hikari.Embed(
+            title="Frog Species Catalog",
+            description="\n\n".join(sections),
+            color=_COLOR,
+        )
         # cycle one random frog tip through the footer per render — the tip
         # sets live in this plugin's own tip_sets (context "frog"), shared
         # with /frog view, and the footer icon pulls a random cirno emoji
@@ -368,6 +376,28 @@ class DebugFreeze(
 loader.command(frog)
 
 
+async def _inventory_glyph(
+    bot: "CazzuBot", species_key: FrogItemKey
+) -> str:
+    """The inventory icon glyph for one normal frog (view snippet).
+
+    The /frog view Inventory snippet lists frogs by their icon asset
+    instead of the species name, mirroring /inventory view: a published
+    ``icon_asset`` resolves through ``bot.assets.get`` to its
+    custom-emoji reference (``<:name:id>``); while unpublished (no asset
+    guild configured or a pending re-sync) the item's static ``icon`` is
+    the fallback, so a line never renders "None". An unknown species
+    (no registered item) degrades to the neutral frog icon — defensive;
+    inventory rows only carry registered species.
+    """
+    item = bot.items.item_for(f"frog:{species_key.value}:normal")
+    if item.icon_asset is not None:
+        published = await bot.assets.get(item.icon_asset)
+        if published is not None:
+            return published
+    return item.icon or "🐸"
+
+
 async def _prepare_personal_summary(
     bot: CazzuBot,
     ctx: lightbulb.Context,
@@ -381,8 +411,10 @@ async def _prepare_personal_summary(
     footer cycles a random frog tip.
 
     Its Inventory section is a snippet of the member's season-active
-    (normal) frogs only, sorted by quantity ascending (frozen trophies and
-    any future non-frog items are excluded) — see the inline build below.
+    (normal) frogs only — each line lists the frog by its icon asset
+    (published custom emoji; the species name is not shown), sorted by
+    quantity ascending — frozen trophies and any future non-frog items
+    are excluded.
     """
     board = await leaderboard.focus_board(
         bot,
@@ -414,9 +446,8 @@ async def _prepare_personal_summary(
         ),
         key=lambda row: row[2],
     ):
-        species = by_key(species_key)
-        label = species.name if species is not None else species_key.value
-        inv_lines.append(f"• {label} ×`{qty}`")
+        glyph = await _inventory_glyph(bot, species_key)
+        inv_lines.append(f"• {glyph} ×`{qty}`")
     inv_text = "\n".join(inv_lines) if inv_lines else "No frogs yet."
 
     now = pendulum.now("UTC")

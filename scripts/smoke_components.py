@@ -20,8 +20,8 @@ from typing import Any, cast
 import hikari
 import pendulum
 
-from cazzubot import utils
-from cazzubot.models import FrogItemKey
+from core import utils
+from core.models import FrogItemKey
 from dotenv import load_dotenv
 
 load_dotenv(".env")

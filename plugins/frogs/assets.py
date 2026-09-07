@@ -1,7 +1,7 @@
 """Frog assets — the declaration IS the reference.
 
 Each member's value is an ``AssetSpec``; the registry key is derived from
-the enum identity (``cazzubot.assets.asset_key``), never hand-written.
+the enum identity (``core.assets.asset_key``), never hand-written.
 Referencing an asset = naming a member, so an undeclared asset cannot be
 spelled.
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from cazzubot.assets import AssetKind, AssetSpec
+from core.assets import AssetKind, AssetSpec
 
 
 class FrogAsset(Enum):

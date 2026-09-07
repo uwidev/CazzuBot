@@ -16,10 +16,10 @@ import hikari
 import lightbulb
 import pendulum
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
-from cazzubot.listeners import guild_listener
-from cazzubot.errors import UserInputError
+from core import utils
+from core.bot import CazzuBot
+from core.listeners import guild_listener
+from core.errors import UserInputError
 
 from . import db
 

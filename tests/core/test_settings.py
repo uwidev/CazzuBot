@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 
 
 async def test_settings_json_roundtrip(bot: CazzuBot) -> None:

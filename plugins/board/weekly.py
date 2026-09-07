@@ -22,9 +22,9 @@ from dataclasses import dataclass
 import hikari
 import pendulum
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
+from core import utils
+from core.bot import CazzuBot
+from core.errors import UserInputError
 
 from . import db as board_db
 from .logic import MAX_IMAGES, build_grid, scrape_week

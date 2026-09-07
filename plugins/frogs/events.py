@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cazzubot.models import FrogState, FrogItemKey
+from core.models import FrogState, FrogItemKey
 
 
 @dataclass(frozen=True, slots=True)

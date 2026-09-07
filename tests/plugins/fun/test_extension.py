@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from plugins.fun.extension import (
     Echo,
     Hashiresoriyo,

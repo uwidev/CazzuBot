@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pendulum
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from plugins.experience import db as exp_db
 
 _UID = 424242

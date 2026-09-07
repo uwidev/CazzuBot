@@ -21,10 +21,10 @@ import hikari
 import lightbulb
 import pendulum
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogItemKey
-from cazzubot.scheduler import InChaotic
+from core import utils
+from core.bot import CazzuBot
+from core.models import FrogItemKey
+from core.scheduler import InChaotic
 
 from . import db as frog_db
 from .events import FrogCapturedEvent
@@ -39,6 +39,35 @@ FROG_NET_EMOJI = "<:cirnoNet:752290769712316506>"
 _CATCH_PREFIX = "frog:catch:"
 
 
+async def _arm_channel_spawn(
+    bot: CazzuBot, payload: dict[str, Any]
+) -> None:
+    """Arm the next spawn for ONE channel — exactly one pending row.
+
+    A channel's spawn schedule is a single-row chain: every arming point
+    (the boot/re-enable queue, and the re-arm after a fire) REPLACES the
+    channel's pending row(s) instead of stacking a second one. Two rows
+    for one channel mean two independent spawn chains — the channel then
+    fires ~2x per interval, and when two chaotic rolls land within
+    `persist` of each other two frogs appear at once (the "2+ frogs
+    instead of 1" bug). The fired row may still be present while its
+    handler runs (the scheduler deletes it only after the handler
+    returns) — every row for the channel is dropped here, duplicates
+    included, so a channel that already carries a duplicate self-heals on
+    its next fire. Drop + insert run inside one transaction so two
+    concurrent arms for the same channel cannot both land.
+    """
+    cid = payload["cid"]
+    async with bot.db.transaction():
+        for task in await bot.scheduler.get("frog"):
+            if task.payload.get("cid") == cid:
+                await bot.scheduler.drop(task.id)
+        run_at = InChaotic(
+            interval=payload["interval"], jitter=payload["fuzzy"]
+        ).next_run(pendulum.now("UTC"))
+        await bot.scheduler.add("frog", run_at, payload)
+
+
 async def on_frog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
     """Scheduler handler for tag ``frog`` — pure chaotic timeline.
 
@@ -51,10 +80,7 @@ async def on_frog_due(bot: CazzuBot, payload: dict[str, Any]) -> None:
     if not await frog_db.get_enabled(bot.settings):
         return
 
-    next_run = InChaotic(
-        interval=payload["interval"], jitter=payload["fuzzy"]
-    ).next_run(pendulum.now("UTC"))
-    await bot.scheduler.add("frog", next_run, payload)
+    await _arm_channel_spawn(bot, payload)
 
     # the spawn channel may belong to the OTHER guild (rows armed while
     # the bot served it) — never spawn into it under this guild mode
@@ -252,13 +278,15 @@ class FrogCatchMenu(lightbulb.components.Menu):
 
 
 async def queue_frog_spawns(bot: CazzuBot) -> None:
-    """Insert one task per configured spawn channel."""
+    """Insert one task per configured spawn channel — one row per channel.
+
+    Each arm REPLACES the channel's pending row(s) via
+    :func:`_arm_channel_spawn` (never stacks a second row), so a stale
+    duplicate left by an earlier double-arm is collapsed here rather than
+    carried forward.
+    """
     for spawn in await frog_db.get_spawns(bot.db):
-        payload = asdict(spawn)
-        run_at = InChaotic(
-            interval=spawn.interval, jitter=spawn.fuzzy
-        ).next_run(pendulum.now("UTC"))
-        await bot.scheduler.add("frog", run_at, payload)
+        await _arm_channel_spawn(bot, asdict(spawn))
 
 
 async def reset_frog_tasks(bot: CazzuBot) -> None:

@@ -12,8 +12,8 @@ from typing import Any, cast
 import pendulum
 import pytest
 
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
+from core.bot import CazzuBot
+from core.errors import UserInputError
 from plugins.mod.extension import (
     Ban,
     Kick,

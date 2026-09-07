@@ -3,7 +3,7 @@
 Builds a temp DB with a legacy ``'species'`` asset row, runs the rename
 logic directly (no CLI), and asserts the new shape — including the boot
 blocker it fixes: every stored kind must coerce to the current
-``AssetKind`` enum (``cazzubot.db._coerce_field`` raises on a stale
+``AssetKind`` enum (``core.db._coerce_field`` raises on a stale
 value).
 """
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from cazzubot.assets import AssetKind
+from core.assets import AssetKind
 from scripts.migrations.asset_kind import migrate, needs_renaming, plan
 
 _ASSET_DDL = """

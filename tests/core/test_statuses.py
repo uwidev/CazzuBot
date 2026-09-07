@@ -20,10 +20,10 @@ from datetime import timedelta
 import pendulum
 import pytest
 
-from cazzubot import statuses
-from cazzubot.bot import CazzuBot
-from cazzubot.db import Database
-from cazzubot.statuses import (
+from core import statuses
+from core.bot import CazzuBot
+from core.db import Database
+from core.statuses import (
     STATUS_CONVERGE_TAG,
     StatusesClearedEvent,
     ReapplyPolicy,

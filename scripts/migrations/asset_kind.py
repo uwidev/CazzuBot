@@ -4,7 +4,7 @@ The asset kind enum changed (``AssetKind.IMAGE`` replaces ``SPECIES``:
 the kind now describes how an asset is stored/accessed — a CDN-published
 image vs. an inline emoji glyph — not what the asset depicts). Rows still
 storing ``'species'`` cannot boot the renamed code: the schema guard's
-enum coercion (``cazzubot.db._coerce_field``) raises on the stale value,
+enum coercion (``core.db._coerce_field``) raises on the stale value,
 and the boot reconcile would otherwise force every IMAGE asset to
 re-publish (new CDN URLs, the old ones deleted).
 
@@ -26,7 +26,7 @@ from dataclasses import dataclass
 
 from scripts.migrations.common import Migration
 
-# mirrors cazzubot/assets.py AssetKind.IMAGE.value
+# mirrors core/assets.py AssetKind.IMAGE.value
 LEGACY_KIND = "species"
 CURRENT_KIND = "image"
 

@@ -1,6 +1,6 @@
 """Counter plugin package."""
 
-from cazzubot import Plugin
+from core import Plugin
 
 from . import db
 from .extension import on_counter_expire

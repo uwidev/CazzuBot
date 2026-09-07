@@ -14,7 +14,7 @@ from pathlib import Path
 
 import hikari
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from plugins.counter import db as counter_db
 from tests.driver import press_button, run_slash
 

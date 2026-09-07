@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from cazzubot.errors import UserInputError
+from core.errors import UserInputError
 
 # Linux font paths — there is no arial.ttf outside Windows.
 _FONT_CANDIDATES = [

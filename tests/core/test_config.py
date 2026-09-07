@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cazzubot.config import GUILD_ID_DEV, GUILD_ID_PROD, Config, parse_side
+from core.config import GUILD_ID_DEV, GUILD_ID_PROD, Config, parse_side
 
 _TOKEN_PROD = "MTIzNDU2Nzg5MDEyMzQ1Ng.OTg3NjU0MzIxMDEyMzQ1Ng.PROD"
 _TOKEN_DEV = "MTIzNDU2Nzg5MDEyMzQ1Ng.OTg3NjU0MzIxMDEyMzQ1Ng.DEV"
@@ -17,7 +17,7 @@ def _no_dotenv(  # pyright: ignore[reportUnusedFunction] pytest autouse fixture
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Never load the real .env — it would refill deleted vars."""
-    monkeypatch.setattr("cazzubot.config.load_dotenv", lambda: False)
+    monkeypatch.setattr("core.config.load_dotenv", lambda: False)
 
 
 def _env(

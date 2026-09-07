@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from enum import Enum
 
-from cazzubot.models import MemberSnapshot
-from cazzubot.utils import OldNew, format_member
+from core.models import MemberSnapshot
+from core.utils import OldNew, format_member
 
 MESSAGE_KEY = "level.message"
 

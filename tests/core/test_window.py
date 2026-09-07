@@ -5,7 +5,7 @@ from __future__ import annotations
 import hikari
 import pytest
 
-from cazzubot.window import (
+from core.window import (
     command_window,
     window_info,
     window_warn,

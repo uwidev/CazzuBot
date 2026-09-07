@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pendulum
 
-from cazzubot.bot import CazzuBot
-from cazzubot.models import ModlogTypeEnum
+from core.bot import CazzuBot
+from core.models import ModlogTypeEnum
 from plugins.mod.db import add_log
 
 

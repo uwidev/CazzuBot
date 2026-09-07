@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from cazzubot.models import WindowEnum
-from cazzubot.utils import OldNew
+from core.models import WindowEnum
+from core.utils import OldNew
 from plugins.ranks.db import RankThreshold
 from plugins.ranks.logic import rank_difference
 

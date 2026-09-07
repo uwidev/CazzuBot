@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pendulum
 
-from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogState, FrogItemKey
+from core.bot import CazzuBot
+from core.models import FrogState, FrogItemKey
 from plugins.frogs import db as frog_db
 from plugins.frogs import (
     FrogsPlugin,

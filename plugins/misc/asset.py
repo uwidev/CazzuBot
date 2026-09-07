@@ -3,11 +3,11 @@
 The misc plugin hosts the bot's shared brand emojis (the cirno reaction
 shots in ``assets/``) so any surface can use them without owning their
 files. Each member's value is an ``AssetSpec``; the registry key is
-derived from the enum identity (``cazzubot.assets.asset_key``), never
+derived from the enum identity (``core.assets.asset_key``), never
 hand-written. A member IS the reference — an undeclared asset cannot be
-spelled (see ``cazzubot/assets.py``).
+spelled (see ``core/assets.py``).
 
-Embed surfaces that cycle a footer tip (``cazzubot.tips``) pull their
+Embed surfaces that cycle a footer tip (``core.tips``) pull their
 footer **icon** from here: :func:`random_footer_icon` mirrors
 ``tips.get_tip``'s random-per-render behavior, so repeated embeds cycle
 through the published cirno emojis instead of pinning one icon.
@@ -19,10 +19,10 @@ import random
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from cazzubot.assets import AssetKind, AssetSpec
+from core.assets import AssetKind, AssetSpec
 
 if TYPE_CHECKING:
-    from cazzubot.bot import CazzuBot
+    from core.bot import CazzuBot
 
 
 class MiscAsset(Enum):

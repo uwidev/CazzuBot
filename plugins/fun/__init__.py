@@ -1,6 +1,6 @@
 """Fun plugin package."""
 
-from cazzubot import Plugin
+from core import Plugin
 
 
 class FunPlugin(Plugin):

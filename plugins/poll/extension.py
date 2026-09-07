@@ -15,10 +15,10 @@ import hikari
 from typing_extensions import override
 import lightbulb
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
-from cazzubot.db import Database
-from cazzubot.listeners import guild_listener
+from core import utils
+from core.bot import CazzuBot
+from core.db import Database
+from core.listeners import guild_listener
 from lightbulb.components import modals
 
 from . import db

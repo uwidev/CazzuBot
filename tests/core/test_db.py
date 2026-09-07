@@ -15,8 +15,8 @@ import pendulum
 import pytest
 from typing import Any
 
-from cazzubot import CazzuBot, Config
-from cazzubot.db import Database, SchemaMismatchError, _coerce_field  # pyright: ignore[reportPrivateUsage]
+from core import CazzuBot, Config
+from core.db import Database, SchemaMismatchError, _coerce_field  # pyright: ignore[reportPrivateUsage]
 from plugins.experience import db as exp_db
 from tests.conftest import _DUMMY_TOKEN
 

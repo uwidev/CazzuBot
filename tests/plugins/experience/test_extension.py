@@ -13,7 +13,7 @@ from typing import Any, cast
 import pendulum
 import pytest
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from plugins.experience import db as exp_db
 from plugins.experience.extension import QuietAdd, TopMenu, View
 from tests.fakes import (
@@ -47,7 +47,7 @@ def _stub_user_lookup(
     async def _resolve(_bot: object, uid: int) -> object:
         return users.get(uid)
 
-    monkeypatch.setattr("cazzubot.utils.find_user", _resolve)
+    monkeypatch.setattr("core.utils.find_user", _resolve)
 
 
 async def test_exp_no_experience_embed(

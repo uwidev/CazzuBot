@@ -11,10 +11,10 @@ import pendulum
 
 from typing import Any
 
-from cazzubot.db import Database
-from cazzubot.models import WindowEnum
-from cazzubot.settings import Settings
-from cazzubot.utils import month2season
+from core.db import Database
+from core.models import WindowEnum
+from core.settings import Settings
+from core.utils import month2season
 
 SCHEMA = [
     """

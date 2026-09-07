@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cazzubot.models import WelcomeModeEnum
+from core.models import WelcomeModeEnum
 from plugins.welcome.logic import should_welcome
 
 

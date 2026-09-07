@@ -6,7 +6,7 @@ Persistence for polls, their items, and votes. Single-guild port of v1's
 
 from dataclasses import dataclass
 
-from cazzubot.db import Database
+from core.db import Database
 
 SCHEMA = [
     """

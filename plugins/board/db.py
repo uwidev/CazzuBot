@@ -9,7 +9,7 @@ are derived from ``ts`` via range queries — no week column.
 
 from dataclasses import dataclass
 
-from cazzubot.db import Database
+from core.db import Database
 
 SCHEMA = [
     """

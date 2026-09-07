@@ -1,7 +1,7 @@
 """get_tip() & the tips registry — plugin registers, core queries.
 
 The strings live in the owning plugins' ``Plugin.tip_sets``; the core
-(``cazzubot.tips``) is a registry the plugins fold into at boot via
+(``core.tips``) is a registry the plugins fold into at boot via
 ``register_tips`` and query on render via ``get_tip``. These tests cover
 the registry contract (register / query / unregister / collision) and the
 two plugin declarations that currently feed it.
@@ -14,8 +14,8 @@ from collections.abc import Generator
 
 import pytest
 
-import cazzubot.tips as tips_mod
-from cazzubot.tips import (
+import core.tips as tips_mod
+from core.tips import (
     TIP_SETS,
     get_tip,
     register_tips,
@@ -31,7 +31,7 @@ def _clean_registry() -> Generator[None, None, None]:
 
     The registry is module-global, so tests that mutate it must leave it
     clean for the next test. ``_PROVIDER`` is the registry's ownership
-    index (mirrors ``cazzubot.items``); clearing it is the teardown of the
+    index (mirrors ``core.items``); clearing it is the teardown of the
     plugin-unload path, which the public API doesn't offer by name.
     """
     tips_mod.TIP_SETS.clear()

@@ -20,8 +20,8 @@ from pathlib import Path
 
 from typing_extensions import override
 
-from cazzubot import CazzuBot, Config
-from cazzubot.config import SANDBOX_DEFAULT_PLUGINS, parse_side
+from core import CazzuBot, Config
+from core.config import SANDBOX_DEFAULT_PLUGINS, parse_side
 
 _log = logging.getLogger(__name__)
 

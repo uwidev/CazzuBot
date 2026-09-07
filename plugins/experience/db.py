@@ -9,9 +9,9 @@ from dataclasses import dataclass
 
 import pendulum
 
-from cazzubot.db import Database
-from cazzubot.models import MemberExpLogSourceEnum
-from cazzubot.utils import rank_rows, season_bounds
+from core.db import Database
+from core.models import MemberExpLogSourceEnum
+from core.utils import rank_rows, season_bounds
 
 SCHEMA = [
     """

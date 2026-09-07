@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from cazzubot.events import EventBus
+from core.events import EventBus
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ async def test_handler_failure_is_isolated(
     bus.on(_A, boom)
     bus.on(_A, after)
 
-    with caplog.at_level(logging.ERROR, logger="cazzubot.events"):
+    with caplog.at_level(logging.ERROR, logger="core.events"):
         await bus.emit(_A(value=1))
 
     assert seen == ["after"]  # later handlers still ran

@@ -6,8 +6,8 @@ from typing import Any, cast
 
 import pytest
 
-from cazzubot.channels.parser import parse
-from cazzubot.channels.plan import build_plan
+from core.channels.parser import parse
+from core.channels.plan import build_plan
 from tests.core.channels_data import SNAPSHOT, ch, mutated
 
 IDENTICAL = """\

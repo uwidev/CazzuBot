@@ -8,7 +8,7 @@ typed tuple/scalar for projections (``rank_rows`` results, ``fetchval``
 counts). Coercion from stored TEXT/INTEGER to field types lives in
 ``row_to``/``rows_to`` — see ``tests/core/test_db.py``.
 
-One carve-out: ``cazzubot/settings.py`` is an intentionally untyped JSON
+One carve-out: ``core/settings.py`` is an intentionally untyped JSON
 key-value store (``Any`` is the honest type there — see
 ``docs/PLAN_DB_MODELS.md`` D3).
 """
@@ -20,16 +20,16 @@ import re
 from pathlib import Path
 
 _TABLE_OWNERS = (
-    "cazzubot/scheduler.py",
-    "cazzubot/settings.py",
-    "cazzubot/statuses.py",
-    "cazzubot/assets.py",
+    "core/scheduler.py",
+    "core/settings.py",
+    "core/statuses.py",
+    "core/assets.py",
 )
 
 # settings.get returns Any by design: an untyped JSON key-value store does not
 # commit to a value type (docs/PLAN_DB_MODELS.md D3).
 _ANY_ALLOWED = {
-    ("cazzubot/settings.py", "get"),
+    ("core/settings.py", "get"),
 }
 
 

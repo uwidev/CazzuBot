@@ -14,8 +14,8 @@ from pathlib import Path
 
 import hikari
 
-from cazzubot import CazzuBot, Config
-from cazzubot.models import FrogState, FrogItemKey
+from core import CazzuBot, Config
+from core.models import FrogState, FrogItemKey
 from scripts.migrations.frog_species_key import (
     INVENTORY_DDL,
     migrate,

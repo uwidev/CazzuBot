@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from plugins.ranks import db as ranks_db
 
 

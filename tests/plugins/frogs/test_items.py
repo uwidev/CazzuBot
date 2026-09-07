@@ -16,9 +16,9 @@ import pendulum
 import pytest
 from typing import TYPE_CHECKING
 
-from cazzubot.errors import UserInputError
-from cazzubot.models import FrogItemKey, FrogState
-from cazzubot.statuses import Scope, status_by_source
+from core.errors import UserInputError
+from core.models import FrogItemKey, FrogState
+from core.statuses import Scope, status_by_source
 from plugins.frogs.seams import FrogSeam
 
 from tests.plugins.frogs._current import events, items, statuses
@@ -196,7 +196,7 @@ async def test_consume_reports_frog_consumed_event(full_bot) -> None:
 
 
 async def test_frozen_consume_is_refused(full_bot) -> None:
-    """Frozen frogs are trophies — their consume glue refuses the act."""
+    """Frozen frogs are trophies — one shared glue refuses the act."""
     it = items()
     for member in (
         it.FrogItems.BASIC_FROZEN,
@@ -206,6 +206,9 @@ async def test_frozen_consume_is_refused(full_bot) -> None:
     ):
         consume = member.value.consume
         assert consume is not None
+        # every frozen species routes through the SAME function — there is
+        # exactly one frozen-consume path, not four copies of the refusal
+        assert consume is it._consume_frozen
         with pytest.raises(UserInputError, match="cannot be consumed"):
             await consume(full_bot, 123, 1)
         # nothing was granted or taken — the refusal happens before any move

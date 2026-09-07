@@ -17,7 +17,7 @@ from collections.abc import Sequence
 
 import hikari
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from lightbulb.commands.commands import CommandBase
 from lightbulb.commands.execution import ExecutionHook
 from lightbulb.commands.groups import Group, SubGroup

@@ -15,10 +15,10 @@ import hikari
 import pendulum
 import pytest
 
-from cazzubot import CazzuBot, Config
-from cazzubot.models import FrogState, FrogItemKey
-from cazzubot.plugin import Plugin
-from cazzubot.scheduler import TaskPolicy
+from core import CazzuBot, Config
+from core.models import FrogState, FrogItemKey
+from core.plugin import Plugin
+from core.scheduler import TaskPolicy
 from plugins.experience import db as exp_db
 from plugins.frogs import db as frog_db
 
@@ -185,8 +185,8 @@ async def test_plugin_on_load_asset_drift_aborts(tmp_path: Path) -> None:
     plugin_dir.mkdir()
     (plugin_dir / "__init__.py").write_text("")
     (plugin_dir / "drifty.py").write_text(
-        "from cazzubot import Plugin\n"
-        "from cazzubot.assets import AssetError\n"
+        "from core import Plugin\n"
+        "from core.assets import AssetError\n"
         "\n"
         "class Drifty(Plugin):\n"
         "    name = 'drifty'\n"

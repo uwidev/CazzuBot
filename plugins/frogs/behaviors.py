@@ -16,7 +16,7 @@ Two behaviors ship:
   its own behavior beside itself (nothing here forces a shape on it).
 - ``ClusterBurst`` — the catch hook for Cluster Frog: catching the frog
   never grants an item (Cluster deliberately has no item) — instead the
-  frog bursts 4–6 Basic frogs into the channels around the caught one.
+  frog bursts 2–10 Basic frogs into the channels around the caught one (weighted low — see ``_burst_spawn_count``).
   Its child-spawning implementation is injected at plugin load
   (behaviors → factory would cycle; the plugin bridges), so this module
   never imports the factory.
@@ -36,16 +36,16 @@ from typing import TYPE_CHECKING, Any, cast
 
 import hikari
 
-from cazzubot import utils
-from cazzubot.assets import emoji_cdn_url
-from cazzubot.models import FrogItemKey, FrogState, MemberSnapshot
-from cazzubot.tips import get_tip
+from core import utils
+from core.assets import emoji_cdn_url
+from core.models import FrogItemKey, FrogState, MemberSnapshot
+from core.tips import get_tip
 
 from . import db as frog_db
 from .assets import FrogAsset
 
 if TYPE_CHECKING:
-    from cazzubot.bot import CazzuBot
+    from core.bot import CazzuBot
 
     from .species import Species
 
@@ -56,6 +56,14 @@ _CAPTURE_COLOR = hikari.Color.from_hex_code("#a2dcf7")
 
 # hikari-free channel-type check (hikari.ChannelType.GUILD_TEXT == 0)
 _GUILD_TEXT = 0
+
+# the cluster burst size roll — weighted 2–10: small blasts are the norm
+# (3–4 the most common amounts), big bursts get less likely the larger
+# they get, and 10 is a ~10% jackpot. One explicit weight per count; the
+# tuple sums to 100 so each entry reads as its approximate percentage.
+_BURST_MIN_COUNT = 2
+_BURST_MAX_COUNT = 10
+_BURST_COUNT_WEIGHTS = (12, 19, 19, 15, 10, 6, 5, 4, 10)  # counts 2..10
 
 
 # -- catch behaviors ------------------------------------------------------
@@ -171,7 +179,7 @@ def _default_capture_embed(
     old→new, the total frog count old→new ("froggies" = all species), the
     CATCH_BANNER media asset's thumbnail (its CDN URL while published, no
     thumbnail while unpublished) and a cycling footer tip (``get_tip`` via
-    ``cazzubot.tips`` — this plugin's "frog" tip_sets) with the catcher's
+    ``core.tips`` — this plugin's "frog" tip_sets) with the catcher's
     avatar. The catcher's mention and ping deliberately live on the message
     content (see :func:`grant_catch`) and NOT here — Discord does not
     resolve pings inside embeds.
@@ -181,7 +189,7 @@ def _default_capture_embed(
         title="Congrats on your catch!",
         description=(
             "+1 to froggies\n\n"
-            f"**{species.name}**: `{species_old}` -> `{species_new}`"
+            f"**{species.name}**: `{species_old}` -> `{species_new}`\n"
             f"**Seasonal Captures**: `{seasonal_old}` -> `{seasonal_new}`\n"
             f"**Total Captures**: `{frog_cnt_old}` -> `{frog_cnt_new}`"
         ),
@@ -195,6 +203,21 @@ def _default_capture_embed(
         embed.set_footer(text=get_tip("frog"))
 
     return embed
+
+
+def _burst_spawn_count(rng: Any) -> int:
+    """One weighted burst size (2–10) drawn from ``rng``.
+
+    Cluster blasts are small most of the time (3–4 the most common
+    amounts), larger bursts get less likely the bigger they get, and 10
+    is a ~10% jackpot — ``_BURST_COUNT_WEIGHTS`` sums to 100 so each
+    entry reads as its approximate percentage. ``rng`` is the injectable
+    random source (the module ``random`` at call time, patched in tests).
+    """
+    return rng.choices(
+        range(_BURST_MIN_COUNT, _BURST_MAX_COUNT + 1),
+        weights=_BURST_COUNT_WEIGHTS,
+    )[0]
 
 
 class ClusterBurst:
@@ -225,7 +248,8 @@ class ClusterBurst:
         cid: int,
         persist: int,
     ) -> hikari.Message | None:
-        """Burst: no item — 4–6 Basic frogs into the channels around ``cid``.
+        """Burst: no item — 2–10 Basic frogs (weighted low, 10 is a ~10% jackpot) into the channels around ``cid``
+        (kept within the caught channel's category).
 
         The capture ledger (log, counter, event) already ran before this
         behavior; the burst is the whole species behavior and never grants
@@ -254,7 +278,7 @@ class ClusterBurst:
                 "cluster catch channel %s outside text channels", cid
             )
             return None
-        count = random.randint(4, 6)
+        count = _burst_spawn_count(random)
         targets = [random.choice(zone) for _ in range(count)]
         _log.info(
             "cluster frog bursts %d basic(s) across %d channel(s)",
@@ -264,17 +288,10 @@ class ClusterBurst:
         # the announcement follows the capture-message convention (see
         # ``grant_catch``): the catcher's mention and ping ride on the
         # message content — Discord does not resolve pings inside embeds,
-        # so the embed must not carry the catcher. The species' art emoji
-        # rides the content line too (published art yields its
-        # ``<:name:id>`` reference, unpublished art adds no emoji — never
-        # the literal "None"). Cluster frogs never grant an item — there is
-        # no species stack to count; the burst count (the Basic Frogs the
-        # failed catch burst into) is the count line instead.
-        art = (
-            await bot.assets.get(species.art)
-            if species.art is not None
-            else None
-        )
+        # so the embed must not carry the catcher. Cluster frogs never
+        # grant an item — there is no species stack to count; the burst
+        # count (the Basic Frogs the failed catch burst into) is the
+        # count line instead.
         content = f"<@{uid}>"
         sent = await bot.rest.create_message(
             cid,
@@ -293,15 +310,40 @@ class ClusterBurst:
     async def _zone(
         self, bot: "CazzuBot", guild_id: int, cid: int
     ) -> list[tuple[int, int]]:
-        """(channel_id, position) of text channels ±2 around ``cid``."""
+        """(channel_id, position) of text channels ±2 around ``cid`` in its room.
+
+        The blast stays **within the channel category** of the caught
+        channel (its "room"): only text channels sharing the origin's
+        ``parent_id`` (None for uncategorized channels, which form one
+        implicit room) qualify, still ordered by (position, id) with the
+        ±2 radius taken inside that room. A cluster catch can therefore
+        never spill into a hidden/sensitive channel that merely sits next
+        to the origin in the guild-wide position order (e.g. a staff-only
+        announcements channel in an adjacent category). A future patch may
+        add a per-channel deny-list a burst must never target — the zone
+        narrowing above is the category-level containment; a blacklist
+        would be the explicit override on top.
+        """
         channels = await bot.rest.fetch_guild_channels(guild_id)
+        by_id = {
+            int(channel.id): channel
+            for channel in channels
+            if getattr(channel, "type", None) == _GUILD_TEXT
+        }
+        origin = by_id.get(cid)
+        if origin is None:
+            return []
+        parent = getattr(origin, "parent_id", None)
         texts = [
             (
                 int(channel.id),
                 int(getattr(channel, "position", 0) or 0),
             )
             for channel in channels
-            if getattr(channel, "type", None) == _GUILD_TEXT
+            if (
+                getattr(channel, "type", None) == _GUILD_TEXT
+                and getattr(channel, "parent_id", None) == parent
+            )
         ]
         texts.sort(key=lambda entry: (entry[1], entry[0]))
         ids = [entry[0] for entry in texts]

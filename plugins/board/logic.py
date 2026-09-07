@@ -1,6 +1,6 @@
 """Board plugin — pure logic: filtering, hashing, scraping, stitching.
 
-Week math lives in ``cazzubot.utils`` (the board week runs Sunday 00:00
+Week math lives in ``core.utils`` (the board week runs Sunday 00:00
 UTC → next Sunday 00:00 UTC). No discord imports here — see
 ``tests/core/test_csr_boundary.py``. The framework-adjacent pieces
 (message history walk, image downloads) are injected: ``scrape_week``
@@ -20,7 +20,7 @@ from typing import Any
 import pendulum
 from PIL import Image
 
-from cazzubot.db import Database
+from core.db import Database
 
 from .db import BoardRow, add_image, delete_image, has_sha_in_week
 from .stitcher import ImageGridStitcher

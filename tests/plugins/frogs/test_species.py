@@ -8,8 +8,8 @@ import random
 
 import pendulum
 
-from cazzubot.models import FrogItemKey, FrogState
-from cazzubot.utils import member_snapshot
+from core.models import FrogItemKey, FrogState
+from core.utils import member_snapshot
 
 from plugins.frogs import plugin as frog_plugin
 from plugins.frogs.assets import FrogAsset

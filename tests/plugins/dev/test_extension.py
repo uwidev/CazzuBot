@@ -6,8 +6,8 @@ from __future__ import annotations
 import pytest
 from lightbulb.prefab.checks import NotOwner, owner_only
 
-from cazzubot import levels
-from cazzubot.bot import CazzuBot
+from core import levels
+from core.bot import CazzuBot
 from plugins.dev.extension import (
     CalcCum,
     CalcTo,

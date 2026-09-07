@@ -5,8 +5,8 @@ from __future__ import annotations
 import pendulum
 import pytest
 
-from cazzubot.errors import UserInputError
-from cazzubot.models import ModlogTypeEnum
+from core.errors import UserInputError
+from core.models import ModlogTypeEnum
 from plugins.mod.logic import ensure_future, resolve_ban_type
 
 

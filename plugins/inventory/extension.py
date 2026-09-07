@@ -10,19 +10,26 @@ published custom-emoji reference — ``bot.assets.get`` — falling back to
 the static ``icon`` while unpublished); the title names the member
 (``X's Inventory``, no author field), the thumbnail is the member's
 profile picture, and the footer cycles one random item tip. Discord caps
-an embed at 25 fields, so the grid pages at that boundary. Stacks whose
+an embed at 25 fields, so the grid pages at that boundary (the pager
+renders only when the grid exceeds one page — 25 or fewer unique items
+show no navigation). Stacks whose
 id no longer resolves (a provider removing/renaming an item) are hidden
 AND compacted away: slots are re-derived over the *visible* stacks only
 (see :func:`_indexed_resolved`), ranked frozen-frog-trophies-last then
 by quantity descending (largest stacks first), so the grid never shows a
 gap like "1, 2, 4".
 ``consume <slot>`` resolves
-a stack by its derived slot number, then runs the item's own consume
-handler and decrements the stack; for exp-granting items its final
-embed also shows the seasonal exp before/after the consume, and when
-the consume grants a status the **resulting** status (the granted
-status class's human prose) appears as a field of its own — nothing
-when the item grants no status.
+a stack by its derived slot number, confirms with the member, then runs
+the item's own consume handler and decrements the stack. Its
+**confirmation step previews the outcome** the final embed then reports:
+the item's effect fields, the seasonal exp before/after (predicted from
+the item module's exp oracle so preview and grant can't drift), and the
+resulting status when the item grants one. The final "Consumed!" embed
+shows the actuals: the seasonal exp before/after the consume (for
+exp-granting items, only when the consume changed it), and the
+**resulting** status (the granted
+status class's human prose, read back from the live contribution) —
+nothing when the item grants no status.
 ``info <slot>`` shows the invoker's item
 in that slot as a description card — thumbnail from the item's asset,
 title the item name, the description prose, then one labeled embed field
@@ -36,12 +43,12 @@ import hikari
 import lightbulb
 import pendulum
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
-from cazzubot.items import Item
-from cazzubot.statuses import Scope
-from cazzubot.tips import get_tip
+from core import utils
+from core.bot import CazzuBot
+from core.errors import UserInputError
+from core.items import Item
+from core.statuses import Scope
+from core.tips import get_tip
 
 from plugins.misc.asset import random_footer_icon
 
@@ -65,21 +72,28 @@ class View(
 ):
     """Render a member's full inventory as a paged inline-field grid.
 
-    The pager (:class:`InventoryPager`) is attached always — a single
-    page clamps both buttons, and 26+ slots page at 25 fields per page —
-    and its buttons are stripped when the 30s attach window lapses.
+    The pager (:class:`InventoryPager`) is attached only when the grid
+    exceeds one page (26+ unique items page 25 fields per page); a single
+    page is sent bare — no navigation buttons — and the pager's buttons
+    are stripped when the 30s attach window lapses.
     """
 
     user = lightbulb.user("user", "The member to show", default=None)
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Render the inventory grid embed and attach the pager."""
+        """Render the grid; attach the pager only when it actually pages."""
         bot = utils.bot_from(ctx)
         target = self.user or ctx.member or ctx.user
         indexed = await _indexed_resolved(bot, target.id)
         page = 1
         embed = await _build_grid(bot, indexed, target, page=page)
+        # one page (PAGE_SIZE or fewer unique items) is sent bare — page
+        # navigation over a single page is pointless, so no buttons render;
+        # 26+ slots page PAGE_SIZE fields at a time via the InventoryPager
+        if len(indexed) <= PAGE_SIZE:
+            await ctx.respond(embed=embed)
+            return
         menu = InventoryPager(bot, ctx, indexed, target, page=page)
         # the menu is a sequence of row builders (no public build())
         await ctx.respond(embed=embed, components=cast(Any, menu))
@@ -103,7 +117,13 @@ class Consume(
     Both the confirmation and the final "Consumed!" embeds carry the bot
     avatar footer and the item's published art as thumbnail when available
     (unpublished → no thumbnail). See :func:`_apply_item_thumbnail`. The
-    final "Consumed!" embed adds an effects section — the item's
+    confirmation step previews the outcome so a member sees what they're
+    agreeing to: the "On consumption"/effect fields (what consuming does),
+    the seasonal exp before/after (predicted from the same oracle the
+    consume glue grants — preview and grant cannot drift), and the
+    resulting status when the item grants one. The
+    final "Consumed!" embed reports the same sections from the *actual*
+    outcome — the item's
     description prose plus one labeled field per item ``field`` (the "On
     consumption" blurb for frogs: what consuming does) — then, for
     exp-granting items, the seasonal exp before/after the consume (only
@@ -163,6 +183,26 @@ class Consume(
             "**Confirmation**", desc, footer_icon=utils.BOT_AVATAR_URL
         )
         await _apply_item_thumbnail(embed, bot, item)
+        # the confirmation step previews the consume outcome the same way the
+        # final "Consumed!" embed reports it — the item's effects (its own
+        # fields), the seasonal exp before/after (predicted from the same
+        # oracle the item's consume glue grants, so preview and grant cannot
+        # drift), and the resulting status when the item grants one — so a
+        # member sees what consuming will do before confirming.
+        for label, text in item.fields:
+            embed.add_field(name=label, value=text)
+        from plugins.frogs.items import exp_grant_for, item_statuses
+
+        grant = exp_grant_for(item_id, self.amount)
+        if grant:
+            exp_now = await _seasonal_exp(bot, uid)
+            embed.add_field(
+                name="Seasonal Exp",
+                value=f"**`{exp_now}`** -> **`{exp_now + grant}`**",
+            )
+        granted = [status.describe() for status in item_statuses(item_id)]
+        if granted:
+            embed.add_field(name="Status", value="\n".join(granted))
         menu = utils.ConfirmMenu(uid, delete_after=False)
         await ctx.respond(embed=embed, components=cast(Any, menu))
         try:
@@ -339,7 +379,7 @@ class Info(
     (``icon_asset`` → CDN URL when published), title the display name, the
     description prose, then one labeled embed field per item ``field``.
     The footer cycles one random item tip (``get_tip("item")`` via
-    ``cazzubot.tips``) — the plugin's own "item" tip_sets, the same set as
+    ``core.tips``) — the plugin's own "item" tip_sets, the same set as
     /inventory view's footer.
     """
 
@@ -375,7 +415,7 @@ class Info(
             embed.add_field(name=label, value=text)
         # the footer cycles one random item tip per render — the same set
         # as the /inventory view footer (the plugin's "item" tip_sets,
-        # queried via cazzubot.tips.get_tip), with a random cirno emoji
+        # queried via core.tips.get_tip), with a random cirno emoji
         # from the shared misc assets as the icon
         embed.set_footer(
             text=get_tip("item"),
@@ -396,8 +436,8 @@ class InventoryPager(lightbulb.components.Menu):
     (everyone else gets the ephemeral "This inventory is not yours to
     page." denial), and the buttons are stripped when the menu's attach
     window lapses (the :class:`View` command edits ``component=None`` on
-    timeout). Attached always — a 1-page grid clamps both buttons into
-    no-ops, and a >25-slot grid pages 25 fields at a time.
+    timeout). Built by :class:`View` only when the grid exceeds one page
+    (26+ unique items) — a single-page inventory renders no buttons.
     """
 
     def __init__(
@@ -489,12 +529,13 @@ async def _build_grid(
     emoji when the item has an ``icon_asset`` — see :func:`_grid_icon`).
     Only the current page's slots
     are added — the embed caps at 25 fields, so slot 26 starts the next
-    page and paging is the caller's job via :class:`InventoryPager`.
+    page and paging is the caller's job via :class:`InventoryPager` (the
+    caller attaches it only when 26+ slots actually page).
     The title carries the target's real display name (``X's Inventory``
     — no author field), the thumbnail is the target's profile picture
     (``display_avatar_url``, set only when the partial user resolves
     one), and the footer cycles one random item tip per render
-    (``get_tip("item")`` via ``cazzubot.tips`` — this plugin's own "item"
+    (``get_tip("item")`` via ``core.tips`` — this plugin's own "item"
     tip_sets, the same set as /frog view and the /inventory info card, with a
     random cirno emoji from the shared misc assets as the icon). ``visible``
     is the caller's

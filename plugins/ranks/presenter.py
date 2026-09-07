@@ -12,10 +12,10 @@ from typing import cast
 
 import hikari
 
-from cazzubot import templates, utils
-from cazzubot.bot import CazzuBot
-from cazzubot.models import WindowEnum
-from cazzubot.utils import OldNew
+from core import templates, utils
+from core.bot import CazzuBot
+from core.models import WindowEnum
+from core.utils import OldNew
 
 from . import db as ranks_db
 from .logic import RankPlan, formatter, plan_rank_changes

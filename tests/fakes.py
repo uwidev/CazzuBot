@@ -27,7 +27,7 @@ from typing import Any, cast
 
 import hikari
 
-from cazzubot import utils
+from core import utils
 
 
 class InstantAsyncio:
@@ -43,9 +43,7 @@ class InstantAsyncio:
     async def sleep(self, _seconds: float) -> None:
         """No-op: the guard's timing is not what the burst tests assert."""
 
-    def create_task(
-        self, coro: Any, *, name: str | None = None
-    ) -> Any:
+    def create_task(self, coro: Any, *, name: str | None = None) -> Any:
         import asyncio
 
         return asyncio.create_task(coro, name=name)
@@ -175,6 +173,7 @@ class FakeChannel:
         self.name = name
         self.guild_id = guild_id
         self.position: int = 0
+        self.parent_id: int | None = None
         self.type: hikari.ChannelType | None = (
             hikari.ChannelType.GUILD_TEXT
         )

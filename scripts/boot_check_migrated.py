@@ -34,10 +34,10 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 
-from cazzubot import CazzuBot, Config  # noqa: E402
-from cazzubot import levels  # noqa: E402
-from cazzubot.models import WindowEnum  # noqa: E402
-from cazzubot.settings import Settings  # noqa: E402
+from core import CazzuBot, Config  # noqa: E402
+from core import levels  # noqa: E402
+from core.models import WindowEnum  # noqa: E402
+from core.settings import Settings  # noqa: E402
 import pendulum  # noqa: E402
 
 from plugins.experience import db as exp_db  # noqa: E402

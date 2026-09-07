@@ -15,12 +15,12 @@ from typing import Any, cast
 import hikari
 import lightbulb
 
-from cazzubot import templates, utils
-from cazzubot.listeners import guild_listener
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
-from cazzubot.models import MemberSnapshot, WelcomeModeEnum
-from cazzubot.window import window_success
+from core import templates, utils
+from core.listeners import guild_listener
+from core.bot import CazzuBot
+from core.errors import UserInputError
+from core.models import MemberSnapshot, WelcomeModeEnum
+from core.window import window_success
 
 from .logic import should_welcome
 

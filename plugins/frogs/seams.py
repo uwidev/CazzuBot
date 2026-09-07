@@ -16,7 +16,7 @@ class FrogSeam(Enum):
     # internal: message-time reaction chance (lazy expiry, no converger)
     FROG_REACTION = "frog_reaction"
     # external: a Discord role granted for a duration (converged by the
-    # core cazzubot.statuses::RoleConverger, registered by the plugin)
+    # core.statuses::RoleConverger, registered by the plugin)
     CLASSY_ROLE = "classy_role"
 
     @property

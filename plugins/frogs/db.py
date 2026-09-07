@@ -3,7 +3,7 @@
 Single-guild port of v1's ``ext/frog.py`` + ``src/frog_factory.py`` +
 ``src/db/member_frog.py`` + ``src/db/member_frog_log.py`` + ``src/db/frog.py``
 + ``src/db/frog_spawn.py``, reworked for the species model: holdings live in
-the **generic inventory** (``cazzubot/inventory.py`` — frog stacks are
+the **generic inventory** (``core/inventory.py`` — frog stacks are
 ``FrogItem`` identities over it), ``member_frog`` only the lifetime capture
 counter, and ``member_frog_log.type`` stores the species key. The species
 *definitions* themselves live in code (``species.py`` — no catalog table).
@@ -13,11 +13,11 @@ from dataclasses import dataclass
 
 import pendulum
 
-from cazzubot import inventory
-from cazzubot.db import Database
-from cazzubot.models import FrogState, FrogItemKey
-from cazzubot.settings import Settings
-from cazzubot.utils import rank_rows, season_bounds
+from core import inventory
+from core.db import Database
+from core.models import FrogState, FrogItemKey
+from core.settings import Settings
+from core.utils import rank_rows, season_bounds
 
 from .species import SPECIES
 
@@ -87,7 +87,7 @@ async def set_enabled(settings: Settings, val: bool) -> None:
 class FrogItem:
     """One frog inventory item: a species in a state.
 
-    The generic inventory's typed identity (``cazzubot.inventory``): ``key``
+    The generic inventory's typed identity (``core.inventory``): ``key``
     derives the stored string from two enum values — never a literal at
     call sites; ``parse`` is the read-side inverse, used once at the DB
     boundary. Item *definitions* stay in code (``species.py``); this only

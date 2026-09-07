@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 
-from cazzubot.channels.export import render_manifest
-from cazzubot.channels.parser import parse
-from cazzubot.channels.plan import build_plan
+from core.channels.export import render_manifest
+from core.channels.parser import parse
+from core.channels.plan import build_plan
 from tests.core.channels_data import SNAPSHOT, ch
 
 
@@ -68,7 +68,7 @@ def test_unsupported_kind_rendered_as_is() -> None:
 
 
 def test_unrepresentable_names_kept_as_is() -> None:
-    from cazzubot.channels.snapshot import representable_name
+    from core.channels.snapshot import representable_name
 
     assert representable_name("normal-name")
     assert not representable_name("a->b")

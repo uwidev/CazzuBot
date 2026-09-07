@@ -1,6 +1,6 @@
 """Welcome plugin package."""
 
-from cazzubot import Plugin
+from core import Plugin
 
 
 class WelcomePlugin(Plugin):

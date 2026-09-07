@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cazzubot.cli import build_parser
+from core.cli import build_parser
 
 
 def test_common_flags_default_to_develop() -> None:

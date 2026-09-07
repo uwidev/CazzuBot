@@ -1,4 +1,4 @@
-"""cazzubot.listeners — the guild-scoped listener registration helper.
+"""core.listeners — the guild-scoped listener registration helper.
 
 The decorator's drop/pass behavior is exercised through the migrated
 plugin listeners (welcome/fun/counter/poll/experience gate tests); these
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from cazzubot.listeners import _event_guild_id
+from core.listeners import _event_guild_id
 from tests.fakes import FakeMessage
 
 

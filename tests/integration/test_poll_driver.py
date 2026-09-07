@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hikari
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from tests.driver import (
     modal_input_custom_id,
     press_button,

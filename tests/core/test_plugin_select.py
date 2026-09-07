@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from cazzubot.errors import UserInputError
-from cazzubot.plugin import (
+from core.errors import UserInputError
+from core.plugin import (
     Plugin,
     discover_plugins,
     filter_enabled,

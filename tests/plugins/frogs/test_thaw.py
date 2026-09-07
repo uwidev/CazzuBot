@@ -12,9 +12,9 @@ from dataclasses import dataclass
 
 import pytest
 
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
-from cazzubot.models import FrogItemKey, FrogState
+from core.bot import CazzuBot
+from core.errors import UserInputError
+from core.models import FrogItemKey, FrogState
 from plugins.frogs import db as frog_db
 from plugins.frogs import thaw
 

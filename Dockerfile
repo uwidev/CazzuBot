@@ -3,7 +3,7 @@ FROM python:3.14-slim
 WORKDIR /usr/src/app
 
 COPY pyproject.toml uv.lock ./
-COPY cazzubot/ cazzubot/
+COPY core/ core/
 COPY plugins/ plugins/
 COPY main.py scripts/ ./
 

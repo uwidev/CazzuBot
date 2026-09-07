@@ -8,8 +8,8 @@ import json
 import hikari
 import pytest
 
-from cazzubot import templates, utils
-from cazzubot.errors import UserInputError
+from core import templates, utils
+from core.errors import UserInputError
 from plugins.levels.logic import formatter
 from tests.fakes import FakeChannel, FakeMember
 

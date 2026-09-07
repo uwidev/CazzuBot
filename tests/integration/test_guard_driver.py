@@ -9,7 +9,7 @@ the existing admin gates.
 
 from __future__ import annotations
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from tests.driver import run_slash
 
 

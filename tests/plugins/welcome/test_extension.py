@@ -10,9 +10,9 @@ from __future__ import annotations
 import hikari
 import pytest
 
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
-from cazzubot.models import WelcomeModeEnum
+from core.bot import CazzuBot
+from core.errors import UserInputError
+from core.models import WelcomeModeEnum
 from plugins.welcome import extension as welcome_ext
 from plugins.welcome.extension import (
     Demo,

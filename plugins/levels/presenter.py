@@ -10,9 +10,9 @@ import logging
 
 import hikari
 
-from cazzubot import templates, utils
-from cazzubot.bot import CazzuBot
-from cazzubot.utils import OldNew
+from core import templates, utils
+from core.bot import CazzuBot
+from core.utils import OldNew
 
 from plugins.ranks.logic import is_ranked_up
 

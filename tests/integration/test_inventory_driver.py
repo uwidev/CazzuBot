@@ -3,8 +3,9 @@
 The commands read the shared ledger and render embeds: ``view`` as a paged
 inline-field grid (one inline embed field per slot — the name a backticked
 ``[ N ]`` token, the value the item's display name with ``×<qty>`` —
-Discord wraps 3 per row; 25 slots per page under a ◀/▶ button pager, and
-the title names the member), ``info`` as a description card (thumbnail
+Discord wraps 3 per row; 25 slots per page, page navigation rendered
+only when 26+ unique items exceed one page, and the title names the
+member), ``info`` as a description card (thumbnail
 from the item's asset, title the name, the description prose, then one
 field per item ``field``). These tests seed real inventory rows, run the
 commands end-to-end via ``run_slash``/``press_button``, and assert the
@@ -23,10 +24,15 @@ import hikari
 import pendulum
 import pytest
 
-from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogState, FrogItemKey
-from cazzubot.tips import TIP_SETS
-from tests.driver import press_button, run_slash, wait_for_menu
+from core.bot import CazzuBot
+from core.models import FrogState, FrogItemKey
+from core.tips import TIP_SETS
+from tests.driver import (
+    attached_buttons,
+    press_button,
+    run_slash,
+    wait_for_menu,
+)
 from tests.fakes import rest_of
 
 # a grid slot field's name is the backticked bracket token ``[ N ]``;
@@ -47,11 +53,12 @@ def _rendered_slots(fields: Sequence[hikari.EmbedField]) -> list[str]:
 async def _view_embed(bot: CazzuBot, *, user_id: int) -> hikari.Embed:
     """Run ``inventory view`` and return the initial grid embed.
 
-    The view blocks on its pager's 30s attach window, so the driver's 3s
-    response budget can't outlast it — the command runs as a background
-    task that gets cancelled once the menu is attached, and the initial
-    embed is read back from the fake REST log (the response is minted
-    before the attach begins).
+    The paged view blocks on its pager's 30s attach window, so the driver's
+    3s response budget can't outlast it — the command runs as a background
+    task that gets cancelled once the initial response lands (the response
+    is minted before any pager attach begins), and the embed is read back
+    from the fake REST log. Single-page inventories attach no pager and
+    the task finishes on its own; the cancel is then a harmless no-op.
     """
     rest = rest_of(bot)
     snapshot = len(rest.interaction_log["responses"])
@@ -59,7 +66,12 @@ async def _view_embed(bot: CazzuBot, *, user_id: int) -> hikari.Embed:
         run_slash(bot, "inventory view", user_id=user_id, timeout=10.0)
     )
     try:
-        await wait_for_menu(bot)
+        for _ in range(500):  # up to ~5s for the initial response
+            if len(rest.interaction_log["responses"]) > snapshot:
+                break
+            await asyncio.sleep(0.01)
+        else:
+            raise TimeoutError("inventory view never produced a response")
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
@@ -203,7 +215,7 @@ async def test_inventory_grid_uses_published_asset_emoji(
     value shows the custom ``<:name:id>`` emoji instead of the static
     ``🐸`` icon.
     """
-    from cazzubot.assets import asset_key
+    from core.assets import asset_key
     from plugins.frogs.assets import FrogAsset
 
     await _seed_frogs(full_bot, 424242)
@@ -272,6 +284,58 @@ async def test_inventory_empty_state(full_bot: CazzuBot) -> None:
 # -- the ◀/▶ pager ---------------------------------------------------------
 
 
+async def test_inventory_view_single_page_has_no_pager(
+    full_bot: CazzuBot,
+) -> None:
+    """25 or fewer unique items fit one page — no ◀/▶ navigation renders.
+
+    The pager attaches only when the grid actually pages (26+ unique
+    items); a single page responds with the bare grid embed (no component
+    rows) and attaches nothing, so the response never blocks on a pager
+    attach window.
+    """
+    provider = await _register_page_items(full_bot, 25)
+    try:
+        for i in range(1, 26):
+            await full_bot.inventory.add(424242, f"page:{i}", i)
+        result = await run_slash(
+            full_bot, "inventory view", user_id=424242, timeout=10.0
+        )
+    finally:
+        full_bot.items.unregister(provider)
+    assert result.exceptions == []
+    assert result.response_type == hikari.ResponseType.MESSAGE_CREATE
+    first = result.first_response
+    assert first is not None
+    # the grid embed renders but no component rows ride along (lightbulb
+    # serializes the omitted kwarg as UNDEFINED), and no menu was attached
+    # for the 30s window
+    nav = first.get("components")
+    assert nav in (None, hikari.UNDEFINED) or nav == []
+    assert attached_buttons(full_bot) == {}
+
+
+async def test_inventory_view_pager_appears_at_26_slots(
+    full_bot: CazzuBot,
+) -> None:
+    """26 unique items overflow one page, so the ◀/▶ navigation appears."""
+    provider = await _register_page_items(full_bot, 26)
+    try:
+        for i in range(1, 27):
+            await full_bot.inventory.add(424242, f"page:{i}", i)
+        task = asyncio.create_task(
+            run_slash(
+                full_bot, "inventory view", user_id=424242, timeout=10.0
+            )
+        )
+        buttons = await wait_for_menu(full_bot)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    finally:
+        full_bot.items.unregister(provider)
+    assert set(buttons) == {"◀", "▶"}
+
+
 async def _register_page_items(bot: CazzuBot, count: int) -> str:
     """Register ``count`` test items (provider name ``test.pager``).
 
@@ -279,7 +343,7 @@ async def _register_page_items(bot: CazzuBot, count: int) -> str:
     tests register their own unique items to exceed the 25-field embed
     cap. Returns the provider name for a finally-guarded unregister.
     """
-    from cazzubot.items import Item
+    from core.items import Item
 
     items = cast(
         type[Enum],
@@ -323,9 +387,10 @@ async def test_inventory_view_pages_over_25_slots(
 ) -> None:
     """26+ stacks page at 25 fields: ◀/▶ move between pages and clamp.
 
-    The embed caps at 25 fields, so slot 26 starts page 2. The pager
-    mirrors /experience leaderboard's TopMenu: attach always, page from
-    the invoker only, clamp at both ends.
+    The embed caps at 25 fields, so slot 26 starts page 2 (only 26+ get a
+    pager — single-page inventories render no navigation). The pager
+    mirrors /experience leaderboard's TopMenu: page from the invoker
+    only, clamp at both ends.
     """
     provider = await _register_page_items(full_bot, 30)
     try:
@@ -382,7 +447,13 @@ async def test_inventory_view_pager_refuses_foreign_user(
     full_bot: CazzuBot,
 ) -> None:
     """A non-invoker click gets the ephemeral "not yours to page" denial."""
-    await _seed_frogs(full_bot, 424242)
+    provider = await _register_page_items(full_bot, 30)
+    try:
+        for i in range(1, 31):
+            await full_bot.inventory.add(424242, f"page:{i}", i)
+    except BaseException:
+        full_bot.items.unregister(provider)
+        raise
 
     task = asyncio.create_task(
         run_slash(full_bot, "inventory view", user_id=424242, timeout=10.0)
@@ -395,6 +466,7 @@ async def test_inventory_view_pager_refuses_foreign_user(
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+        full_bot.items.unregister(provider)
 
     assert press.exceptions == []
     assert press.response_type == hikari.ResponseType.MESSAGE_CREATE
@@ -426,7 +498,7 @@ async def _info_embed(bot: CazzuBot, uid: int, slot: int) -> hikari.Embed:
 
 async def test_inventory_info_shows_item_card(full_bot: CazzuBot) -> None:
     """info renders the card: asset thumbnail, name, description, fields."""
-    from cazzubot.assets import asset_key
+    from core.assets import asset_key
     from plugins.frogs.assets import FrogAsset
 
     await _seed_frogs(full_bot, 424242)
@@ -583,7 +655,7 @@ async def test_inventory_consume_embeds_use_bot_avatar_footer(
 ) -> None:
     """Both consume embeds (confirmation + final) stamp the bot avatar
     as the footer icon, not the -sarono catbox icon."""
-    from cazzubot.utils import BOT_AVATAR_URL
+    from core.utils import BOT_AVATAR_URL
 
     await full_bot.inventory.add(424242, "frog:basic:normal", 2)
 
@@ -679,7 +751,7 @@ async def test_inventory_consume_embeds_use_item_thumbnail_when_published(
 ) -> None:
     """When the art asset is published, both consume embeds (confirmation +
     final) set the thumbnail to the item's CDN image URL."""
-    from cazzubot.assets import asset_key
+    from core.assets import asset_key
     from plugins.frogs.assets import FrogAsset
 
     await full_bot.inventory.add(424242, "frog:basic:normal", 2)
@@ -782,6 +854,102 @@ async def test_inventory_consume_final_embed_shows_effects_and_result(
     assert result_field.value == "**`2`** -> **`1`**"
 
 
+async def test_inventory_consume_confirmation_previews_effects_exp_and_status(
+    full_bot: CazzuBot,
+) -> None:
+    """The confirmation step previews the consume outcome before Yes.
+
+    The pre-consume embed shows the same sections the final "Consumed!"
+    embed reports, phrased as a projection: the item's effect fields (the
+    "On consumption" blurb), the seasonal exp before/after (predicted from
+    the item module's exp oracle), and the resulting status when the item
+    grants one — so the member sees what consuming will do up front.
+    """
+    await full_bot.inventory.add(424242, "frog:pog:normal", 2)
+
+    (
+        confirm_embed,
+        _final_embed,
+    ) = await _consume_confirmation_and_final_embeds(full_bot)
+
+    assert confirm_embed.title == "**Confirmation**"
+    # the item's effect prose rides in the description ("about to consume …")
+    # plus the "On consumption" field
+    assert "about to consume **`1` Pog Frog**" in (
+        confirm_embed.description or ""
+    )
+    assert [field.name for field in confirm_embed.fields] == [
+        "On consumption",
+        "Seasonal Exp",
+        "Status",
+    ]
+    consumption = next(
+        field
+        for field in confirm_embed.fields
+        if field.name == "On consumption"
+    )
+    assert "Grants **30** seasonal exp." in consumption.value
+    # the exp preview: a fresh member's seasonal exp now (0) -> +30 for one
+    # pog — predicted from the same oracle the consume glue grants
+    exp_field = next(
+        field
+        for field in confirm_embed.fields
+        if field.name == "Seasonal Exp"
+    )
+    assert exp_field.value == "**`0`** -> **`30`**"
+    # the resulting-status preview: the item's granted status prose
+    status_field = next(
+        field for field in confirm_embed.fields if field.name == "Status"
+    )
+    assert status_field.value == (
+        "For 1 hour, a **1%** chance the bot reacts to your messages "
+        "with the froggers emoji (10s cooldown)."
+    )
+
+
+async def test_inventory_consume_confirmation_previews_amount_scaled_exp(
+    full_bot: CazzuBot,
+) -> None:
+    """Consuming more than one unit scales the exp preview (amount × unit)."""
+    await full_bot.inventory.add(424242, "frog:basic:normal", 3)
+
+    task = asyncio.create_task(
+        run_slash(
+            full_bot,
+            "inventory consume",
+            options={"slot": 1, "amount": 2},
+            user_id=424242,
+            timeout=10.0,
+        )
+    )
+    buttons = await wait_for_menu(full_bot)
+    press = await press_button(
+        full_bot,
+        custom_id=buttons["Yes"],
+        message_id=555,
+        user_id=424242,
+    )
+    result = await task
+    assert press.exceptions == []
+    assert result.exceptions == []
+
+    first_response = result.first_response
+    assert first_response is not None
+    confirm_embed = first_response.get("embed")
+    assert confirm_embed is not None
+    exp_field = next(
+        field
+        for field in confirm_embed.fields
+        if field.name == "Seasonal Exp"
+    )
+    # fresh member: 0 -> 20 (2 × basic's 10 exp); no Status (basic grants none)
+    assert exp_field.value == "**`0`** -> **`20`**"
+    assert [field.name for field in confirm_embed.fields] == [
+        "On consumption",
+        "Seasonal Exp",
+    ]
+
+
 async def test_inventory_consume_exp_item_shows_exp_before_after(
     full_bot: CazzuBot,
 ) -> None:
@@ -792,7 +960,7 @@ async def test_inventory_consume_exp_item_shows_exp_before_after(
     read both sides in the test to avoid hardcoding the season. A fresh
     member consuming one pog (30 exp) goes 0 -> 30.
     """
-    from cazzubot.utils import month2season
+    from core.utils import month2season
     from plugins.experience import db as exp_db
 
     now = pendulum.now("UTC")

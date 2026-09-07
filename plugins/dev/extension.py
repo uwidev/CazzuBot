@@ -11,10 +11,10 @@ from pathlib import Path
 import hikari
 import lightbulb
 
-from cazzubot import levels, utils
-from cazzubot.bot import CazzuBot
-from cazzubot.errors import UserInputError
-from cazzubot.plugin import discover_plugins
+from core import levels, utils
+from core.bot import CazzuBot
+from core.errors import UserInputError
+from core.plugin import discover_plugins
 
 _log = logging.getLogger(__name__)
 

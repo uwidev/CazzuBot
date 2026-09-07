@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cazzubot.assets import AssetKind
+from core.assets import AssetKind
 from plugins.misc import MiscPlugin
 from plugins.misc.asset import MiscAsset, random_footer_icon
 

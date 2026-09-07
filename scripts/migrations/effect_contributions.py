@@ -1,8 +1,8 @@
 """Migration: fold ``member_effect`` rows into the effects seam store.
 
-The legacy shape (``cazzubot/member_effects.py``) is one scalar REAL value
+The legacy shape (``core/member_effects.py``) is one scalar REAL value
 per ``(uid, key)`` with replacement-on-set, member-only. The new shape
-(``cazzubot/effects.py``) is the generic scope-aware seam store: each
+(``core/effects.py``) is the generic scope-aware seam store: each
 modifier becomes a contribution with a ``source`` identity, a JSON
 ``payload`` the seam interprets, and the same lazy ``expires_at`` (NULL =
 permanent). Migrated rows map uid → member scope, the legacy key → its
@@ -25,7 +25,7 @@ from dataclasses import dataclass
 
 from scripts.migrations.common import Migration
 
-# Mirrors cazzubot/effects.py exactly: the boot-time schema guard compares
+# Mirrors core/effects.py exactly: the boot-time schema guard compares
 # column order, defaults and constraints, so migrated tables must match the
 # Python DDL.
 EFFECT_CONTRIBUTION_DDL = """

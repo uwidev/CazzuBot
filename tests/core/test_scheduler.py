@@ -9,8 +9,8 @@ from typing import Any
 
 import pendulum
 
-from cazzubot.bot import CazzuBot
-from cazzubot.scheduler import Scheduler, Task, TaskPolicy
+from core.bot import CazzuBot
+from core.scheduler import Scheduler, Task, TaskPolicy
 
 
 async def _pump(bot: CazzuBot) -> None:

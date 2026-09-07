@@ -25,9 +25,9 @@ from typing import cast
 import hikari
 import lightbulb
 
-from cazzubot.bot import CazzuBot
-from cazzubot.statuses import Scope, StatusContribution, status_by_source
-from cazzubot.listeners import guild_listener
+from core.bot import CazzuBot
+from core.statuses import Scope, StatusContribution, status_by_source
+from core.listeners import guild_listener
 
 from .assets import FrogAsset
 from .seams import FrogSeam

@@ -15,8 +15,8 @@ from pathlib import Path
 
 import hikari
 
-from cazzubot import CazzuBot, Config
-from cazzubot.statuses import Scope
+from core import CazzuBot, Config
+from core.statuses import Scope
 from scripts.migrations.effect_contributions import (
     LEGACY_SOURCE,
     migrate,
@@ -159,7 +159,7 @@ async def test_migrated_db_boots_and_pull_reads_multiplier(
             hikari.StartingEvent(app=instance)
         )
         # the new experience pull reads the folded multipliers
-        from cazzubot import statuses
+        from core import statuses
         from plugins.experience.logic import StatusSeam
 
         assert (

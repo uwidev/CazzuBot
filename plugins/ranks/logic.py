@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cazzubot.db import Database
-from cazzubot.models import MemberSnapshot
-from cazzubot.utils import OldNew, format_member
+from core.db import Database
+from core.models import MemberSnapshot
+from core.utils import OldNew, format_member
 
 from . import db as ranks_db
 from .db import RankThreshold

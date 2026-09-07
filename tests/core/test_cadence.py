@@ -5,7 +5,7 @@ from __future__ import annotations
 import pendulum
 import pytest
 
-from cazzubot.scheduler import At, AtChaotic, In, InChaotic
+from core.scheduler import At, AtChaotic, In, InChaotic
 
 # 2026-08-10 is a Monday; 2026-08-16 is the following Sunday.
 # pendulum weekday(): Monday=0 … Sunday=6.

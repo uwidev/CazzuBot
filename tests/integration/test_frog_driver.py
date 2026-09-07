@@ -16,10 +16,10 @@ import hikari
 import pendulum
 import pytest
 
-from cazzubot.bot import CazzuBot
-from cazzubot.models import FrogItemKey
-from cazzubot.statuses import STATUS_CONVERGE_TAG, Scope
-from cazzubot.tips import TIP_SETS
+from core.bot import CazzuBot
+from core.models import FrogItemKey
+from core.statuses import STATUS_CONVERGE_TAG, Scope
+from core.tips import TIP_SETS
 from tests.driver import press_button, run_slash, wait_for_menu
 from tests.fakes import InstantAsyncio, rest_of
 

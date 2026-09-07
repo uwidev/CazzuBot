@@ -26,7 +26,7 @@ import random
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from cazzubot.models import FrogItemKey
+from core.models import FrogItemKey
 
 from .assets import FrogAsset
 from .behaviors import ClusterBurst, grant_catch

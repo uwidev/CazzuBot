@@ -13,7 +13,7 @@ values off the class — single source of truth, no payload drift.
 
 Role-granting statuses (:class:`RoleStatus`) implement the core role-grant
 contract (``role_id_for(guild_kind)``), so the generic core
-:class:`~cazzubot.statuses.RoleConverger` reconciles the CLASSY_ROLE
+:class:`~core.statuses.RoleConverger` reconciles the CLASSY_ROLE
 seam's world state; it is registered on the plugin at load
 (``plugins/frogs/__init__.py``).
 """
@@ -25,7 +25,7 @@ from datetime import timedelta
 
 from typing_extensions import override
 
-from cazzubot.statuses import (
+from core.statuses import (
     Status,
     register_status,
 )
@@ -55,7 +55,7 @@ class RoleStatus(Status):
     """A role-grant status: the classy frog's external world consequence.
 
     Exposes ``role_id_for(guild_kind)`` — the structural role-grant
-    contract the core :class:`~cazzubot.statuses.RoleConverger` reads, so
+    contract the core :class:`~core.statuses.RoleConverger` reads, so
     no frog-side converger is needed for this seam.
     """
 

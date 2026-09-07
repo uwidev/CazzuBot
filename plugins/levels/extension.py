@@ -9,9 +9,9 @@ import json
 import hikari
 import lightbulb
 
-from cazzubot import templates, utils
+from core import templates, utils
 
-from cazzubot.window import window_success
+from core.window import window_success
 
 from .logic import MESSAGE_KEY, formatter
 

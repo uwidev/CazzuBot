@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from types import SimpleNamespace
 
-from cazzubot.channels import executor
+from core.channels import executor
 
 
 def _channel(**kw: object) -> SimpleNamespace:

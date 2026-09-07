@@ -8,11 +8,11 @@ import hikari
 import pendulum
 import pytest
 
-from cazzubot.bot import CazzuBot
-from cazzubot.assets import asset_key
-from cazzubot.errors import UserInputError
-from cazzubot.models import FrogItemKey, FrogState
-from cazzubot.tips import TIP_SETS
+from core.bot import CazzuBot
+from core.assets import asset_key
+from core.errors import UserInputError
+from core.models import FrogItemKey, FrogState
+from core.tips import TIP_SETS
 from plugins.frogs import FrogsPlugin, db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.events import FrogCapturedEvent
@@ -48,7 +48,7 @@ def _register_frog_tips() -> None:
     these tests drive commands on a plugin-less fixture bot — register the
     plugin's own sets explicitly (and restore after, since the registry is
     module-global across tests)."""
-    from cazzubot.tips import register_tips, unregister_tips
+    from core.tips import register_tips, unregister_tips
 
     register_tips("frogs", FrogsPlugin.tip_sets)
     yield
@@ -147,10 +147,15 @@ async def test_frog_view_inventory_snippet_normal_only_qty_ascending(
 ) -> None:
     """The permit's Inventory section is a normal-frogs-only snippet.
 
-    Frozen trophies are excluded, rows sort by quantity ascending, and the
-    format is prose (``• label ×qty``) rather than /inventory view's
-    inline-field grid.
+    Frozen trophies are excluded, rows sort by quantity ascending, and each
+    line lists the frog by its **published icon asset** (custom emoji), not
+    the species name — mirroring /inventory view's icon-led rows.
     """
+    # the view reads each row's icon through its registered item (the
+    # plugin-less fixture bot never ran the frogs on_load, so register here)
+    from plugins.frogs.items import FrogItems
+
+    seeded_bot.items.register("frogs", FrogItems)
     now = pendulum.now("UTC")
     await frog_db.add_capture_log(
         seeded_bot.db,
@@ -169,6 +174,15 @@ async def test_frog_view_inventory_snippet_normal_only_qty_ascending(
     await frog_db.modify_inventory(
         seeded_bot.db, author.id, FrogItemKey.CLASSY, FrogState.FROZEN, 9
     )
+    # publish the two normal species' art assets — the snippet then lists
+    # them by their custom-emoji icon rather than the species name
+    await seeded_bot.db.executemany(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        [
+            ("<:frog_basic:111>", "FrogAsset.FROG_BASIC"),
+            ("<:frog_pog:222>", "FrogAsset.FROG_POG"),
+        ],
+    )
 
     view_ctx = FakeContext(
         bot=seeded_bot,
@@ -183,15 +197,22 @@ async def test_frog_view_inventory_snippet_normal_only_qty_ascending(
     desc = embed.description
     assert desc is not None
     assert "**__Inventory__**" in desc
-    # normal-only, qty ascending (2 before 5), no slot tokens, no state tags
-    assert "Pog Frog ×`2`" in desc
-    assert "Basic Frog ×`5`" in desc
-    assert desc.index("Pog Frog ×`2`") < desc.index("Basic Frog ×`5`")
+    # normal-only, qty ascending (2 before 5): the frog's icon asset rides
+    # the bullet instead of its name — no slot tokens, no state tags
+    assert "• <:frog_pog:222> ×`2`" in desc
+    assert "• <:frog_basic:111> ×`5`" in desc
+    assert desc.index("• <:frog_pog:222> ×`2`") < desc.index(
+        "• <:frog_basic:111> ×`5`"
+    )
+    assert "Pog Frog" not in desc
+    assert "Basic Frog" not in desc
     assert "Frozen" not in desc
     assert "Classy Frog" not in desc
+    assert "None" not in desc
     assert "[" not in desc
     assert "(normal)" not in desc
     assert "(frozen)" not in desc
+    seeded_bot.items.unregister("frogs")
 
 
 async def test_frog_view_inventory_snippet_no_frogs_yet_only_frozen(
@@ -227,6 +248,46 @@ async def test_frog_view_inventory_snippet_no_frogs_yet_only_frozen(
     assert "**__Inventory__**" in embed.description
     assert "No frogs yet." in embed.description
     assert "Classy Frog" not in embed.description
+
+
+async def test_frog_view_inventory_snippet_icon_fallback_unpublished(
+    seeded_bot: CazzuBot,
+    fake_guild: FakeGuild,
+    author: FakeMember,
+    channel: FakeChannel,
+) -> None:
+    """Unpublished icon assets fall back to the item's static icon.
+
+    While a species art asset is not yet published, the snippet bullet
+    shows the static ``icon`` — no name, and never the literal "None".
+    """
+    now = pendulum.now("UTC")
+    await frog_db.add_capture_log(
+        seeded_bot.db,
+        author.id,
+        now,
+        waited_for=3.0,
+        species_key=FrogItemKey.BASIC,
+    )
+    await frog_db.modify_inventory(
+        seeded_bot.db, author.id, FrogItemKey.BASIC, FrogState.NORMAL, 3
+    )
+
+    view_ctx = FakeContext(
+        bot=seeded_bot,
+        member=author,
+        guild=fake_guild,
+        channel=channel,
+    )
+    await invoke_command(View(), view_ctx, member=author)
+
+    embed = view_ctx.sent[-1].embed
+    assert embed is not None
+    assert embed.description is not None
+    # offline seeds keep the asset url NULL — the fallback static icon
+    assert "• 🐸 ×`3`" in embed.description
+    assert "Basic Frog" not in embed.description
+    assert "None" not in embed.description
 
 
 async def test_frog_register_upserts_spawn(
@@ -360,13 +421,16 @@ async def test_frog_catalog_lists_all_frogmd_species(
     embed = ctx.sent[-1].embed
     assert embed is not None
     assert embed.title == "Frog Species Catalog"
-    names = [field.name for field in embed.fields]
-    assert len(names) == 5
-    assert any("Basic Frog" in name for name in names)
-    assert any("Pog Frog" in name for name in names)
-    assert any("Froggers Frog" in name for name in names)
-    assert any("Classy Frog" in name for name in names)
-    assert any("Cluster Frog" in name for name in names)
+    # each species is a description section headed by an H3 markdown header
+    # (the species name) — Discord renders headings in the description, not
+    # in fields, so the catalog carries no fields
+    assert embed.fields == []
+    desc = embed.description or ""
+    assert "### Basic Frog" in desc
+    assert "### Pog Frog" in desc
+    assert "### Froggers Frog" in desc
+    assert "### Classy Frog" in desc
+    assert "### Cluster Frog" in desc
     # name + art + description only — no rarity, and the item's own
     # effects (exp/consume) belong to `/inventory info`, not the catalog
     descriptions = {
@@ -376,13 +440,13 @@ async def test_frog_catalog_lists_all_frogmd_species(
         "Classy Frog": "A frog with rather refined tastes.",
         "Cluster Frog": "Be careful with this one… she's… spawning!",
     }
-    for field in embed.fields:
-        # species names render bolded (markdown **) as the field label
-        assert field.name.startswith("**") and field.name.endswith("**")
-        assert field.name.strip("*") in descriptions
-        assert "Rarity" not in field.value
-        assert "Consume:" not in field.value
-        assert "exp" not in field.value
+    for name, description in descriptions.items():
+        # the species name is an H3 markdown header on its own line, and
+        # the body carries the description under that header
+        assert f"### {name}\n{description}" in desc
+        assert "Rarity" not in description
+        assert "Consume:" not in description
+        assert "exp" not in description
     # the catalog shares /frog view's cycling frog-tip footer
     assert embed.footer is not None
     assert embed.footer.text in TIP_SETS["frog"]
@@ -765,6 +829,71 @@ async def test_on_frog_due_rolls_from_fire_instant(
     # rejects the old despawn-anchored design (it would arm ≥ now+660)
     assert before.add(seconds=60) <= run_at
     assert run_at <= pendulum.now("UTC").add(seconds=180)
+
+
+async def test_on_frog_due_collapses_duplicate_armed_rows(
+    seeded_bot: CazzuBot,
+    channel: FakeChannel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A channel with two pending spawn rows (the "2 frogs at once" state
+    seen in the live DB) collapses to one row on its next fire.
+
+    The spawn schedule is exactly one armed row per channel; every re-arm
+    REPLACES the channel's rows instead of stacking a second chain. Seed
+    two rows for the same channel (both due, like production's doubled
+    rows), fire one, and assert the sibling duplicate is gone.
+    """
+    await frog_db.set_enabled(seeded_bot.settings, True)
+    payload = {
+        "cid": channel.id,
+        "interval": 120,
+        "persist": 1,
+        "fuzzy": 0.5,
+    }
+    # the corrupted state: two independent armed rows for one channel
+    for _ in range(2):
+        await seeded_bot.scheduler.add(
+            "frog", pendulum.now("UTC").subtract(seconds=1), payload
+        )
+
+    async def _no_spawn(
+        _bot: CazzuBot, _persist: int, _ctx: Any = None, **_: Any
+    ) -> bool:
+        return False
+
+    monkeypatch.setattr(factory, "spawn_and_wait", _no_spawn)
+    await factory.on_frog_due(seeded_bot, payload)
+
+    rows = await seeded_bot.scheduler.get("frog")
+    assert len(rows) == 1, rows  # duplicate chain dropped, one re-arm left
+
+
+async def test_queue_frog_spawns_replaces_not_stacks(
+    seeded_bot: CazzuBot,
+    channel: FakeChannel,
+) -> None:
+    """queue_frog_spawns leaves exactly one row per channel — never two.
+
+    Regression for the doubled-armed-row state: queueing must not add a
+    second chain on top of an existing armed row for the same channel.
+    """
+    payload = {
+        "cid": channel.id,
+        "interval": 120,
+        "persist": 30,
+        "fuzzy": 0.5,
+    }
+    # a stale duplicate is already pending for the channel
+    await seeded_bot.scheduler.add(
+        "frog", pendulum.now("UTC").add(seconds=300), payload
+    )
+    await frog_db.upsert_spawn(seeded_bot.db, channel.id, 120, 30, 0.5)
+
+    await factory.queue_frog_spawns(seeded_bot)
+
+    rows = await seeded_bot.scheduler.get("frog")
+    assert len(rows) == 1, rows
 
 
 def _frog_message(

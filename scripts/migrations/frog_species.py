@@ -3,7 +3,7 @@
 The legacy shape stores frog quantities as columns on ``member_frog``
 (``normal``/``frozen``) and records captures in ``member_frog_log.type``
 as ``'normal'``/``'frozen'``. The new shape keeps quantities in the
-generic inventory (``cazzubot/inventory.py`` — frog stacks as
+generic inventory (``core/inventory.py`` — frog stacks as
 ``frog:<species>:<state>`` items) and stores the species key in
 ``member_frog_log.type``. Species themselves are code-defined
 (``plugins/frogs/species.py``), so no species rows are created — the
@@ -29,7 +29,7 @@ from scripts.migrations.common import Migration
 # mirrors plugins/frogs/species.py FrogItemKey.BASIC.value
 DEFAULT_SPECIES_KEY = "basic"
 
-# The generic inventory DDL, mirroring cazzubot/inventory.py exactly: the
+# The generic inventory DDL, mirroring core/inventory.py exactly: the
 # boot-time schema guard compares column order, defaults and the
 # AUTOINCREMENT keyword, so migrated tables must match the Python DDL.
 # Frog stacks live here as items derived from FrogItem.key

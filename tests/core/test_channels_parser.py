@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from cazzubot.channels.parser import ManifestError, parse
-from cazzubot.manifest.lines import rewrite_renames
+from core.channels.parser import ManifestError, parse
+from core.manifest.lines import rewrite_renames
 
 
 def issues(text: str) -> list[str]:

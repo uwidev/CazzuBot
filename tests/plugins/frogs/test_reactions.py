@@ -19,8 +19,8 @@ from __future__ import annotations
 import pendulum
 import pytest
 
-from cazzubot.assets import asset_key
-from cazzubot.statuses import Scope, StatusContribution, ScopeKind
+from core.assets import asset_key
+from core.statuses import Scope, StatusContribution, ScopeKind
 from plugins.frogs.assets import FrogAsset
 from plugins.frogs.seams import FrogSeam
 

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from cazzubot.roles.parser import parse
-from cazzubot.roles.plan import build_plan
-from cazzubot.roles.snapshot import RoleSnapshot
+from core.roles.parser import parse
+from core.roles.plan import build_plan
+from core.roles.snapshot import RoleSnapshot
 
 SNAPSHOT: list[RoleSnapshot] = [
     # top-down sidebar order; position 0 = highest. [X] entries are the

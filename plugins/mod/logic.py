@@ -10,9 +10,9 @@ import re
 
 import pendulum
 
-from cazzubot.errors import UserInputError
-from cazzubot.models import ModlogTypeEnum
-from cazzubot.timeparse import (
+from core.errors import UserInputError
+from core.models import ModlogTypeEnum
+from core.timeparse import (
     DURATION_UNITS,
     InvalidTimeError,
     is_future,
@@ -35,7 +35,7 @@ from cazzubot.timeparse import (
 # and bare units ("minutes") which only follow a bare quantity
 # ("2 hours 5 minutes" extends; "2 hours minutes" does not). Reason
 # words ("being", "bad") never match and stop the extension. The unit
-# vocabulary is shared with ``parse_duration`` (cazzubot/timeparse.py).
+# vocabulary is shared with ``parse_duration`` (core/timeparse.py).
 _DURATION_AMOUNT = re.compile(
     r"^\d+(\.\d+)?(st|nd|rd|th)?(am|pm)?$", re.IGNORECASE
 )

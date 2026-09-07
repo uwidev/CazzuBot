@@ -17,8 +17,8 @@ from typing import Any, cast
 
 import pendulum
 
-from cazzubot import utils
-from cazzubot.models import FrogItemKey
+from core import utils
+from core.models import FrogItemKey
 from plugins.experience.extension import TopMenu
 from plugins.frogs import factory
 from plugins.inventory.extension import InventoryPager

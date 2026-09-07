@@ -15,8 +15,8 @@ import io
 import pendulum
 from PIL import Image
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
+from core import utils
+from core.bot import CazzuBot
 from plugins.board import (
     CADENCE,
     BoardPlugin,

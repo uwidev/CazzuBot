@@ -1,6 +1,6 @@
 """Inventory plugin — the generic /inventory view + consume commands.
 
-The generic inventory store (``cazzubot/inventory.py``) counts every
+The generic inventory store (``core/inventory.py``) counts every
 "player × item × stack" (frog species×state today, badges/shop later);
 this plugin surfaces it as two user-facing commands. It declares no schema
 and no assets — the store is core — so the plugin is just the commands plus
@@ -11,7 +11,7 @@ for the view, its consume behavior) comes from the item-definitions registry
 ``bot.items``, keyed by the immutable ``item_id`` oracle.
 """
 
-from cazzubot import Plugin
+from core import Plugin
 
 
 class InventoryPlugin(Plugin):

@@ -2,7 +2,7 @@
 
 The plugin-reload tests (``tests/core/test_boot.py``) purge and re-import
 ``plugins.frogs.*`` mid-suite, which replaces the module-global status
-class instances in the ``cazzubot.statuses`` registry. A test module that
+class instances in the ``core.statuses`` registry. A test module that
 imports those instances at collection time would hold **stale** references
 that no longer match the registry (``isinstance``/``is`` checks fail).
 Resolve the modules at call time so the references always match the

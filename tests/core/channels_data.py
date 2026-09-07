@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from cazzubot.channels.snapshot import ChannelSnapshot
+from core.channels.snapshot import ChannelSnapshot
 
 
 def ch(

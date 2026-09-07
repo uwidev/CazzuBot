@@ -6,8 +6,8 @@ from typing import Any, cast
 
 import pendulum
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
+from core import utils
+from core.bot import CazzuBot
 from plugins.counter.extension import (
     NO_BAKAS_TEXT,
     _handle_baka,
@@ -103,7 +103,7 @@ async def test_counter_create_with_id_recreates_deleted_counter(
 async def test_counter_create_unknown_id_errors(
     ctx: FakeContext,
 ) -> None:
-    from cazzubot.errors import UserInputError
+    from core.errors import UserInputError
 
     try:
         await invoke_command(Create(), ctx, counter_id=999)

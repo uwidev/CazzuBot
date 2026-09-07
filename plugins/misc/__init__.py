@@ -1,6 +1,6 @@
 """Misc plugin package — small server utilities + shared brand emojis."""
 
-from cazzubot import Plugin
+from core import Plugin
 
 from .asset import MiscAsset
 

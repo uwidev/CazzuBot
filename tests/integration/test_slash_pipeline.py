@@ -15,7 +15,7 @@ from pathlib import Path
 import hikari
 import pendulum
 
-from cazzubot.bot import CazzuBot
+from core.bot import CazzuBot
 from tests.conftest import boot_full_bot
 from tests.driver import press_button, run_slash, wait_for_menu
 

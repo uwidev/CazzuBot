@@ -12,10 +12,10 @@ import hikari
 import lightbulb
 import pendulum
 
-from cazzubot import utils
-from cazzubot.bot import CazzuBot
-from cazzubot.models import ModlogTypeEnum
-from cazzubot.window import window_error, window_info, window_success
+from core import utils
+from core.bot import CazzuBot
+from core.models import ModlogTypeEnum
+from core.window import window_error, window_info, window_success
 
 from . import db
 from .logic import ensure_future, resolve_ban_type, split_duration_reason
