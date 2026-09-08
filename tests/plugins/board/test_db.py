@@ -108,3 +108,31 @@ async def test_latest_row_and_delete(bot: CazzuBot) -> None:
         bot.db, _WEEK_START, _WEEK_END, 99
     )
     assert [r.image_url for r in remaining] == ["u2"]
+
+
+async def test_drop_excluded_filters_by_message(bot: CazzuBot) -> None:
+    """The shared filter drops excluded source messages (order kept) and
+    never deletes the rows — removing the exclusion re-includes them."""
+    await _add(bot, "2026-08-03T00:00:00+00:00", url="u1", message=1)
+    await _add(bot, "2026-08-03T01:00:00+00:00", url="u2", message=2)
+    await _add(bot, "2026-08-03T02:00:00+00:00", url="u3", message=3)
+    rows = await board_db.get_week_images(
+        bot.db, _WEEK_START, _WEEK_END, 99
+    )
+    assert len(rows) == 3
+
+    # two messages from the SAME source message collapse to one drop
+    await _add(bot, "2026-08-03T03:00:00+00:00", url="u4", message=2)
+    rows = await board_db.get_week_images(
+        bot.db, _WEEK_START, _WEEK_END, 99
+    )
+    await board_db.add_exclusion(bot.db, 2, 1, "2026-08-04T00:00:00+00:00")
+    kept = await board_db.drop_excluded(bot.db, rows)
+    assert [r.image_url for r in kept] == ["u1", "u3"]
+
+    # rows are NOT pruned (prune stays for genuinely deleted messages)
+    assert len(rows) == 4
+    await board_db.remove_exclusion(bot.db, 2)
+    kept = await board_db.drop_excluded(bot.db, rows)
+    assert len(kept) == 4
+    assert await board_db.drop_excluded(bot.db, []) == []

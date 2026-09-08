@@ -32,6 +32,16 @@ SCHEMA = [
     """
 	CREATE INDEX IF NOT EXISTS idx_board_ts ON board (ts)
 	""",
+    # one row per excluded source message — owner/mod kept a message off
+    # the board by reacting with the configured emoji (never destructive,
+    # reversible: removing the reaction deletes the row)
+    """
+	CREATE TABLE IF NOT EXISTS board_exclusions (
+		message_id INTEGER PRIMARY KEY,
+		created_by INTEGER NOT NULL,
+		created_at TEXT NOT NULL
+	)
+	""",
 ]
 
 
@@ -139,3 +149,57 @@ async def latest_row(db: Database) -> BoardRow | None:
         BoardRow,
         "SELECT * FROM board ORDER BY ts DESC, id DESC LIMIT 1",
     )
+
+
+# -- exclusions ------------------------------------------------------------
+#
+# An exclusion keeps one source MESSAGE off the board (reaction toggle,
+# reversible, per-occurrence). It never deletes the board row — pruning
+# stays reserved for genuinely deleted messages.
+
+
+async def add_exclusion(
+    db: Database,
+    message_id: int,
+    created_by: int,
+    created_at: str,
+) -> None:
+    """Record an excluded message (idempotent — re-reacts add nothing)."""
+    await db.execute(
+        """
+		INSERT OR IGNORE INTO board_exclusions
+			(message_id, created_by, created_at)
+		VALUES (?, ?, ?)
+		""",
+        message_id,
+        created_by,
+        created_at,
+    )
+
+
+async def remove_exclusion(db: Database, message_id: int) -> None:
+    """Re-include a message (idempotent — removal on a non-excluded
+    message is a no-op)."""
+    await db.execute(
+        "DELETE FROM board_exclusions WHERE message_id = ?", message_id
+    )
+
+
+async def drop_excluded(
+    db: Database, rows: list[BoardRow]
+) -> list[BoardRow]:
+    """Rows minus any whose source message is excluded.
+
+    One shared filter for /board post, the weekly flow and the close-time
+    winner resolution, so the numbered grid, poll iids and winner mapping
+    always agree. Order is preserved; excluded rows are NOT deleted.
+    """
+    if not rows:
+        return rows
+    excluded = await db.fetchall(
+        "SELECT message_id FROM board_exclusions WHERE message_id IN "
+        f"({','.join('?' * len(rows))})",
+        *[r.message_id for r in rows],
+    )
+    drop = {row["message_id"] for row in excluded}
+    return [r for r in rows if r.message_id not in drop]

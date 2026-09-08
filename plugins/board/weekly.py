@@ -141,6 +141,8 @@ async def run_weekly(
         end.isoformat(),
         scrape_channel,
     )
+    # curation: excluded messages (reaction toggle) never make the board
+    rows = await board_db.drop_excluded(bot.db, rows)
     if not rows:
         _log.warning(
             "weekly scrape for %s found no images; aborting", week_label
@@ -265,10 +267,12 @@ async def _announce_winner(
 
     Poll items are the grid numbers in row order, so the winning iid maps
     straight onto the posted rows. ``ids`` is the frozen list of posted
-    row ids (run_weekly stores it in the close payload): the scoped re-read
-    is restricted to it so the mapping always matches the posted grid even
-    when a week was sampled down to MAX_IMAGES. A poll with no votes just
-    gets the no-votes message (no banner change).
+    row ids (run_weekly stores it in the close payload): the winner is
+    resolved BY that id against the current (week ∩ canonical channel,
+    exclusions applied) rows, so the mapping always matches the posted
+    grid even when a week was sampled down to MAX_IMAGES or a row was
+    excluded after posting. A poll with no votes just gets the no-votes
+    message (no banner change).
     """
     week_no = utils.week_number(start)[0]
     results = await poll_db.get_results(bot.db, pid)
@@ -280,26 +284,43 @@ async def _announce_winner(
         return
 
     # the rows a weekly run posts are scoped to the canonical scrape
-    # channel — winner resolution must read the IDENTICAL scoped list so
-    # the winning iid maps onto the same row it did at post time
+    # channel, minus anything excluded since (the same filter the post
+    # used) — winner resolution reads the IDENTICAL scoped list
     rows = await board_db.get_week_images(
         bot.db,
         start.isoformat(),
         start.add(days=7).isoformat(),
         weekly_targets(bot.config.guild_kind)[0],
     )
-    if ids is not None:
-        posted = set(ids)
-        rows = [r for r in rows if r.id in posted]
+    rows = await board_db.drop_excluded(bot.db, rows)
     index = results[0].iid - 1  # ORDER BY count DESC
-    if not 0 <= index < len(rows):
-        _log.warning(
-            "board_weekly_close: winner iid %d out of range (%d rows)",
-            results[0].iid,
-            len(rows),
-        )
-        return
-    winner = rows[index]
+    if ids is not None:
+        # resolve strictly by the frozen posted row id — positional index
+        # into the re-read would shift if a row was excluded after posting
+        if not 0 <= index < len(ids):
+            _log.warning(
+                "board_weekly_close: winner iid %d out of range (%d rows)",
+                results[0].iid,
+                len(ids),
+            )
+            return
+        winner = next((r for r in rows if r.id == ids[index]), None)
+        if winner is None:
+            _log.warning(
+                "board_weekly_close: winner row %d was excluded or "
+                "deleted after posting",
+                ids[index],
+            )
+            return
+    else:  # legacy payload without frozen ids (defensive)
+        if not 0 <= index < len(rows):
+            _log.warning(
+                "board_weekly_close: winner iid %d out of range (%d rows)",
+                results[0].iid,
+                len(rows),
+            )
+            return
+        winner = rows[index]
 
     try:
         data = await _download_url(winner.image_url)

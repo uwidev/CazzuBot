@@ -22,6 +22,9 @@ from scripts.migrations.board_channel_scope import (
     plan,
     verify,
 )
+from scripts.migrations.board_exclusions import (
+    migrate as migrate_exclusions,
+)
 
 _LEGACY_BOARD = """
 CREATE TABLE board (
@@ -148,7 +151,10 @@ async def test_migrated_db_passes_schema_guard_and_scoped_reads(
     db_path = tmp_path / "migrated.db"
     conn = _legacy_conn(db_path)
     try:
+        # apply the whole board v2 chain, runner order: 009 (rebuild +
+        # backfill) then 010 (the exclusions table now in board SCHEMA)
         migrate(conn)
+        migrate_exclusions(conn)
     finally:
         conn.close()
 

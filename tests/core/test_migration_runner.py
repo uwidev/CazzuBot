@@ -108,6 +108,7 @@ def test_registry_is_ordered_and_ids_unique() -> None:
         "007_status_contribution",
         "008_frog_species_cleanup",
         "009_board_channel_scope",
+        "010_board_exclusions",
     ]
 
 

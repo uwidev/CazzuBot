@@ -246,6 +246,38 @@ async def test_run_weekly_ignores_stray_channel_rows(
     assert len(await poll_db.get_items(bot.db, result.poll_id)) == 2
 
 
+async def test_run_weekly_drops_excluded_images(
+    seeded_bot: CazzuBot, monkeypatch
+) -> None:
+    """Excluded messages (reaction curation) never make the weekly grid —
+    same filter as /board post, applied before sampling/poll."""
+    monkeypatch.setattr(weekly, "_download_url", _fake_download_url)
+    bot = seeded_bot
+    _seed_week(bot, channel_id=SCRAPE_CHANNEL_DEV, week=0, count=3)
+    # a mod excluded message 2 during the week
+    await board_db.add_exclusion(
+        bot.db, 2, 1, pendulum.now("UTC").isoformat()
+    )
+
+    result = await run_weekly(bot)
+
+    assert not result.aborted
+    assert result.scraped == 2
+    content = rest_of(bot).created[0].content
+    assert "2 image(s)" in content
+    assert (
+        f"[1](https://discord.com/channels/2/{SCRAPE_CHANNEL_DEV}/1)"
+        in content
+    )
+    assert (
+        f"[2](https://discord.com/channels/2/{SCRAPE_CHANNEL_DEV}/3)"
+        in content
+    )
+    assert f"channels/2/{SCRAPE_CHANNEL_DEV}/2" not in content
+    assert result.poll_id is not None
+    assert len(await poll_db.get_items(bot.db, result.poll_id)) == 2
+
+
 async def test_run_weekly_close_winner_maps_posted_sample(
     seeded_bot: CazzuBot, monkeypatch
 ) -> None:

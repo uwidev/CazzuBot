@@ -182,6 +182,7 @@ class Post(
             rows = await db.get_week_images(
                 bot.db, start.isoformat(), end.isoformat(), channel_id
             )
+            rows = await db.drop_excluded(bot.db, rows)
             window.info(
                 f"Stitching {len(rows)} image(s) for week {week_no} of "
                 f"<#{channel_id}>..."

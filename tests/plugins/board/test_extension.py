@@ -634,6 +634,51 @@ async def test_scrape_defaults_to_invoking_channel(
     assert "Scraped 3 new image(s)" in (ctx.sent[-1].content or "")
 
 
+async def test_post_exclusion_toggle_removes_and_reincludes(
+    seeded_bot: CazzuBot,
+    fake_guild,
+    author: FakeMember,
+    channel,
+    monkeypatch,
+) -> None:
+    """An excluded message (the reaction toggle's effect) is dropped from
+    the next post with renumbering; removing the exclusion re-includes it
+    on a re-post. Grid numbers always come from the filtered list."""
+    from plugins.board import extension as board_ext
+
+    monkeypatch.setattr(board_ext, "_download_url", _hash_download)
+    rest = rest_of(seeded_bot)
+    now = pendulum.now("UTC")
+    start = utils.week_start(now, start="sunday").subtract(days=7)
+    _seed_week_channel(
+        rest, channel_id=99, start=start, hours=(1, 2, 3), author=author
+    )
+    ctx = _ctx(seeded_bot, author, channel, fake_guild)
+    await invoke_command(board_ext.Scrape(), ctx)  # messages 1..3
+
+    # owner reacts ⛔ on message 2 → excluded from the next post
+    await db.add_exclusion(
+        seeded_bot.db, 2, 1, pendulum.now("UTC").isoformat()
+    )
+    await invoke_command(board_ext.Post(), ctx)
+
+    content = ctx.sent[-1].content or ""
+    assert "2 image(s)" in content
+    assert "[1](https://discord.com/channels/2/99/1)" in content
+    # the excluded message is gone and numbering comes from the survivors
+    assert "[2](https://discord.com/channels/2/99/3)" in content
+    assert "channels/2/99/2" not in content
+
+    # removing the reaction re-includes it on the next post
+    await db.remove_exclusion(seeded_bot.db, 2)
+    ctx.sent.clear()
+    await invoke_command(board_ext.Post(), ctx)
+
+    content = ctx.sent[-1].content or ""
+    assert "3 image(s)" in content
+    assert "[2](https://discord.com/channels/2/99/2)" in content
+
+
 async def test_board_weekly_command_runs_flow_via_driver(
     full_bot: CazzuBot, monkeypatch
 ) -> None:

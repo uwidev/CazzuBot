@@ -51,7 +51,7 @@ class BoardPlugin(Plugin):
 
     name = "board"
     schema = db.SCHEMA
-    extensions = ["plugins.board.extension"]
+    extensions = ["plugins.board.extension", "plugins.board.reactions"]
     scheduled = {
         "board_weekly": on_board_weekly_due,
         "board_weekly_close": on_board_weekly_close,

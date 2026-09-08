@@ -17,6 +17,7 @@ The ids are numbered for stable ordering; the migrations are independent
 from scripts.migrations import (
     asset_kind,
     board_channel_scope,
+    board_exclusions,
     counter_events,
     effect_contributions,
     frog_species,
@@ -37,6 +38,7 @@ MIGRATIONS = (
     status_contribution.MIGRATION,
     frog_species_cleanup.MIGRATION,
     board_channel_scope.MIGRATION,
+    board_exclusions.MIGRATION,
 )
 
 __all__ = ["MIGRATIONS", "Migration"]
