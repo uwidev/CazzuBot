@@ -18,10 +18,9 @@ from core.assets import (
     SCHEMA,
     AssetError,
     _EMOJI_CREATE_DELAY,
+    _attachment_id,
     _emoji_id_from_ref,
     _emoji_name_from_key,
-    _is_emoji_ref,
-    _message_id,
     asset_key,
     emoji_cdn_url,
 )
@@ -134,18 +133,28 @@ async def test_reconcile_registers_and_publishes(
         await assets.get(_FrogAsset.LEAF_FROG)
         == "https://cdn.example.com/leaf_frog.png"
     )
+    # the publication's message id is recorded beside the URL — the URL's
+    # own path segment is the attachment id and cannot find the message
+    assert (
+        await asset_db.fetchval(
+            "SELECT message_id FROM asset WHERE key = ?",
+            asset_key(_FrogAsset.LEAF_FROG),
+        )
+        == 1
+    )
 
 
 async def test_reconcile_changed_file_resyncs(
     asset_db: Database, tmp_path: Path
 ) -> None:
-    """An edited art file re-queues the row for CDN sync (url cleared)."""
+    """An edited art file re-queues the row for CDN sync (ref cleared)."""
     path = _write_art(tmp_path, "leaf_frog.png", b"v1")
     _write_art(tmp_path, "classy_frog.webp", b"v1")
     assets = _assets(asset_db, str(tmp_path), channel_id=None)
     await assets.reconcile()
     await asset_db.execute(
-        "UPDATE asset SET url = 'https://old' WHERE key = ?",
+        "UPDATE asset SET url = 'https://old', message_id = 42 "
+        + "WHERE key = ?",
         asset_key(_FrogAsset.LEAF_FROG),
     )
 
@@ -153,11 +162,12 @@ async def test_reconcile_changed_file_resyncs(
     await assets.reconcile()
 
     row = await asset_db.fetchone(
-        "SELECT sha256, url FROM asset WHERE key = ?",
+        "SELECT sha256, url, message_id FROM asset WHERE key = ?",
         asset_key(_FrogAsset.LEAF_FROG),
     )
     assert row is not None
     assert row["url"] is None  # re-queued
+    assert row["message_id"] is None  # the dead message is not kept either
     assert row["sha256"] == _sha256_bytes(b"v2")
 
 
@@ -225,9 +235,41 @@ _LeafOnly = Enum(
 )
 
 
-def _url(channel: int, message: int, name: str) -> str:
-    return (
-        f"https://cdn.example.com/attachments/{channel}/{message}/{name}"
+def _url(channel: int, attachment: int, name: str) -> str:
+    """A CDN attachment URL — the path segment is the ATTACHMENT id.
+
+    Discord's current shape is
+    ``…/attachments/<channel>/<attachment>/<file>``: the message id is
+    *not* in the URL, which is exactly what the registry's ``message_id``
+    column exists for.
+    """
+    return f"https://cdn.example.com/attachments/{channel}/{attachment}/{name}"
+
+
+def _live_message(
+    message_id: int, channel_id: int, attachment_id: int, name: str
+) -> FakeMessage:
+    """A live CDN message whose attachment carries ``attachment_id``."""
+    message = FakeMessage(id=message_id, channel_id=channel_id)
+    message.attachments = [
+        FakeAttachment(
+            id=attachment_id,
+            filename=name,
+            url=_url(channel_id, attachment_id, name),
+        )
+    ]
+    return message
+
+
+async def _seed_published(
+    db: Database, asset: Enum, message_id: int, url: str
+) -> None:
+    """Mark a row published as ``message_id`` with a stored ``url``."""
+    await db.execute(
+        "UPDATE asset SET url = ?, message_id = ? WHERE key = ?",
+        url,
+        message_id,
+        asset_key(asset),
     )
 
 
@@ -261,27 +303,15 @@ async def test_pruned_asset_cdn_message_is_deleted(
     rest = FakeRest()
     cast(Any, assets.bot).rest = rest
     await assets.reconcile()
-    await asset_db.execute(
-        "UPDATE asset SET url = ? WHERE key = ?",
-        _url(777, 111, "leaf.png"),
-        asset_key(_FrogAsset.LEAF_FROG),
+    await _seed_published(
+        asset_db, _FrogAsset.LEAF_FROG, 111, _url(777, 11, "leaf.png")
     )
-    await asset_db.execute(
-        "UPDATE asset SET url = ? WHERE key = ?",
-        _url(777, 222, "classy.webp"),
-        asset_key(_FrogAsset.CLASSY_FROG),
+    await _seed_published(
+        asset_db, _FrogAsset.CLASSY_FROG, 222, _url(777, 22, "classy.webp")
     )
     # leaf's publication is alive (message + attachment); classy's is
     # about to be orphaned
-    rest.messages[(777, 111)] = FakeMessage(
-        id=111,
-        channel_id=777,
-        attachments=[
-            FakeAttachment(
-                id=1, filename="leaf.png", url=_url(777, 111, "leaf.png")
-            )
-        ],
-    )
+    rest.messages[(777, 111)] = _live_message(111, 777, 11, "leaf.png")
 
     assets.bot.plugins[0].asset_decl = _LeafOnly
     await assets.reconcile()
@@ -292,7 +322,7 @@ async def test_pruned_asset_cdn_message_is_deleted(
     assert await asset_db.fetchval("SELECT COUNT(*) FROM asset") == 1
     assert (
         await asset_db.fetchval("SELECT url FROM asset")
-        == _url(777, 111, "leaf.png")  # verification kept it
+        == _url(777, 11, "leaf.png")  # verification kept it
     )
 
 
@@ -301,10 +331,11 @@ async def test_second_boot_does_not_reupload(
 ) -> None:
     """Already-published, unchanged assets are NOT re-uploaded on a second boot.
 
-    Regression: the reconcile must not clear the url for a row whose file
-    hash, kind and path match the DB, and the sync's publish pass
+    Regression: the reconcile must not clear the reference for a row whose
+    file hash, kind and path match the DB, and the sync's publish pass
     (``WHERE url IS NULL``) must not include rows whose url is still set
-    from a previous boot.
+    from a previous boot. The stored ``message_id`` — not the URL, whose
+    path segment is the attachment id — is what the verify fetches.
     """
     _write_art(tmp_path, "leaf_frog.png", b"leaf bytes")
     _write_art(tmp_path, "classy_frog.webp", b"classy bytes")
@@ -312,18 +343,20 @@ async def test_second_boot_does_not_reupload(
     await assets.reconcile()
 
     # simulate a previous boot's publish step
-    await asset_db.execute(
-        "UPDATE asset SET url = ? WHERE key = ?",
-        _url(777, 111, "leaf_frog.png"),
-        asset_key(_FrogAsset.LEAF_FROG),
+    await _seed_published(
+        asset_db,
+        _FrogAsset.LEAF_FROG,
+        111,
+        _url(777, 11, "leaf_frog.png"),
     )
-    await asset_db.execute(
-        "UPDATE asset SET url = ? WHERE key = ?",
-        _url(777, 222, "classy_frog.webp"),
-        asset_key(_FrogAsset.CLASSY_FROG),
+    await _seed_published(
+        asset_db,
+        _FrogAsset.CLASSY_FROG,
+        222,
+        _url(777, 22, "classy_frog.webp"),
     )
 
-    # ---- second boot: reconcile must NOT clear published URLs ----
+    # ---- second boot: reconcile must NOT clear published references ----
     assets2 = _assets(asset_db, str(tmp_path), channel_id=777)
     await assets2.reconcile()
 
@@ -331,51 +364,30 @@ async def test_second_boot_does_not_reupload(
         "SELECT url FROM asset WHERE key = ?",
         asset_key(_FrogAsset.LEAF_FROG),
     )
-    assert leaf_url == _url(777, 111, "leaf_frog.png"), (
+    assert leaf_url == _url(777, 11, "leaf_frog.png"), (
         f"reconcile cleared leaf url: {leaf_url}"
     )
     classy_url = await asset_db.fetchval(
         "SELECT url FROM asset WHERE key = ?",
         asset_key(_FrogAsset.CLASSY_FROG),
     )
-    assert classy_url == _url(777, 222, "classy_frog.webp"), (
+    assert classy_url == _url(777, 22, "classy_frog.webp"), (
         f"reconcile cleared classy url: {classy_url}"
     )
 
     # ---- second boot: sync_cdn must NOT re-upload live assets ----
     rest = FakeRest()
-    rest.messages[(777, 111)] = FakeMessage(
-        id=111,
-        channel_id=777,
-        attachments=[
-            FakeAttachment(
-                id=1,
-                filename="leaf_frog.png",
-                url=_url(777, 111, "leaf_frog.png"),
-            )
-        ],
+    rest.messages[(777, 111)] = _live_message(
+        111, 777, 11, "leaf_frog.png"
     )
-    rest.messages[(777, 222)] = FakeMessage(
-        id=222,
-        channel_id=777,
-        attachments=[
-            FakeAttachment(
-                id=1,
-                filename="classy_frog.webp",
-                url=_url(777, 222, "classy_frog.webp"),
-            )
-        ],
+    rest.messages[(777, 222)] = _live_message(
+        222, 777, 22, "classy_frog.webp"
     )
 
     created: list[FakeMessage] = []
 
     async def _upload(_channel_id: int, **_: object) -> FakeMessage:
-        message = FakeMessage(
-            id=next(iter(FakeRest()._FakeRest__mint))
-            if hasattr(FakeRest, "_FakeRest__mint")
-            else 999,  # pyright: ignore[reportAttributeAccessIssue]
-            channel_id=_channel_id,
-        )
+        message = FakeMessage(id=999, channel_id=_channel_id)
         created.append(message)
         return message
 
@@ -394,11 +406,144 @@ async def test_second_boot_does_not_reupload(
     assert await asset_db.fetchval(
         "SELECT url FROM asset WHERE key = ?",
         asset_key(_FrogAsset.LEAF_FROG),
-    ) == _url(777, 111, "leaf_frog.png")
+    ) == _url(777, 11, "leaf_frog.png")
     assert await asset_db.fetchval(
         "SELECT url FROM asset WHERE key = ?",
         asset_key(_FrogAsset.CLASSY_FROG),
-    ) == _url(777, 222, "classy_frog.webp")
+    ) == _url(777, 22, "classy_frog.webp")
+
+
+async def test_stored_url_attachment_id_is_not_the_message_id(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """The reported boot loop: the URL's path segment is the ATTACHMENT id.
+
+    Discord's current CDN shape is
+    ``…/attachments/<channel>/<attachment>/<file>``, so a stored URL cannot
+    fetch its own message (the legacy shape embedded the message id, and
+    the old code assumed it still did). A row published as message 111 with
+    attachment 999 must verify through the stored ``message_id`` — fetching
+    the URL's 999 404s, which used to re-upload the media on every boot.
+    """
+    _write_art(tmp_path, "leaf_frog.png", b"leaf bytes")
+    _write_art(tmp_path, "classy_frog.webp", b"classy bytes")
+    assets = _assets(asset_db, str(tmp_path), channel_id=777)
+    await assets.reconcile()
+    stored = _url(777, 999, "leaf_frog.png")  # 999 = attachment id
+    await _seed_published(asset_db, _FrogAsset.LEAF_FROG, 111, stored)
+    await _seed_published(
+        asset_db,
+        _FrogAsset.CLASSY_FROG,
+        222,
+        _url(777, 22, "classy_frog.webp"),
+    )
+    rest = FakeRest()
+    rest.messages[(777, 111)] = _live_message(
+        111, 777, 999, "leaf_frog.png"
+    )
+    rest.messages[(777, 222)] = _live_message(
+        222, 777, 22, "classy_frog.webp"
+    )
+    cast(Any, assets.bot).rest = rest
+
+    await assets.sync_cdn(cast(Any, None))
+
+    assert rest.created == [], (
+        "sync re-uploaded a live asset because the URL's attachment id "
+        + "was mistaken for the message id"
+    )
+    assert (
+        await asset_db.fetchval(
+            "SELECT url FROM asset WHERE key = ?",
+            asset_key(_FrogAsset.LEAF_FROG),
+        )
+        == stored
+    )
+
+
+async def test_legacy_row_adopts_its_preexisting_message(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """A row published before ``message_id`` existed adopts its message.
+
+    The id is not recoverable from the URL, so the verify discovers the
+    message by matching the URL's attachment id against the channel's
+    recent messages, stores the id and refreshes the URL — uploading
+    nothing.
+    """
+    _write_art(tmp_path, "leaf_frog.png", b"leaf bytes")
+    _write_art(tmp_path, "classy_frog.webp", b"classy bytes")
+    assets = _assets(asset_db, str(tmp_path), channel_id=777)
+    await assets.reconcile()
+    # legacy row: url only, message_id NULL (the pre-migration shape)
+    await asset_db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        _url(777, 999, "leaf_frog.png"),
+        asset_key(_FrogAsset.LEAF_FROG),
+    )
+    await _seed_published(
+        asset_db,
+        _FrogAsset.CLASSY_FROG,
+        222,
+        _url(777, 22, "classy_frog.webp"),
+    )
+    rest = FakeRest()
+    rest.messages[(777, 111)] = _live_message(
+        111, 777, 999, "leaf_frog.png"
+    )
+    rest.messages[(777, 222)] = _live_message(
+        222, 777, 22, "classy_frog.webp"
+    )
+    cast(Any, assets.bot).rest = rest
+
+    await assets.sync_cdn(cast(Any, None))
+
+    assert rest.created == [], "the pre-existing media was re-uploaded"
+    assert (
+        await asset_db.fetchval(
+            "SELECT message_id FROM asset WHERE key = ?",
+            asset_key(_FrogAsset.LEAF_FROG),
+        )
+        == 111
+    )  # discovered and remembered for later boots
+    assert await asset_db.fetchval(
+        "SELECT url FROM asset WHERE key = ?",
+        asset_key(_FrogAsset.LEAF_FROG),
+    ) == _url(777, 999, "leaf_frog.png")
+
+
+async def test_pruned_legacy_row_deletes_discovered_message(
+    asset_db: Database, tmp_path: Path
+) -> None:
+    """A pruned legacy row (no stored message id) still deletes its message.
+
+    The cleanup path uses the same attachment-id discovery as the verify
+    pass, so the messages the old bug left behind are reclaimable.
+    """
+    _write_art(tmp_path, "leaf_frog.png", b"leaf")
+    _write_art(tmp_path, "classy_frog.webp", b"classy")
+    assets = _assets(asset_db, str(tmp_path), channel_id=777)
+    rest = FakeRest()
+    cast(Any, assets.bot).rest = rest
+    await assets.reconcile()
+    await _seed_published(
+        asset_db, _FrogAsset.LEAF_FROG, 111, _url(777, 11, "leaf.png")
+    )
+    # legacy classy row: url only, no message id
+    await asset_db.execute(
+        "UPDATE asset SET url = ? WHERE key = ?",
+        _url(777, 22, "classy.webp"),
+        asset_key(_FrogAsset.CLASSY_FROG),
+    )
+    rest.messages[(777, 111)] = _live_message(111, 777, 11, "leaf.png")
+    rest.messages[(777, 222)] = _live_message(222, 777, 22, "classy.webp")
+
+    assets.bot.plugins[0].asset_decl = _LeafOnly
+    await assets.reconcile()
+    await assets.sync_cdn(cast(Any, None))
+
+    assert (777, 222) in rest.deleted  # discovered, then deleted
+    assert (777, 111) not in rest.deleted
 
 
 async def test_deleted_cdn_message_republishes(
@@ -411,25 +556,13 @@ async def test_deleted_cdn_message_republishes(
     rest = FakeRest()
     cast(Any, assets.bot).rest = rest
     await assets.reconcile()
-    await asset_db.execute(
-        "UPDATE asset SET url = ? WHERE key = ?",
-        _url(777, 111, "leaf.png"),
-        asset_key(_FrogAsset.LEAF_FROG),
+    await _seed_published(
+        asset_db, _FrogAsset.LEAF_FROG, 111, _url(777, 11, "leaf.png")
     )
-    await asset_db.execute(
-        "UPDATE asset SET url = ? WHERE key = ?",
-        _url(777, 222, "classy.webp"),
-        asset_key(_FrogAsset.CLASSY_FROG),
+    await _seed_published(
+        asset_db, _FrogAsset.CLASSY_FROG, 222, _url(777, 22, "classy.webp")
     )
-    rest.messages[(777, 111)] = FakeMessage(
-        id=111,
-        channel_id=777,
-        attachments=[
-            FakeAttachment(
-                id=1, filename="leaf.png", url=_url(777, 111, "leaf.png")
-            )
-        ],
-    )
+    rest.messages[(777, 111)] = _live_message(111, 777, 11, "leaf.png")
     # classy's message is NOT recorded — someone deleted it
 
     created: list[FakeMessage] = []
@@ -440,7 +573,7 @@ async def test_deleted_cdn_message_republishes(
             FakeAttachment(
                 id=9,
                 filename="classy.webp",
-                url=_url(777, 333, "classy.webp"),
+                url=_url(777, 9, "classy.webp"),
             )
         ]
         created.append(message)
@@ -457,7 +590,14 @@ async def test_deleted_cdn_message_republishes(
     assert await asset_db.fetchval(
         "SELECT url FROM asset WHERE key = ?",
         asset_key(_FrogAsset.CLASSY_FROG),
-    ) == _url(777, 333, "classy.webp")
+    ) == _url(777, 9, "classy.webp")
+    assert (
+        await asset_db.fetchval(
+            "SELECT message_id FROM asset WHERE key = ?",
+            asset_key(_FrogAsset.CLASSY_FROG),
+        )
+        == 333
+    )  # the new publication's message id
 
 
 async def test_live_message_refreshes_rotten_cdn_url(
@@ -470,8 +610,8 @@ async def test_live_message_refreshes_rotten_cdn_url(
     so a row that stored one keeps serving a dead link — or, when the
     message lookup 404s, re-uploads the media on every boot. The verify
     pass must pull the pre-existing CDN reference instead: fetch the live
-    message and refresh the row's URL from its current attachment URL,
-    uploading nothing.
+    message (by the stored message id) and refresh the row's URL from its
+    current attachment URL, uploading nothing.
     """
     _write_art(tmp_path, "leaf_frog.png", b"leaf bytes")
     _write_art(tmp_path, "classy_frog.webp", b"classy bytes")
@@ -480,21 +620,18 @@ async def test_live_message_refreshes_rotten_cdn_url(
     # a previous boot stored a signed URL whose signature has since
     # expired — the CDN message itself is still alive
     rotten = (
-        "https://cdn.example.com/attachments/777/111/leaf_frog.png"
+        "https://cdn.example.com/attachments/777/11/leaf_frog.png"
         "?ex=00000000&is=00000000&hm=deadbeef"
     )
-    await asset_db.execute(
-        "UPDATE asset SET url = ? WHERE key = ?",
-        rotten,
-        asset_key(_FrogAsset.LEAF_FROG),
-    )
-    await asset_db.execute(
-        "UPDATE asset SET url = ? WHERE key = ?",
-        _url(777, 222, "classy_frog.webp"),
-        asset_key(_FrogAsset.CLASSY_FROG),
+    await _seed_published(asset_db, _FrogAsset.LEAF_FROG, 111, rotten)
+    await _seed_published(
+        asset_db,
+        _FrogAsset.CLASSY_FROG,
+        222,
+        _url(777, 22, "classy_frog.webp"),
     )
     fresh = (
-        "https://cdn.example.com/attachments/777/111/leaf_frog.png"
+        "https://cdn.example.com/attachments/777/11/leaf_frog.png"
         "?ex=11111111&is=11111111&hm=cafebabe"
     )
     rest = FakeRest()
@@ -502,19 +639,11 @@ async def test_live_message_refreshes_rotten_cdn_url(
         id=111,
         channel_id=777,
         attachments=[
-            FakeAttachment(id=1, filename="leaf_frog.png", url=fresh)
+            FakeAttachment(id=11, filename="leaf_frog.png", url=fresh)
         ],
     )
-    rest.messages[(777, 222)] = FakeMessage(
-        id=222,
-        channel_id=777,
-        attachments=[
-            FakeAttachment(
-                id=1,
-                filename="classy_frog.webp",
-                url=_url(777, 222, "classy_frog.webp"),
-            )
-        ],
+    rest.messages[(777, 222)] = _live_message(
+        222, 777, 22, "classy_frog.webp"
     )
     cast(Any, assets.bot).rest = rest
     await assets.sync_cdn(cast(Any, None))
@@ -528,6 +657,13 @@ async def test_live_message_refreshes_rotten_cdn_url(
             asset_key(_FrogAsset.LEAF_FROG),
         )
         == fresh  # refreshed from the live message, nothing uploaded
+    )
+    assert (
+        await asset_db.fetchval(
+            "SELECT message_id FROM asset WHERE key = ?",
+            asset_key(_FrogAsset.LEAF_FROG),
+        )
+        == 111  # the anchor is unchanged
     )
 
 
@@ -546,30 +682,16 @@ async def test_message_that_lost_attachment_republishes(
     rest = FakeRest()
     cast(Any, assets.bot).rest = rest
     await assets.reconcile()
-    await asset_db.execute(
-        "UPDATE asset SET url = ? WHERE key = ?",
-        _url(777, 111, "leaf.png"),
-        asset_key(_FrogAsset.LEAF_FROG),
+    await _seed_published(
+        asset_db, _FrogAsset.LEAF_FROG, 111, _url(777, 11, "leaf.png")
     )
-    await asset_db.execute(
-        "UPDATE asset SET url = ? WHERE key = ?",
-        _url(777, 222, "classy.webp"),
-        asset_key(_FrogAsset.CLASSY_FROG),
+    await _seed_published(
+        asset_db, _FrogAsset.CLASSY_FROG, 222, _url(777, 22, "classy.webp")
     )
     # leaf's message is alive but its attachment was removed; classy's
     # message carries its attachment as normal
     rest.messages[(777, 111)] = FakeMessage(id=111, channel_id=777)
-    rest.messages[(777, 222)] = FakeMessage(
-        id=222,
-        channel_id=777,
-        attachments=[
-            FakeAttachment(
-                id=1,
-                filename="classy.webp",
-                url=_url(777, 222, "classy.webp"),
-            )
-        ],
-    )
+    rest.messages[(777, 222)] = _live_message(222, 777, 22, "classy.webp")
 
     created: list[FakeMessage] = []
 
@@ -579,7 +701,7 @@ async def test_message_that_lost_attachment_republishes(
             FakeAttachment(
                 id=9,
                 filename="leaf.png",
-                url=_url(777, 333, "leaf.png"),
+                url=_url(777, 9, "leaf.png"),
             )
         ]
         created.append(message)
@@ -596,21 +718,24 @@ async def test_message_that_lost_attachment_republishes(
     assert await asset_db.fetchval(
         "SELECT url FROM asset WHERE key = ?",
         asset_key(_FrogAsset.LEAF_FROG),
-    ) == _url(777, 333, "leaf.png")
+    ) == _url(777, 9, "leaf.png")
     assert await asset_db.fetchval(
         "SELECT url FROM asset WHERE key = ?",
         asset_key(_FrogAsset.CLASSY_FROG),
-    ) == _url(777, 222, "classy.webp")
+    ) == _url(777, 22, "classy.webp")
 
 
-def test_message_id_parses_attachment_url() -> None:
+def test_attachment_id_parses_attachment_url() -> None:
+    """The URL's path segment is the attachment id (never the message id)."""
     assert (
-        _message_id(
+        _attachment_id(
             "https://cdn.example.com/attachments/777/222/classy.webp"
         )
         == 222
     )
-    assert _message_id("https://cdn.example.com/not-an-attachment") is None
+    assert (
+        _attachment_id("https://cdn.example.com/not-an-attachment") is None
+    )
 
 
 # -- emoji-kind assets (the asset child-guild) ------------------------------
@@ -652,9 +777,6 @@ def _write_glyphs(root: Path) -> None:
 
 def test_emoji_ref_helpers() -> None:
     """``<:name:id>`` / ``<a:name:id>`` parse; CDN URLs do not."""
-    assert _is_emoji_ref("<:leaf:123>")
-    assert _is_emoji_ref("<a:leaf:123>")
-    assert not _is_emoji_ref("https://cdn.example.com/leaf.png")
     assert _emoji_id_from_ref("<:leaf:123>") == 123
     assert _emoji_id_from_ref("<a:leaf:123>") == 123
     assert _emoji_id_from_ref("https://cdn.example.com/leaf.png") is None
@@ -879,7 +1001,10 @@ async def test_emoji_hash_change_deletes_and_recreates(
     # change the file — reconcile queues the old emoji for deletion
     _write_glyph(tmp_path, "frog_emoji.png", b"v2")
     await assets.reconcile()
-    assert assets._pending_deletes == ["<:frog_glyph:999>"]
+    pending = assets._pending_deletes
+    assert [(o.kind, o.url) for o in pending] == [
+        (AssetKind.EMOJI, "<:frog_glyph:999>")
+    ]
 
     await assets.sync_cdn(cast(Any, None))
     assert deleted == [999]  # old emoji gone

@@ -109,6 +109,7 @@ def test_registry_is_ordered_and_ids_unique() -> None:
         "008_frog_species_cleanup",
         "009_board_channel_scope",
         "010_board_exclusions",
+        "011_asset_message_id",
     ]
 
 

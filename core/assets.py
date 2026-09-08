@@ -18,6 +18,11 @@ a live media one has its stored URL refreshed from its CDN message
 (Discord's signed attachment URLs rot after ~a day, so the row is renewed
 instead of the asset being re-uploaded each boot).
 
+Media rows therefore also record the **message id** of their publication:
+the CDN URL's path segment is the *attachment* id, not the message id
+(``_attachment_id``), so the message — the durable anchor the verification
+fetches — cannot be derived from the URL.
+
 The kind dispatches the sync to the shared **asset child-guild**: images
 (``IMAGE``) CDN-publish into a private channel, while ``EMOJI`` assets are
 created as custom emoji in the guild and referenced as ``<:name:id>`` —
@@ -56,11 +61,12 @@ _log = logging.getLogger(__name__)
 _SCHEMA = [
     """
 	CREATE TABLE IF NOT EXISTS asset (
-		key    TEXT PRIMARY KEY,
-		kind   TEXT NOT NULL,
-		sha256 TEXT NOT NULL,
-		path   TEXT NOT NULL,
-		url    TEXT
+		key        TEXT PRIMARY KEY,
+		kind       TEXT NOT NULL,
+		sha256     TEXT NOT NULL,
+		path       TEXT NOT NULL,
+		url        TEXT,
+		message_id INTEGER
 	)
 	""",
 ]
@@ -77,7 +83,15 @@ _EMOJI_CREATE_DELAY = 2.0
 # or <a:name:id> (animated). The ``id`` is what emoji CRUD needs.
 _EMOJI_REF = re.compile(r"^<(a)?:([\w]+):(\d+)>$")
 
+# A CDN attachment URL: …/attachments/<channel id>/<attachment id>/<file>.
+# The captured group is the ATTACHMENT id — Discord's current format, which
+# replaced the legacy …/<channel>/<message>/<file> shape — so it can match a
+# message's attachment but never identifies the message itself.
 _ATTACHMENT_URL = re.compile(r"/attachments/\d+/(\d+)/")
+
+# How many recent messages the legacy discovery scan reads. Bounded: the
+# asset channel is a private, low-traffic publication sink.
+_DISCOVERY_LIMIT = 100
 
 
 class AssetError(RuntimeError):
@@ -118,13 +132,33 @@ class AssetSpec:
 
 @dataclass(frozen=True, slots=True)
 class AssetRow:
-    """One ``asset`` registry row (``url`` is None until published)."""
+    """One ``asset`` registry row.
+
+    ``url`` is None until published; ``message_id`` is the Discord message
+    of a media publication (the durable anchor the verification fetches —
+    never derivable from ``url``, whose path segment is the attachment id).
+    Emoji rows carry None.
+    """
 
     key: str
     kind: AssetKind
     sha256: str
     path: str
     url: str | None
+    message_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _Orphan:
+    """A stored reference queued for deletion (prune or hash/kind change).
+
+    Carries the row's ``message_id`` because a media reference can only be
+    deleted through the message, not the URL (see :func:`_attachment_id`).
+    """
+
+    kind: AssetKind
+    url: str
+    message_id: int | None
 
 
 def asset_key(asset: Enum) -> str:
@@ -158,9 +192,10 @@ class Assets:
         self.plugins_dir = Path(plugins_dir)
         # Stored references queued for deletion by the last reconcile's
         # prune or an emoji/media hash-change — the sync performs the REST
-        # deletes (REST is up by then). Each entry is a row's ``url``: a CDN
-        # message URL for media, a ``<:name:id>`` emoji reference for emoji.
-        self._pending_deletes: list[str] = []
+        # deletes (REST is up by then). Each entry is a row's ``url`` plus
+        # its kind and message id (a media message needs the id, not the
+        # URL's attachment id).
+        self._pending_deletes: list[_Orphan] = []
         # Throttle pacing: count emoji creates within one sync pass so we
         # sleep *between* consecutive creates (never before the first).
         self._emoji_created_this_pass = 0
@@ -205,7 +240,8 @@ class Assets:
                 stored_path = f"{plugin.name}/{spec.path}"
                 row = await self.bot.db.fetch_model(
                     AssetRow,
-                    "SELECT key, sha256, url, kind, path FROM asset WHERE key = ?",
+                    "SELECT key, sha256, url, kind, path, message_id "
+                    + "FROM asset WHERE key = ?",
                     key,
                 )
                 if row is None:
@@ -234,11 +270,18 @@ class Assets:
                     # <:name:id>) is queued for deletion (an emoji's image is
                     # immutable, so a changed emoji file means delete + recreate).
                     if row.url:
-                        self._pending_deletes.append(row.url)
+                        self._pending_deletes.append(
+                            _Orphan(
+                                kind=row.kind,
+                                url=row.url,
+                                message_id=row.message_id,
+                            )
+                        )
                     await self.bot.db.execute(
                         """
 						UPDATE asset
-						SET sha256 = ?, kind = ?, path = ?, url = NULL
+						SET sha256 = ?, kind = ?, path = ?, url = NULL,
+						    message_id = NULL
 						WHERE key = ?
 						""",
                         sha,
@@ -260,13 +303,19 @@ class Assets:
         fully idempotent.
         """
         rows = await self.bot.db.fetchall(
-            "SELECT key, kind, sha256, path, url FROM asset"
+            "SELECT key, kind, sha256, path, url, message_id FROM asset"
         )
         for row in rows_to(AssetRow, rows):
             if row.key in declared:
                 continue
             if row.url:
-                self._pending_deletes.append(row.url)
+                self._pending_deletes.append(
+                    _Orphan(
+                        kind=row.kind,
+                        url=row.url,
+                        message_id=row.message_id,
+                    )
+                )
             await self.bot.db.execute(
                 "DELETE FROM asset WHERE key = ?", row.key
             )
@@ -288,6 +337,9 @@ class Assets:
            fetched message's current attachment URL (Discord re-signs
            attachment CDN URLs — the refresh is how a boot pulls the
            pre-existing reference instead of re-uploading the media).
+           The message is fetched by the stored ``message_id``; a legacy
+           row without one is discovered by matching the URL's attachment
+           id against the channel's recent messages and adopts the id.
            The registry never serves a dead reference.
         2. **Cleanup** — stored references queued by the last reconcile's
            prune or a hash-change (deleted assets) are removed
@@ -313,7 +365,8 @@ class Assets:
         await self._verify_published(channel_id, guild_id)
         await self._delete_orphaned(channel_id, guild_id)
         rows = await self.bot.db.fetchall(
-            "SELECT key, kind, sha256, path, url FROM asset WHERE url IS NULL"
+            "SELECT key, kind, sha256, path, url, message_id "
+            + "FROM asset WHERE url IS NULL"
         )
         for row in rows_to(AssetRow, rows):
             if row.kind is AssetKind.EMOJI:
@@ -345,10 +398,21 @@ class Assets:
                 channel_id, attachment=hikari.Bytes(data, path.name)
             )
             url = message.attachments[0].url
+            # the message id is stored beside the URL: the URL's own path
+            # segment is the attachment id, so the message (the anchor the
+            # next boot's verification fetches) is not derivable from it
             await self.bot.db.execute(
-                "UPDATE asset SET url = ? WHERE key = ?", url, row.key
+                "UPDATE asset SET url = ?, message_id = ? WHERE key = ?",
+                url,
+                message.id,
+                row.key,
             )
-            _log.info("asset %s published (%s)", row.key, url)
+            _log.info(
+                "asset %s published (message %s, %s)",
+                row.key,
+                message.id,
+                url,
+            )
 
     async def _publish_emoji(self, guild_id: int, row: AssetRow) -> None:
         """Create a guild emoji for an emoji-kind asset, store ``<:name:id>``.
@@ -393,20 +457,23 @@ class Assets:
     ) -> None:
         """Re-check published references — a dead one re-queues the row.
 
-        Media rows are liveness-checked with one ``fetch_message`` (a CDN
-        URL embeds its message id). A live message's current attachment
-        URL **refreshes** the stored one: Discord's signed CDN attachment
-        URLs rot after ~a day, so re-deriving from the message each boot is
-        how the bot pulls the pre-existing reference instead of
-        re-uploading the media. A message that no longer carries an
-        attachment is dead too (re-queued). Emoji rows are checked with
-        one ``fetch_guild_emoji``. Only a definitive ``NotFoundError`` (or
-        an attachment-less message) resets the row; any other failure
+        Media rows are liveness-checked with one ``fetch_message`` on the
+        stored ``message_id`` (see :meth:`_published_message`; the URL's
+        path segment is the attachment id and cannot fetch the message). A
+        live message's current attachment URL **refreshes** the stored
+        one: Discord's signed CDN attachment URLs rot after ~a day, so
+        re-deriving from the message each boot is how the bot pulls the
+        pre-existing reference instead of re-uploading the media. A
+        message that no longer carries an attachment is dead too
+        (re-queued). Emoji rows are checked with one
+        ``fetch_guild_emoji``. Only a definitive ``NotFoundError`` (or an
+        attachment-less message) resets the row; any other failure
         (permissions, transient) logs and leaves the reference alone — a
         hiccup must not cause a re-publish storm.
         """
         rows = await self.bot.db.fetchall(
-            "SELECT key, kind, sha256, path, url FROM asset WHERE url IS NOT NULL"
+            "SELECT key, kind, sha256, path, url, message_id "
+            + "FROM asset WHERE url IS NOT NULL"
         )
         for row in rows_to(AssetRow, rows):
             if row.url is None:
@@ -434,10 +501,7 @@ class Assets:
                         "asset %s emoji gone; re-queuing publish",
                         row.key,
                     )
-                    await self.bot.db.execute(
-                        "UPDATE asset SET url = NULL WHERE key = ?",
-                        row.key,
-                    )
+                    await self._reset_publish(row.key)
                 except Exception:
                     _log.exception(
                         "failed to verify asset %s emoji", row.key
@@ -450,32 +514,41 @@ class Assets:
                     row.key,
                 )
                 continue
-            message_id = _message_id(row.url)
-            if message_id is None:
-                _log.warning(
-                    "asset %s has an unparseable URL: %s",
-                    row.key,
-                    row.url,
-                )
-                continue
             try:
-                message = await self.bot.rest.fetch_message(
-                    channel_id, message_id
-                )
+                message = await self._published_message(channel_id, row)
             except hikari.NotFoundError:
                 _log.info(
                     "asset %s CDN message gone; re-queuing publish",
                     row.key,
                 )
-                await self.bot.db.execute(
-                    "UPDATE asset SET url = NULL WHERE key = ?", row.key
-                )
+                await self._reset_publish(row.key)
                 continue
             except Exception:
                 _log.exception(
                     "failed to verify asset %s publication", row.key
                 )
                 continue
+            if message is None:
+                _log.info(
+                    "asset %s CDN message not found; re-queuing publish",
+                    row.key,
+                )
+                await self._reset_publish(row.key)
+                continue
+            # a legacy row (published before the registry stored the id)
+            # just adopted its pre-existing message — remember it so later
+            # boots fetch the message directly instead of scanning
+            if row.message_id is None:
+                _log.info(
+                    "asset %s adopted pre-existing CDN message %s",
+                    row.key,
+                    message.id,
+                )
+                await self.bot.db.execute(
+                    "UPDATE asset SET message_id = ? WHERE key = ?",
+                    message.id,
+                    row.key,
+                )
             # Media discovery: the message is the durable anchor and the
             # attachment's CDN URL is re-signed on every fetch (Discord's
             # signed attachment URLs rot after ~a day), so a live message's
@@ -489,9 +562,7 @@ class Assets:
                     + "re-queuing publish",
                     row.key,
                 )
-                await self.bot.db.execute(
-                    "UPDATE asset SET url = NULL WHERE key = ?", row.key
-                )
+                await self._reset_publish(row.key)
                 continue
             fresh_url = message.attachments[0].url
             if fresh_url != row.url:
@@ -503,6 +574,64 @@ class Assets:
                     fresh_url,
                     row.key,
                 )
+
+    async def _published_message(
+        self, channel_id: int, row: AssetRow
+    ) -> hikari.Message | None:
+        """The live CDN message backing a media row, or None.
+
+        The stored ``message_id`` is authoritative — it is recorded at
+        publish time. A row published before that column existed carries
+        None, and the URL cannot stand in for it (its path segment is the
+        *attachment* id), so the message is discovered by matching the
+        attachment id against the channel's recent messages
+        (:meth:`_discover_message`). None means neither found it: the row
+        re-publishes.
+        """
+        if row.message_id is not None:
+            return await self.bot.rest.fetch_message(
+                channel_id, row.message_id
+            )
+        if row.url is None:
+            return None
+        return await self._discover_message(
+            channel_id, _attachment_id(row.url)
+        )
+
+    async def _discover_message(
+        self, channel_id: int, attachment_id: int | None
+    ) -> hikari.Message | None:
+        """Find the live message carrying ``attachment_id``, or None.
+
+        Bounded scan of the ``_DISCOVERY_LIMIT`` most recent messages in
+        the channel — the legacy-row path only, since new publications
+        record their message id. Returns None when the attachment is not
+        among them.
+        """
+        if attachment_id is None:
+            return None
+        seen = 0
+        async for message in self.bot.rest.fetch_messages(channel_id):
+            seen += 1
+            if any(
+                attachment.id == attachment_id
+                for attachment in message.attachments
+            ):
+                return message
+            if seen >= _DISCOVERY_LIMIT:
+                break
+        return None
+
+    async def _reset_publish(self, key: str) -> None:
+        """Clear a row's published reference so the publish pass redoes it.
+
+        Both ``url`` and ``message_id`` are dropped: the reference is dead
+        and its message (if it ever existed) no longer anchors it.
+        """
+        await self.bot.db.execute(
+            "UPDATE asset SET url = NULL, message_id = NULL WHERE key = ?",
+            key,
+        )
 
     async def _delete_orphaned(
         self, channel_id: int | None, guild_id: int | None
@@ -517,9 +646,9 @@ class Assets:
         re-queues it then).
         """
         pending, self._pending_deletes = self._pending_deletes, []
-        for ref in pending:
-            if _is_emoji_ref(ref):
-                emoji_id = _emoji_id_from_ref(ref)
+        for orphan in pending:
+            if orphan.kind is AssetKind.EMOJI:
+                emoji_id = _emoji_id_from_ref(orphan.url)
                 if not guild_id or emoji_id is None:
                     continue
                 try:
@@ -528,21 +657,37 @@ class Assets:
                     pass  # already gone
                 except Exception:
                     _log.exception(
-                        "failed to delete orphaned emoji %s", ref
+                        "failed to delete orphaned emoji %s", orphan.url
                     )
                 continue
             if not channel_id:
                 continue
-            message_id = _message_id(ref)
+            message_id = orphan.message_id
             if message_id is None:
-                continue
+                # legacy row: no stored id, so locate the message the way
+                # the verification does (the URL only carries the
+                # attachment id)
+                try:
+                    message = await self._discover_message(
+                        channel_id, _attachment_id(orphan.url)
+                    )
+                except Exception:
+                    _log.exception(
+                        "failed to locate orphaned asset message %s",
+                        orphan.url,
+                    )
+                    continue
+                if message is None:
+                    continue
+                message_id = message.id
             try:
                 await self.bot.rest.delete_message(channel_id, message_id)
             except hikari.NotFoundError:
                 pass  # already gone
             except Exception:
                 _log.exception(
-                    "failed to delete orphaned asset message %s", ref
+                    "failed to delete orphaned asset message %s",
+                    orphan.url,
                 )
 
     # -- runtime lookup -----------------------------------------------------
@@ -590,21 +735,18 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _message_id(url: str) -> int | None:
-    """The Discord message id embedded in a CDN attachment URL.
+def _attachment_id(url: str) -> int | None:
+    """The Discord attachment id embedded in a CDN attachment URL.
 
-    CDN URLs look like ``…/attachments/<channel>/<message>/<file>``; the
-    message id is how the sync finds (and deletes) the published message.
-    Returns None when the URL isn't a recognizable attachment URL.
+    CDN URLs look like ``…/attachments/<channel>/<attachment>/<file>``.
+    That second segment is the **attachment** id, not the message id —
+    Discord replaced the legacy ``…/<channel>/<message>/<file>`` shape, so
+    it can only match a message's attachment (the discovery scan), never
+    fetch the message itself. Returns None when the URL isn't a
+    recognizable attachment URL.
     """
     match = _ATTACHMENT_URL.search(url)
     return int(match.group(1)) if match else None
-
-
-def _is_emoji_ref(ref: str) -> bool:
-    """Whether a stored reference is a custom-emoji ``<:name:id>`` (or
-    ``<a:name:id>``) rather than a CDN URL."""
-    return _EMOJI_REF.match(ref) is not None
 
 
 def _emoji_id_from_ref(ref: str) -> int | None:
