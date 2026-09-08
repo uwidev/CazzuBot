@@ -34,7 +34,7 @@ loader = lightbulb.Loader()
 # settings keys (core settings store, read at event time with defaults)
 EXCLUDE_EMOJI_KEY = "board.exclude.emoji"
 EXCLUDE_ROLE_KEY = "board.exclude.role"
-DEFAULT_EXCLUDE_EMOJI = "⛔"
+DEFAULT_EXCLUDE_EMOJI = "❌"
 
 
 @guild_listener(loader, hikari.GuildReactionAddEvent)

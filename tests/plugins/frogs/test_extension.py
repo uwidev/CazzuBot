@@ -17,12 +17,14 @@ from plugins.frogs import FrogsPlugin, db as frog_db
 from plugins.frogs import factory
 from plugins.frogs.events import FrogCapturedEvent
 from plugins.frogs.extension import (
+    _SILHOUETTE,
     Catalog,
     DebugFreeze,
+    FrogCatalog,
     Register,
     View,
 )
-from plugins.frogs.species import by_key
+from plugins.frogs.species import SPECIES, by_key
 from plugins.misc.asset import MiscAsset
 from tests.fakes import (
     FakeCache,
@@ -412,46 +414,150 @@ async def test_frog_debug_freeze_no_normal_frogs_is_a_noop(
     assert ctx.sent[-1].content == "✓ frex has no normal frogs to freeze."
 
 
-async def test_frog_catalog_lists_all_frogmd_species(
+async def test_frog_catalog_renders_only_discovered_species(
     bot: CazzuBot,
     ctx: FakeContext,
+    author: FakeMember,
 ) -> None:
+    """The book renders the invoker's captures; the rest are silhouettes.
+
+    Discovery is lifetime and derives from the capture log, so one Basic
+    capture reveals Basic and nothing else: every other species must stay
+    a nameless slot (no name, no description, no art) and the render must
+    carry no rarity, exp, weight, or species-count prose.
+    """
+    now = pendulum.now("UTC")
+    await frog_db.add_capture_log(
+        bot.db,
+        author.id,
+        now,
+        waited_for=3.0,
+        species_key=FrogItemKey.BASIC,
+    )
+
     await invoke_command(Catalog(), ctx)
 
     embed = ctx.sent[-1].embed
     assert embed is not None
-    assert embed.title == "Frog Species Catalog"
-    # each species is a description section headed by an H3 markdown header
-    # (the species name) — Discord renders headings in the description, not
-    # in fields, so the catalog carries no fields
+    assert embed.title == f"{author.display_name}'s Frog Collection"
+    # each entry is a description section headed by an H3 markdown header
+    # (Discord renders headings in the description, not in fields)
     assert embed.fields == []
     desc = embed.description or ""
-    assert "### Basic Frog" in desc
-    assert "### Pog Frog" in desc
-    assert "### Froggers Frog" in desc
-    assert "### Classy Frog" in desc
-    assert "### Cluster Frog" in desc
-    # name + art + description only — no rarity, and the item's own
-    # effects (exp/consume) belong to `/inventory info`, not the catalog
-    descriptions = {
-        "Basic Frog": "The most normalest frog of them all.",
-        "Pog Frog": "A frog with a pog.",
-        "Froggers Frog": "A frog with a poggers.",
-        "Classy Frog": "A frog with rather refined tastes.",
-        "Cluster Frog": "Be careful with this one… she's… spawning!",
-    }
-    for name, description in descriptions.items():
-        # the species name is an H3 markdown header on its own line, and
-        # the body carries the description under that header
-        assert f"### {name}\n{description}" in desc
-        assert "Rarity" not in description
-        assert "Consume:" not in description
-        assert "exp" not in description
+    assert "### Basic Frog\nThe most normalest frog of them all." in desc
+    for species in SPECIES:
+        if species.key is FrogItemKey.BASIC:
+            continue
+        assert species.name not in desc
+        assert species.description not in desc
+    visible = [species for species in SPECIES if not species.hidden]
+    assert desc.count(f"### {_SILHOUETTE}") == len(visible) - 1
+    # value-agnostic: no rarity tiers, no exp, no weights, no totals
+    for banned in ("Rarity", "common", "uncommon", "rare", "special"):
+        assert banned not in desc
+    assert "exp" not in desc and "weight" not in desc
     # the catalog shares /frog view's cycling frog-tip footer
     assert embed.footer is not None
     assert embed.footer.text in TIP_SETS["frog"]
     # no footer icon while the shared cirno emojis are unpublished
     assert embed.footer.icon is None
+
+
+async def test_frog_catalog_empty_state_for_member_with_no_captures(
+    bot: CazzuBot,
+    ctx: FakeContext,
+) -> None:
+    """Zero captures: the empty state leads, silhouettes stay, no spoilers."""
+    await invoke_command(Catalog(), ctx)
+
+    embed = ctx.sent[-1].embed
+    assert embed is not None
+    desc = embed.description or ""
+    assert "haven't discovered any frogs yet" in desc
+    for species in SPECIES:
+        assert species.name not in desc
+        assert species.description not in desc
+    visible = [species for species in SPECIES if not species.hidden]
+    assert desc.count(f"### {_SILHOUETTE}") == len(visible)
+    assert embed.footer is not None
+    assert embed.footer.text in TIP_SETS["frog"]
+
+
+async def test_frog_catalog_skips_hidden_species(
+    bot: CazzuBot,
+    ctx: FakeContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hidden species spawns but never takes a book slot.
+
+    The registry has no hidden member yet, so this patches a copy of Pog
+    into the extension's registry: the member book leaves it out
+    entirely (not even a silhouette), while the staff full-set view
+    still renders it for asset checks.
+    """
+    from dataclasses import replace
+
+    from plugins.frogs import extension as frog_ext
+
+    # resolve the module at call time (plugin-reload safe): a suite that
+    # re-imported plugins.frogs.* leaves the module-level imports above
+    # pointing at the previous module object, so patching the live
+    # registry would not reach the command class under test
+    patched = tuple(
+        replace(species, hidden=True)
+        if species.key is FrogItemKey.POG
+        else species
+        for species in frog_ext.SPECIES
+    )
+    hidden_pog = next(
+        species for species in patched if species.key is FrogItemKey.POG
+    )
+    monkeypatch.setattr(frog_ext, "SPECIES", patched)
+
+    await invoke_command(frog_ext.Catalog(), ctx)
+
+    book = ctx.sent[-1].embed
+    assert book is not None
+    desc = book.description or ""
+    assert "Pog Frog" not in desc
+    assert hidden_pog.description not in desc
+    assert desc.count(f"### {_SILHOUETTE}") == len(patched) - 1
+
+    await invoke_command(frog_ext.FrogCatalog(), ctx)
+
+    staff = ctx.sent[-1].embed
+    assert staff is not None
+    staff_desc = staff.description or ""
+    assert f"### Pog Frog\n{hidden_pog.description}" in staff_desc
+
+
+async def test_frog_catalog_staff_view_renders_the_full_set(
+    bot: CazzuBot,
+    ctx: FakeContext,
+) -> None:
+    """The staff full-set view renders every species, members never see it.
+
+    ``default_member_permissions`` is what keeps the command out of a
+    member's picker — the ``ADMIN_ONLY`` hook alone would leave it listed
+    and only block execution. It has to be top-level: lightbulb ignores
+    that field on subcommands (``tests/core/test_command_guards.py``
+    pins the hidden-command contract).
+    """
+    await invoke_command(FrogCatalog(), ctx)
+
+    embed = ctx.sent[-1].embed
+    assert embed is not None
+    assert embed.title == "Frog Species Catalog"
+    desc = embed.description or ""
+    for species in SPECIES:
+        assert f"### {species.name}\n" in desc
+        assert species.description in desc
+    assert embed.footer is not None
+    assert embed.footer.text in TIP_SETS["frog"]
+    assert (
+        FrogCatalog._command_data.default_member_permissions  # pyright: ignore[reportPrivateUsage]
+        == hikari.Permissions.ADMINISTRATOR
+    )
 
 
 async def test_frog_catalog_footer_icon_pulls_a_random_misc_emoji(

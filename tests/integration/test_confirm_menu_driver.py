@@ -98,7 +98,9 @@ async def test_author_confirm_wrong_user_rejected(
 @pytest.mark.parametrize(
     ("button_label", "expected_normal", "expected_exp_logs"),
     [
-        pytest.param("Yes", 4, 1, id="yes-awards-exp"),
+        # no item grants exp any more (2026-09): the log stays empty either
+        # way, while Yes still consumes the stack
+        pytest.param("Yes", 4, 0, id="yes-consumes-no-exp"),
         pytest.param("No", 5, 0, id="no-changes-nothing"),
     ],
 )

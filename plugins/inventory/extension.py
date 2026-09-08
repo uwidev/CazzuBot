@@ -22,14 +22,16 @@ gap like "1, 2, 4".
 a stack by its derived slot number, confirms with the member, then runs
 the item's own consume handler and decrements the stack. Its
 **confirmation step previews the outcome** the final embed then reports:
-the item's effect fields, the seasonal exp before/after (predicted from
-the item module's exp oracle so preview and grant can't drift), and the
-resulting status when the item grants one. The final "Consumed!" embed
-shows the actuals: the seasonal exp before/after the consume (for
-exp-granting items, only when the consume changed it), and the
-**resulting** status (the granted
+the item's effect fields and the resulting status when the item grants
+one — plus a plain warning when the item's consume has no effect at all
+(it still proceeds; the member is told, not blocked). The final
+"Consumed!" embed
+shows the actuals: the **resulting** status (the granted
 status class's human prose, read back from the live contribution) —
-nothing when the item grants no status.
+nothing when the item grants no status — and the stack-consumption
+result line. A successful consume also appends one row to the member
+consumption ledger (``db.add_item_log``, ``member_item_log``) — inert
+history no surface reads yet.
 ``info <slot>`` shows the invoker's item
 in that slot as a description card — thumbnail from the item's asset,
 title the item name, the description prose, then one labeled embed field
@@ -51,6 +53,8 @@ from core.statuses import Scope
 from core.tips import get_tip
 
 from plugins.misc.asset import random_footer_icon
+
+from . import db as inv_db
 
 loader = lightbulb.Loader()
 
@@ -118,16 +122,16 @@ class Consume(
     avatar footer and the item's published art as thumbnail when available
     (unpublished → no thumbnail). See :func:`_apply_item_thumbnail`. The
     confirmation step previews the outcome so a member sees what they're
-    agreeing to: the "On consumption"/effect fields (what consuming does),
-    the seasonal exp before/after (predicted from the same oracle the
-    consume glue grants — preview and grant cannot drift), and the
-    resulting status when the item grants one. The
+    agreeing to: the "On consumption"/effect fields (what consuming does)
+    and the resulting status when the item grants one — or, when the
+    item's consume has no effect at all, a plain warning that consuming it
+    grants nothing (the consume still proceeds; the member is told, not
+    blocked). The
     final "Consumed!" embed reports the same sections from the *actual*
     outcome — the item's
     description prose plus one labeled field per item ``field`` (the "On
-    consumption" blurb for frogs: what consuming does) — then, for
-    exp-granting items, the seasonal exp before/after the consume (only
-    when the consume actually changed it), then — when the consume
+    consumption" blurb for frogs: what consuming does) — then, when the
+    consume
     granted a status — the **resulting** status (the granted status
     class's human text, read back from the live contribution; absent
     when the item grants none), and finally the stack-consumption
@@ -177,32 +181,31 @@ class Consume(
             f"You are about to consume **`{self.amount}` {name}**.\n\n"
             f"Resulting {name}\n**`{balance}`** -> "
             f"**`{balance - self.amount}`**\n\n"
-            "Please confirm."
         )
         embed = utils.prepare_embed(
             "**Confirmation**", desc, footer_icon=utils.BOT_AVATAR_URL
         )
         await _apply_item_thumbnail(embed, bot, item)
+
         # the confirmation step previews the consume outcome the same way the
         # final "Consumed!" embed reports it — the item's effects (its own
-        # fields), the seasonal exp before/after (predicted from the same
-        # oracle the item's consume glue grants, so preview and grant cannot
-        # drift), and the resulting status when the item grants one — so a
-        # member sees what consuming will do before confirming.
+        # fields) and the resulting status when the item grants one — so a
+        # member sees what consuming will do before confirming. An item
+        # whose consume declares no effect gets a plain warning instead: the
+        # fact, stated once, with nothing promised (2026-09 copy rule; any
+        # future effect-free consumable inherits it).
+        from plugins.frogs.items import item_statuses
+
         for label, text in item.fields:
             embed.add_field(name=label, value=text)
-        from plugins.frogs.items import exp_grant_for, item_statuses
-
-        grant = exp_grant_for(item_id, self.amount)
-        if grant:
-            exp_now = await _seasonal_exp(bot, uid)
-            embed.add_field(
-                name="Seasonal Exp",
-                value=f"**`{exp_now}`** -> **`{exp_now + grant}`**",
-            )
         granted = [status.describe() for status in item_statuses(item_id)]
         if granted:
             embed.add_field(name="Status", value="\n".join(granted))
+        else:
+            embed.add_field(
+                name="Warning",
+                value="Consuming this grants nothing.",
+            )
         menu = utils.ConfirmMenu(uid, delete_after=False)
         await ctx.respond(embed=embed, components=cast(Any, menu))
         try:
@@ -219,20 +222,22 @@ class Consume(
         if bal_now < self.amount:
             raise UserInputError("Not enough of that item to consume.")
 
-        # the item's own consume runs first (grants exp etc.), then the
-        # stack decrements — a failed outcome never eats items. Capture
-        # the exp before/after so exp-granting items can report the gain.
-        exp_before = await _seasonal_exp(bot, uid)
+        # the item's own consume runs first, then the stack decrements — a
+        # failed outcome never eats items
         await item.consume(bot, uid, self.amount)
-        exp_after = await _seasonal_exp(bot, uid)
         await bot.inventory.remove(uid, item_id, self.amount)
+        # the consumption ledger: one append-only row per successful consume,
+        # written last so refusals and failed outcomes are never logged.
+        # Nothing reads it yet (2026-09) — it is history for later features.
+        await inv_db.add_item_log(
+            bot.db, uid, item_id, self.amount, pendulum.now("UTC")
+        )
 
         # the final "Consumed!" embed: the description carries the item's
         # prose, then one labeled field per item field (the "On consumption"
-        # blurb for frogs — what consuming does), then — only when the
-        # consume granted exp — the seasonal exp before/after, then —
-        # when the consume granted a status — the resulting status, then
-        # the stack-consumption result (what consuming them did: the
+        # blurb for frogs — what consuming does), then — when the consume
+        # granted a status — the resulting status, then the
+        # stack-consumption result (what consuming them did: the
         # resulting quantity).
         embed_post = utils.prepare_embed(
             f"Consumed **`{self.amount}` {name}**!",
@@ -241,11 +246,6 @@ class Consume(
         )
         for label, text in item.fields:
             embed_post.add_field(name=label, value=text)
-        if exp_after != exp_before:
-            embed_post.add_field(
-                name="Seasonal Exp",
-                value=f"**`{exp_before}`** -> **`{exp_after}`**",
-            )
         # the resulting status, if any — the ground truth is the status
         # contribution this consume just published (provenance = item_id);
         # the class's describe() is the human text. The item declares its
@@ -280,7 +280,10 @@ class Consume(
 class Thaw(
     lightbulb.SlashCommand,
     name="thaw",
-    description="Thaw a frozen frog: 50% survives, 50% becomes Frog Remains.",
+    description=(
+        "Thaw a frozen frog: a per-unit gamble that may restore it or "
+        "leave remains."
+    ),
 ):
     """Thaw a frozen frog with a 50/50 gamble (slot addressing like consume).
 
@@ -301,7 +304,11 @@ class Thaw(
         """Resolve the slot, confirm the gamble, roll, and report the tally."""
         # deferred: the thaw service imports the frogs package — loaded
         # lazily so the inventory extension never hard-couples to it
-        from plugins.frogs.thaw import frozen_species_of, thaw_frogs
+        from plugins.frogs.thaw import (
+            THAW_CHANCE,
+            frozen_species_of,
+            thaw_frogs,
+        )
 
         bot = utils.bot_from(ctx)
         uid = (ctx.member or ctx.user).id
@@ -326,10 +333,15 @@ class Thaw(
             )
 
         name = item.display_name or item_id
+        # the commitment surface: the odds are stated in full, read from
+        # the oracle that rolls them (thaw.THAW_CHANCE) rather than typed
+        # into the prose (R4, R7)
+        survive = f"{THAW_CHANCE:.0%}"
+        fail = f"{1 - THAW_CHANCE:.0%}"
         desc = (
             f"You are about to thaw **`{self.amount}` {name}**.\n\n"
-            f"Each has a **50%** chance to survive as a {name}, and "
-            "**50%** to become **Frog Remains** (3 exp).\n\n"
+            f"Each has a **{survive}** chance to survive as a {name}, and "
+            f"**{fail}** to become **Frog Remains**.\n\n"
             f"Resulting {name}\n**`{balance}`** -> "
             f"**`{balance - self.amount}`**\n\n"
             "Please confirm."
@@ -683,20 +695,3 @@ async def _slot_balance(bot: CazzuBot, uid: int, slot: int) -> int:
     """Re-read a slot's stack at consume time (slots are derived, not stored)."""
     entry = await _slot_entry(bot, uid, slot)
     return entry[2] if entry is not None else 0
-
-
-async def _seasonal_exp(bot: CazzuBot, uid: int) -> int:
-    """A member's current-season exp — the metric item consumes grant.
-
-    Frog consumables log their exp straight into ``member_exp_log``
-    (``source=FROG``); lifetime on ``member_exp`` is precomputed and only
-    resynced by the daily job, so it would read stale right after a
-    consume. Reading the seasonal sum (the same measure the item's "On
-    consumption" blurb promises) reflects the grant immediately.
-    """
-    from plugins.experience import db as exp_db
-
-    now = pendulum.now("UTC")
-    return await exp_db.seasonal_exp(
-        bot.db, uid, now.year, utils.month2season(now.month)
-    )

@@ -18,11 +18,20 @@ from plugins.misc.asset import random_footer_icon
 
 from . import db as frog_db
 from . import factory
-from .species import SPECIES
+from .species import SPECIES, Species
 
 loader = lightbulb.Loader()
 
 _COLOR = hikari.Color.from_hex_code("#a2dcf7")
+
+# the collection book's undiscovered slot — a nameless placeholder: no
+# species name, no description, no art, so a slot shows that something is
+# still out there without spoiling what
+_SILHOUETTE = "???"
+_UNDISCOVERED = "Not yet discovered."
+_EMPTY_STATE = (
+    "You haven't discovered any frogs yet — catch one to fill a slot."
+)
 
 _SPECIES_CHOICES = [
     lightbulb.Choice(species.name, species.key.value)
@@ -105,55 +114,50 @@ class View(
 class Catalog(
     lightbulb.SlashCommand,
     name="catalog",
-    description="Browse the catchable frog species.",
+    description="Your discovered frog collection.",
 ):
-    """Browse the catchable frog species."""
+    """Your discovered frog collection."""
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
-        """Render the species catalog embed — name, art, description.
+        """Render the invoker's collection book.
 
-        Each species renders as its own description section: an H3 markdown
-        header carrying the species name, then the species' published art
-        (emoji reference when published) and its description. Headers are
-        description text because Discord renders markdown headings only in
-        the description (not in field names/values) — and H3 headers give
-        each entry a visible break from the next. Content stays limited to
-        name/art/description — what catching or consuming the frog does
-        belongs to the item's own info card, not here. The footer cycles a
-        random frog tip, like /frog view's.
+        Only the species the invoker has ever captured render with their
+        name, art and description — discovery is lifetime (the capture log
+        via ``frog_db.discovered_species``), so the book is a museum, not
+        the current holdings. Every other non-hidden species renders as a
+        nameless silhouette slot, and ``Species.hidden`` species take no
+        slot at all. Nothing here names rarity, exp, weights, or how many
+        species exist: the full set is staff-only (``/frog_catalog``).
+        Entries are H3 markdown headers carrying the species name — Discord renders headings only in the description (not in
+        field names/values), so the book carries no fields. The footer
+        cycles a random frog tip, like /frog view's.
         """
         bot = utils.bot_from(ctx)
+        user = ctx.member or ctx.user
         if not SPECIES:
             await ctx.respond("The frog catalog is empty.")
             return
+        discovered = await frog_db.discovered_species(bot.db, user.id)
         sections: list[str] = []
         for species in SPECIES:
-            art = (
-                await bot.assets.get(species.art)
-                if species.art is not None
-                else None
-            )
-            body = (
-                f"{art} {species.description}"
-                if art
-                else species.description
-            )
-            sections.append(f"### {species.name}\n{body}")
+            if species.hidden:
+                continue
+            if species.key in discovered:
+                sections.append(await _species_section(bot, species))
+            else:
+                sections.append(f"### {_SILHOUETTE}\n{_UNDISCOVERED}")
+        body = "\n".join(sections)
+        if not discovered:
+            # zero captures: the empty state leads, and the silhouettes
+            # stay — the book shows its shape even before the first catch
+            body = f"{_EMPTY_STATE}\n\n{body}"
         embed = hikari.Embed(
-            title="Frog Species Catalog",
-            description="\n\n".join(sections),
+            title=f"{user.display_name}'s Frog Collection",
+            description=body,
             color=_COLOR,
         )
-        # cycle one random frog tip through the footer per render — the tip
-        # sets live in this plugin's own tip_sets (context "frog"), shared
-        # with /frog view, and the footer icon pulls a random cirno emoji
-        # from the shared misc assets (plugins.misc.asset — the tip surfaces'
-        # icon provider)
-        embed.set_footer(
-            text=get_tip("frog"),
-            icon=await random_footer_icon(bot),
-        )
+        await _set_frog_footer(embed, bot)
         await ctx.respond(embed=embed)
 
 
@@ -376,6 +380,46 @@ class DebugFreeze(
 loader.command(frog)
 
 
+@loader.command()
+class FrogCatalog(
+    lightbulb.SlashCommand,
+    name="frog_catalog",
+    description="Render the full frog species set (staff asset check).",
+    default_member_permissions=hikari.Permissions.ADMINISTRATOR,
+    hooks=[utils.ADMIN_ONLY],
+):
+    """The full species set — the staff-only counterpart of the book.
+
+    Top-level rather than a ``/frog`` subcommand on purpose: lightbulb
+    ignores ``default_member_permissions`` on subcommands (it warns at
+    load), so a view hidden from members has to be its own top-level
+    command — that field is what keeps it out of their picker, while the
+    ``ADMIN_ONLY`` hook blocks execution if it is invoked anyway. Unlike
+    ``/frog catalog`` (the per-member collection book) this renders EVERY
+    species — including ``Species.hidden`` ones — because its job is
+    verifying that each species' art publishes and renders, not
+    collecting.
+    """
+
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
+        """Render every species — name, art, description."""
+        bot = utils.bot_from(ctx)
+        if not SPECIES:
+            await ctx.respond("The frog catalog is empty.")
+            return
+        sections = [
+            await _species_section(bot, species) for species in SPECIES
+        ]
+        embed = hikari.Embed(
+            title="Frog Species Catalog",
+            description="\n".join(sections),
+            color=_COLOR,
+        )
+        await _set_frog_footer(embed, bot)
+        await ctx.respond(embed=embed)
+
+
 async def _inventory_glyph(
     bot: "CazzuBot", species_key: FrogItemKey
 ) -> str:
@@ -464,14 +508,9 @@ async def _prepare_personal_summary(
         title=f"{user.display_name}'s Frog Capture Permit", color=_COLOR
     )
     embed.set_thumbnail(str(user.display_avatar_url))
-    # cycle one random frog tip through the footer per render — the tip
-    # sets live in this plugin's own tip_sets (context "frog"), shared with
-    # /frog catalog, and the footer icon pulls a random cirno emoji from the
-    # shared misc assets (plugins.misc.asset — the tip surfaces' icon provider)
-    embed.set_footer(
-        text=get_tip("frog"),
-        icon=await random_footer_icon(bot),
-    )
+    # the shared frog-tip footer (same cycling tip + random cirno icon as
+    # the catalog surfaces — see _set_frog_footer)
+    await _set_frog_footer(embed, bot)
     embed.description = f"""
 		Total Frogs Captured: **`{user_frog_cnt}`**
 
@@ -482,3 +521,37 @@ async def _prepare_personal_summary(
 		```py\n{scoreboard_s}```
 		"""
     return embed
+
+
+async def _species_section(bot: CazzuBot, species: Species) -> str:
+    """One full catalog entry: an H3 name header, then art + description.
+
+    The art resolves through ``bot.assets.get`` — a custom-emoji
+    reference once published, ``None`` while unpublished, in which case
+    the description stands alone rather than rendering "None".
+    Undiscovered species never reach this helper: the collection book
+    renders their silhouette slot instead, so they are never named,
+    described, or given art.
+    """
+    art = (
+        await bot.assets.get(species.art)
+        if species.art is not None
+        else None
+    )
+    body = f"{art} {species.description}" if art else species.description
+    return f"### {species.name}\n{body}"
+
+
+async def _set_frog_footer(embed: hikari.Embed, bot: CazzuBot) -> None:
+    """Attach the cycling frog-tip footer + random cirno icon.
+
+    Shared by the frog surfaces that carry a tip footer (``/frog view``,
+    the collection book, the staff full-set view): the tip strings live in
+    this plugin's own ``tip_sets`` (context "frog") and the icon pulls a
+    random cirno emoji from the shared misc assets
+    (``plugins.misc.asset`` — the tip surfaces' icon provider).
+    """
+    embed.set_footer(
+        text=get_tip("frog"),
+        icon=await random_footer_icon(bot),
+    )

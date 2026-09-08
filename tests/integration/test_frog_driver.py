@@ -171,7 +171,7 @@ async def test_catch_button_is_stale_after_capture(
 async def test_consume_pog_via_driver_publishes_reaction_seam(
     full_bot: CazzuBot,
 ) -> None:
-    """/inventory consume of a Pog grants exp + reaction contribution."""
+    """/inventory consume of a Pog publishes the reaction seam (no exp)."""
     await full_bot.db.execute(
         """
 		INSERT OR IGNORE INTO inventory (uid, item, qty)
@@ -193,11 +193,12 @@ async def test_consume_pog_via_driver_publishes_reaction_seam(
     )
     result = await task
     assert press.exceptions == [] and result.exceptions == []
+    # exp is chatting-only: the consume path writes no exp row at all
     assert (
         await full_bot.db.fetchval(
             "SELECT COUNT(*) FROM member_exp_log WHERE uid = 424242"
         )
-        == 1
+        == 0
     )
     contribs = await full_bot.statuses.list(
         Scope.member(424242), FrogSeam.FROG_REACTION
@@ -384,3 +385,50 @@ async def test_capture_cluster_bursts_basics_no_item(
         )
         == 0
     )
+
+
+async def test_frog_catalog_is_a_per_user_collection_book(
+    full_bot: CazzuBot,
+) -> None:
+    """``/frog catalog`` renders only the invoker's discovered species.
+
+    Discovery rides the capture log: the driver seeds one Basic capture
+    for the caller and a Pog capture for a different member, so the
+    caller's book must render Basic in full and every other species as a
+    nameless silhouette — Pog is never named, described, or given art.
+    """
+    from plugins.frogs import db as frog_db
+    from plugins.frogs.species import SPECIES
+
+    now = pendulum.now("UTC")
+    await frog_db.add_capture_log(
+        full_bot.db,
+        424242,
+        now,
+        waited_for=1.0,
+        species_key=FrogItemKey.BASIC,
+    )
+    await frog_db.add_capture_log(
+        full_bot.db,
+        555,
+        now,
+        waited_for=1.0,
+        species_key=FrogItemKey.POG,
+    )
+
+    result = await run_slash(
+        full_bot, "frog catalog", user_id=424242, timeout=10.0
+    )
+
+    assert result.exceptions == []
+    first = result.first_response
+    assert first is not None
+    embed = first["embed"]
+    assert embed.title == "tester's Frog Collection"
+    desc = embed.description or ""
+    assert "### Basic Frog\nThe most normalest frog of them all." in desc
+    assert "Pog Frog" not in desc
+    visible = [species for species in SPECIES if not species.hidden]
+    assert desc.count("### ???") == len(visible) - 1
+    assert embed.footer is not None
+    assert embed.footer.text in TIP_SETS["frog"]

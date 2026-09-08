@@ -166,6 +166,40 @@ async def test_inventory_rows(bot: CazzuBot) -> None:
     assert rows == [(FrogItemKey.BASIC, FrogState.NORMAL, 2)], rows
 
 
+async def test_discovered_species_is_lifetime_and_deduped(
+    bot: CazzuBot,
+) -> None:
+    """The collection book's discovery set: distinct captured species.
+
+    Discovery derives from the capture log, not holdings, so a species
+    stays discovered after the quarterly freeze and after its frogs are
+    consumed. A log row whose key is no longer a registered species is
+    ignored instead of raising.
+    """
+    now = pendulum.now("UTC")
+    for key in (FrogItemKey.BASIC, FrogItemKey.POG, FrogItemKey.BASIC):
+        await frog_db.add_capture_log(
+            bot.db, _UID, now, waited_for=1.0, species_key=key
+        )
+    await bot.db.execute(
+        """
+		INSERT INTO member_frog_log (uid, type, at, waited_for)
+		VALUES (?, ?, ?, ?)
+		""",
+        _UID,
+        "ancient",
+        now.isoformat(),
+        1.0,
+    )
+
+    assert await frog_db.discovered_species(bot.db, _UID) == {
+        FrogItemKey.BASIC,
+        FrogItemKey.POG,
+    }
+    # another member's captures never leak into this book
+    assert await frog_db.discovered_species(bot.db, _UID + 1) == set()
+
+
 async def test_spawn_roundtrip_typed(bot: CazzuBot) -> None:
     """Typed row models construct from real rows (drift catches renames)."""
     await frog_db.upsert_spawn(bot.db, 123, 300, 60, 0.2)

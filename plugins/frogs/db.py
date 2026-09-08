@@ -264,6 +264,28 @@ async def add_capture_log(
     )
 
 
+async def discovered_species(db: Database, uid: int) -> set[FrogItemKey]:
+    """Every species ``uid`` has ever captured — the collection book's set.
+
+    Lifetime by design (a museum, not a ladder): discovery derives from
+    the capture log (``member_frog_log.type`` stores the species key per
+    capture), so a species stays discovered across season freezes and
+    after its frogs are consumed. Rows whose stored key no longer maps to
+    a registered species (a species removed from the registry) are
+    ignored rather than raising.
+    """
+    rows = await db.fetchall(
+        "SELECT DISTINCT type FROM member_frog_log WHERE uid = ?", uid
+    )
+    discovered: set[FrogItemKey] = set()
+    for row in rows:
+        try:
+            discovered.add(FrogItemKey(row["type"]))
+        except ValueError:
+            continue
+    return discovered
+
+
 async def seasonal_ranked(
     db: Database, year: int, season: int
 ) -> list[tuple[int, int, int]]:

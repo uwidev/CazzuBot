@@ -3,6 +3,12 @@
 Single-guild port of v1's ``ext/experience.py`` + ``src/db/member_exp.py`` +
 ``src/db/member_exp_log.py``. Exp events are logged per-message with timestamps;
 seasonal totals are summed from the log; lifetime is precomputed on the member.
+
+The ladder is **chatting-only** (2026-09 decision): every reader here sums
+``source = 'message'`` rows and ignores the rest. ``member_exp_log`` keeps
+its FROG rows — the ``source`` column exists for exactly this — so the
+history stays intact and readable by a future frog-side reader, which is
+the only thing allowed to read them.
 """
 
 from dataclasses import dataclass
@@ -33,6 +39,10 @@ SCHEMA = [
 	""",
     "CREATE INDEX IF NOT EXISTS idx_exp_log_uid_at ON member_exp_log (uid, at)",
 ]
+
+# The chat ladder's row filter: exp earned by chatting. FROG rows (frog
+# consumes, historical) stay in the log but never feed a reader below.
+_CHAT_SOURCE = MemberExpLogSourceEnum.MESSAGE.value
 
 
 @dataclass(slots=True)
@@ -103,7 +113,11 @@ async def add_exp_log(
     *,
     source: MemberExpLogSourceEnum = MemberExpLogSourceEnum.MESSAGE,
 ) -> None:
-    """Log one exp event with its ``source`` and timestamp."""
+    """Log one exp event with its ``source`` and timestamp.
+
+    Only the default MESSAGE source feeds the chat readers above; other
+    sources are inert history.
+    """
     await db.execute(
         """
 		INSERT INTO member_exp_log (uid, exp, at, source)
@@ -119,18 +133,19 @@ async def add_exp_log(
 async def seasonal_ranked(
     db: Database, year: int, season: int
 ) -> list[tuple[int, int, int]]:
-    """All members' exp in a season, ranked: [(rank, uid, exp)]."""
+    """All members' *chat* exp in a season, ranked: [(rank, uid, exp)]."""
     start, end = season_bounds(year, season)
     rows = await db.fetchall(
         """
 		SELECT uid, SUM(exp) AS exp
 		FROM member_exp_log
-		WHERE at >= ? AND at < ?
+		WHERE at >= ? AND at < ? AND source = ?
 		GROUP BY uid
 		ORDER BY exp DESC
 		""",
         start,
         end,
+        _CHAT_SOURCE,
     )
     return rank_rows([dict(r) for r in rows], "exp")
 
@@ -138,17 +153,18 @@ async def seasonal_ranked(
 async def seasonal_exp(
     db: Database, uid: int, year: int, season: int
 ) -> int:
-    """A member's exp earned within a single season."""
+    """A member's *chat* exp earned within a single season."""
     start, end = season_bounds(year, season)
     val = await db.fetchval(
         """
 		SELECT COALESCE(SUM(exp), 0)
 		FROM member_exp_log
-		WHERE uid = ? AND at >= ? AND at < ?
+		WHERE uid = ? AND at >= ? AND at < ? AND source = ?
 		""",
         uid,
         start,
         end,
+        _CHAT_SOURCE,
     )
     return int(val or 0)
 
@@ -156,16 +172,21 @@ async def seasonal_exp(
 async def seasonal_total_members(
     db: Database, year: int, season: int
 ) -> int:
-    """How many distinct members earned exp within a season."""
+    """How many members earned *chat* exp within a season.
+
+    The percentile denominator: a member whose only rows are FROG ones has
+    no chat exp and must not inflate it.
+    """
     start, end = season_bounds(year, season)
     val = await db.fetchval(
         """
 		SELECT COUNT(DISTINCT uid)
 		FROM member_exp_log
-		WHERE at >= ? AND at < ?
+		WHERE at >= ? AND at < ? AND source = ?
 		""",
         start,
         end,
+        _CHAT_SOURCE,
     )
     return int(val or 0)
 
@@ -179,8 +200,16 @@ async def lifetime_ranked(db: Database) -> list[tuple[int, int, int]]:
 
 
 async def total_members(db: Database) -> int:
-    """How many members have an exp row."""
-    val = await db.fetchval("SELECT COUNT(*) FROM member_exp")
+    """How many members have ever earned *chat* exp.
+
+    The lifetime percentile denominator (see
+    :func:`seasonal_total_members`): counted from the log's message rows,
+    so a frog-only member is not counted at all.
+    """
+    val = await db.fetchval(
+        "SELECT COUNT(DISTINCT uid) FROM member_exp_log WHERE source = ?",
+        _CHAT_SOURCE,
+    )
     return int(val or 0)
 
 
@@ -195,7 +224,12 @@ async def reset_all_cdr(db: Database) -> None:
 
 
 async def sync_with_exp_logs(db: Database) -> None:
-    """Rebuild lifetime exp from the sum of all exp logs."""
+    """Rebuild lifetime exp from the sum of every *chat* exp log row.
+
+    FROG rows are deliberately excluded, so this is the pass that drops
+    pre-decoupling frog exp out of lifetime (seasonal already reads
+    chat-only live). Members with no message rows land at 0.
+    """
     await db.execute(
         """
 		UPDATE member_exp
@@ -203,6 +237,8 @@ async def sync_with_exp_logs(db: Database) -> None:
 			SELECT COALESCE(SUM(exp), 0)
 			FROM member_exp_log
 			WHERE member_exp_log.uid = member_exp.uid
+			  AND member_exp_log.source = ?
 		)
-		"""
+		""",
+        _CHAT_SOURCE,
     )

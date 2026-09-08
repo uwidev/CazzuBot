@@ -24,6 +24,7 @@ from scripts.migrations import (
     frog_species,
     frog_species_cleanup,
     frog_species_key,
+    member_item_log,
     poll_cid,
     status_contribution,
 )
@@ -41,6 +42,7 @@ MIGRATIONS = (
     board_channel_scope.MIGRATION,
     board_exclusions.MIGRATION,
     asset_message_id.MIGRATION,
+    member_item_log.MIGRATION,
 )
 
 __all__ = ["MIGRATIONS", "Migration"]

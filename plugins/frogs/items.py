@@ -6,24 +6,25 @@ object — immutable ``item_id`` (the oracle), display name/icon, the
 description card, and its **item-owned consume** behavior.
 
 What consuming an item does is the ITEM's decision and is written as code:
-the per-item glue grants seasonal exp from the ``frog_exp`` oracle and
-invokes the statuses the item declares (e.g. ``POG_REACTION``). Statuses
-are unique classes owning their own values (``plugins/frogs/statuses.py``);
-the item just *names* the ones it triggers — no outbound payload objects,
-no registry indirection.
+the per-item glue invokes the statuses the item declares (e.g.
+``POG_REACTION``) — and nothing else. Exp is a pure measure of chatting
+(2026-09 decision): no item grants exp, so no frog item writes an exp log
+row and no frog-side exp total exists. Statuses are unique classes owning
+their own values (``plugins/frogs/statuses.py``); the item just *names* the
+ones it triggers — no outbound payload objects, no registry indirection.
 
-Each species × state is a distinct item (normal vs frozen give different
-exp), so consumption needs no state juggling — the item's ``consume`` grants
-its own per-unit value. Every item is declared as a bare ``Item`` literal —
-no builder indirection — and both the consume grant and the info card's
-"On consumption" field read the ``frog_exp`` oracle + the status classes,
-so display and grant cannot drift.
+Each species × state is a distinct item (normal vs frozen differ), so
+consumption needs no state juggling. Every item is declared as a bare
+``Item`` literal — no builder indirection — and the info card's "On
+consumption" field is derived from the same status classes the consume glue
+applies, so display and effect cannot drift. An item whose consume has no
+effect (Basic Frog, Frog Remains) declares no field at all: the consume
+surface warns instead.
 
 Frozen items are trophies, not consumables (design 2026): the seasonal
 freeze preserves species identity; a frozen frog cannot be consumed —
 only thawed with risk (``thaw.py``), and its info card carries an
-"On thaw" field instead of "On consumption". ``frog_exp`` covers normal
-frogs only; "Frog Remains" (id ``remains``) has its own flat value.
+"On thaw" field instead of "On consumption".
 """
 
 from __future__ import annotations
@@ -36,13 +37,7 @@ import pendulum
 from core import Item
 from core.errors import UserInputError
 from core.statuses import Scope, Status
-from core.models import (
-    FrogState,
-    MemberExpLogSourceEnum,
-    FrogItemKey,
-)
-
-from plugins.experience import db as exp_db
+from core.models import FrogItemKey, FrogState
 
 from .assets import FrogAsset
 from .events import FrogConsumedEvent
@@ -51,59 +46,10 @@ from .statuses import (
     FROGGERS_REACTION,
     CLASSY_ROLE,
 )
+from .thaw import THAW_CHANCE
 
 if TYPE_CHECKING:
     from core.bot import CazzuBot
-
-# species -> normal-exp per unit (D1/D2 defaults; owner-tunable). The
-# single source for both the consume grant and the info card's consume
-# field. Frozen frogs are never consumed (they are thawed instead), so
-# no frozen exp exists here. Cluster is deliberately absent: catching it
-# never grants an item, so no exp exists for it.
-_SPECIES_EXP: dict[FrogItemKey, dict[FrogState, int]] = {
-    FrogItemKey.BASIC: {
-        FrogState.NORMAL: 10,
-    },
-    FrogItemKey.POG: {
-        FrogState.NORMAL: 30,
-    },
-    FrogItemKey.FROGGERS: {
-        FrogState.NORMAL: 300,
-    },
-    FrogItemKey.CLASSY: {
-        FrogState.NORMAL: 200,  # owner-set placeholder (D1)
-    },
-}
-
-
-def frog_exp(species_key: FrogItemKey, state: FrogState) -> int:
-    """Seasonal exp granted by one unit of a species' item in ``state``."""
-    return _SPECIES_EXP[species_key][state]
-
-
-def exp_grant_for(item_id: str, amount: int) -> int | None:
-    """Seasonal exp that consuming ``amount`` of ``item_id`` will grant.
-
-    Reads the same oracle the consume glues grant (``frog_exp`` for the
-    ``frog:<species>:normal`` items, the flat ``remains`` value for Frog
-    Remains) so a *confirmation-step preview* and the actual consume
-    cannot drift — the value is derived from the id, never parsed from
-    display prose. Returns None when the item grants no exp (frozen
-    trophies — never consumed — and anything unknown), so callers render
-    nothing for non-exp items.
-    """
-    if item_id == "remains":
-        return _REMAINS_EXP * amount
-    try:
-        _prefix, species_str, state_str = item_id.split(":")
-        species_key = FrogItemKey(species_str)
-        state = FrogState(state_str)
-    except ValueError, KeyError:
-        return None
-    if state is not FrogState.NORMAL:
-        return None
-    return frog_exp(species_key, state) * amount
-
 
 # item-owned consume statuses: the status class instances each item triggers.
 # This is the item's composition, written as code (no payload objects).
@@ -124,26 +70,18 @@ def item_statuses(item_id: str) -> tuple[Status, ...]:
 async def _consume_item(
     bot: "CazzuBot", uid: int, amount: int, item_id: str
 ) -> None:
-    """The item-owned consume: exp, statuses, then the FrogConsumedEvent.
+    """The item-owned consume: statuses, then the FrogConsumedEvent.
 
-    The exp grant derives from the item's own id via ``frog_exp`` (the
-    single oracle). The item's statuses are the classes it declares above;
-    each ``apply`` to the member scope with the item id as provenance.
-    The event stays last so domain observers see a *finished* consume.
+    No exp: consuming grants only the statuses the item declares (and a
+    Basic Frog declares none, so its consume has no effect at all — the
+    inventory surface warns about that before the member confirms). Each
+    ``apply`` targets the member scope with the item id as provenance. The
+    event stays last so domain observers see a *finished* consume.
     """
     _, species_str, state_str = item_id.split(":")
     species_key = FrogItemKey(species_str)
     state = FrogState(state_str)
-    exp = frog_exp(species_key, state) * amount
     now = pendulum.now("UTC")
-
-    await exp_db.add_exp_log(
-        bot.db,
-        uid,
-        exp,
-        now,
-        source=MemberExpLogSourceEnum.FROG,
-    )
 
     for status in item_statuses(item_id):
         await status.apply(
@@ -167,28 +105,28 @@ async def _consume_item(
 async def _consume_basic_normal(
     bot: "CazzuBot", uid: int, amount: int
 ) -> None:
-    """Consume glue for ``frog:basic:normal`` (its own exp, per the id)."""
+    """Consume glue for ``frog:basic:normal`` (no effect: no statuses)."""
     await _consume_item(bot, uid, amount, "frog:basic:normal")
 
 
 async def _consume_pog_normal(
     bot: "CazzuBot", uid: int, amount: int
 ) -> None:
-    """Consume glue for ``frog:pog:normal`` (its own exp, per the id)."""
+    """Consume glue for ``frog:pog:normal`` (its own status, per the id)."""
     await _consume_item(bot, uid, amount, "frog:pog:normal")
 
 
 async def _consume_froggers_normal(
     bot: "CazzuBot", uid: int, amount: int
 ) -> None:
-    """Consume glue for ``frog:froggers:normal`` (its own exp, per the id)."""
+    """Consume glue for ``frog:froggers:normal`` (its own status)."""
     await _consume_item(bot, uid, amount, "frog:froggers:normal")
 
 
 async def _consume_classy_normal(
     bot: "CazzuBot", uid: int, amount: int
 ) -> None:
-    """Consume glue for ``frog:classy:normal`` (its own exp, per the id)."""
+    """Consume glue for ``frog:classy:normal`` (its own status)."""
     await _consume_item(bot, uid, amount, "frog:classy:normal")
 
 
@@ -209,56 +147,52 @@ async def _consume_frozen(bot: "CazzuBot", uid: int, amount: int) -> None:
 
 # "Frog Remains" — the consolation prize of a failed thaw (owner placeholder,
 # 2026). Not a species: the id is deliberately NOT ``frog:``-prefixed so the
-# capture-embed/permit ``frog:`` prefix totals never count it.
-_REMAINS_EXP = 3
+# capture-embed/permit ``frog:`` prefix totals never count it. A memorial
+# item since exp left the frog side (2026-09): consuming it grants nothing.
 
 
 async def _consume_remains(bot: "CazzuBot", uid: int, amount: int) -> None:
-    """Consume glue for ``remains`` — flat exp, no species, no statuses.
+    """Consume glue for ``remains`` — a memorial: it grants nothing.
 
-    Remains are not a frog (no species key), so unlike frog consumes this
-    grants exp only and never emits ``FrogConsumedEvent`` (which carries a
-    species key).
+    Kept as an explicit no-op (not ``consume=None``) so the item stays
+    consumable and the inventory surface can state the plain fact before
+    the member confirms, rather than refusing the act. Remains are not a
+    frog (no species key), so unlike frog consumes this never emits
+    ``FrogConsumedEvent`` (which carries a species key).
     """
-    now = pendulum.now("UTC")
-    await exp_db.add_exp_log(
-        bot.db,
-        uid,
-        _REMAINS_EXP * amount,
-        now,
-        source=MemberExpLogSourceEnum.FROG,
-    )
 
 
-def _consume_blurb(species_key: FrogItemKey, state: FrogState) -> str:
-    """The info card's "On consumption" — reads the same sources the glue
-    uses (``frog_exp`` + the item's declared status classes), so display
-    and grant cannot drift."""
-    parts = [f"Grants **{frog_exp(species_key, state)}** seasonal exp."]
-    for status in item_statuses(f"frog:{species_key.value}:{state.value}"):
-        parts.append(status.describe())
-    return " ".join(parts)
-
-
-def _consumption_field(
+def _consumption_fields(
     species_key: FrogItemKey,
     state: FrogState,
-) -> tuple[str, str]:
-    """The info card's "On consumption" (label, text) for a species' state."""
-    return ("On consumption", _consume_blurb(species_key, state))
+) -> tuple[tuple[str, str], ...]:
+    """The info card's "On consumption" fields — effects only.
+
+    Derived from the same status classes the consume glue applies, so
+    display and effect cannot drift. An item whose consume has no effect
+    yields no field at all (nothing to state on the card; the consume
+    surface warns instead).
+    """
+    statuses = item_statuses(f"frog:{species_key.value}:{state.value}")
+    if not statuses:
+        return ()
+    return (("On consumption", " ".join(s.describe() for s in statuses)),)
 
 
 def _thaw_field() -> tuple[str, str]:
     """The info card's "On thaw" — frozen frogs are trophies, not consumables.
 
-    Prose kept in sync with ``thaw.THAW_CHANCE`` (read at thaw time): a
-    frozen frog is non-consumable and thaws with a 50% survival gamble,
-    failing into Frog Remains (``_REMAINS_EXP``).
+    The odds are read from the oracle that rolls them
+    (``thaw.THAW_CHANCE``) instead of being written into the prose, so
+    re-tuning the knob cannot leave the card lying (R7). The failure
+    payout is named, not valued: Frog Remains grants nothing (2026-09).
     """
+    survive = f"{THAW_CHANCE:.0%}"
+    fail = f"{1 - THAW_CHANCE:.0%}"
     return (
         "On thaw",
-        "Frozen and non-consumable. Thawing this frog has a 50% chance "
-        "to restore it, and 50% to leave Frog Remains (3 exp).",
+        f"Frozen and non-consumable. Thawing this frog has a {survive} "
+        f"chance to restore it, and {fail} to leave Frog Remains.",
     )
 
 
@@ -268,8 +202,9 @@ class FrogItems(Enum):
     The member is the code reference (rename freely); ``item_id`` is the
     immutable oracle. Registered as the frogs plugin's ``item_decl``. Each
     item is one bare ``Item`` literal: the description prose plus the
-    field derived from the oracle and the status classes (normal) or the
-    thaw gamble (frozen). Frozen items reuse the normal-species art (D8) —
+    field derived from the status classes the consume applies (normal —
+    none for Basic, so it carries no field) or the thaw gamble (frozen).
+    Frozen items reuse the normal-species art (D8) —
     distinct frozen art is assigned later. Cluster deliberately has no
     item — catching it never grants one (the burst is the catch), so it
     can never be held or consumed. Frog Remains (id ``remains``) sits
@@ -284,7 +219,7 @@ class FrogItems(Enum):
         description="The most normalest frog of them all.",
         icon_asset=FrogAsset.FROG_BASIC,
         consume=_consume_basic_normal,
-        fields=(_consumption_field(FrogItemKey.BASIC, FrogState.NORMAL),),
+        fields=_consumption_fields(FrogItemKey.BASIC, FrogState.NORMAL),
     )
     BASIC_FROZEN = Item(
         item_id="frog:basic:frozen",
@@ -302,7 +237,7 @@ class FrogItems(Enum):
         description="A frog with a pog.",
         icon_asset=FrogAsset.FROG_POG,
         consume=_consume_pog_normal,
-        fields=(_consumption_field(FrogItemKey.POG, FrogState.NORMAL),),
+        fields=_consumption_fields(FrogItemKey.POG, FrogState.NORMAL),
     )
     POG_FROZEN = Item(
         item_id="frog:pog:frozen",
@@ -320,9 +255,7 @@ class FrogItems(Enum):
         description="A frog with a poggers.",
         icon_asset=FrogAsset.FROG_FROGGERS,
         consume=_consume_froggers_normal,
-        fields=(
-            _consumption_field(FrogItemKey.FROGGERS, FrogState.NORMAL),
-        ),
+        fields=_consumption_fields(FrogItemKey.FROGGERS, FrogState.NORMAL),
     )
     FROGGERS_FROZEN = Item(
         item_id="frog:froggers:frozen",
@@ -340,7 +273,7 @@ class FrogItems(Enum):
         description="A frog with rather refined tastes.",
         icon_asset=FrogAsset.FROG_CLASSY,
         consume=_consume_classy_normal,
-        fields=(_consumption_field(FrogItemKey.CLASSY, FrogState.NORMAL),),
+        fields=_consumption_fields(FrogItemKey.CLASSY, FrogState.NORMAL),
     )
     CLASSY_FROZEN = Item(
         item_id="frog:classy:frozen",
@@ -360,10 +293,5 @@ class FrogItems(Enum):
         ),
         icon_asset=None,
         consume=_consume_remains,
-        fields=(
-            (
-                "On consumption",
-                f"Grants **{_REMAINS_EXP}** seasonal exp.",
-            ),
-        ),
+        fields=(),
     )

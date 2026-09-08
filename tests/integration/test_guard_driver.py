@@ -79,3 +79,35 @@ async def test_existing_admin_gates_hold(full_bot: CazzuBot) -> None:
     assert not level.responded
     assert level.exceptions == []
     assert await full_bot.settings.get("level.message") is None
+
+
+async def test_frog_catalog_staff_view_blocked_for_regular_member(
+    full_bot: CazzuBot,
+) -> None:
+    """The staff full-set catalog is hook-blocked for non-admins.
+
+    ``default_member_permissions`` is what hides it from a member's
+    picker; this run is the server-side backstop that still blocks the
+    invocation.
+    """
+    result = await run_slash(
+        full_bot,
+        "frog_catalog",
+        user_id=424242,
+        member_permissions=0,
+    )
+    assert not result.responded
+    assert result.exceptions == []
+
+
+async def test_frog_catalog_staff_view_allowed_for_admin(
+    full_bot: CazzuBot,
+) -> None:
+    result = await run_slash(
+        full_bot, "frog_catalog", user_id=1, username="owner"
+    )
+    assert result.exceptions == []
+    assert result.responded
+    first = result.first_response
+    assert first is not None
+    assert first["embed"].title == "Frog Species Catalog"

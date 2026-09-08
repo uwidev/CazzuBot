@@ -50,6 +50,11 @@ class Species:
     What a caught frog becomes as an inventory object (its item_id, icon,
     consume behavior) lives on the matching :class:`Item` in ``items.py``,
     not here — consumption is item-owned.
+
+    ``hidden`` species spawn and can be caught like any other, but never
+    take a slot in a member's collection book (``/frog catalog``) — not
+    even as a silhouette. The staff full-set view (``/frog_catalog``)
+    still renders them, so their art stays checkable.
     """
 
     key: FrogItemKey
@@ -59,6 +64,7 @@ class Species:
     spawn_weight: float
     catch: Behavior | None
     art: FrogAsset | None
+    hidden: bool = False
 
 
 SPECIES: tuple[Species, ...] = (

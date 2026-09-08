@@ -57,6 +57,8 @@ HIDDEN_COMMANDS: set[tuple[str, ...]] = {
     ("scrape",),
     ("register_inktober",),
     ("scrape_inktober",),
+    # the staff full-set frog catalog (/frog catalog is the member book)
+    ("frog_catalog",),
 }
 
 # Visible-by-design: read-only or self-service user commands.

@@ -38,10 +38,10 @@ class FrogCapturedEvent:
 
 @dataclass(frozen=True, slots=True)
 class FrogConsumedEvent:
-    """A consume completed: exp + statuses applied, inventory decremented.
+    """A consume completed: statuses applied, inventory decremented.
 
     Sole emitter: ``plugins/frogs/items.py`` ``_consume_item``, right after
-    the item-owned consume (post-statuses, post-exp).
+    the item-owned consume (post-statuses). No exp is granted (2026-09).
     """
 
     uid: int

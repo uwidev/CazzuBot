@@ -110,6 +110,7 @@ def test_registry_is_ordered_and_ids_unique() -> None:
         "009_board_channel_scope",
         "010_board_exclusions",
         "011_asset_message_id",
+        "012_member_item_log",
     ]
 
 

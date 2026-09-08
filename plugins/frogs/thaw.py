@@ -2,10 +2,10 @@
 
 At the season rollover every frog freezes in place (``db.season_reset_frogs``),
 and frozen frogs are non-consumable. The only way out is the thaw gamble:
-per unit, ``THAW_CHANCE`` (50%) restores the species' *normal* frog — full
-exp and statuses again, re-freezing at the next rollover if unconsumed —
-and the rest leaves behind "Frog Remains" (id ``remains``, a small exp
-floor; ``items._REMAINS_EXP``).
+per unit, ``THAW_CHANCE`` (50%) restores the species' *normal* frog — with
+its statuses again, re-freezing at the next rollover if unconsumed — and
+the rest leaves behind "Frog Remains" (id ``remains``, a memorial item that
+grants nothing since exp left the frog side, 2026-09).
 
 This service owns the odds and the ledger moves; the command edge
 (``/inventory thaw``) is presentation. RNG is injectable (``rng``), mirroring
@@ -37,7 +37,8 @@ class _RandomLike(Protocol):
 
 
 # the per-unit thaw survival chance. Deliberately flat (no pity/streak —
-# an explicit trial run); kept in sync with items._thaw_field()'s prose.
+# an explicit trial run); every surface that states the odds reads it here
+# (the item card's "On thaw" and the /inventory thaw confirm — R7).
 THAW_CHANCE = 0.5
 
 # the failed-thaw consolation item id (deliberately NOT ``frog:``-prefixed,

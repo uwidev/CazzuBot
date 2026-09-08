@@ -21,12 +21,13 @@ from enum import Enum
 from typing import cast
 
 import hikari
-import pendulum
 import pytest
 
 from core.bot import CazzuBot
+from core.items import Item, register_items, set_consumable, unregister_items
 from core.models import FrogState, FrogItemKey
 from core.tips import TIP_SETS
+from plugins.inventory import db as inv_db
 from tests.driver import (
     attached_buttons,
     press_button,
@@ -532,7 +533,7 @@ async def test_inventory_info_shows_item_card(full_bot: CazzuBot) -> None:
     assert [field.name for field in embed.fields] == ["On thaw"]
     assert [field.value for field in embed.fields] == [
         "Frozen and non-consumable. Thawing this frog has a 50% chance "
-        "to restore it, and 50% to leave Frog Remains (3 exp)."
+        "to restore it, and 50% to leave Frog Remains."
     ]
     # the footer cycles one random item tip (the /inventory view set)
     assert embed.footer is not None
@@ -635,6 +636,13 @@ async def test_inventory_thaw_confirms_and_rolls(
 
     assert press.exceptions == []
     assert result.exceptions == []
+    # the commitment dialog states the odds in full (R4) — read from the
+    # oracles the thaw service rolls (R7)
+    confirm = result.first_response
+    assert confirm is not None
+    confirm_desc = confirm["embed"].description
+    assert "**50%** chance to survive" in confirm_desc
+    assert "**50%** to become **Frog Remains**" in confirm_desc
     # 2 thawed: one survived as normal Pog, one became Frog Remains
     assert await full_bot.inventory.get(424242, "frog:pog:frozen") == 1
     assert await full_bot.inventory.get(424242, "frog:pog:normal") == 1
@@ -804,9 +812,8 @@ async def test_inventory_consume_final_embed_shows_effects_and_result(
     full_bot: CazzuBot,
 ) -> None:
     """The "Consumed!" embed shows the item's effects (description prose +
-    the "On consumption" field), the seasonal exp before/after (exp items
-    only), the resulting status when one was granted, and the
-    stack-consumption result."""
+    the "On consumption" field), the resulting status when one was
+    granted, and the stack-consumption result."""
     await full_bot.inventory.add(424242, "frog:pog:normal", 2)
 
     (
@@ -818,7 +825,6 @@ async def test_inventory_consume_final_embed_shows_effects_and_result(
     assert (final_embed.description or "") == "A frog with a pog."
     assert [field.name for field in final_embed.fields] == [
         "On consumption",
-        "Seasonal Exp",
         "Status",
         "Resulting Pog Frog",
     ]
@@ -827,15 +833,11 @@ async def test_inventory_consume_final_embed_shows_effects_and_result(
         for field in final_embed.fields
         if field.name == "On consumption"
     )
-    assert "Grants **30** seasonal exp." in consumption.value
-    # the exp outcome (fresh member: 0 before, 30 after one pog) sits before
-    # the status and the stack-consumption result —
-    exp_field = next(
-        field
-        for field in final_embed.fields
-        if field.name == "Seasonal Exp"
+    assert "reacts to your messages" in consumption.value
+    # no item grants exp any more — the embed carries no exp field
+    assert not any(
+        field.name == "Seasonal Exp" for field in final_embed.fields
     )
-    assert exp_field.value == "**`0`** -> **`30`**"
     # the resulting status (the pog reaction status, read back from the live
     # contribution) — the describe() prose, not just the prospective blurb
     status_field = next(
@@ -854,16 +856,15 @@ async def test_inventory_consume_final_embed_shows_effects_and_result(
     assert result_field.value == "**`2`** -> **`1`**"
 
 
-async def test_inventory_consume_confirmation_previews_effects_exp_and_status(
+async def test_inventory_consume_confirmation_previews_effects_and_status(
     full_bot: CazzuBot,
 ) -> None:
     """The confirmation step previews the consume outcome before Yes.
 
     The pre-consume embed shows the same sections the final "Consumed!"
     embed reports, phrased as a projection: the item's effect fields (the
-    "On consumption" blurb), the seasonal exp before/after (predicted from
-    the item module's exp oracle), and the resulting status when the item
-    grants one — so the member sees what consuming will do up front.
+    "On consumption" blurb) and the resulting status when the item grants
+    one — so the member sees what consuming will do up front.
     """
     await full_bot.inventory.add(424242, "frog:pog:normal", 2)
 
@@ -880,7 +881,6 @@ async def test_inventory_consume_confirmation_previews_effects_exp_and_status(
     )
     assert [field.name for field in confirm_embed.fields] == [
         "On consumption",
-        "Seasonal Exp",
         "Status",
     ]
     consumption = next(
@@ -888,15 +888,7 @@ async def test_inventory_consume_confirmation_previews_effects_exp_and_status(
         for field in confirm_embed.fields
         if field.name == "On consumption"
     )
-    assert "Grants **30** seasonal exp." in consumption.value
-    # the exp preview: a fresh member's seasonal exp now (0) -> +30 for one
-    # pog — predicted from the same oracle the consume glue grants
-    exp_field = next(
-        field
-        for field in confirm_embed.fields
-        if field.name == "Seasonal Exp"
-    )
-    assert exp_field.value == "**`0`** -> **`30`**"
+    assert "reacts to your messages" in consumption.value
     # the resulting-status preview: the item's granted status prose
     status_field = next(
         field for field in confirm_embed.fields if field.name == "Status"
@@ -907,10 +899,15 @@ async def test_inventory_consume_confirmation_previews_effects_exp_and_status(
     )
 
 
-async def test_inventory_consume_confirmation_previews_amount_scaled_exp(
+async def test_inventory_consume_effect_free_item_warns_and_grants_nothing(
     full_bot: CazzuBot,
 ) -> None:
-    """Consuming more than one unit scales the exp preview (amount × unit)."""
+    """A Basic Frog warns it grants nothing — and the consume still runs.
+
+    The warning states the plain fact and stops (no consolation, no hint
+    of anything else); the stack still decrements and no exp row is
+    written.
+    """
     await full_bot.inventory.add(424242, "frog:basic:normal", 3)
 
     task = asyncio.create_task(
@@ -937,36 +934,28 @@ async def test_inventory_consume_confirmation_previews_amount_scaled_exp(
     assert first_response is not None
     confirm_embed = first_response.get("embed")
     assert confirm_embed is not None
-    exp_field = next(
-        field
-        for field in confirm_embed.fields
-        if field.name == "Seasonal Exp"
+    assert [field.name for field in confirm_embed.fields] == ["Warning"]
+    warning = confirm_embed.fields[0]
+    assert warning.value == "Consuming this grants nothing."
+    # the consume proceeds: the stack decrements, nothing is granted
+    assert await full_bot.inventory.get(424242, "frog:basic:normal") == 1
+    assert (
+        await full_bot.db.fetchval(
+            "SELECT COUNT(*) FROM member_exp_log WHERE uid = 424242"
+        )
+        == 0
     )
-    # fresh member: 0 -> 20 (2 × basic's 10 exp); no Status (basic grants none)
-    assert exp_field.value == "**`0`** -> **`20`**"
-    assert [field.name for field in confirm_embed.fields] == [
-        "On consumption",
-        "Seasonal Exp",
-    ]
 
 
-async def test_inventory_consume_exp_item_shows_exp_before_after(
+async def test_inventory_consume_grants_no_exp(
     full_bot: CazzuBot,
 ) -> None:
-    """Consuming an exp-granting item reports seasonal exp before/after.
+    """Consuming a frog writes no exp row and reports no exp field.
 
-    The "Seasonal Exp" field shows the member's seasonal exp summed from
-    the exp logs (the metric the consume glue writes) before and after —
-    read both sides in the test to avoid hardcoding the season. A fresh
-    member consuming one pog (30 exp) goes 0 -> 30.
+    Exp is chatting-only (2026-09): the consume path must not touch
+    ``member_exp_log`` at all, and the final embed carries no exp
+    before/after.
     """
-    from core.utils import month2season
-    from plugins.experience import db as exp_db
-
-    now = pendulum.now("UTC")
-    before = await exp_db.seasonal_exp(
-        full_bot.db, 424242, now.year, month2season(now.month)
-    )
     await full_bot.inventory.add(424242, "frog:pog:normal", 2)
 
     (
@@ -974,16 +963,151 @@ async def test_inventory_consume_exp_item_shows_exp_before_after(
         final_embed,
     ) = await _consume_confirmation_and_final_embeds(full_bot)
 
-    after = await exp_db.seasonal_exp(
-        full_bot.db, 424242, now.year, month2season(now.month)
+    assert (
+        await full_bot.db.fetchval(
+            "SELECT COUNT(*) FROM member_exp_log WHERE uid = 424242"
+        )
+        == 0
     )
-    assert after == before + 30
-    exp_field = next(
-        field
-        for field in final_embed.fields
-        if field.name == "Seasonal Exp"
+    assert not any(
+        field.name == "Seasonal Exp" for field in final_embed.fields
     )
-    assert exp_field.value == f"**`{before}`** -> **`{after}`**"
+
+
+# -- the consumption ledger (member_item_log) -------------------------------
+
+
+async def test_inventory_consume_appends_one_ledger_row(
+    full_bot: CazzuBot,
+) -> None:
+    """A successful consume appends exactly one row, with its amount."""
+    await full_bot.inventory.add(424242, "frog:pog:normal", 3)
+
+    await _consume_confirmation_and_final_embeds(full_bot)
+
+    rows = await inv_db.item_log_for(full_bot.db, 424242)
+    assert len(rows) == 1
+    row = rows[0]
+    assert (row.uid, row.item_id, row.amount) == (
+        424242,
+        "frog:pog:normal",
+        1,
+    )
+    assert row.at.tzinfo is not None  # ISO-8601 UTC round-trip
+
+
+async def test_inventory_consume_declined_writes_no_ledger_row(
+    full_bot: CazzuBot,
+) -> None:
+    """Pressing No consumes nothing — and logs nothing."""
+    await full_bot.inventory.add(424242, "frog:pog:normal", 3)
+
+    task = asyncio.create_task(
+        run_slash(
+            full_bot,
+            "inventory consume",
+            options={"slot": 1},
+            user_id=424242,
+            timeout=10.0,
+        )
+    )
+    buttons = await wait_for_menu(full_bot)
+    press = await press_button(
+        full_bot,
+        custom_id=buttons["No"],
+        message_id=555,
+        user_id=424242,
+    )
+    result = await task
+
+    assert press.exceptions == []
+    assert result.exceptions == []
+    assert await full_bot.inventory.get(424242, "frog:pog:normal") == 3
+    assert await inv_db.item_log_for(full_bot.db, 424242) == []
+
+
+async def _slot_of(bot: CazzuBot, uid: int, item_id: str) -> int:
+    """The derived slot number currently addressing ``item_id``."""
+    from plugins.inventory.extension import _indexed_resolved
+
+    for slot, resolved, _qty in await _indexed_resolved(bot, uid):
+        if resolved == item_id:
+            return slot
+    raise AssertionError(f"{item_id} has no slot")
+
+
+async def test_inventory_consume_refusals_write_no_ledger_row(
+    full_bot: CazzuBot,
+) -> None:
+    """Every refusal path logs nothing: frozen, non-consumable, over-balance."""
+    # 1) a frozen frog is a trophy — refused before any confirm
+    await full_bot.inventory.add(424242, "frog:basic:frozen", 1)
+    frozen = await run_slash(
+        full_bot,
+        "inventory consume",
+        options={"slot": await _slot_of(full_bot, 424242, "frog:basic:frozen")},
+        user_id=424242,
+    )
+    assert frozen.exceptions == []
+    frozen_response = frozen.first_response
+    assert frozen_response is not None
+    assert "Frozen frogs cannot be consumed" in str(
+        frozen_response.get("content", "")
+    )
+
+    # 2) an item with no consume behavior is refused
+    inert = cast(
+        type[Enum],
+        Enum(
+            "InertItems",
+            {
+                "INERT": Item(
+                    item_id="test:inert",
+                    display_name="Inert Token",
+                    icon="🧪",
+                    description="Nothing happens.",
+                )
+            },
+        ),
+    )
+    register_items("test-items", inert)
+    set_consumable("test-items", True)
+    try:
+        await full_bot.inventory.add(424242, "test:inert", 1)
+        inert_result = await run_slash(
+            full_bot,
+            "inventory consume",
+            options={"slot": await _slot_of(full_bot, 424242, "test:inert")},
+            user_id=424242,
+        )
+        assert inert_result.exceptions == []
+        inert_response = inert_result.first_response
+        assert inert_response is not None
+        assert "cannot be consumed" in str(
+            inert_response.get("content", "")
+        )
+
+        # 3) more than held is refused
+        await full_bot.inventory.add(424242, "frog:pog:normal", 1)
+        over = await run_slash(
+            full_bot,
+            "inventory consume",
+            options={
+                "slot": await _slot_of(
+                    full_bot, 424242, "frog:pog:normal"
+                ),
+                "amount": 5,
+            },
+            user_id=424242,
+        )
+        assert over.exceptions == []
+        over_response = over.first_response
+        assert over_response is not None
+        assert "only have" in str(over_response.get("content", ""))
+
+        assert await inv_db.item_log_for(full_bot.db, 424242) == []
+    finally:
+        unregister_items("test-items")
 
 
 async def test_inventory_consume_classy_final_embed_shows_role_status(
@@ -1007,8 +1131,8 @@ async def test_inventory_consume_classy_final_embed_shows_role_status(
 async def test_inventory_consume_remains_final_embed_has_no_status(
     full_bot: CazzuBot,
 ) -> None:
-    """An item that grants no status (Frog Remains) shows no Status field —
-    the "if any" guard keeps the effects + exp + result fields only."""
+    """An item that grants nothing (Frog Remains) shows no effect fields —
+    just the stack-consumption result."""
     await full_bot.inventory.add(424242, "remains", 3)
 
     (
@@ -1017,14 +1141,12 @@ async def test_inventory_consume_remains_final_embed_has_no_status(
     ) = await _consume_confirmation_and_final_embeds(full_bot)
 
     assert [field.name for field in final_embed.fields] == [
-        "On consumption",
-        "Seasonal Exp",
         "Resulting Frog Remains",
     ]
-    # the remains' own flat exp still reports (3 per unit, fresh member)
-    exp_field = next(
-        field
-        for field in final_embed.fields
-        if field.name == "Seasonal Exp"
+    # a memorial item: no exp row, no status, nothing but the stack line
+    assert (
+        await full_bot.db.fetchval(
+            "SELECT COUNT(*) FROM member_exp_log WHERE uid = 424242"
+        )
+        == 0
     )
-    assert exp_field.value == "**`0`** -> **`3`**"

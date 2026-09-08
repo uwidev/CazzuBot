@@ -1,9 +1,10 @@
-"""Frog items — the exp oracle and the item-owned consume composition.
+"""Frog items — the item-owned consume composition (statuses only).
 
-The item composes what consuming does — exp from its oracle, plus the
-status classes it declares (Pog/Froggers → their reaction status, Classy
-→ its role status). Status values live on the classes
-(``plugins/frogs/statuses.py``); the store records only provenance.
+The item composes what consuming does: the status classes it declares
+(Pog/Froggers → their reaction status, Classy → its role status) and
+nothing else — no item grants exp (2026-09). Status values live on the
+classes (``plugins/frogs/statuses.py``); the store records only
+provenance.
 
 The frog modules are resolved at call time (``tests/plugins/frogs/_current.py``):
 the plugin-reload tests purge and re-import ``plugins.frogs.*`` mid-suite,
@@ -12,7 +13,6 @@ so collection-time references would go stale against the registry.
 
 from __future__ import annotations
 
-import pendulum
 import pytest
 from typing import TYPE_CHECKING
 
@@ -50,26 +50,22 @@ def test_item_composes_only_its_statuses() -> None:
     assert it.item_statuses("frog:classy:normal") == (st.CLASSY_ROLE,)
 
 
-def test_new_species_exp_oracle_values() -> None:
-    """D1/D2 defaults (owner-tunable) — normal exp only.
+def test_no_item_grants_exp() -> None:
+    """Exp is chatting-only (2026-09): no frog item carries an exp oracle.
 
-    The frozen rows are gone: frozen frogs are never consumed (they are
-    thawed instead), so no frozen exp exists in the oracle.
+    The consume glues write no exp rows, so the old ``frog_exp`` /
+    ``REMAINS_EXP`` machinery is gone rather than left dangling.
     """
     it = items()
-    assert it.frog_exp(FrogItemKey.POG, FrogState.NORMAL) == 30
-    assert it.frog_exp(FrogItemKey.FROGGERS, FrogState.NORMAL) == 300
-    assert it.frog_exp(FrogItemKey.CLASSY, FrogState.NORMAL) == 200
-    assert len(it._SPECIES_EXP) == 4  # cluster has no exp (no item)
+    for name in ("frog_exp", "exp_grant_for", "_SPECIES_EXP", "REMAINS_EXP"):
+        assert not hasattr(it, name), name
 
 
-def test_consume_blurb_reads_the_oracle() -> None:
-    """The info card's consume text derives from the oracle (display = grant)."""
+def test_basic_item_card_states_no_effect() -> None:
+    """A Basic consume has no effect, so its card carries no field."""
     it = items()
-    assert (
-        it._consume_blurb(FrogItemKey.BASIC, FrogState.NORMAL)
-        == "Grants **10** seasonal exp."
-    )
+    assert it._consumption_fields(FrogItemKey.BASIC, FrogState.NORMAL) == ()
+    assert it.FrogItems.BASIC.value.fields == ()
 
 
 def test_frozen_items_carry_the_thaw_blurb() -> None:
@@ -77,7 +73,7 @@ def test_frozen_items_carry_the_thaw_blurb() -> None:
     it = items()
     thaw = (
         "Frozen and non-consumable. Thawing this frog has a 50% chance "
-        "to restore it, and 50% to leave Frog Remains (3 exp)."
+        "to restore it, and 50% to leave Frog Remains."
     )
     for member in (
         it.FrogItems.BASIC_FROZEN,
@@ -88,36 +84,52 @@ def test_frozen_items_carry_the_thaw_blurb() -> None:
         assert member.value.fields == (("On thaw", thaw),)
 
 
-def test_remains_item_declared() -> None:
-    """Frog Remains: a flat-exp consolation item, not a frog."""
+def test_thaw_blurb_reads_the_oracles(monkeypatch) -> None:
+    """The card's odds derive from the knob the thaw service rolls (R7).
+
+    Re-tuning ``thaw.THAW_CHANCE`` must move the prose with it —
+    hand-written numbers would silently lie.
+    """
     it = items()
-    assert it._REMAINS_EXP == 3
+    monkeypatch.setattr(it, "THAW_CHANCE", 0.25)
+    assert it._thaw_field() == (
+        "On thaw",
+        "Frozen and non-consumable. Thawing this frog has a 25% chance "
+        "to restore it, and 75% to leave Frog Remains.",
+    )
+
+
+def test_remains_item_declared() -> None:
+    """Frog Remains: a memorial item, not a frog — consuming grants nothing."""
+    it = items()
     remains = it.FrogItems.REMAINS.value
     assert remains.item_id == "remains"
     assert remains.display_name == "Frog Remains"
     assert remains.consume is not None
-    assert remains.fields == (
-        ("On consumption", "Grants **3** seasonal exp."),
-    )
+    assert remains.fields == ()
 
 
-def test_consume_blurb_describes_composed_statuses() -> None:
-    """Pog/Froggers/Classy blurbs read the status classes the consume runs."""
+def test_consumption_fields_describe_composed_statuses() -> None:
+    """Pog/Froggers/Classy cards read the status classes the consume runs."""
     it = items()
-    assert it._consume_blurb(FrogItemKey.POG, FrogState.NORMAL) == (
-        "Grants **30** seasonal exp. For 1 hour, a **1%** chance the bot "
-        + "reacts to your messages with the froggers emoji (10s cooldown)."
+    assert it._consumption_fields(
+        FrogItemKey.POG, FrogState.NORMAL
+    ) == (
+        (
+            "On consumption",
+            "For 1 hour, a **1%** chance the bot reacts to your messages "
+            "with the froggers emoji (10s cooldown).",
+        ),
     )
-    assert it._consume_blurb(FrogItemKey.CLASSY, FrogState.NORMAL) == (
-        "Grants **200** seasonal exp. Grants the **Classy** role for 3 "
-        + "hours."
+    assert it._consumption_fields(
+        FrogItemKey.CLASSY, FrogState.NORMAL
+    ) == (
+        ("On consumption", "Grants the **Classy** role for 3 hours."),
     )
 
 
-async def test_consume_grants_exp_and_publishes_status(
-    full_bot,
-) -> None:
-    """Consuming a Pog grants exp AND applies its reaction status."""
+async def test_consume_publishes_status_and_no_exp(full_bot) -> None:
+    """Consuming a Pog applies its reaction status and grants no exp."""
     bot = full_bot
     uid = 123
     await bot.inventory.add(uid, "frog:pog:normal", 2)
@@ -130,6 +142,9 @@ async def test_consume_grants_exp_and_publishes_status(
         Scope.member(uid), FrogSeam.FROG_REACTION
     )
     assert contribs and contribs[0].source == "frog:blessing:pog"
+    assert (
+        await bot.db.fetchval("SELECT COUNT(*) FROM member_exp_log") == 0
+    )
 
 
 async def test_provenance_is_item_id(full_bot) -> None:
@@ -167,8 +182,6 @@ async def test_consume_composes_item_statuses(full_bot) -> None:
 
 async def test_consume_reports_frog_consumed_event(full_bot) -> None:
     """The consume emits FrogConsumedEvent last (finished-consume signal)."""
-    from plugins.experience import db as exp_db
-
     event_cls = events().FrogConsumedEvent  # call-time (reload-safe)
     received: list[FrogConsumedEvent] = []
 
@@ -181,13 +194,13 @@ async def test_consume_reports_frog_consumed_event(full_bot) -> None:
     assert consume is not None
     await consume(bot, 424242, 2)
 
-    now = pendulum.now("UTC")
+    # a Basic consume grants nothing at all — not even an exp log row
     assert (
-        await exp_db.seasonal_exp(
-            bot.db, 424242, now.year, (now.month - 1) // 3
+        await bot.db.fetchval(
+            "SELECT COUNT(*) FROM member_exp_log WHERE uid = 424242"
         )
-        == 20
-    )  # 10 exp/unit * 2
+        == 0
+    )
     assert len(received) == 1
     assert received[0].uid == 424242
     assert received[0].species_key is FrogItemKey.BASIC
@@ -216,10 +229,8 @@ async def test_frozen_consume_is_refused(full_bot) -> None:
         assert await full_bot.inventory.get(123, "frog:classy:frozen") == 0
 
 
-async def test_remains_consume_grants_flat_exp(full_bot) -> None:
-    """Remains consume: 3 exp/unit, no statuses, no FrogConsumedEvent."""
-    from plugins.experience import db as exp_db
-
+async def test_remains_consume_grants_nothing(full_bot) -> None:
+    """Remains consume: a memorial — no exp rows, no statuses, no event."""
     it = items()
     consume = it.FrogItems.REMAINS.value.consume
     assert consume is not None
@@ -227,10 +238,13 @@ async def test_remains_consume_grants_flat_exp(full_bot) -> None:
 
     await consume(full_bot, 424242, 2)
 
-    now = pendulum.now("UTC")
     assert (
-        await exp_db.seasonal_exp(
-            full_bot.db, 424242, now.year, (now.month - 1) // 3
+        await full_bot.db.fetchval(
+            "SELECT COUNT(*) FROM member_exp_log WHERE uid = 424242"
         )
-        == 6
-    )  # 3 exp/unit * 2
+        == 0
+    )
+    contribs = await full_bot.statuses.list(
+        Scope.member(424242), FrogSeam.FROG_REACTION
+    )
+    assert contribs == []

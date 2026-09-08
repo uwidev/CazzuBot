@@ -8,12 +8,11 @@ import random
 
 import pendulum
 
-from core.models import FrogItemKey, FrogState
+from core.models import FrogItemKey
 from core.utils import member_snapshot
 
 from plugins.frogs import plugin as frog_plugin
 from plugins.frogs.assets import FrogAsset
-from plugins.frogs.items import frog_exp
 from plugins.frogs.species import (
     DEFAULT_SPECIES_KEY,
     SPECIES,
@@ -28,12 +27,10 @@ def test_default_species_is_basic() -> None:
     assert DEFAULT_SPECIES_KEY is FrogItemKey.BASIC
     basic = by_key(FrogItemKey.BASIC)
     assert basic is not None and basic.name == "Basic Frog"
-    # the entity sheds consume data — the legacy 10/3 values moved to the
-    # item definitions (basic normal gives 10; frozen is a non-consumable
-    # trophy thawed via the gamble, so it has no exp of its own)
+    # the entity sheds consume data — what consuming does lives on the item
+    # definitions (statuses only; no item grants exp since 2026-09)
     assert not hasattr(basic, "consume_outcome")
     assert not hasattr(basic, "consumable")
-    assert frog_exp(basic.key, FrogState.NORMAL) == 10
 
 
 def test_species_registry_has_frogmd_five() -> None:
@@ -105,6 +102,16 @@ def test_roll_species_only_returns_registered() -> None:
         assert roll_species(random.Random()).key in {
             species.key for species in SPECIES
         }
+
+
+def test_species_hidden_defaults_off() -> None:
+    """No species is hidden yet; the flag exists for future secret frogs.
+
+    A hidden species spawns and can be caught like any other but takes no
+    slot in a member's collection book — ``/frog_catalog`` still
+    renders it (staff asset checks).
+    """
+    assert all(species.hidden is False for species in SPECIES)
 
 
 def test_species_are_defined_in_code_only() -> None:

@@ -36,6 +36,7 @@ docs/how-do-i/             step-by-step task guides
 docs/SYSTEMS.md            one-page systems map
 docs/GLOSSARY.md           stabilized vocabulary
 docs/FROG.md               frog system design
+docs/INFORMATION_STRATEGY.md  what player-facing text may say, and where
 docs/needs-rewrite/        older in-depth docs (being reworked)
 docs/aegis/                Aegis workspace
 CONTEXT.md                 canonical project terms
@@ -186,3 +187,15 @@ Guild safety
     user explicitly allows it per-turn. All work lives on `main`.
  -  This repo is worked on by parallel agent sessions — `git status` +
     file mtimes before claiming suite state.
+
+
+Branch discipline
+-----------------
+
+ -  **`main` is the working development branch** — every project write
+    (file edits, commits, migrations) happens here, never on `prod`.
+ -  **`prod` exists only to be rebased onto `main`** when a release is
+    ready; it is not a branch to develop on.
+ -  If a session is on `prod` and about to make a write, stop and ask
+    whether the user meant to be on `main`; do not write until told to.
+ -  Writing on `prod` requires explicit per-turn user permission.
