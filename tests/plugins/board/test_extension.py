@@ -23,6 +23,7 @@ from tests.fakes import (
     invoke_command,
     rest_of,
 )
+
 # one distinct color per attachment url, so hashes differ
 _COLORS = {
     "https://example.com/a.png": (10, 200, 40),
@@ -169,7 +170,7 @@ async def test_scrape_saves_rows(
     start = utils.week_start(now, start="sunday").subtract(days=7)
     end = start.add(days=7)
     rows = await db.get_week_images(
-        seeded_bot.db, start.isoformat(), end.isoformat()
+        seeded_bot.db, start.isoformat(), end.isoformat(), 99
     )
     assert [(r.image_url, r.msg_url) for r in rows] == [
         (
@@ -273,7 +274,7 @@ async def test_scrape_week_argument_targets_that_week(
 
     start = utils.week_start(now, start="sunday")
     rows = await db.get_week_images(
-        seeded_bot.db, start.isoformat(), start.add(days=7).isoformat()
+        seeded_bot.db, start.isoformat(), start.add(days=7).isoformat(), 99
     )
     assert len(rows) == 3
     flushed = ctx.sent[-1].content or ""
@@ -382,6 +383,8 @@ async def test_post_prunes_dead_rows(
         _DEAD_URL,
         "https://discord.com/channels/2/99/99",
         "dead-hash",
+        99,
+        99,
     )
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
@@ -389,7 +392,7 @@ async def test_post_prunes_dead_rows(
 
     end = start.add(days=7)
     rows = await db.get_week_images(
-        seeded_bot.db, start.isoformat(), end.isoformat()
+        seeded_bot.db, start.isoformat(), end.isoformat(), 99
     )
     assert all(r.image_url != _DEAD_URL for r in rows)
     assert len(rows) == 3
@@ -461,6 +464,8 @@ async def test_post_truncates_links_over_budget(
             f"https://example.com/bulk{i}.png",
             f"https://discord.com/channels/2/99/{1000 + i}",
             f"hash-{i}",
+            99,
+            1000 + i,
         )
 
     ctx = _ctx(seeded_bot, author, channel, fake_guild)

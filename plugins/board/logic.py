@@ -108,7 +108,7 @@ async def scrape_week(
             result.skipped_animated += 1
             continue
         sha = content_sha256(data)
-        if await has_sha_in_week(db, sha, start_iso, end_iso):
+        if await has_sha_in_week(db, sha, start_iso, end_iso, channel_id):
             result.skipped_duplicates += 1
             continue
         ts = pendulum.instance(message.created_at).isoformat()
@@ -116,7 +116,15 @@ async def scrape_week(
             f"https://discord.com/channels/{guild_id}/{channel_id}/"
             f"{message.id}"
         )
-        if await add_image(db, ts, str(attachment.url), msg_url, sha):
+        if await add_image(
+            db,
+            ts,
+            str(attachment.url),
+            msg_url,
+            sha,
+            channel_id,
+            message.id,
+        ):
             result.scraped += 1
     return result
 

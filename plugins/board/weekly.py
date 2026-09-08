@@ -136,7 +136,10 @@ async def run_weekly(
         download=_download_url,
     )
     rows = await board_db.get_week_images(
-        bot.db, start.isoformat(), end.isoformat()
+        bot.db,
+        start.isoformat(),
+        end.isoformat(),
+        scrape_channel,
     )
     if not rows:
         _log.warning(
@@ -261,7 +264,13 @@ async def _announce_winner(
         return
 
     rows = await board_db.get_week_images(
-        bot.db, start.isoformat(), start.add(days=7).isoformat()
+        bot.db,
+        start.isoformat(),
+        start.add(days=7).isoformat(),
+        # the rows a weekly run posts are scoped to the canonical scrape
+        # channel — winner resolution must read the IDENTICAL scoped list
+        # so the winning iid maps onto the same row it did at post time
+        weekly_targets(bot.config.guild_kind)[0],
     )
     index = results[0].iid - 1  # ORDER BY count DESC
     if not 0 <= index < len(rows):

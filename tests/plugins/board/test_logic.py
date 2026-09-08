@@ -198,7 +198,7 @@ async def test_scrape_week_records_window_images(bot: CazzuBot) -> None:
     assert result.skipped_animated == 0
     assert result.skipped_duplicates == 0
     rows = await board_db.get_week_images(
-        bot.db, start.isoformat(), end.isoformat()
+        bot.db, start.isoformat(), end.isoformat(), 99
     )
     assert len(rows) == 3
     assert [r.msg_url for r in rows] == [
@@ -309,7 +309,9 @@ async def test_scrape_week_dedupes_same_bytes_in_window(
 # -- build_grid service ------------------------------------------------------
 
 
-async def _seed_rows(bot: CazzuBot, count: int = 3) -> list[board_db.BoardRow]:
+async def _seed_rows(
+    bot: CazzuBot, count: int = 3
+) -> list[board_db.BoardRow]:
     start = pendulum.datetime(2026, 8, 2, tz="UTC")
     for i in range(count):
         await board_db.add_image(
@@ -318,9 +320,11 @@ async def _seed_rows(bot: CazzuBot, count: int = 3) -> list[board_db.BoardRow]:
             f"https://example.com/g{i}.png",
             f"https://discord.com/channels/2/99/{10 + i}",
             f"hash-{i}",
+            99,
+            10 + i,
         )
     return await board_db.get_week_images(
-        bot.db, start.isoformat(), start.add(days=7).isoformat()
+        bot.db, start.isoformat(), start.add(days=7).isoformat(), 99
     )
 
 
@@ -354,6 +358,8 @@ async def test_build_grid_prunes_dead_rows(bot: CazzuBot) -> None:
         "https://example.com/ok.png",
         "https://discord.com/channels/2/99/1",
         "hash-ok",
+        99,
+        1,
     )
     await board_db.add_image(
         bot.db,
@@ -361,9 +367,11 @@ async def test_build_grid_prunes_dead_rows(bot: CazzuBot) -> None:
         "https://example.com/dead.png",
         "https://discord.com/channels/2/99/2",
         "hash-dead",
+        99,
+        2,
     )
     rows = await board_db.get_week_images(
-        bot.db, start.isoformat(), start.add(days=7).isoformat()
+        bot.db, start.isoformat(), start.add(days=7).isoformat(), 99
     )
 
     async def _download(url: str) -> bytes:
@@ -371,17 +379,17 @@ async def test_build_grid_prunes_dead_rows(bot: CazzuBot) -> None:
             raise RuntimeError("gone")
         return _png_bytes()
 
-    result = await build_grid(
-        bot.db, rows, download=_download, week=33
-    )
+    result = await build_grid(bot.db, rows, download=_download, week=33)
 
     assert result.pruned == 1
     assert len(result.survivors) == 1
     assert "1 image(s)" in result.content
     remaining = await board_db.get_week_images(
-        bot.db, start.isoformat(), start.add(days=7).isoformat()
+        bot.db, start.isoformat(), start.add(days=7).isoformat(), 99
     )
-    assert [r.image_url for r in remaining] == ["https://example.com/ok.png"]
+    assert [r.image_url for r in remaining] == [
+        "https://example.com/ok.png"
+    ]
 
 
 async def test_build_grid_all_dead_returns_empty(bot: CazzuBot) -> None:
@@ -392,17 +400,17 @@ async def test_build_grid_all_dead_returns_empty(bot: CazzuBot) -> None:
         "https://example.com/dead.png",
         "https://discord.com/channels/2/99/1",
         "hash",
+        99,
+        1,
     )
     rows = await board_db.get_week_images(
-        bot.db, start.isoformat(), start.add(days=7).isoformat()
+        bot.db, start.isoformat(), start.add(days=7).isoformat(), 99
     )
 
     async def _download(_url: str) -> bytes:
         raise RuntimeError("gone")
 
-    result = await build_grid(
-        bot.db, rows, download=_download, week=33
-    )
+    result = await build_grid(bot.db, rows, download=_download, week=33)
 
     assert result.survivors == []
     assert result.data == b""

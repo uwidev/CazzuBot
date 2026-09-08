@@ -36,7 +36,6 @@ _log = logging.getLogger(__name__)
 loader = lightbulb.Loader()
 
 
-
 async def _download_url(url: str) -> bytes:
     """Fetch raw bytes from a URL (module-level for test stubbing)."""
     return await hikari.files.URL(url).read()
@@ -148,26 +147,30 @@ class Post(
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = utils.bot_from(ctx)
         now = pendulum.now("UTC")
+        # the newest scraped row is the read anchor: its week + channel
+        # (a "pointer") scope the post — the board never aggregates
+        # channels
+        latest = await db.latest_row(bot.db)
         if self.week is None:
-            latest = await db.latest_ts(bot.db)
             if latest is None:
                 await window_error(
                     ctx, "Nothing scraped yet — run /board scrape first."
                 )
                 return
-            latest_dt = pendulum.parse(latest)
+            latest_dt = pendulum.parse(latest.ts)
             if not isinstance(latest_dt, pendulum.DateTime):
                 raise UserInputError("invalid timestamp in board table")
             week_no, year = utils.week_number(latest_dt)
         else:
             week_no, year = self.week, now.year
+        channel_id = latest.channel_id if latest is not None else 0
         start = utils.week_start_of(year, week_no)
         end = start.add(days=7)
         day = start.format("YYYY-MM-DD")
 
         async with command_window(ctx) as window:
             rows = await db.get_week_images(
-                bot.db, start.isoformat(), end.isoformat()
+                bot.db, start.isoformat(), end.isoformat(), channel_id
             )
             window.info(
                 f"Stitching {len(rows)} image(s) for week {week_no}..."
