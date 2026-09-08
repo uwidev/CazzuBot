@@ -24,6 +24,7 @@ from plugins.board import (
     on_board_weekly_due,
 )
 from plugins.board import weekly
+from plugins.board import db as board_db
 from plugins.board.weekly import (
     CLOSE_TAG,
     DONE_KEY,
@@ -207,6 +208,81 @@ async def test_run_weekly_samples_over_max_images(
     assert "50 image(s)" in rest_of(bot).created[0].content
 
 
+async def test_run_weekly_ignores_stray_channel_rows(
+    seeded_bot: CazzuBot, monkeypatch
+) -> None:
+    """Rows scraped from ANOTHER channel the same week never leak into the
+    weekly board — reads are (week ∩ canonical channel) only."""
+    monkeypatch.setattr(weekly, "_download_url", _fake_download_url)
+    bot = seeded_bot
+    _seed_week(bot, channel_id=SCRAPE_CHANNEL_DEV, week=0, count=2)
+    # a manual scrape of a different channel, same week window
+    start = utils.week_start(pendulum.now("UTC"))
+    await board_db.add_image(
+        bot.db,
+        start.add(days=2).isoformat(),
+        "https://example.com/stray.png",
+        "https://discord.com/channels/2/88/1",
+        "hash-stray",
+        88,
+        1,
+    )
+
+    result = await run_weekly(bot)
+
+    assert not result.aborted
+    assert result.scraped == 2
+    assert result.poll_id is not None
+    content = rest_of(bot).created[0].content
+    assert "2 image(s)" in content
+    assert "https://discord.com/channels/2/88/" not in content
+    assert (
+        f"[1](https://discord.com/channels/2/{SCRAPE_CHANNEL_DEV}/1)"
+        in content
+    )
+    poll_row = await poll_db.get_poll(bot.db, result.poll_id)
+    assert poll_row is not None
+    # poll items = the canonical channel's rows only (same scoped list)
+    assert len(await poll_db.get_items(bot.db, result.poll_id)) == 2
+
+
+async def test_run_weekly_close_winner_maps_posted_sample(
+    seeded_bot: CazzuBot, monkeypatch
+) -> None:
+    """A >MAX_IMAGES week: the close payload freezes the posted rows, so
+    the winning iid resolves onto the SAME row the grid numbered at post
+    time (the re-read can't reproduce the random sample on its own)."""
+    monkeypatch.setattr(weekly, "_download_url", _fake_download_url)
+    bot = seeded_bot
+    _seed_week(bot, channel_id=SCRAPE_CHANNEL_DEV, week=0, count=60)
+
+    result = await run_weekly(bot)
+    assert not result.aborted
+    assert result.scraped == 50
+    assert result.poll_id is not None
+
+    tasks = await bot.scheduler.get(CLOSE_TAG)
+    assert len(tasks) == 1
+    payload = tasks[0].payload
+    ids = [int(x) for x in payload["ids"]]
+    assert len(ids) == 50
+    assert len(set(ids)) == 50  # the posted rows, no duplicates
+
+    # vote for grid cell 1 → its winner must be the first posted row
+    await poll_db.add_votes(bot.db, result.poll_id, [1, 1, 1], 424242)
+    rest = rest_of(bot)
+    rest.created.clear()
+    await on_board_weekly_close(bot, payload)
+
+    winner = await bot.db.fetchone(
+        "SELECT msg_url FROM board WHERE id = ?", ids[0]
+    )
+    assert winner is not None
+    last = rest.created[-1].content or ""
+    assert "https://discord.com/channels/2/" in last
+    assert winner["msg_url"] in last
+
+
 async def test_run_weekly_production_last_week_prod_channels(
     seeded_bot: CazzuBot, monkeypatch
 ) -> None:
@@ -295,6 +371,8 @@ async def test_run_weekly_schedules_monday_close(
     assert task.payload["pid"] == result.poll_id
     assert task.payload["cid"] == POST_CHANNEL_DEV
     assert task.payload["retry"] is True
+    # the close payload freezes the posted row ids (the winner mapping)
+    assert task.payload["ids"] == [1, 2]  # 2 seeded images, ids 1..2
     assert pendulum.parse(str(task.payload["start"])) is not None
     assert task.run_at >= now.add(days=1).start_of("minute")
 

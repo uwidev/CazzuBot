@@ -204,6 +204,9 @@ async def test_scrape_week_records_window_images(bot: CazzuBot) -> None:
     assert [r.msg_url for r in rows] == [
         f"https://discord.com/channels/2/99/{i}" for i in (1, 2, 3)
     ]
+    # every row records its source channel + message (board v2)
+    assert [r.channel_id for r in rows] == [99, 99, 99]
+    assert [r.message_id for r in rows] == [1, 2, 3]
 
 
 async def test_scrape_week_skips_animated_and_out_of_window(
@@ -304,6 +307,57 @@ async def test_scrape_week_dedupes_same_bytes_in_window(
 
     assert result.scraped == 3
     assert result.skipped_duplicates == 1
+
+
+async def test_scrape_week_same_content_other_channel_not_duplicate(
+    bot: CazzuBot,
+) -> None:
+    """board v2: the same image bytes in ANOTHER channel the same week is
+    not a false duplicate — within-week dedup is per-channel."""
+    rest = FakeRest()
+    start = utils.week_start(pendulum.now("UTC")).subtract(days=7)
+    end = start.add(days=7)
+    _seed_messages(rest, channel_id=99, start=start)
+    # channel 88 re-posts img0's exact bytes (distinct CDN url)
+    rest.messages[(88, 1)] = FakeMessage(
+        id=1,
+        author=FakeMember(id=1, name="a"),
+        channel_id=88,
+        created_at=start.add(hours=1),
+        attachments=[
+            FakeAttachment(
+                id=1,
+                filename="x.png",
+                url="https://example.com/88/x.png",
+            )
+        ],
+    )
+
+    async def _download(url: str) -> bytes:
+        if url.endswith("88/x.png"):
+            # identical content to channel 99's img0
+            return await _png_download("https://example.com/img0.png")
+        return await _png_download(url)
+
+    await scrape_week(rest, bot.db, 2, 99, start, end, download=_download)
+    result = await scrape_week(
+        rest, bot.db, 2, 88, start, end, download=_download
+    )
+
+    # the same content in a fresh channel is NOT skipped as a duplicate
+    assert result.scraped == 1
+    assert result.skipped_duplicates == 0
+    other = await board_db.get_week_images(
+        bot.db, start.isoformat(), end.isoformat(), 88
+    )
+    assert len(other) == 1
+    assert other[0].channel_id == 88
+    # re-scraping the SAME channel still dedupes (per-channel window)
+    again = await scrape_week(
+        rest, bot.db, 2, 88, start, end, download=_download
+    )
+    assert again.scraped == 0
+    assert again.skipped_duplicates == 1
 
 
 # -- build_grid service ------------------------------------------------------

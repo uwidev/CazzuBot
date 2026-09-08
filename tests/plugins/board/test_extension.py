@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 
 import hikari
@@ -68,6 +69,19 @@ async def _fake_download_url(url: str) -> bytes:
     if url == _DUP_URL:
         return _png_bytes(_COLORS["https://example.com/a.png"])
     return _png_bytes(_COLORS.get(url, (10, 200, 40)))
+
+
+async def _hash_download(url: str) -> bytes:
+    """Distinct PNG bytes per url — two channels need distinct hashes so
+    cross-channel rows are never same-content duplicates."""
+    digest = hashlib.sha256(url.encode()).hexdigest()
+    return _png_bytes(
+        (
+            int(digest[0:2], 16),
+            int(digest[2:4], 16),
+            int(digest[4:6], 16),
+        )
+    )
 
 
 def _ctx(
@@ -490,6 +504,111 @@ async def test_post_without_scrape_errors(
     assert "Nothing scraped yet" in (ctx.sent[-1].content or "")
 
 
+def _seed_week_channel(
+    rest,
+    *,
+    channel_id: int,
+    start,
+    hours: tuple[int, ...],
+    author: FakeMember,
+) -> None:
+    """Seed one image message per hour offset in a channel's week window
+    (message id == its ordinal, so link numbers are predictable)."""
+    for mid, h in enumerate(hours, start=1):
+        rest.messages[(channel_id, mid)] = FakeMessage(
+            id=mid,
+            author=author,
+            channel_id=channel_id,
+            created_at=start.add(hours=h),
+            attachments=[
+                FakeAttachment(
+                    id=mid,
+                    filename=f"{channel_id}-{mid}.png",
+                    url=f"https://example.com/{channel_id}/m{mid}.png",
+                )
+            ],
+        )
+
+
+async def _scrape_two_channels_same_week(
+    bot: CazzuBot,
+    author: FakeMember,
+    channel,
+    fake_guild,
+    *,
+    monkeypatch,
+) -> FakeContext:
+    """Scrape week N−1 from channels 88 and 99 (99 posted later → newest
+    row, hence the pointer, lives in 99)."""
+    from plugins.board import extension as board_ext
+
+    monkeypatch.setattr(board_ext, "_download_url", _hash_download)
+    rest = rest_of(bot)
+    now = pendulum.now("UTC")
+    start = utils.week_start(now, start="sunday").subtract(days=7)
+    _seed_week_channel(
+        rest, channel_id=88, start=start, hours=(1, 2, 3), author=author
+    )
+    _seed_week_channel(
+        rest, channel_id=99, start=start, hours=(4, 5, 6), author=author
+    )
+
+    ctx = _ctx(bot, author, channel, fake_guild)
+    await invoke_command(
+        board_ext.Scrape(), ctx, channel=FakeChannel(id=88)
+    )
+    ctx.sent.clear()
+    await invoke_command(
+        board_ext.Scrape(), ctx
+    )  # default: ctx channel 99
+    ctx.sent.clear()
+    return ctx
+
+
+async def test_post_pointer_defaults_to_newest_rows_channel(
+    seeded_bot: CazzuBot,
+    fake_guild,
+    author: FakeMember,
+    channel,
+    monkeypatch,
+) -> None:
+    """Two channels scraped in the same week: /board post renders week ∩
+    the pointer channel (the newest row's channel) — never an aggregate."""
+    ctx = await _scrape_two_channels_same_week(
+        seeded_bot, author, channel, fake_guild, monkeypatch=monkeypatch
+    )
+    from plugins.board import extension as board_ext
+
+    await invoke_command(board_ext.Post(), ctx)
+
+    content = ctx.sent[-1].content or ""
+    assert "3 image(s)" in content
+    assert "[1](https://discord.com/channels/2/99/1)" in content
+    assert "channels/2/88/" not in content  # stray channel never leaks
+
+
+async def test_post_channel_override_reads_that_channel(
+    seeded_bot: CazzuBot,
+    fake_guild,
+    author: FakeMember,
+    channel,
+    monkeypatch,
+) -> None:
+    """A channel override posts that channel's week rows instead of the
+    pointer default."""
+    ctx = await _scrape_two_channels_same_week(
+        seeded_bot, author, channel, fake_guild, monkeypatch=monkeypatch
+    )
+    from plugins.board import extension as board_ext
+
+    await invoke_command(board_ext.Post(), ctx, channel=FakeChannel(id=88))
+
+    content = ctx.sent[-1].content or ""
+    assert "3 image(s)" in content
+    assert "[1](https://discord.com/channels/2/88/1)" in content
+    assert "channels/2/99/" not in content
+
+
 @pytest.mark.parametrize(
     "channel_arg", [None, pytest.param(FakeChannel(id=99), id="explicit")]
 )
@@ -529,7 +648,9 @@ async def test_board_weekly_command_runs_flow_via_driver(
     from plugins.poll import db as poll_db
     from tests.driver import run_slash
 
-    monkeypatch.setattr(board_weekly, "_download_url", _fake_download_url)
+    # per-url distinct bytes (the shared fake would hash-dedup the two
+    # identical-default-color images into one row)
+    monkeypatch.setattr(board_weekly, "_download_url", _hash_download)
     rest = rest_of(full_bot)
     now = pendulum.now("UTC")
     start = utils.week_start(now, start="sunday")
@@ -547,6 +668,16 @@ async def test_board_weekly_command_runs_flow_via_driver(
                 )
             ],
         )
+    # a stray scrape of ANOTHER channel, same week — stored but inert
+    await db.add_image(
+        full_bot.db,
+        inside.add(days=1).isoformat(),
+        "https://example.com/stray.png",
+        "https://discord.com/channels/2/88/1",
+        "hash-stray",
+        88,
+        1,
+    )
 
     result = await run_slash(
         full_bot, "board weekly", user_id=1, username="owner"
@@ -562,5 +693,14 @@ async def test_board_weekly_command_runs_flow_via_driver(
     assert f"<@&{VOTE_ROLE_ID}>" in msg.content  # role ping
     assert "just-cirno voting is now open!" in msg.content
     assert "Week " in msg.content and "image(s)" in msg.content
+    # the weekly board renders week ∩ canonical channel only
+    assert "2 image(s)" in msg.content
+    assert "channels/2/88/" not in msg.content
     poll_count = await full_bot.db.fetchval("SELECT COUNT(*) FROM poll")
     assert poll_count == 1
+    pid = await full_bot.db.fetchval(
+        "SELECT id FROM poll ORDER BY id DESC LIMIT 1"
+    )
+    assert pid is not None
+    # poll items = the canonical channel's 2 images (one scoped list)
+    assert len(await poll_db.get_items(full_bot.db, pid)) == 2

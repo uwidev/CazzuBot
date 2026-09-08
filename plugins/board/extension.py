@@ -142,14 +142,20 @@ class Post(
         min_value=1,
         max_value=53,
     )
+    channel = lightbulb.channel(
+        "channel",
+        "Channel to post (default: newest scraped row's channel)",
+        default=None,
+        channel_types=[hikari.ChannelType.GUILD_TEXT],
+    )
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         bot = utils.bot_from(ctx)
         now = pendulum.now("UTC")
-        # the newest scraped row is the read anchor: its week + channel
-        # (a "pointer") scope the post — the board never aggregates
-        # channels
+        # the read scope is a single week × channel — the board never
+        # aggregates. Default (the "pointer"): the newest scraped row's
+        # week + channel; both are overridable (week, channel).
         latest = await db.latest_row(bot.db)
         if self.week is None:
             if latest is None:
@@ -163,7 +169,11 @@ class Post(
             week_no, year = utils.week_number(latest_dt)
         else:
             week_no, year = self.week, now.year
-        channel_id = latest.channel_id if latest is not None else 0
+        channel_id = (
+            self.channel.id
+            if self.channel is not None
+            else (latest.channel_id if latest is not None else 0)
+        )
         start = utils.week_start_of(year, week_no)
         end = start.add(days=7)
         day = start.format("YYYY-MM-DD")
@@ -173,7 +183,8 @@ class Post(
                 bot.db, start.isoformat(), end.isoformat(), channel_id
             )
             window.info(
-                f"Stitching {len(rows)} image(s) for week {week_no}..."
+                f"Stitching {len(rows)} image(s) for week {week_no} of "
+                f"<#{channel_id}>..."
             )
             await window.flush()  # ack before downloads + CPU-bound stitch
 

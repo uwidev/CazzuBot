@@ -161,15 +161,6 @@ async def run_weekly(
         rows = sorted(
             random.sample(rows, MAX_IMAGES), key=lambda r: (r.ts, r.id)
         )
-    n = len(rows)
-
-    pid = await poll_db.add_poll(
-        bot.db, POLL_TITLE.format(week_no=week_no), POLL_DESC, n // 20 + 1
-    )
-    if pid is None:
-        raise RuntimeError("poll registration returned no id")
-    await poll_db.add_items_dummy(bot.db, pid, n)
-    await poll_db.set_open(bot.db, pid, True)
 
     # one combined message: the role-ping announcement + grid header/links
     # in the content, the grid as the attachment, the poll embed + vote
@@ -192,6 +183,18 @@ async def run_weekly(
     if not grid.survivors:
         raise RuntimeError("all scraped images vanished before posting")
 
+    # poll items = the stitched survivors (the IDENTICAL list the grid's
+    # numbers and message links came from), so poll iids always match the
+    # numbered grid
+    n = len(grid.survivors)
+    pid = await poll_db.add_poll(
+        bot.db, POLL_TITLE.format(week_no=week_no), POLL_DESC, n // 20 + 1
+    )
+    if pid is None:
+        raise RuntimeError("poll registration returned no id")
+    await poll_db.add_items_dummy(bot.db, pid, n)
+    await poll_db.set_open(bot.db, pid, True)
+
     poll_row = await poll_db.get_poll(bot.db, pid)
     if poll_row is None:
         raise RuntimeError(f"poll #{pid} missing right after registration")
@@ -208,7 +211,9 @@ async def run_weekly(
         role_mentions=True,
     )
     await poll_db.set_mid(bot.db, pid, poll_message.id, post_channel)
-    # auto-close 24h after the open (Monday 00:00 UTC for a Sunday open)
+    # auto-close 24h after the open (Monday 00:00 UTC for a Sunday open);
+    # the payload freezes the posted row ids so the close-time winner
+    # resolution reads the IDENTICAL scoped list (sampling excluded)
     await bot.scheduler.add(
         CLOSE_TAG,
         now.add(days=1),
@@ -217,6 +222,7 @@ async def run_weekly(
             "cid": post_channel,
             "start": start.isoformat(),
             "retry": True,
+            "ids": [r.id for r in grid.survivors],
         },
     )
 
@@ -238,21 +244,31 @@ async def on_board_weekly_close(
     start = pendulum.parse(str(payload["start"]))
     if not isinstance(start, pendulum.DateTime):
         raise UserInputError("invalid week start in close payload")
+    raw_ids = payload.get("ids")
+    ids = [int(x) for x in raw_ids] if isinstance(raw_ids, list) else None
 
     err = await set_poll_open(bot, pid, open=False)
     if err:
         _log.warning("board_weekly_close: %s", err)
-    await _announce_winner(bot, pid, cid, start)
+    await _announce_winner(bot, pid, cid, start, ids=ids)
 
 
 async def _announce_winner(
-    bot: CazzuBot, pid: int, cid: int, start: pendulum.DateTime
+    bot: CazzuBot,
+    pid: int,
+    cid: int,
+    start: pendulum.DateTime,
+    *,
+    ids: list[int] | None = None,
 ) -> None:
     """The highest-voted grid cell → guild banner + winner message.
 
     Poll items are the grid numbers in row order, so the winning iid maps
-    straight onto the week's board rows. A poll with no votes just gets
-    the no-votes message (no banner change).
+    straight onto the posted rows. ``ids`` is the frozen list of posted
+    row ids (run_weekly stores it in the close payload): the scoped re-read
+    is restricted to it so the mapping always matches the posted grid even
+    when a week was sampled down to MAX_IMAGES. A poll with no votes just
+    gets the no-votes message (no banner change).
     """
     week_no = utils.week_number(start)[0]
     results = await poll_db.get_results(bot.db, pid)
@@ -263,15 +279,18 @@ async def _announce_winner(
         )
         return
 
+    # the rows a weekly run posts are scoped to the canonical scrape
+    # channel — winner resolution must read the IDENTICAL scoped list so
+    # the winning iid maps onto the same row it did at post time
     rows = await board_db.get_week_images(
         bot.db,
         start.isoformat(),
         start.add(days=7).isoformat(),
-        # the rows a weekly run posts are scoped to the canonical scrape
-        # channel — winner resolution must read the IDENTICAL scoped list
-        # so the winning iid maps onto the same row it did at post time
         weekly_targets(bot.config.guild_kind)[0],
     )
+    if ids is not None:
+        posted = set(ids)
+        rows = [r for r in rows if r.id in posted]
     index = results[0].iid - 1  # ORDER BY count DESC
     if not 0 <= index < len(rows):
         _log.warning(
