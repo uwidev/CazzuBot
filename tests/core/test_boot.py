@@ -100,7 +100,9 @@ async def test_sandbox_boot_loads_only_requested_plugins(
             owner_id=1,
             guild_id=2,
             db_path=str(tmp_path / "sandbox.db"),
-            sandbox_plugins=("frogs",),
+            # levels pulls the ranks <-> experience cycle in with it; frogs
+            # no longer has any dependency to expand (2026-09 decoupling)
+            sandbox_plugins=("levels",),
         ),
         plugins_dir="plugins",
     )
@@ -110,8 +112,30 @@ async def test_sandbox_boot_loads_only_requested_plugins(
             "experience",
             "levels",
             "ranks",
-            "frogs",
         }
+    finally:
+        await _shutdown(instance)
+
+
+async def test_sandbox_frogs_loads_no_ladder(tmp_path: Path) -> None:
+    """``-s frogs`` loads frogs alone — the exp edge is gone (2026-09).
+
+    Frog consumes grant statuses only, so frogs needs no experience table;
+    the sandbox must not drag the chat ladder in with it.
+    """
+    instance = CazzuBot(
+        Config(
+            token=_DUMMY_TOKEN,
+            owner_id=1,
+            guild_id=2,
+            db_path=str(tmp_path / "frogs-only.db"),
+            sandbox_plugins=("frogs",),
+        ),
+        plugins_dir="plugins",
+    )
+    await _boot(instance)
+    try:
+        assert {p.name for p in instance.plugins} == {"frogs"}
     finally:
         await _shutdown(instance)
 
@@ -285,8 +309,9 @@ async def test_reload_cascades_to_dependents(full_bot: CazzuBot) -> None:
     imports of the provider's modules would otherwise go stale)."""
     affected = full_bot.affected_by_unload("experience")
     assert "experience" in affected
-    assert "frogs" in affected  # frogs depends on experience
     assert "levels" in affected and "ranks" in affected
+    # frogs no longer depends on the ladder (2026-09 decoupling)
+    assert "frogs" not in affected
 
     plugin = await full_bot.reload_plugin("experience")
 
@@ -355,7 +380,7 @@ async def test_boot_cascades_to_dependents_of_disabled(
         ),
         plugins_dir="plugins",
     )
-    # ranks is a dependency of experience/levels/frogs
+    # ranks is a dependency of experience/levels (not of frogs any more)
     await _preset_setting(instance, "plugin.enabled.ranks", False)
     await _boot(instance)
     try:
@@ -363,7 +388,7 @@ async def test_boot_cascades_to_dependents_of_disabled(
         assert "ranks" not in names
         assert "experience" not in names
         assert "levels" not in names
-        assert "frogs" not in names
+        assert "frogs" in names  # decoupled from the ladder (2026-09)
         assert "poll" in names  # independent plugin still loads
     finally:
         await _shutdown(instance)
@@ -416,10 +441,13 @@ async def test_disable_plugin_unloads_cascade_and_persists(
     unloaded = await full_bot.disable_plugin("experience")
 
     assert "experience" in unloaded
-    assert "frogs" in unloaded  # depends on experience
+    assert "levels" in unloaded and "ranks" in unloaded
+    # frogs is no longer a dependent (2026-09 decoupling)
+    assert "frogs" not in unloaded
     names = {p.name for p in full_bot.plugins}
     for name in unloaded:
         assert name not in names
+    assert "frogs" in names
     assert (
         await full_bot.settings.get("plugin.enabled.experience") is False
     )

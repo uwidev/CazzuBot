@@ -25,11 +25,12 @@ def _names(plugins: list[Plugin]) -> list[str]:
     return [p.name for p in plugins]
 
 
-# mirrors the real dependency graph; list order simulates discovery order
+# mirrors the real dependency graph; list order simulates discovery order.
+# frogs has no dependency since frog exp left the chat ladder (2026-09).
 PLUGINS = [
     _plugin("dev"),
     _plugin("experience", "levels", "ranks"),
-    _plugin("frogs", "experience"),
+    _plugin("frogs"),
     _plugin("levels", "ranks"),
     _plugin("poll"),
     _plugin("ranks", "experience"),
@@ -50,11 +51,11 @@ def test_none_selects_everything_in_dependency_order() -> None:
 
 
 def test_requested_expands_transitively() -> None:
-    assert _names(select_plugins(PLUGINS, ("frogs",))) == [
+    assert _names(select_plugins(PLUGINS, ("frogs",))) == ["frogs"]
+    assert _names(select_plugins(PLUGINS, ("levels",))) == [
         "experience",
         "levels",
         "ranks",
-        "frogs",
     ]
 
 
@@ -133,11 +134,16 @@ def test_real_plugin_set_is_consistent() -> None:
             assert reaches(plugin.name, dep) and reaches(dep, plugin.name)
 
     # a requested leaf pulls in its whole support network
-    assert _names(select_plugins(plugins, ("frogs",))) == [
+    assert _names(select_plugins(plugins, ("frogs",))) == ["frogs"]
+    assert _names(select_plugins(plugins, ("levels",))) == [
         "experience",
         "levels",
         "ranks",
-        "frogs",
+    ]
+    assert _names(select_plugins(plugins, ("board",))) == [
+        "misc",
+        "poll",
+        "board",
     ]
     assert _names(select_plugins(plugins, ("poll",))) == ["poll"]
 

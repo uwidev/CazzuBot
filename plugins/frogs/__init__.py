@@ -68,11 +68,10 @@ class FrogsPlugin(Plugin):
         DAILY_FROG_TAG: on_daily_frog_due,
         QUARTERLY_TAG: on_quarterly_due,
     }
-    # frogs no longer writes frog exp into the experience tables (2026-09:
-    # exp is chatting-only), so no table is shared any more. The declared
-    # edge is now load-order only — kept so the frog surfaces still load
-    # alongside the ladder; severing it would re-point the loader tests.
-    depends_on = ("experience",)
+    # no depends_on: frogs touches no experience table (2026-09 — exp is
+    # chatting-only, consumes grant statuses). The old frogs -> experience
+    # edge was for the FROG exp writes and is gone with them, so disabling
+    # the chat ladder no longer takes the frog side down with it.
     asset_decl = FrogAsset
     item_decl = FrogItems
 
