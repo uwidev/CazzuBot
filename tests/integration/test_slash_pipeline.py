@@ -126,6 +126,49 @@ async def test_exp_top_paging(full_bot: CazzuBot) -> None:
     assert embed is not None and "Page: **`2`**" in embed.description
 
 
+async def test_exp_lifetime_board_paging(full_bot: CazzuBot) -> None:
+    """Manual C3 (lifetime): the all-time board pages, with no season pair.
+
+    ``lifetime`` is the precomputed ``member_exp`` column, so the rows are
+    seeded there rather than in the log."""
+    for uid in range(201, 213):
+        await full_bot.db.execute(
+            "INSERT INTO member_exp (uid, lifetime, msg_cnt, cdr) VALUES (?, ?, 1, NULL)",
+            uid,
+            1000 - uid,
+        )
+
+    task = asyncio.create_task(
+        run_slash(
+            full_bot,
+            "experience leaderboard",
+            options={"mode": "lifetime"},
+            user_id=424242,
+            timeout=10.0,
+        )
+    )
+    buttons = await wait_for_menu(full_bot)
+    # the season buttons have nothing to step through on a flat window
+    assert "⬅" not in buttons and "➡" not in buttons
+
+    page = await press_button(
+        full_bot,
+        custom_id=buttons["▶"],
+        message_id=555,
+        user_id=424242,
+    )
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    assert page.exceptions == []
+    assert page.first_response is not None
+    embed = page.first_response.get("embed")
+    assert embed is not None
+    assert "Window: **`All time`**" in embed.description
+    assert "Page: **`2`**" in embed.description
+    assert "Year:" not in embed.description
+
+
 async def test_exp_top_wrong_user_denied(full_bot: CazzuBot) -> None:
     task = asyncio.create_task(
         run_slash(full_bot, "experience leaderboard", user_id=424242, timeout=10.0)

@@ -14,8 +14,14 @@ import pendulum
 import pytest
 
 from core.bot import CazzuBot
+from core.errors import UserInputError
 from plugins.experience import db as exp_db
-from plugins.experience.extension import QuietAdd, TopMenu, View
+from plugins.experience.extension import (
+    Leaderboard,
+    QuietAdd,
+    TopMenu,
+    View,
+)
 from tests.fakes import (
     invoke_command,
     FakeChannel,
@@ -110,6 +116,64 @@ def _make_menu(bot: CazzuBot, ctx: FakeContext) -> TopMenu:
     return TopMenu(
         bot, cast(Any, ctx), pendulum.datetime(2026, 1, 1), rows, page=1
     )
+
+
+async def _skip_attach(*_args: Any, **_kwargs: Any) -> None:
+    """Stand in for ``Menu.attach``: no 30s interaction wait in unit tests."""
+    return None
+
+
+async def test_exp_lifetime_leaderboard(
+    bot: CazzuBot,
+    ctx: FakeContext,
+    author: FakeMember,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``mode:lifetime`` boards the all-time window, with no season fields."""
+    _stub_user_lookup(monkeypatch, {author.id: author})
+    await _seed_exp(bot, author.id, 100)
+    monkeypatch.setattr(TopMenu, "attach", _skip_attach)
+
+    await invoke_command(Leaderboard(), ctx, mode="lifetime")
+
+    embed = ctx.sent[0].embed
+    assert embed is not None and embed.description is not None
+    assert "Window: **`All time`**" in embed.description
+    assert "Page: **`1`**" in embed.description
+    assert "100" in embed.description
+    assert "Year:" not in embed.description
+    assert "Season:" not in embed.description
+
+
+async def test_exp_lifetime_leaderboard_rejects_season_options(
+    bot: CazzuBot, ctx: FakeContext
+) -> None:
+    """Year/season belong to the seasonal window only — refuse them."""
+    with pytest.raises(UserInputError):
+        await invoke_command(
+            Leaderboard(), ctx, mode="lifetime", year=2024
+        )
+
+
+async def test_lifetime_menu_pages_without_season_buttons(
+    bot: CazzuBot,
+    ctx: FakeContext,
+    author: FakeMember,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The all-time pager keeps ◀/▶ and drops the ⬅/➡ season pair."""
+    _stub_user_lookup(monkeypatch, {author.id: author})
+    rows = [(i, 1000 + i, 500 - i) for i in range(1, 13)]
+    menu = TopMenu(bot, cast(Any, ctx), None, rows, page=1, lifetime=True)
+    assert len(cast(Any, menu)._rows[0]) == 2
+
+    mctx = FakeMenuContext(FakeInteraction(id=1, member=author))
+    await menu_button(menu, 1).callback(mctx)  # ▶
+
+    embed = mctx.sent[0].embed
+    assert embed is not None and embed.description is not None
+    assert "Window: **`All time`**" in embed.description
+    assert "Page: **`2`**" in embed.description
 
 
 async def test_topview_denies_foreign_user(

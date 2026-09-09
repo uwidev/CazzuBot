@@ -30,6 +30,20 @@ _SCOREBOARD_STAMP = (
 )
 _COLOR = hikari.Color.from_hex_code("#a2dcf7")
 
+
+def _mode_option(description: str):
+    """The seasonal/lifetime window choice (card and board share it)."""
+    return lightbulb.string(
+        "mode",
+        description,
+        default="seasonal",
+        choices=[
+            lightbulb.Choice("Seasonal", "seasonal"),
+            lightbulb.Choice("Lifetime", "lifetime"),
+        ],
+    )
+
+
 experience = lightbulb.Group(
     "experience", "Experience, the membership card and leaderboards."
 )
@@ -93,15 +107,7 @@ class View(
     """Show a member's seasonal or lifetime membership card."""
 
     user = lightbulb.user("user", "The member to show", default=None)
-    mode = lightbulb.string(
-        "mode",
-        "The card window",
-        default="seasonal",
-        choices=[
-            lightbulb.Choice("Seasonal", "seasonal"),
-            lightbulb.Choice("Lifetime", "lifetime"),
-        ],
-    )
+    mode = _mode_option("The card window")
 
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
@@ -127,10 +133,11 @@ class View(
 class Leaderboard(
     lightbulb.SlashCommand,
     name="leaderboard",
-    description="Display the seasonal experience leaderboard (button-paged).",
+    description="Display the seasonal or lifetime leaderboard (paged).",
 ):
-    """Display the seasonal experience leaderboard (button-paged)."""
+    """Display the seasonal or lifetime experience leaderboard."""
 
+    mode = _mode_option("The board window")
     year = lightbulb.integer(
         "year", "The year", default=None, min_value=2023
     )
@@ -148,25 +155,40 @@ class Leaderboard(
         """Render the paged leaderboard and attach the pager menu."""
         bot = utils.bot_from(ctx)
         now = pendulum.now("UTC")
-        year = self.year or now.year
-        season = self.season or utils.month2season(now.month) + 1
         page = self.page or 1
+        lifetime = self.mode == "lifetime"
 
-        # season/page are already bounds-validated by the options; only the
-        # year's upper bound is live (no max_value on the option)
-        if not 2023 <= year <= now.year:
-            raise UserInputError(
-                f"Year {year} is not a valid year, or is too early."
+        if lifetime:
+            # the lifetime board is a single flat window: the seasonal
+            # options have nothing to select, so refuse them outright
+            # rather than silently ignoring what the member typed
+            if self.year is not None or self.season is not None:
+                raise UserInputError(
+                    "The lifetime board has no year or season."
+                )
+            date = None
+            rows = await exp_db.lifetime_ranked(bot.db)
+        else:
+            year = self.year or now.year
+            season = self.season or utils.month2season(now.month) + 1
+
+            # season/page are already bounds-validated by the options;
+            # only the year's upper bound is live (no max_value)
+            if not 2023 <= year <= now.year:
+                raise UserInputError(
+                    f"Year {year} is not a valid year, or is too early."
+                )
+
+            date = pendulum.datetime(year, ((season - 1) * 3) + 1, 1)
+            rows = await exp_db.seasonal_ranked(
+                bot.db, date.year, utils.month2season(date.month)
             )
 
-        date = pendulum.datetime(year, ((season - 1) * 3) + 1, 1)
-        rows = await exp_db.seasonal_ranked(
-            bot.db, date.year, utils.month2season(date.month)
-        )
-
-        menu = TopMenu(bot, ctx, date, rows, page=page)
+        menu = TopMenu(bot, ctx, date, rows, page=page, lifetime=lifetime)
         await ctx.respond(
-            embed=await _top_embed(ctx, date, rows, page),
+            embed=await _top_embed(
+                ctx, date, rows, page, lifetime=lifetime
+            ),
             # the menu is a sequence of row builders (no public build())
             components=cast(Any, menu),
         )
@@ -361,9 +383,11 @@ async def _prepare_personal_summary(
 
 async def _top_embed(
     ctx: lightbulb.Context,
-    date: pendulum.DateTime,
+    date: pendulum.DateTime | None,
     rows: list[tuple[int, int, int]],
     page: int,
+    *,
+    lifetime: bool = False,
 ) -> hikari.Embed:
     """The leaderboard pager embed (pageable via TopMenu)."""
     bot = utils.bot_from(ctx)
@@ -373,7 +397,11 @@ async def _top_embed(
     )
 
     if not rows:
-        scoreboard_s = "No data has been logged during this time period."
+        scoreboard_s = (
+            "No experience has been logged yet."
+            if lifetime
+            else "No data has been logged during this time period."
+        )
     else:
         top_user = await utils.find_user(bot, rows[0][1])
         if top_user:
@@ -402,23 +430,39 @@ async def _top_embed(
         scoreboard_s = "\n".join(scoreboard)
 
     embed.description = f"""
-		Year: **`{date.year}`**
-		Season: **`{utils.month2season(date.month) + 1}`**
-		Page: **`{page}`**
+		{_window_header(date, page, lifetime=lifetime)}
 		```ansi\n{scoreboard_s}```"""
     return embed
 
 
+def _window_header(
+    date: pendulum.DateTime | None, page: int, *, lifetime: bool
+) -> str:
+    """The embed's window lines: all-time, or year/season, plus the page."""
+    if lifetime:
+        lines = ["Window: **`All time`**", f"Page: **`{page}`**"]
+    else:
+        assert date is not None  # seasonal boards always carry a date
+        lines = [
+            f"Year: **`{date.year}`**",
+            f"Season: **`{utils.month2season(date.month) + 1}`**",
+            f"Page: **`{page}`**",
+        ]
+    return "\n\t\t".join(lines)
+
+
 class TopMenu(lightbulb.components.Menu):
-    """Seasonal leaderboard pager: page ◀/▶ and season ⬅/➡ buttons."""
+    """Leaderboard pager: page ◀/▶, plus season ⬅/➡ in seasonal mode."""
 
     def __init__(
         self,
         bot: CazzuBot,
         ctx: lightbulb.Context,
-        date: pendulum.DateTime,
+        date: pendulum.DateTime | None,
         rows: list[tuple[int, int, int]],
         page: int = 1,
+        *,
+        lifetime: bool = False,
     ) -> None:
         """Build the pager buttons and remember the board's state."""
         super().__init__()
@@ -428,22 +472,33 @@ class TopMenu(lightbulb.components.Menu):
         self.date = date
         self.rows = rows
         self.page = page
-        self.add_interactive_button(
-            hikari.ButtonStyle.SECONDARY, self._prev_season, emoji="⬅"
-        )
+        self.lifetime = lifetime
+        # the lifetime board is one flat window — season buttons would
+        # have nothing to step through, so it gets the page pair only
+        if not lifetime:
+            self.add_interactive_button(
+                hikari.ButtonStyle.SECONDARY, self._prev_season, emoji="⬅"
+            )
         self.add_interactive_button(
             hikari.ButtonStyle.SECONDARY, self._prev_page, emoji="◀"
         )
         self.add_interactive_button(
             hikari.ButtonStyle.SECONDARY, self._next_page, emoji="▶"
         )
-        self.add_interactive_button(
-            hikari.ButtonStyle.SECONDARY, self._next_season, emoji="➡"
-        )
+        if not lifetime:
+            self.add_interactive_button(
+                hikari.ButtonStyle.SECONDARY, self._next_season, emoji="➡"
+            )
 
     async def _edit(self, mctx: lightbulb.components.MenuContext) -> None:
         """Re-render the embed at the current page (atomic ack+edit)."""
-        embed = await _top_embed(self.ctx, self.date, self.rows, self.page)
+        embed = await _top_embed(
+            self.ctx,
+            self.date,
+            self.rows,
+            self.page,
+            lifetime=self.lifetime,
+        )
         # respond(edit=True) is the atomic ack+edit: lightbulb menu clicks
         # arrive un-acked, and edit_response on the un-acked interaction 404s
         await mctx.respond(edit=True, embed=embed)
@@ -465,7 +520,10 @@ class TopMenu(lightbulb.components.Menu):
     async def _step_season(
         self, mctx: lightbulb.components.MenuContext, months: int
     ) -> None:
+        """Shift the seasonal window; unreachable on the lifetime board."""
         if not await self._guard(mctx):
+            return
+        if self.date is None:
             return
         self.date = self.date.add(months=months)
         self.rows = await exp_db.seasonal_ranked(
