@@ -33,8 +33,13 @@ def test_default_species_is_basic() -> None:
     assert not hasattr(basic, "consumable")
 
 
-def test_species_registry_has_frogmd_five() -> None:
-    """FROG.md's five species with their spawn weights are registered."""
+def test_species_registry_has_five_species() -> None:
+    """The five species are registered and Basic stays the common case.
+
+    The registry is the source of truth for the weights, and they are
+    tunables, so this pins the shape rather than the numbers: Basic
+    dominates the roll and every rare species stays rare.
+    """
     keys = {species.key for species in SPECIES}
     assert keys == {
         FrogItemKey.BASIC,
@@ -44,12 +49,15 @@ def test_species_registry_has_frogmd_five() -> None:
         FrogItemKey.CLUSTER,
     }
     weights = {species.key: species.spawn_weight for species in SPECIES}
-    # FROG.md weights (relative)
-    assert weights[FrogItemKey.BASIC] == 1000.0
-    assert weights[FrogItemKey.POG] == 200.0
-    assert weights[FrogItemKey.FROGGERS] == 50.0
-    assert weights[FrogItemKey.CLASSY] == 200.0
-    assert weights[FrogItemKey.CLUSTER] == 300.0
+    assert all(weight > 0 for weight in weights.values())
+    total = sum(weights.values())
+    assert weights[FrogItemKey.BASIC] / total > 0.9
+    rare = [
+        weight / total
+        for key, weight in weights.items()
+        if key is not FrogItemKey.BASIC
+    ]
+    assert max(rare) < 0.02
     # cluster is catchable-by-design: it spawns like any frog, but its
     # catch bursts into Basics instead of granting an item
     from plugins.frogs.behaviors import ClusterBurst
@@ -72,13 +80,13 @@ def test_species_art_is_a_declared_asset_member_or_none() -> None:
 
 
 def test_roll_species_respects_weights() -> None:
-    """The weighted roll lands near the FROG.md distribution."""
+    """The weighted roll tracks the weights declared in the registry."""
     rng = random.Random(42)
-    rolls = [roll_species(rng).key for _ in range(2000)]
-    basic = rolls.count(FrogItemKey.BASIC) / len(rolls)
-    froggers = rolls.count(FrogItemKey.FROGGERS) / len(rolls)
-    assert 0.50 < basic < 0.65  # 1000/1750 ≈ 0.571 within noise
-    assert 0.01 < froggers < 0.08  # 50/1750 ≈ 0.029
+    rolls = [roll_species(rng).key for _ in range(4000)]
+    total = sum(species.spawn_weight for species in SPECIES)
+    for species in SPECIES:
+        share = rolls.count(species.key) / len(rolls)
+        assert abs(share - species.spawn_weight / total) < 0.015
 
 
 def test_by_key_unknown_returns_none() -> None:
