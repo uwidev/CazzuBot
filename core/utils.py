@@ -8,6 +8,7 @@ import asyncio
 import logging
 import re
 from collections.abc import Callable
+from math import ceil
 from typing import Any, NamedTuple, TypeVar, cast
 
 import hikari
@@ -149,9 +150,17 @@ def ordinal(n: int) -> str:
     return f"{n}{suffix}"
 
 
-def calc_percentile(rank: int, total: int) -> float:
-    """Percentile of a rank within a total (1 is best)."""
-    return (total - rank + 1) / total * 100 if total else 0.0
+def top_percent(rank: int, total: int) -> int:
+    """The member's distance from the top, in whole percent.
+
+    Rounded up, so the band never claims more than the member holds: rank 4
+    of 341 members sits inside the top 2% (1% of 341 is 3.4 members), not
+    the top 1%. Clamped to 1..100; an empty board reports 100 rather than
+    dividing by zero.
+    """
+    if total <= 0:
+        return 100
+    return min(100, max(1, ceil(rank / total * 100)))
 
 
 # The bot's avatar (the dev bot "Cazzubot-Dev", as documented in

@@ -2,7 +2,6 @@
 leaderboards."""
 
 import asyncio
-from math import trunc
 from typing import Any, cast
 from weakref import WeakValueDictionary
 
@@ -344,8 +343,6 @@ async def _prepare_personal_summary(
             bot.db, now.year, utils.month2season(now.month)
         )
 
-    percentile = utils.calc_percentile(rank, total)
-
     embed = hikari.Embed(color=_COLOR)
     embed.set_author(
         name=f"{user.display_name}'s Club Membership Card",
@@ -357,7 +354,7 @@ async def _prepare_personal_summary(
 		Level: **`{lvl:,}`**
 		Experience: **`{exp:,}`**
 
-		You are currently the `{utils.ordinal(trunc(percentile))}` percentile of all members!
+		You are currently in the top `{utils.top_percent(rank, total)}%` of all members!
 		```py\n{scoreboard_s}```"""
     return embed
 

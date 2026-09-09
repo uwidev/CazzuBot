@@ -4,6 +4,7 @@ Depended on by: ``plugins.experience`` (``exp top``) and ``plugins.frogs``
 (frog board).
 """
 
+import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -56,21 +57,96 @@ def _format(
     padding = calc_max_col_width(entries, headers, max_padding)
 
     header_s = f"{' ' * spacing}".join(
-        f"{headers[i]:{align[i]}{padding[i]}}" for i in range(len(padding))
+        _pad(headers[i], padding[i], fill=" ", align=align[i])
+        for i in range(len(padding))
     )
 
     rows_s: list[str] = []
     for row_i, row in enumerate(entries):
-        row_fill = "" if row_i % 2 else fill
-        row_s = f"{row_fill * spacing}".join(
-            (
-                f"{val:{row_fill}{align[col]}{padding[col]}{'' if isinstance(val, str) else ','}}"
-                for col, val in enumerate(row)
+        # even rows carry the dotted "leader" fill, odd rows plain spaces;
+        # the separator follows the same alternation (never empty, or the
+        # columns would run together)
+        row_fill = fill if row_i % 2 == 0 else " "
+        separator = row_fill * spacing
+        cells: list[str] = []
+        for col, val in enumerate(row):
+            text = val if isinstance(val, str) else f"{val:,}"
+            cells.append(
+                _pad(text, padding[col], fill=row_fill, align=align[col])
             )
-        )
-        rows_s.append(row_s)
+        rows_s.append(separator.join(cells))
 
     return [header_s, *rows_s], padding
+
+
+_ZERO_WIDTH = frozenset({"\u200b", "\u2060"})
+_REGIONAL_INDICATORS = range(0x1F1E6, 0x1F200)
+_ZWJ = "\u200d"
+_EMOJI_PRESENTATION = "\ufe0f"
+
+
+def display_width(text: str) -> int:
+    """Rendered cell width of ``text`` inside a Discord code block.
+
+    Discord renders code blocks monospaced, where East-Asian wide/fullwidth
+    characters and emoji occupy two cells and combining marks and zero-width
+    characters occupy none — so ``len`` undercounts exactly the names that
+    would otherwise push a row out of alignment. A joined glyph counts once:
+    a ZWJ sequence (👨‍👩‍👧) is one emoji, an emoji-presentation selector
+    (❤️) widens its base, and a regional-indicator pair (🇯🇵) is one flag.
+    Exotic sequences (skin-tone modifiers, keycaps) can still be off by a
+    cell — close enough for a scoreboard.
+    """
+    width = 0
+    last = 0  # width of the glyph counted last (for the VS16 upgrade)
+    joined = False  # previous character was a ZWJ
+    regional = False  # previous character was a lone regional indicator
+    for char in text:
+        if char == _ZWJ:
+            joined = True
+            continue
+        if char == _EMOJI_PRESENTATION:
+            if last:
+                width += 2 - last
+                last = 2
+            continue
+        if char in _ZERO_WIDTH or unicodedata.combining(char):
+            continue
+        if joined:  # tail of a ZWJ sequence: same glyph
+            joined = False
+            continue
+        if ord(char) in _REGIONAL_INDICATORS:
+            if regional:  # a pair renders as one flag
+                regional = False
+                continue
+            regional = True
+            glyph = 2
+        else:
+            regional = False
+            glyph = (
+                2
+                if unicodedata.east_asian_width(char) in ("W", "F")
+                else 1
+            )
+        width += glyph
+        last = glyph
+    return width
+
+
+def _pad(text: str, width: int, *, fill: str, align: str) -> str:
+    """Pad ``text`` to a display ``width`` (no-op once it is already wider).
+
+    Replaces the ``str`` format spec, whose padding counts code points.
+    """
+    deficit = width - display_width(text)
+    if deficit <= 0:
+        return text
+    if align == ">":
+        return fill * deficit + text
+    if align == "^":
+        left = deficit // 2
+        return fill * left + text + fill * (deficit - left)
+    return text + fill * deficit
 
 
 def highlight_row(
@@ -80,14 +156,26 @@ def highlight_row(
     *,
     has_header: bool = True,
 ) -> list[str]:
-    """Prepend ``@`` to the rank column of the indexed row (in place)."""
+    """Prepend ``@`` to the rank column of the indexed row (in place).
+
+    The marker is paid for by dropping one separator character, so the row
+    keeps its width and the following columns stay on their offsets.
+    """
     row_i = index + int(has_header)
-    col1_width = column_widths[0]
-    this_rank = scoreboard[row_i][0:col1_width]
-    scoreboard[row_i] = (
-        "@" + this_rank + scoreboard[row_i][col1_width + 1 :]
-    )
+    line = scoreboard[row_i]
+    cut = _cell_end(line, column_widths[0])
+    scoreboard[row_i] = "@" + line[:cut] + line[cut + 1 :]
     return scoreboard
+
+
+def _cell_end(line: str, width: int) -> int:
+    """Index just past the first ``width`` display cells of ``line``."""
+    seen = 0
+    for i, char in enumerate(line):
+        if seen >= width:
+            return i
+        seen += display_width(char)
+    return len(line)
 
 
 _NO_CAP = 999
@@ -100,6 +188,8 @@ def calc_max_col_width(
 ) -> list[int]:
     """Per-column max rendered width (commas for ints, header respected).
 
+    Widths are display widths (:func:`display_width`), so a wide name is
+    measured by the cells it occupies rather than its code points.
     ``max_padding`` caps each column; 0 means "no cap" (historical
     sentinel). A list shorter than the column count is padded with no-cap.
     """
@@ -116,8 +206,10 @@ def calc_max_col_width(
             entire_col.append(
                 str(cell) if isinstance(cell, str) else f"{cell:,}"
             )
-        widest_val = len(sorted(entire_col, key=len)[-1])
-        width = min(max(widest_val, len(headers[col])), caps[col])
+        widest_val = max(display_width(cell) for cell in entire_col)
+        width = min(
+            max(widest_val, display_width(headers[col])), caps[col]
+        )
         padding.append(width)
     return padding
 

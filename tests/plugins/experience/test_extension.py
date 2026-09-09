@@ -99,6 +99,8 @@ async def test_exp_membership_card(
     assert "reimu" in embed.description  # resolved via find_user stub
     assert "Rank:" in embed.description
     assert "Level:" in embed.description
+    # rank 1 of the 2 seeded members
+    assert "in the top `50%` of all members!" in embed.description
 
 
 def _make_menu(bot: CazzuBot, ctx: FakeContext) -> TopMenu:

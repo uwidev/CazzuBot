@@ -1,8 +1,6 @@
 """Frogs plugin extension — profile, register/configure spawns, catalog,
 owner commands."""
 
-from math import trunc
-
 import hikari
 import lightbulb
 import pendulum
@@ -502,8 +500,6 @@ async def _prepare_personal_summary(
             bot.db, now.year, utils.month2season(now.month)
         )
 
-    percentile = utils.calc_percentile(rank, total)
-
     embed = hikari.Embed(
         title=f"{user.display_name}'s Frog Capture Permit", color=_COLOR
     )
@@ -517,7 +513,7 @@ async def _prepare_personal_summary(
 		**__Inventory__**
 		{inv_text}
 
-		You are currently the `{utils.ordinal(trunc(percentile))}` percentile of all members!
+		You are currently in the top `{utils.top_percent(rank, total)}%` of all members!
 		```py\n{scoreboard_s}```
 		"""
     return embed
