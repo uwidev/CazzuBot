@@ -355,7 +355,7 @@ async def _prepare_personal_summary(
 		Experience: **`{exp:,}`**
 
 		You are currently in the top `{utils.top_percent(rank, total)}%` of all members!
-		```py\n{scoreboard_s}```"""
+		```ansi\n{scoreboard_s}```"""
     return embed
 
 
@@ -397,6 +397,7 @@ async def _top_embed(
             align=align,
             max_padding=max_padding,
             highlight=uids.index(author_id) if author_id in uids else None,
+            color=True,
         )
         scoreboard_s = "\n".join(scoreboard)
 
@@ -404,7 +405,7 @@ async def _top_embed(
 		Year: **`{date.year}`**
 		Season: **`{utils.month2season(date.month) + 1}`**
 		Page: **`{page}`**
-		```py\n{scoreboard_s}```"""
+		```ansi\n{scoreboard_s}```"""
     return embed
 
 

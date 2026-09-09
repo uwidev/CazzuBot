@@ -101,6 +101,8 @@ async def test_exp_membership_card(
     assert "Level:" in embed.description
     # rank 1 of the 2 seeded members
     assert "in the top `50%` of all members!" in embed.description
+    # the board's ANSI row colors only render in an ansi fence
+    assert "```ansi" in embed.description
 
 
 def _make_menu(bot: CazzuBot, ctx: FakeContext) -> TopMenu:

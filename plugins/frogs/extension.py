@@ -514,7 +514,7 @@ async def _prepare_personal_summary(
 		{inv_text}
 
 		You are currently in the top `{utils.top_percent(rank, total)}%` of all members!
-		```py\n{scoreboard_s}```
+		```ansi\n{scoreboard_s}```
 		"""
     return embed
 

@@ -9,7 +9,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from core import utils
+from core import ansi, utils
 
 if TYPE_CHECKING:
     from core.bot import CazzuBot
@@ -24,12 +24,16 @@ def format(
     spacing: int = 2,
     max_padding: list[int] | None = None,
     highlight: int | None = None,
+    color: bool = False,
 ) -> list[str]:
     """Render row-major data as a text scoreboard (header first, then rows).
 
     ``highlight`` marks the indexed row with ``@`` in its first column (see
     :func:`highlight_row`) in the same pass — no need to re-derive column
     widths at the call site.
+
+    ``color`` wraps every line in its ANSI color (see :func:`colorize`);
+    the result only renders in an ```` ```ansi ```` code block.
     """
     lines, widths = _format(
         entries,
@@ -41,6 +45,8 @@ def format(
     )
     if highlight is not None:
         highlight_row(lines, highlight, widths)
+    if color:
+        colorize(lines, highlight)
     return lines
 
 
@@ -94,6 +100,7 @@ def display_width(text: str) -> int:
     would otherwise push a row out of alignment. A joined glyph counts once:
     a ZWJ sequence (👨‍👩‍👧) is one emoji, an emoji-presentation selector
     (❤️) widens its base, and a regional-indicator pair (🇯🇵) is one flag.
+    ANSI color sequences are stripped first: they occupy no cells.
     Exotic sequences (skin-tone modifiers, keycaps) can still be off by a
     cell — close enough for a scoreboard.
     """
@@ -101,7 +108,7 @@ def display_width(text: str) -> int:
     last = 0  # width of the glyph counted last (for the VS16 upgrade)
     joined = False  # previous character was a ZWJ
     regional = False  # previous character was a lone regional indicator
-    for char in text:
+    for char in ansi.strip(text):
         if char == _ZWJ:
             joined = True
             continue
@@ -165,6 +172,35 @@ def highlight_row(
     line = scoreboard[row_i]
     cut = _cell_end(line, column_widths[0])
     scoreboard[row_i] = "@" + line[:cut] + line[cut + 1 :]
+    return scoreboard
+
+
+# the scoreboard palette: neutral rows alternate, the focus row pops out
+_ROW_COLORS = (ansi.WHITE, ansi.GRAY)
+_HEADER_COLOR = ansi.BOLD_WHITE
+_FOCUS_COLOR = ansi.BOLD_YELLOW
+
+
+def colorize(
+    scoreboard: list[str], highlight: int | None = None
+) -> list[str]:
+    """Wrap each line in its ANSI color (in place); header first.
+
+    ``highlight`` is a data-row index, as in :func:`highlight_row`. The
+    sequences add no display cells, so the columns keep their offsets, and
+    a client that drops ANSI (mobile) still shows the aligned plain board.
+
+    Call this *after* :func:`highlight_row` — the ``@`` splice counts
+    characters, and escape sequences would be counted as cells.
+    """
+    scoreboard[0] = ansi.wrap(scoreboard[0], _HEADER_COLOR)
+    for row_i, line in enumerate(scoreboard[1:]):
+        color = (
+            _FOCUS_COLOR
+            if row_i == highlight
+            else _ROW_COLORS[row_i % len(_ROW_COLORS)]
+        )
+        scoreboard[row_i + 1] = ansi.wrap(line, color)
     return scoreboard
 
 
@@ -269,6 +305,7 @@ async def focus_board(
     align: list[str],
     max_padding: list[int],
     level_of: Callable[[int], int] | None = None,
+    color: bool = True,
 ) -> FocusBoard | None:
     """The highlighted scoreboard around ``focus_uid``'s row; None when absent.
 
@@ -276,7 +313,8 @@ async def focus_board(
     rows, resolve names, render with :func:`format` (highlighting the
     focus row) and expose the focus row's rank/value(/level) for the
     surrounding stats. ``level_of`` renders an extra Level column (exp
-    cards); frogs' count card passes none.
+    cards); frogs' count card passes none. ``color`` emits ANSI row colors,
+    so the text belongs in an ```` ```ansi ```` fence.
     """
     uids = [r[1] for r in rows]
     if focus_uid not in uids:
@@ -299,6 +337,7 @@ async def focus_board(
             align=align,
             max_padding=max_padding,
             highlight=subset_i,
+            color=color,
         )
     )
     return FocusBoard(

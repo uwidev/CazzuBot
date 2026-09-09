@@ -1,6 +1,6 @@
 """core.leaderboard — column alignment, the dotted fill, and highlight."""
 
-from core import leaderboard
+from core import ansi, leaderboard
 
 _HEADERS = ["Rank", "Exp", "Lv", "User"]
 _ALIGN = ["<", ">", ">", ">"]
@@ -120,3 +120,40 @@ def test_max_padding_caps_the_column_but_never_truncates() -> None:
         entries, _HEADERS, align=_ALIGN, max_padding=_CAPS
     )
     assert _LONG_NAME in lines[1]
+
+
+def test_color_alternates_and_marks_the_focus_row() -> None:
+    lines = leaderboard.format(
+        _ENTRIES,
+        _HEADERS,
+        align=_ALIGN,
+        max_padding=_CAPS,
+        highlight=2,
+        color=True,
+    )
+    assert lines[0].startswith(ansi.BOLD_WHITE)  # header
+    assert lines[1].startswith(ansi.WHITE)  # data row 0
+    assert lines[2].startswith(ansi.GRAY)  # data row 1
+    assert lines[3].startswith(ansi.BOLD_YELLOW)  # the focus row
+    assert lines[4].startswith(ansi.GRAY)  # alternation continues
+    assert all(line.endswith(ansi.RESET) for line in lines)
+
+
+def test_color_adds_no_display_cells() -> None:
+    """The ANSI codes are decoration: strip them and the plain board is
+    back, offsets intact — which is what a client that drops ANSI shows."""
+    plain = leaderboard.format(
+        _ENTRIES, _HEADERS, align=_ALIGN, max_padding=_CAPS, highlight=3
+    )
+    colored = leaderboard.format(
+        _ENTRIES,
+        _HEADERS,
+        align=_ALIGN,
+        max_padding=_CAPS,
+        highlight=3,
+        color=True,
+    )
+    assert [ansi.strip(line) for line in colored] == plain
+    assert [leaderboard.display_width(line) for line in colored] == [
+        leaderboard.display_width(line) for line in plain
+    ]
