@@ -200,16 +200,18 @@ async def lifetime_ranked(db: Database) -> list[tuple[int, int, int]]:
 
 
 async def total_members(db: Database) -> int:
-    """How many members have ever earned *chat* exp.
+    """How many members have a lifetime-exp row.
 
     The lifetime percentile denominator (see
-    :func:`seasonal_total_members`): counted from the log's message rows,
-    so a frog-only member is not counted at all.
+    :func:`seasonal_total_members`): counted from ``member_exp`` — the
+    table :func:`lifetime_ranked` boards — so the denominator is the
+    board's own population, the way ``plugins.frogs.db.total_members``
+    counts ``member_frog`` for the capture permit. Counting the log
+    instead counted members who hold no row (1,299 of them in the live
+    DB) and scanned every log row, which overran Discord's 3s response
+    window and made the lifetime card answer too late to be accepted.
     """
-    val = await db.fetchval(
-        "SELECT COUNT(DISTINCT uid) FROM member_exp_log WHERE source = ?",
-        _CHAT_SOURCE,
-    )
+    val = await db.fetchval("SELECT COUNT(*) FROM member_exp")
     return int(val or 0)
 
 
