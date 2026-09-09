@@ -8,6 +8,7 @@ import hikari
 import pendulum
 import pytest
 
+from core import ansi
 from core.bot import CazzuBot
 from core.assets import asset_key
 from core.errors import UserInputError
@@ -211,7 +212,9 @@ async def test_frog_view_inventory_snippet_normal_only_qty_ascending(
     assert "Frozen" not in desc
     assert "Classy Frog" not in desc
     assert "None" not in desc
-    assert "[" not in desc
+    # no slot tokens ("[ 1 ]") — the board's ANSI row colors carry "["
+    # inside their escape sequences, so compare the stripped text
+    assert "[" not in ansi.strip(desc)
     assert "(normal)" not in desc
     assert "(frozen)" not in desc
     seeded_bot.items.unregister("frogs")
