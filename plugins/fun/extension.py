@@ -241,11 +241,6 @@ class StoryCompile(
         response_id = await ctx.respond("Compiling channel history...")
         contributions = 0
         contributors: defaultdict[str, int] = defaultdict(int)
-        # the bot's own messages are never story material: this command's
-        # status message is posted *before* the scan below and previous
-        # /story write dumps sit in the same channel, so both would
-        # otherwise be compiled straight back into the story
-        bot_id = _self_id(bot)
 
         Path("story").mkdir(exist_ok=True)
         with open(
@@ -253,7 +248,12 @@ class StoryCompile(
         ) as file:
             messages = cast(Any, bot.rest.fetch_messages(ctx.channel_id))
             async for message in messages:
-                if message.author.id == bot_id:
+                # bot lines are never story material: this command's own
+                # status message is posted *before* the scan, previous
+                # /story write dumps sit in the same channel, and a second
+                # bot instance (a sandbox run in the live guild) leaves its
+                # own status lines behind too
+                if message.author.is_bot:
                     continue
                 contributors[message.author.display_name] += 1
                 file.write(f"{message.content} ")
@@ -340,15 +340,3 @@ class StoryWrite(
 
 
 loader.command(story)
-
-
-# -- helpers ----------------------------------------------------------------
-
-
-def _self_id(bot: CazzuBot) -> int | None:
-    """The bot's own user id, or None when it is not resolvable."""
-    try:
-        me = bot.get_me()
-    except Exception:
-        return None
-    return me.id if me is not None else None

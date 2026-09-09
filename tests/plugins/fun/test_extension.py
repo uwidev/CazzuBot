@@ -124,21 +124,19 @@ async def test_story_compile_writes_files(
     tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        seeded_bot, "get_me", lambda: FakeUser(id=555, name="CazzuBot")
-    )
     rest_of(seeded_bot).messages[(channel.id, 1)] = FakeMessage(
         id=1, content="once upon", author=author, channel_id=channel.id
     )
     rest_of(seeded_bot).messages[(channel.id, 2)] = FakeMessage(
         id=2, content="a time", author=author, channel_id=channel.id
     )
-    # the bot's own lines never enter the story — its compile status is
-    # posted before the scan, so it would otherwise compile itself in
+    # bot lines never enter the story: this command's status is posted
+    # before the scan, and a second bot instance (sandbox run in the live
+    # guild) leaves its own status lines in the same channel
     rest_of(seeded_bot).messages[(channel.id, 3)] = FakeMessage(
         id=3,
         content="Compiling channel history...",
-        author=FakeUser(id=555, name="CazzuBot"),
+        author=FakeUser(id=555, name="CazzuBot", bot=True),
         channel_id=channel.id,
     )
 

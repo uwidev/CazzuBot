@@ -76,6 +76,11 @@ class FakeUser:
         return self.name
 
     @property
+    def is_bot(self) -> bool:
+        """Hikari spells the payload's ``bot`` flag ``is_bot``."""
+        return self.bot
+
+    @property
     def display_name(self) -> str:
         return self.global_name or self.name
 

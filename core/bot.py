@@ -34,6 +34,7 @@ from core.plugin import (
 )
 from core.scheduler import Scheduler
 from core.settings import Settings
+from core.window import window_error
 
 _log = logging.getLogger(__name__)
 
@@ -281,6 +282,15 @@ class CazzuBot(hikari.GatewayBot):
             )
             return True
         if isinstance(cause, hikari.ForbiddenError):
+            # a refused request is a real failure the invoker has to see:
+            # swallowing it leaves the command looking hung — the ack stays
+            # and nothing follows (a 403 while reading a channel's history
+            # is how /story compile appeared to "just stop")
+            _log.warning("forbidden: %s", cause)
+            await window_error(
+                err.context,
+                f"Discord refused that: {cause.message or 'no access'}",
+            )
             return True
         return False
 
