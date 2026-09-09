@@ -142,6 +142,9 @@ async def test_story_compile_writes_files(
 
     await invoke_command(StoryCompile(), ctx)
 
+    # status and result stay hidden: the compile is an owner tool, and its
+    # output would otherwise be compiled into the next story
+    assert ctx.sent[0].ephemeral is True
     story = (tmp_path / "story" / "general.txt").read_text()
     assert story == "once upon a time "
     contrib = (tmp_path / "story" / "general-contributors.txt").read_text()

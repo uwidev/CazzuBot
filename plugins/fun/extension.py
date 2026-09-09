@@ -233,31 +233,40 @@ class StoryCompile(
         bot = utils.bot_from(ctx)
         channel = bot.cache.get_guild_channel(ctx.channel_id)
         if channel is None or not hasattr(channel, "name"):
-            await ctx.respond("Stories need a text channel.")
+            await ctx.respond(
+                "Stories need a text channel.", ephemeral=True
+            )
             return
         channel_name = cast(Any, channel).name
-        # respond immediately with a status; the scan may exceed 3s, so the
-        # result is delivered as an edit
-        response_id = await ctx.respond("Compiling channel history...")
-        contributions = 0
+        # status and result are owner-only: the ephemeral ack keeps the
+        # channel free of bot chatter (and out of the compiled story). The
+        # scan may exceed 3s, so the result is delivered as an edit.
+        response_id = await ctx.respond(
+            "Compiling channel history...", ephemeral=True
+        )
         contributors: defaultdict[str, int] = defaultdict(int)
 
+        # Discord hands history back newest-first, and a story reads
+        # oldest-first: collect the lines, then join them in send order
         Path("story").mkdir(exist_ok=True)
+        lines: list[str] = []
+        messages = cast(Any, bot.rest.fetch_messages(ctx.channel_id))
+        async for message in messages:
+            # bot lines are never story material: this command's own
+            # status message is posted *before* the scan, previous
+            # /story write dumps sit in the same channel, and a second
+            # bot instance (a sandbox run in the live guild) leaves its
+            # own status lines behind too
+            if message.author.is_bot:
+                continue
+            contributors[message.author.display_name] += 1
+            lines.append(f"{message.content} ")
+        contributions = len(lines)
+
         with open(
             f"story/{channel_name}.txt", mode="w", encoding="utf-8"
         ) as file:
-            messages = cast(Any, bot.rest.fetch_messages(ctx.channel_id))
-            async for message in messages:
-                # bot lines are never story material: this command's own
-                # status message is posted *before* the scan, previous
-                # /story write dumps sit in the same channel, and a second
-                # bot instance (a sandbox run in the live guild) leaves its
-                # own status lines behind too
-                if message.author.is_bot:
-                    continue
-                contributors[message.author.display_name] += 1
-                file.write(f"{message.content} ")
-                contributions += 1
+            file.write("".join(reversed(lines)))
 
         with open(
             f"story/{channel_name}-contributors.txt",

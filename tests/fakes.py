@@ -432,7 +432,11 @@ class FakeRest:
         return message
 
     def fetch_messages(self, channel_id: int, **kwargs: Any) -> Any:
-        """Async-iterate the recorded messages for a channel."""
+        """Async-iterate the recorded messages for a channel.
+
+        Newest-first, like Discord's history endpoint — a caller that wants
+        send order has to reverse the stream itself.
+        """
 
         async def _gen() -> Any:
             for m in sorted(
@@ -442,6 +446,7 @@ class FakeRest:
                     if cid == channel_id
                 ),
                 key=lambda m: m.id,
+                reverse=True,
             ):
                 yield m
 
@@ -788,9 +793,12 @@ class FakeContext:
         component: Any = None,
         components: list[Any] | None = None,
         flags: int = 0,
+        ephemeral: bool = False,
         attachment: Any = None,
         **kwargs: Any,
     ) -> int:
+        if ephemeral:
+            flags |= hikari.MessageFlag.EPHEMERAL
         self.sent.append(
             SentMessage(
                 content=content,
