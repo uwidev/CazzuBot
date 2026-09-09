@@ -291,7 +291,7 @@ class FrogItems(Enum):
         description=(
             "The leftovers of a frozen frog that didn't survive the thaw."
         ),
-        icon_asset=None,
+        icon_asset=FrogAsset.FROG_REMAINS,
         consume=_consume_remains,
         fields=(),
     )
