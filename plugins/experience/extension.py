@@ -318,6 +318,7 @@ async def _prepare_personal_summary(
     lifetime: bool = False,
 ) -> hikari.Embed:
     """The "Club Membership Card" embed."""
+    now = pendulum.now("UTC")
     board = await leaderboard.focus_board(
         bot,
         rows,
@@ -329,7 +330,10 @@ async def _prepare_personal_summary(
     )
     if board is None:
         embed = hikari.Embed(
-            description=f"{user.display_name} has no experience yet.",
+            description=(
+                f"{_window_label(now, lifetime=lifetime)}\n\n"
+                f"{user.display_name} has no experience yet."
+            ),
             color=_COLOR,
         )
         embed.set_author(
@@ -360,7 +364,6 @@ async def _prepare_personal_summary(
     if lifetime:
         total = await exp_db.total_members(bot.db)
     else:
-        now = pendulum.now("UTC")
         total = await exp_db.seasonal_total_members(
             bot.db, now.year, utils.month2season(now.month)
         )
@@ -372,6 +375,8 @@ async def _prepare_personal_summary(
     )
     embed.set_thumbnail(str(user.display_avatar_url))
     embed.description = f"""
+		{_window_label(now, lifetime=lifetime)}
+
 		Rank: {role.mention if role else "`None`"}
 		Level: **`{lvl:,}`**
 		Experience: **`{exp:,}`**
@@ -449,6 +454,22 @@ def _window_header(
             f"Page: **`{page}`**",
         ]
     return "\n\t\t".join(lines)
+
+
+def _window_label(now: pendulum.DateTime, *, lifetime: bool) -> str:
+    """The card's window line — which window its numbers cover.
+
+    The card is otherwise identical in both modes (same author, same stat
+    lines), so without this line a member cannot tell the seasonal card
+    from the lifetime one — least of all the "no experience yet" card,
+    which a lifetime-only member sees on their seasonal card. Shares the
+    board's vocabulary (see :func:`_window_header`): ``All time`` is the
+    lifetime window, a numbered season is the seasonal one.
+    """
+    if lifetime:
+        return "Window: **`All time`**"
+    season = utils.month2season(now.month) + 1
+    return f"Window: **`Season {season}, {now.year}`**"
 
 
 class TopMenu(lightbulb.components.Menu):

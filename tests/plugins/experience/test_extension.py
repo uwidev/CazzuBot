@@ -65,6 +65,13 @@ async def test_exp_no_experience_embed(
     assert embed.author.name == "cirno's Club Membership Card"
     assert embed.description is not None
     assert "has no experience yet." in embed.description
+    # the empty card is window-scoped too — a member with lifetime exp but
+    # nothing this season must not read this as their all-time standing
+    now = pendulum.now("UTC")
+    season = (now.month - 1) // 3 + 1
+    assert (
+        f"Window: **`Season {season}, {now.year}`**" in embed.description
+    )
 
 
 async def test_exp_lifetime_mode(
@@ -83,6 +90,8 @@ async def test_exp_lifetime_mode(
     assert embed.author.name == "cirno's Club Membership Card"
     assert embed.description is not None
     assert "Experience: **`100`**" in embed.description
+    # the window line is the only thing telling the two modes apart
+    assert "Window: **`All time`**" in embed.description
 
 
 async def test_exp_membership_card(
@@ -107,6 +116,12 @@ async def test_exp_membership_card(
     assert "Level:" in embed.description
     # rank 1 of the 2 seeded members
     assert "in the top `50%` of all members!" in embed.description
+    # the seasonal card names its window (the default mode)
+    now = pendulum.now("UTC")
+    season = (now.month - 1) // 3 + 1
+    assert (
+        f"Window: **`Season {season}, {now.year}`**" in embed.description
+    )
     # the board's ANSI row colors only render in an ansi fence
     assert "```ansi" in embed.description
 
