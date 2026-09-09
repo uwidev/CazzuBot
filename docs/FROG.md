@@ -28,12 +28,14 @@ Some rules
 Frog Types
 ----------
 
+Spawn weights are tunables, so they are not listed here — ``SPECIES`` in
+``plugins/frogs/species.py`` is the source of truth for the current weights.
+
 ### Basic Frog
 
 The most normalest frog of them all.
 
 Asset: frog-basic.png as Emoji
-Spawn Weight: 1000
 
 On Capture: Acquire x1 Basic Frog
 On Consumption: Nothing. Consuming it grants nothing.
@@ -43,7 +45,6 @@ On Consumption: Nothing. Consuming it grants nothing.
 A frog with a pog.
 
 Asset: frog-pog.png as Emoji
-Spawn Weight: 100
 
 On Capture: Acquire x1 Pog Frog
 On Consumption: For the next hour, there's a 1% chance
@@ -55,7 +56,6 @@ cooldown per react.
 A frog with a poggers.
 
 Asset: frog-froggers.png as Emoji
-Spawn Weight: 50
 
 On Capture: Acquire x1 Froggers Frog
 On Consumption: For the next hour, there's a 7% chance
@@ -67,7 +67,6 @@ cooldown per react.
 A frog with rather refined tastes.
 
 Asset: frog-classy.png as Emoji
-Spawn Weight: 150
 
 On Capture: Acquire x1 Classy Frog
 On Consumption: User acquires a specific role for 3
@@ -79,11 +78,11 @@ is 1542293782588952696.
 Be careful with this one… she's… spawning!
 
 Asset: frog-cluster.png as Emoji
-Spawn Weight: 100
 
 On Capture: Cannot be captured. Instead immediately (with a delay to prevent
-rate limiting) spawn 2 to 10 Basic Frogs, weighted so small bursts are the
-common case and 10 is a ~10% jackpot. The burst scatters across the text
+rate limiting) spawn a burst of Basic Frogs, weighted so small bursts are the
+common case and the largest is a jackpot — the count range and weights live
+in ``plugins/frogs/behaviors.py``. The burst scatters across the text
 channels in the caught channel's category, within 2 channel positions either
 side of it.
 On Consumption: Nothing. User should not be able to acquire this item, this
