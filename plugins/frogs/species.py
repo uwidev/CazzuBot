@@ -61,10 +61,10 @@ class Species:
     name: str
     rarity: str
     description: str
-    spawn_weight: float
     catch: Behavior | None
     art: FrogAsset | None
     hidden: bool = False
+    spawn_weight: float =  0
 
 
 SPECIES: tuple[Species, ...] = (
@@ -73,45 +73,45 @@ SPECIES: tuple[Species, ...] = (
         name="Basic Frog",
         rarity="common",
         description="The most normalest frog of them all.",
-        spawn_weight=1000.0,
         catch=grant_catch,
         art=FrogAsset.FROG_BASIC,
+        spawn_weight=1000.0,
     ),
     Species(
         key=FrogItemKey.POG,
         name="Pog Frog",
         rarity="uncommon",
         description="A frog with a pog.",
-        spawn_weight=000.0,
         catch=grant_catch,
         art=FrogAsset.FROG_POG,
+        spawn_weight=100.0,
     ),
     Species(
         key=FrogItemKey.FROGGERS,
         name="Froggers Frog",
         rarity="rare",
         description="A frog with a poggers.",
-        spawn_weight=00.0,
         catch=grant_catch,
         art=FrogAsset.FROG_FROGGERS,
+        spawn_weight=50.0,
     ),
     Species(
         key=FrogItemKey.CLASSY,
         name="Classy Frog",
         rarity="rare",
         description="A frog with rather refined tastes.",
-        spawn_weight=000.0,
         catch=grant_catch,
         art=FrogAsset.FROG_CLASSY,
+        spawn_weight=150.0,
     ),
     Species(
         key=FrogItemKey.CLUSTER,
         name="Cluster Frog",
         rarity="special",
         description="Be careful with this one… she's… spawning!",
-        spawn_weight=000.0,
         catch=ClusterBurst(),  # the burst IS the catch — no item is granted
         art=FrogAsset.FROG_CLUSTER,
+        spawn_weight=100.0,
     ),
 )
 

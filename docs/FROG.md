@@ -43,7 +43,7 @@ On Consumption: Nothing. Consuming it grants nothing.
 A frog with a pog.
 
 Asset: frog-pog.png as Emoji
-Spawn Weight: 200
+Spawn Weight: 100
 
 On Capture: Acquire x1 Pog Frog
 On Consumption: For the next hour, there's a 1% chance
@@ -67,7 +67,7 @@ cooldown per react.
 A frog with rather refined tastes.
 
 Asset: frog-classy.png as Emoji
-Spawn Weight: 200
+Spawn Weight: 150
 
 On Capture: Acquire x1 Classy Frog
 On Consumption: User acquires a specific role for 3
@@ -79,7 +79,7 @@ is 1542293782588952696.
 Be careful with this one… she's… spawning!
 
 Asset: frog-cluster.png as Emoji
-Spawn Weight: 300
+Spawn Weight: 100
 
 On Capture: Cannot be captured. Instead immediately (with a delay to prevent
 rate limiting) spawn 2 to 10 Basic Frogs, weighted so small bursts are the
