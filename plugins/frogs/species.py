@@ -84,7 +84,7 @@ SPECIES: tuple[Species, ...] = (
         description="A frog with a pog.",
         catch=grant_catch,
         art=FrogAsset.FROG_POG,
-        spawn_weight=100.0,
+        spawn_weight=10.0,
     ),
     Species(
         key=FrogItemKey.FROGGERS,
@@ -93,7 +93,7 @@ SPECIES: tuple[Species, ...] = (
         description="A frog with a poggers.",
         catch=grant_catch,
         art=FrogAsset.FROG_FROGGERS,
-        spawn_weight=50.0,
+        spawn_weight=5.0,
     ),
     Species(
         key=FrogItemKey.CLASSY,
@@ -102,7 +102,7 @@ SPECIES: tuple[Species, ...] = (
         description="A frog with rather refined tastes.",
         catch=grant_catch,
         art=FrogAsset.FROG_CLASSY,
-        spawn_weight=150.0,
+        spawn_weight=10.0,
     ),
     Species(
         key=FrogItemKey.CLUSTER,
@@ -111,7 +111,7 @@ SPECIES: tuple[Species, ...] = (
         description="Be careful with this one… she's… spawning!",
         catch=ClusterBurst(),  # the burst IS the catch — no item is granted
         art=FrogAsset.FROG_CLUSTER,
-        spawn_weight=100.0,
+        spawn_weight=10.0,
     ),
 )
 
