@@ -133,9 +133,9 @@ def test_color_alternates_and_marks_the_focus_row() -> None:
     )
     assert lines[0].startswith(ansi.BOLD_WHITE)  # header
     assert lines[1].startswith(ansi.WHITE)  # data row 0
-    assert lines[2].startswith(ansi.GRAY)  # data row 1
+    assert lines[2].startswith(ansi.CYAN)  # data row 1
     assert lines[3].startswith(ansi.BOLD_YELLOW)  # the focus row
-    assert lines[4].startswith(ansi.GRAY)  # alternation continues
+    assert lines[4].startswith(ansi.CYAN)  # alternation continues
     assert all(line.endswith(ansi.RESET) for line in lines)
 
 

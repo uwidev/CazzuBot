@@ -175,8 +175,10 @@ def highlight_row(
     return scoreboard
 
 
-# the scoreboard palette: neutral rows alternate, the focus row pops out
-_ROW_COLORS = (ansi.WHITE, ansi.GRAY)
+# the scoreboard palette: neutral rows alternate, the focus row pops out.
+# the second color is cyan rather than ansi.GRAY (SGR 30, ANSI black):
+# Discord's gray is dark enough to read as black on a dark code block.
+_ROW_COLORS = (ansi.WHITE, ansi.CYAN)
 _HEADER_COLOR = ansi.BOLD_WHITE
 _FOCUS_COLOR = ansi.BOLD_YELLOW
 

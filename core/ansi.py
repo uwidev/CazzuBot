@@ -11,7 +11,9 @@ Depended on by: ``core.leaderboard`` (the scoreboard's row colors).
 
 import re
 
-# text colors (SGR 30-37)
+# text colors (SGR 30-37). 30 is the darkest slot — ANSI black, which
+# Discord renders as a dark gray that reads as black on a dark code block,
+# so it is not usable as a "light neutral"; 36/37 are.
 GRAY = "\x1b[0;30m"
 RED = "\x1b[0;31m"
 GREEN = "\x1b[0;32m"
