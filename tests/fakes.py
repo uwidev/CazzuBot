@@ -769,6 +769,7 @@ class FakeContext:
         self.window: Any = None  # set by the windowed decorator
         self.sent: list[SentMessage] = []
         self.deferred: bool = False
+        self.defer_ephemeral: bool = False
         self.modals: list[Any] = []
         self.edits: list[dict[str, Any]] = []
         self.deleted: list[int] = []
@@ -799,8 +800,11 @@ class FakeContext:
         )
         return 1  # the response message id
 
-    async def defer(self, *, flags: int = 0) -> None:
+    async def defer(
+        self, *, ephemeral: bool = False, flags: int = 0
+    ) -> None:
         self.deferred = True
+        self.defer_ephemeral = bool(ephemeral)
 
     async def create_modal_response(self, modal: Any, /) -> None:
         self.modals.append(modal)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -25,6 +26,7 @@ from tests.fakes import (
     FakeMember,
     FakeMessage,
     FakeMessageCreateEvent,
+    FakeUser,
     invoke_command,
 )
 
@@ -122,11 +124,22 @@ async def test_story_compile_writes_files(
     tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        seeded_bot, "get_me", lambda: FakeUser(id=555, name="CazzuBot")
+    )
     rest_of(seeded_bot).messages[(channel.id, 1)] = FakeMessage(
         id=1, content="once upon", author=author, channel_id=channel.id
     )
     rest_of(seeded_bot).messages[(channel.id, 2)] = FakeMessage(
         id=2, content="a time", author=author, channel_id=channel.id
+    )
+    # the bot's own lines never enter the story — its compile status is
+    # posted before the scan, so it would otherwise compile itself in
+    rest_of(seeded_bot).messages[(channel.id, 3)] = FakeMessage(
+        id=3,
+        content="Compiling channel history...",
+        author=FakeUser(id=555, name="CazzuBot"),
+        channel_id=channel.id,
     )
 
     await invoke_command(StoryCompile(), ctx)
@@ -135,11 +148,55 @@ async def test_story_compile_writes_files(
     assert story == "once upon a time "
     contrib = (tmp_path / "story" / "general-contributors.txt").read_text()
     assert "Total contributions: 2" in contrib
+    assert "CazzuBot" not in contrib
     assert ctx.edits[-1]["content"].startswith("Compiled 2 contributions")
 
 
-async def test_story_write_headers(
-    bot: CazzuBot, ctx: FakeContext
+async def test_story_write_posts_plain_messages(
+    seeded_bot: CazzuBot,
+    ctx: FakeContext,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    async def _no_sleep(_seconds: float) -> None:
+        """Drop the per-chunk pacing delay."""
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "plugins.fun.extension.asyncio", SimpleNamespace(sleep=_no_sleep)
+    )
+    story_dir = tmp_path / "story"
+    story_dir.mkdir()
+    (story_dir / "general.txt").write_text("once upon a time ")
+    (story_dir / "general-contributors.txt").write_text("alice: 2\n")
+
+    await invoke_command(StoryWrite(), ctx, file_name="general")
+
+    # the interaction is only acked (invisibly): the story itself posts as
+    # standalone channel messages, so nothing carries reply styling
+    assert ctx.deferred is True
+    assert ctx.defer_ephemeral is True
+    assert ctx.sent == []
+    created = [m.content for m in rest_of(seeded_bot).created]
+    assert created == [
+        "```fix\n>>> general <<<```",
+        "once upon a time ",
+        "alice: 2\n",
+    ]
+    assert ctx.edits[-1]["content"].startswith("✓ Posted 2 chunks")
+
+
+async def test_story_write_headers(
+    seeded_bot: CazzuBot,
+    ctx: FakeContext,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
     await invoke_command(StoryWrite(), ctx, file_name="missing")
-    assert ctx.sent[-1].content == "```fix\n>>> missing <<<```"
+
+    assert ctx.sent == []
+    assert [m.content for m in rest_of(seeded_bot).created] == [
+        "```fix\n>>> missing <<<```"
+    ]
+    assert ctx.edits[-1]["content"].startswith("⚠︎ No compiled")

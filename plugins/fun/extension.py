@@ -241,6 +241,11 @@ class StoryCompile(
         response_id = await ctx.respond("Compiling channel history...")
         contributions = 0
         contributors: defaultdict[str, int] = defaultdict(int)
+        # the bot's own messages are never story material: this command's
+        # status message is posted *before* the scan below and previous
+        # /story write dumps sit in the same channel, so both would
+        # otherwise be compiled straight back into the story
+        bot_id = _self_id(bot)
 
         Path("story").mkdir(exist_ok=True)
         with open(
@@ -248,6 +253,8 @@ class StoryCompile(
         ) as file:
             messages = cast(Any, bot.rest.fetch_messages(ctx.channel_id))
             async for message in messages:
+                if message.author.id == bot_id:
+                    continue
                 contributors[message.author.display_name] += 1
                 file.write(f"{message.content} ")
                 contributions += 1
@@ -299,7 +306,16 @@ class StoryWrite(
                 ctx, "file_name must be a plain file name, not a path"
             )
             return
-        await ctx.respond(f"```fix\n>>> {self.file_name} <<<```")
+        # the story posts as standalone channel messages, never as
+        # interaction responses: those render as replies to this slash
+        # command. The interaction is therefore only acked — invisibly —
+        # and every visible line goes through rest.create_message.
+        await ctx.defer(ephemeral=True)
+        bot = utils.bot_from(ctx)
+        await bot.rest.create_message(
+            ctx.channel_id, f"```fix\n>>> {self.file_name} <<<```"
+        )
+        chunks = 0
         for suffix in ("", "-contributors"):
             path = Path(f"story/{self.file_name}{suffix}.txt")
             if not path.exists():
@@ -309,8 +325,30 @@ class StoryWrite(
                     chunk = file.read(1900)
                     if not chunk:
                         break
-                    await ctx.respond(chunk)
+                    await bot.rest.create_message(ctx.channel_id, chunk)
+                    chunks += 1
                     await asyncio.sleep(2)
+        if chunks:
+            content = (
+                f"✓ Posted {chunks} chunks of story/{self.file_name}.txt"
+            )
+        else:
+            content = f"⚠︎ No compiled story/{self.file_name}.txt to post"
+        await ctx.edit_response(
+            utils.INITIAL_RESPONSE_IDENTIFIER, content=content
+        )
 
 
 loader.command(story)
+
+
+# -- helpers ----------------------------------------------------------------
+
+
+def _self_id(bot: CazzuBot) -> int | None:
+    """The bot's own user id, or None when it is not resolvable."""
+    try:
+        me = bot.get_me()
+    except Exception:
+        return None
+    return me.id if me is not None else None
