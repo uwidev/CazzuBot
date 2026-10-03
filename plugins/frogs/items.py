@@ -221,6 +221,7 @@ class FrogItems(Enum):
         consume=_consume_basic_normal,
         fields=_consumption_fields(FrogItemKey.BASIC, FrogState.NORMAL),
     )
+
     BASIC_FROZEN = Item(
         item_id="frog:basic:frozen",
         display_name="Basic Frog (Frozen)",
@@ -230,6 +231,7 @@ class FrogItems(Enum):
         consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
+
     POG = Item(
         item_id="frog:pog:normal",
         display_name="Pog Frog",
@@ -239,6 +241,7 @@ class FrogItems(Enum):
         consume=_consume_pog_normal,
         fields=_consumption_fields(FrogItemKey.POG, FrogState.NORMAL),
     )
+
     POG_FROZEN = Item(
         item_id="frog:pog:frozen",
         display_name="Pog Frog (Frozen)",
@@ -248,6 +251,7 @@ class FrogItems(Enum):
         consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
+
     FROGGERS = Item(
         item_id="frog:froggers:normal",
         display_name="Froggers Frog",
@@ -257,6 +261,7 @@ class FrogItems(Enum):
         consume=_consume_froggers_normal,
         fields=_consumption_fields(FrogItemKey.FROGGERS, FrogState.NORMAL),
     )
+
     FROGGERS_FROZEN = Item(
         item_id="frog:froggers:frozen",
         display_name="Froggers Frog (Frozen)",
@@ -266,6 +271,7 @@ class FrogItems(Enum):
         consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
+
     CLASSY = Item(
         item_id="frog:classy:normal",
         display_name="Classy Frog",
@@ -275,6 +281,7 @@ class FrogItems(Enum):
         consume=_consume_classy_normal,
         fields=_consumption_fields(FrogItemKey.CLASSY, FrogState.NORMAL),
     )
+
     CLASSY_FROZEN = Item(
         item_id="frog:classy:frozen",
         display_name="Classy Frog (Frozen)",
@@ -284,6 +291,7 @@ class FrogItems(Enum):
         consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
+
     REMAINS = Item(
         item_id="remains",
         display_name="Frog Remains",
