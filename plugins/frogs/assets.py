@@ -26,12 +26,24 @@ class FrogAsset(Enum):
 
     FROG_POG = AssetSpec(kind=AssetKind.EMOJI, path="assets/frog-pog.png")
 
+    FROG_POG_FROZEN = AssetSpec(
+        kind=AssetKind.EMOJI, path="assets/frog-pog-frozen.png"
+    )
+
     FROG_FROGGERS = AssetSpec(
         kind=AssetKind.EMOJI, path="assets/frog-froggers.png"
     )
 
+    FROG_FROGGERS_FROZEN = AssetSpec(
+        kind=AssetKind.EMOJI, path="assets/frog-froggers-frozen.png"
+    )
+
     FROG_CLASSY = AssetSpec(
         kind=AssetKind.EMOJI, path="assets/frog-classy.png"
+    )
+
+    FROG_CLASSY_FROZEN = AssetSpec(
+        kind=AssetKind.EMOJI, path="assets/frog-classy-frozen.png"
     )
 
     FROG_CLUSTER = AssetSpec(

@@ -247,7 +247,7 @@ class FrogItems(Enum):
         display_name="Pog Frog (Frozen)",
         icon="🧊",
         description="A pog frog frozen solid by the seasonal freeze.",
-        icon_asset=None,
+        icon_asset=FrogAsset.FROG_POG_FROZEN,
         consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
@@ -267,7 +267,7 @@ class FrogItems(Enum):
         display_name="Froggers Frog (Frozen)",
         icon="🧊",
         description="A froggers frog frozen solid by the seasonal freeze.",
-        icon_asset=None,
+        icon_asset=FrogAsset.FROG_FROGGERS_FROZEN,
         consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
@@ -287,7 +287,7 @@ class FrogItems(Enum):
         display_name="Classy Frog (Frozen)",
         icon="🧊",
         description="A classy frog frozen solid by the seasonal freeze.",
-        icon_asset=None,
+        icon_asset=FrogAsset.FROG_CLASSY_FROZEN,
         consume=_consume_frozen,
         fields=(_thaw_field(),),
     )
