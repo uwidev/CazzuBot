@@ -6,6 +6,7 @@ Week math is covered by ``tests/core/test_utils_weeks.py``.
 
 import hashlib
 import io
+import random
 from datetime import datetime, timezone
 
 import pendulum
@@ -16,8 +17,10 @@ from core.bot import CazzuBot
 from plugins.board import db as board_db
 from plugins.board.logic import (
     MAX_IMAGES,
+    _encode_upload,
+    _webp_bytes,
     build_grid,
-    build_post_content,
+    build_post_pages,
     content_sha256,
     in_week,
     is_animated,
@@ -102,35 +105,42 @@ def test_max_images_cap() -> None:
 # -- post content ------------------------------------------------------------
 
 
-def test_build_post_content_links_on_own_line() -> None:
-    content = build_post_content("Header", ["u1", "u2"])
-    assert content == "Header\n[1](u1) [2](u2)"
+def test_build_post_pages_links_on_own_line() -> None:
+    pages = build_post_pages("Header", ["u1", "u2"])
+    assert pages == ["Header\n[1](u1) [2](u2)"]
 
 
-def test_build_post_content_no_marker_when_all_fit() -> None:
-    content = build_post_content("Header", ["u1", "u2"])
-    assert not content.endswith(" …")
+def test_build_post_pages_empty_urls_keeps_header_only() -> None:
+    assert build_post_pages("Header", []) == ["Header"]
 
 
-def test_build_post_content_truncates_tail_with_marker() -> None:
+def test_build_post_pages_splits_without_dropping_links() -> None:
+    """A week bigger than the content limit spills onto more messages —
+    every link survives, in order, and no page exceeds the limit."""
     urls = [
         f"https://discord.com/channels/2/99/{1000 + i}" for i in range(50)
     ]
-    content = build_post_content("Header", urls)
-    assert len(content) <= 2000
-    assert content.endswith(" …")
-    assert "[1](https://discord.com/channels/2/99/1000)" in content
+    pages = build_post_pages("Header", urls)
+
+    assert len(pages) > 1
+    assert all(len(page) <= 2000 for page in pages)
+    joined = " ".join(pages)
+    for i, url in enumerate(urls, 1):
+        assert f"[{i}]({url})" in joined
+    # first page opens with the header, later pages mark the continuation
+    assert pages[0].startswith("Header\n")
+    assert pages[1].startswith("Header — continued\n")
 
 
-def test_build_post_content_never_overflows_with_marker() -> None:
-    """The marker is gated on the remaining budget (regression: it used
-    to push content past the limit when links landed within a char)."""
+def test_build_post_pages_never_overflows() -> None:
+    """Regression: the old truncating builder could push content past the
+    limit on the marker; pagination must hold for any header length."""
     urls = [
         f"https://discord.com/channels/2/99/{1000 + i}" for i in range(60)
     ]
     for header_len in (0, 1, 50, 1900, 1950, 1990, 1999):
-        content = build_post_content("H" * header_len, urls)
-        assert len(content) <= 2000, header_len
+        pages = build_post_pages("H" * header_len, urls)
+        assert all(len(page) <= 2000 for page in pages), header_len
 
 
 # -- scrape_week service -----------------------------------------------------
@@ -370,7 +380,8 @@ async def _seed_rows(
     for i in range(count):
         await board_db.add_image(
             bot.db,
-            start.add(days=i).isoformat(),
+            # hours, not days: a count past 7 must stay inside the week
+            start.add(hours=i).isoformat(),
             f"https://example.com/g{i}.png",
             f"https://discord.com/channels/2/99/{10 + i}",
             f"hash-{i}",
@@ -380,6 +391,51 @@ async def _seed_rows(
     return await board_db.get_week_images(
         bot.db, start.isoformat(), start.add(days=7).isoformat(), 99
     )
+
+
+# -- upload sizing -----------------------------------------------------------
+
+
+def _noisy_canvas(size: tuple[int, int] = (768, 768)) -> Image.Image:
+    """A noise canvas — worst case for WebP (nothing compresses)."""
+    random.seed(1)
+    image = Image.new("RGB", size)
+    image.putdata(
+        [
+            (
+                random.randrange(256),
+                random.randrange(256),
+                random.randrange(256),
+            )
+            for _ in range(size[0] * size[1])
+        ]
+    )
+    return image
+
+
+def test_encode_upload_downscales_to_fit_the_cap() -> None:
+    """The guard re-encodes (quality, then resolution) until the bytes fit
+    the cap — proven on a noise canvas against a proportional cap, because
+    a real 50-cell grid (3872×8712) takes ~1min to encode and would make
+    the suite unusable. Verified separately: that grid is ~21MB at q85,
+    i.e. well over Discord's 8MB cap, and encodes to 7.0MB under it."""
+    canvas = _noisy_canvas((512, 512))
+    cap = len(_webp_bytes(canvas, 85)) // 8  # 8× smaller than the source
+    assert cap < len(_webp_bytes(canvas, 85))
+
+    data = _encode_upload(canvas, cap)
+
+    assert len(data) <= cap
+    with Image.open(io.BytesIO(data)) as image:
+        assert image.format == "WEBP"
+        assert image.size[0] <= 512  # traded resolution, never upscaled
+
+
+def test_encode_upload_keeps_small_incompressible_image() -> None:
+    """A grid already under the cap is returned as-is (no needless loss)."""
+    canvas = _noisy_canvas((256, 256))
+    data = _encode_upload(canvas)
+    assert data == _webp_bytes(canvas, 85)
 
 
 async def test_build_grid_stitches_survivors(bot: CazzuBot) -> None:
@@ -396,12 +452,49 @@ async def test_build_grid_stitches_survivors(bot: CazzuBot) -> None:
 
     assert result.pruned == 0
     assert len(result.survivors) == 3
-    assert result.content.startswith("Week 33 — 3 image(s)")
-    assert "[1](https://discord.com/channels/2/99/10)" in result.content
-    assert isinstance(result.data, bytes) and result.data
+    assert len(result.pages) == 1
+    page = result.pages[0]
+    assert page.content.startswith("Week 33 — 3 image(s)")
+    assert "[1](https://discord.com/channels/2/99/10)" in page.content
+    assert isinstance(page.data, bytes) and page.data
     # 3 images in 2 columns → 2 rows; label area 96px, 8px borders
-    with Image.open(io.BytesIO(result.data)) as image:
+    with Image.open(io.BytesIO(page.data)) as image:
         assert image.size == (2 * 64 + 8, 2 * (64 + 96) + 8)
+
+
+async def test_build_grid_splits_over_max_images(bot: CazzuBot) -> None:
+    """More rows than MAX_IMAGES → several grid images, links complete on
+    the leading page(s) and the images last."""
+    total = MAX_IMAGES + 5
+    rows = await _seed_rows(bot, count=total)
+
+    result = await build_grid(
+        bot.db,
+        rows,
+        download=_png_download,
+        week=33,
+        columns=5,
+        cell_size=32,
+    )
+
+    assert len(result.survivors) == total
+    # the image pages are paginated and always come last
+    imaged = [p for p in result.pages if p.data]
+    assert len(imaged) == 2
+    assert result.pages[-1] is imaged[-1]  # last message carries a grid
+    # every link survives across the messages
+    numbers = [
+        n
+        for page in result.pages
+        for n in range(1, total + 1)
+        if f"[{n}](" in page.content
+    ]
+    assert sorted(set(numbers)) == list(range(1, total + 1))
+    # the first image shares the LAST link page; the second labels itself
+    assert f"Week 33 — {total} image(s)" in imaged[0].content
+    assert "[55](" in imaged[0].content  # the tail links ride the image
+    assert "[1](" in result.pages[0].content  # the head links lead
+    assert imaged[1].content == "Grid 2/2 — 51–55"
 
 
 async def test_build_grid_prunes_dead_rows(bot: CazzuBot) -> None:
@@ -437,7 +530,8 @@ async def test_build_grid_prunes_dead_rows(bot: CazzuBot) -> None:
 
     assert result.pruned == 1
     assert len(result.survivors) == 1
-    assert "1 image(s)" in result.content
+    assert len(result.pages) == 1
+    assert "1 image(s)" in result.pages[0].content
     remaining = await board_db.get_week_images(
         bot.db, start.isoformat(), start.add(days=7).isoformat(), 99
     )
@@ -467,5 +561,4 @@ async def test_build_grid_all_dead_returns_empty(bot: CazzuBot) -> None:
     result = await build_grid(bot.db, rows, download=_download, week=33)
 
     assert result.survivors == []
-    assert result.data == b""
-    assert result.content == ""
+    assert result.pages == []

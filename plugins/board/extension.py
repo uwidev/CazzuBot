@@ -217,11 +217,18 @@ class Post(
                 )
                 return
 
-            # plain content so the text renders above the attachment
-            await ctx.respond(
-                content=grid.content,
-                attachment=hikari.Bytes(grid.data, f"board-{day}.webp"),
-            )
+            # the pages already carry their own content + image (the last
+            # link page rides the first grid image); send them in order so
+            # the attachment always lands on the final message
+            for page in grid.pages:
+                await ctx.respond(
+                    content=page.content,
+                    attachment=(
+                        hikari.Bytes(page.data, f"board-{day}.webp")
+                        if page.data
+                        else hikari.UNDEFINED
+                    ),
+                )
 
 
 @board.register

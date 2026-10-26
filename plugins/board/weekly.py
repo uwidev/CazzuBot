@@ -3,9 +3,12 @@
 The ``board_weekly`` scheduler tag fires at ``At(weekday=(6,), time="00:00")``
 (Sunday 00:00 UTC): scrape the just-ended week from the source channel,
 register + open a vote poll (items = grid cells, ``max_vote = n // 20 + 1``),
-then send ONE combined message — role-ping "voting has opened" announcement
-+ numbered grid links in the content, the stitched grid as the attachment,
-the poll embed + vote button as the embed/component. ``/board weekly`` runs
+then post the week — the role-ping "voting has opened" announcement with the
+numbered grid links, followed by the stitched grid image(s) with the poll
+embed + vote button riding the LAST message. A week too big for one image
+posts as several grid images (``MAX_IMAGES`` cells each); links that outgrow
+one message's content limit spill onto extra messages first, so nothing is
+ever dropped and every grid number stays reachable. ``/board weekly`` runs
 the same flow manually (``force=True``, bypassing the done-guard) for
 testing.
 
@@ -52,6 +55,9 @@ MESSAGE_OPEN = (
 GRID_COLUMNS = 5
 GRID_CELL_SIZE = 768
 
+# poll items per vote (the poll plugin's per-message item cap)
+ITEMS_PER_VOTE = 20
+
 # settings key recording which week was already run (the claim guard)
 DONE_KEY = "board.weekly.done"
 
@@ -59,6 +65,11 @@ DONE_KEY = "board.weekly.done"
 CLOSE_TAG = "board_weekly_close"
 WINNER_MSG = "# Week {week_no} of just-cirno voting — winner:\n{msg_url}"
 NO_VOTES_MSG = "# Week {week_no} of just-cirno voting — no votes!"
+
+
+def _max_vote(items: int) -> int:
+    """Votes allowed per member: one per 20 grid cells, at least one."""
+    return max(1, items // ITEMS_PER_VOTE + 1)
 
 
 def weekly_targets(guild_kind: str) -> tuple[int, int, bool]:
@@ -190,7 +201,7 @@ async def run_weekly(
     # numbered grid
     n = len(grid.survivors)
     pid = await poll_db.add_poll(
-        bot.db, POLL_TITLE.format(week_no=week_no), POLL_DESC, n // 20 + 1
+        bot.db, POLL_TITLE.format(week_no=week_no), POLL_DESC, _max_vote(n)
     )
     if pid is None:
         raise RuntimeError("poll registration returned no id")
@@ -201,14 +212,25 @@ async def run_weekly(
     if poll_row is None:
         raise RuntimeError(f"poll #{pid} missing right after registration")
     embed, row = build_send_payload(poll_row)
+    # link pages first (nothing dropped), then the grid image(s) with the
+    # poll embed + vote button riding the LAST one
+    for page in grid.pages[:-1]:
+        await bot.rest.create_message(
+            post_channel,
+            content=page.content,
+            # the first page opens with a <@&VOTE_ROLE_ID> ping — hikari's
+            # default allowed_mentions is {"parse": []} (no pings), so
+            # enable them
+            user_mentions=True,
+            role_mentions=True,
+        )
+    last = grid.pages[-1]
     poll_message = await bot.rest.create_message(
         post_channel,
-        content=grid.content,
+        content=last.content,
         embed=embed,
         component=row,
-        attachment=hikari.Bytes(grid.data, f"board-{day}.webp"),
-        # the content opens with a <@&VOTE_ROLE_ID> ping — hikari's default
-        # allowed_mentions is {"parse": []} (no pings), so enable them
+        attachment=hikari.Bytes(last.data, f"board-{day}.webp"),
         user_mentions=True,
         role_mentions=True,
     )

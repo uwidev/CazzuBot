@@ -208,6 +208,37 @@ async def test_run_weekly_samples_over_max_images(
     assert "50 image(s)" in rest_of(bot).created[0].content
 
 
+async def test_run_weekly_links_never_truncated_over_messages(
+    seeded_bot: CazzuBot, monkeypatch
+) -> None:
+    """The grid index is complete: a 50-cell week posts every numbered
+    link, and the poll embed + vote button ride the LAST message."""
+    monkeypatch.setattr(weekly, "_download_url", _fake_download_url)
+    bot = seeded_bot
+    _seed_week(bot, channel_id=SCRAPE_CHANNEL_DEV, week=0, count=50)
+
+    result = await run_weekly(bot)
+
+    assert not result.aborted
+    created = rest_of(bot).created
+    assert created, "weekly run posted nothing"
+    # every grid number is reachable from some message
+    linked = "\n".join(m.content or "" for m in created)
+    assert "…" not in linked  # nothing was tail-dropped
+    for i in range(1, 51):
+        assert f"[{i}](https://discord.com/channels/2/" in linked
+    # the poll (embed + vote button) + grid upload are on the last message
+    last = created[-1]
+    assert last.embeds
+    assert last.create_kwargs is not None
+    assert last.create_kwargs.get("component") is not None
+    assert last.create_kwargs.get("attachment") is not None
+    assert result.poll_id is not None
+    poll_row = await poll_db.get_poll(bot.db, result.poll_id)
+    assert poll_row is not None
+    assert poll_row.mid == last.id  # the poll lives on the final message
+
+
 async def test_run_weekly_ignores_stray_channel_rows(
     seeded_bot: CazzuBot, monkeypatch
 ) -> None:

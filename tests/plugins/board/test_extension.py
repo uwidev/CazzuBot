@@ -459,14 +459,15 @@ async def test_post_invalid_week_rejected(
         await invoke_command(board_ext.Post(), ctx, week=99)
 
 
-async def test_post_truncates_links_over_budget(
+async def test_post_paginates_links_over_budget(
     seeded_bot: CazzuBot,
     fake_guild,
     author: FakeMember,
     channel,
     monkeypatch,
 ) -> None:
-    """50 links overflow the content limit — tail links are dropped."""
+    """50 links overflow one message — every link still posts, split over
+    extra messages, and the grid image lands on the LAST one."""
     from plugins.board import extension as board_ext
 
     monkeypatch.setattr(board_ext, "_download_url", _fake_download_url)
@@ -485,10 +486,19 @@ async def test_post_truncates_links_over_budget(
     ctx = _ctx(seeded_bot, author, channel, fake_guild)
     await invoke_command(board_ext.Post(), ctx, columns=5, cell_size=64)
 
-    content = ctx.sent[-1].content
-    assert content is not None
-    assert len(content) <= 2000
-    assert content.endswith(" …")
+    pages = [
+        s for s in ctx.sent if s.content and s.content.startswith("Week")
+    ]
+    assert len(pages) > 1  # split, not truncated
+    assert all(len(s.content or "") <= 2000 for s in pages)
+    linked = "\n".join(s.content or "" for s in pages)
+    for i in range(1, 51):  # nothing dropped
+        assert (
+            f"[{i}](https://discord.com/channels/2/99/{1000 + i - 1})"
+            in (linked)
+        )
+    # the grid upload is on the final message of the post
+    assert ctx.sent[-1].attachment is not None
 
 
 async def test_post_without_scrape_errors(
