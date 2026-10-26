@@ -100,6 +100,43 @@ async def _download_url(url: str) -> bytes:
     return await hikari.files.URL(url).read()
 
 
+def _attachment_id(image_url: str) -> int | None:
+    """The attachment snowflake in a stored CDN url (None if unparsable)."""
+    parts = image_url.split("?", 1)[0].split("/")
+    if len(parts) < 2:
+        return None
+    try:
+        return int(parts[-2])
+    except ValueError:
+        return None
+
+
+async def _winner_image(bot: CazzuBot, winner: board_db.BoardRow) -> bytes:
+    """Download the winning image from a FRESHLY minted CDN url.
+
+    The stored ``image_url`` still carries the signed query
+    (``?ex=&is=&hm=``) Discord minted at scrape time, and that signature
+    lives roughly 24h. The close runs exactly 24h after the scrape
+    (``now.add(days=1)``), so the stored url is already dead by then
+    (404, "This content is no longer available") and the banner silently
+    never changes. Fetching the message again mints a new signature; the
+    attachment is matched by the snowflake in the stored url because a
+    message can hold several images.
+    """
+    message = await bot.rest.fetch_message(
+        winner.channel_id, winner.message_id
+    )
+    wanted = _attachment_id(winner.image_url)
+    attachment = next(
+        (a for a in message.attachments if a.id == wanted), None
+    )
+    if attachment is None and message.attachments:
+        attachment = message.attachments[0]
+    if attachment is None:
+        raise RuntimeError("winning message has no attachments")
+    return await _download_url(str(attachment.url))
+
+
 async def run_weekly(
     bot: CazzuBot, *, force: bool = False
 ) -> WeeklyResult:
@@ -294,7 +331,9 @@ async def _announce_winner(
     exclusions applied) rows, so the mapping always matches the posted
     grid even when a week was sampled down to MAX_IMAGES or a row was
     excluded after posting. A poll with no votes just gets the no-votes
-    message (no banner change).
+    message (no banner change). The banner image is re-downloaded from a
+    url minted at close time, never the week-old signed one (see
+    ``_winner_image``).
     """
     week_no = utils.week_number(start)[0]
     results = await poll_db.get_results(bot.db, pid)
@@ -345,7 +384,7 @@ async def _announce_winner(
         winner = rows[index]
 
     try:
-        data = await _download_url(winner.image_url)
+        data = await _winner_image(bot, winner)
         banner = prepare_banner(data)
         await bot.rest.edit_guild(
             bot.config.guild_id, banner=hikari.Bytes(banner, "banner.jpg")
@@ -354,7 +393,7 @@ async def _announce_winner(
         # a failed banner must not lose the winner announcement
         _log.exception(
             "board_weekly_close: failed to set guild banner from %s",
-            winner.image_url,
+            winner.msg_url,
         )
     await bot.rest.create_message(
         cid,

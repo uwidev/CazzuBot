@@ -36,6 +36,7 @@ from plugins.board.weekly import (
     SCRAPE_CHANNEL_DEV,
     SCRAPE_CHANNEL_PROD,
     VOTE_ROLE_ID,
+    _attachment_id,
     run_weekly,
     weekly_targets,
 )
@@ -469,6 +470,90 @@ async def test_board_weekly_close_resolves_winner(
     winner_msg = rest.created[-1].content or ""
     assert "# Week" in winner_msg
     assert "https://discord.com/channels/2/" in winner_msg
+
+
+def test_attachment_id_parses_stored_cdn_url() -> None:
+    """The attachment snowflake is readable from a stored CDN url, and a
+    url without one (a test/placeholder) reports None."""
+    url = (
+        "https://cdn.discordapp.com/attachments/1002249390792122378/"
+        "1553683132052537354/Big_Dawg..jpg?ex=6ac2b56c&is=6ac163ec"
+        "&hm=e2e4a5517db45d2cb925987e138e850190ff5dcb4cb120c09b9b92bda"
+    )
+    assert _attachment_id(url) == 1553683132052537354
+    assert _attachment_id("https://example.com/img0.png") is None
+
+
+async def test_board_weekly_close_remints_the_expired_cdn_url(
+    seeded_bot: CazzuBot, monkeypatch
+) -> None:
+    """The banner must come from a url minted at close time.
+
+    The close fires exactly 24h after the scrape, while the signed query
+    Discord minted at scrape time only lives ~24h: the stored url 404s by
+    then (production W39-W42 all failed this way). A close that still
+    downloads the stored url leaves the banner unset; one that refetches
+    the message sets it from the fresh signature.
+    """
+    requested: list[str] = []
+
+    async def _expiry_aware(url: str) -> bytes:
+        if "ex=" in url:  # a signed url is dead by close time
+            raise RuntimeError("404: This content is no longer available.")
+        requested.append(url)
+        return _bytes_for(url)
+
+    monkeypatch.setattr(weekly, "_download_url", _expiry_aware)
+    bot = seeded_bot
+    _seed_week(bot, channel_id=SCRAPE_CHANNEL_DEV, week=0, count=3)
+    result = await run_weekly(bot)
+    assert result.poll_id is not None
+    await poll_db.add_votes(bot.db, result.poll_id, [1, 1], 424242)
+    rows = await bot.scheduler.get(CLOSE_TAG)
+    assert len(rows) == 1
+    ids = [int(x) for x in rows[0].payload["ids"]]
+    # what the scrape stored: a signed url, already expired at close time
+    cdn = "https://cdn.discordapp.com/attachments/584858037605498891/1/"
+    await bot.db.execute(
+        "UPDATE board SET image_url = ? WHERE id = ?",
+        cdn + "img0.png?ex=6ac2b56c&is=6ac163ec&hm=dead",
+        ids[0],
+    )
+
+    rest = rest_of(bot)
+    requested.clear()
+    await on_board_weekly_close(bot, rows[0].payload)
+
+    assert rest.guild_edits, "banner was not set"
+    assert requested == ["https://example.com/img0.png"]
+
+
+async def test_board_weekly_close_deleted_source_still_announces(
+    seeded_bot: CazzuBot, monkeypatch
+) -> None:
+    """A deleted winning message costs the banner, never the announcement:
+    the remint fetch 404s and only the log records it."""
+    monkeypatch.setattr(weekly, "_download_url", _fake_download_url)
+    bot = seeded_bot
+    _seed_week(bot, channel_id=SCRAPE_CHANNEL_DEV, week=0, count=2)
+    result = await run_weekly(bot)
+    assert result.poll_id is not None
+    await poll_db.add_votes(bot.db, result.poll_id, [1], 424242)
+    rows = await bot.scheduler.get(CLOSE_TAG)
+    assert len(rows) == 1
+    ids = [int(x) for x in rows[0].payload["ids"]]
+    row = await bot.db.fetchone(
+        "SELECT channel_id, message_id FROM board WHERE id = ?", ids[0]
+    )
+    assert row is not None
+    rest = rest_of(bot)
+    rest.messages.pop((row["channel_id"], row["message_id"]))
+
+    await on_board_weekly_close(bot, rows[0].payload)
+
+    assert rest.guild_edits == []  # no source image → no banner change
+    winner_msg = rest.created[-1].content or ""
+    assert "# Week" in winner_msg
 
 
 async def test_board_weekly_close_no_votes(
