@@ -149,6 +149,19 @@ class FakeRole:
         return f"<@&{self.id}>"
 
 
+class FakePermissionOverwrite:
+    """hikari.PermissionOverwrite stand-in: just the allow/deny bits."""
+
+    def __init__(
+        self,
+        *,
+        allow: hikari.Permissions | None = None,
+        deny: hikari.Permissions | None = None,
+    ) -> None:
+        self.allow = allow or hikari.Permissions.NONE
+        self.deny = deny or hikari.Permissions.NONE
+
+
 class FakeGuild:
     def __init__(
         self,
@@ -161,9 +174,15 @@ class FakeGuild:
         self.name = name
         self.owner_id = owner_id
         self.channels: dict[int, FakeChannel] = {}
+        # empty = unknown: the burst's writability check fails open
+        self.roles: dict[int, FakeRole] = {}
 
     def get_channels(self) -> dict[int, FakeChannel]:
         return self.channels
+
+    def get_roles(self) -> dict[int, FakeRole]:
+        """Cached role mapping (the hikari ``GatewayGuild`` shape)."""
+        return self.roles
 
 
 class FakeChannel:
@@ -179,6 +198,7 @@ class FakeChannel:
         self.guild_id = guild_id
         self.position: int = 0
         self.parent_id: int | None = None
+        self.permission_overwrites: dict[int, FakePermissionOverwrite] = {}
         self.type: hikari.ChannelType | None = (
             hikari.ChannelType.GUILD_TEXT
         )
@@ -273,6 +293,10 @@ class FakeCache:
         self._users: dict[int, FakeUser] = {}
         self._roles: dict[int, FakeRole] = {}
         self._channels: dict[int, FakeChannel] = {}
+        self.me: FakeUser | None = None
+
+    def get_me(self) -> FakeUser | None:
+        return self.me
 
     def get_guild(self, guild_id: int) -> FakeGuild | None:
         return self._guilds.get(guild_id)

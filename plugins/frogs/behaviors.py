@@ -31,8 +31,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from collections.abc import Awaitable, Callable, Coroutine
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 import hikari
 
@@ -64,6 +64,12 @@ _GUILD_TEXT = 0
 _BURST_MIN_COUNT = 2
 _BURST_MAX_COUNT = 10
 _BURST_COUNT_WEIGHTS = (12, 19, 19, 15, 10, 6, 5, 4, 10)  # counts 2..10
+
+# the bits a child frog's message needs: it is a plain text send (the
+# catch button is a component, not an embed)
+_POST_BITS = (
+    hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES
+)
 
 
 # -- catch behaviors ------------------------------------------------------
@@ -220,6 +226,106 @@ def _burst_spawn_count(rng: Any) -> int:
     )[0]
 
 
+def _bot_member(bot: "CazzuBot", guild_id: int) -> Any | None:
+    """The bot's own guild member (roles included), or None when unknown.
+
+    The gateway user carries the id; the cached member adds the role ids
+    the permission check needs. Absent cache data is not an error here —
+    ``_may_post`` fails open and lets the send decide.
+    """
+    try:
+        me = bot.get_me()
+    except Exception:
+        return None
+    if me is None:
+        return None
+    return bot.cache.get_member(guild_id, me.id)
+
+
+def _channel_permissions(
+    channel: Any, member: Any, roles: Any
+) -> hikari.Permissions | None:
+    """The permission bits ``member`` holds in ``channel``, or None.
+
+    hikari 2.x ships no permission calculator, so this is Discord's
+    algorithm for the parts a burst cares about: union the guild role
+    permissions (``@everyone`` included — ``ADMINISTRATOR`` short-circuits
+    to ``_POST_BITS``), apply the ``@everyone`` channel overwrite, then the
+    member's role overwrites, then the member's own overwrite, each step
+    allow-OR and deny-AND. ``roles`` is the guild's role mapping. Missing
+    data returns None rather than a guess.
+    """
+    everyone = roles.get(int(getattr(channel, "guild_id", 0) or 0))
+    if everyone is None:
+        return None
+    perms = hikari.Permissions(everyone.permissions)
+    role_ids = [
+        int(role_id) for role_id in getattr(member, "role_ids", ())
+    ]
+    for role_id in role_ids:
+        role = roles.get(role_id)
+        if role is not None:
+            perms |= role.permissions
+    if perms & hikari.Permissions.ADMINISTRATOR:
+        return _POST_BITS
+    overwrites = getattr(channel, "permission_overwrites", None) or {}
+    own = overwrites.get(int(getattr(channel, "guild_id", 0) or 0))
+    if own is not None:  # the @everyone overwrite
+        perms &= ~own.deny
+        perms |= own.allow
+    allowed = hikari.Permissions.NONE
+    denied = hikari.Permissions.NONE
+    for role_id in role_ids:
+        overwrite = overwrites.get(role_id)
+        if overwrite is not None:
+            allowed |= overwrite.allow
+            denied |= overwrite.deny
+    own = overwrites.get(int(getattr(member, "id", 0)))
+    if own is not None:
+        allowed |= own.allow
+        denied |= own.deny
+    return (perms & ~denied) | allowed
+
+
+def _guild_roles(guild: Any) -> Any:
+    """The guild's role mapping (``@everyone`` included), or None.
+
+    hikari's cached guilds expose ``get_roles()``; a plain ``roles``
+    attribute is accepted as a fallback. None means the cache cannot say,
+    and ``_may_post`` fails open rather than guess.
+    """
+    getter = getattr(guild, "get_roles", None)
+    if callable(getter):
+        try:
+            return getter()
+        except Exception:  # an absent role view is "unknown"
+            return None
+    return getattr(guild, "roles", None)
+
+
+def _may_post(bot: "CazzuBot", channel: Any) -> bool:
+    """Whether the bot may post a child frog in ``channel`` right now.
+
+    Evaluated on every burst against the channel object that burst just
+    fetched, so its overwrites are current: a permission fixed mid-uptime
+    is honoured by the next catch — no restart, no remembered denials.
+    Fails **open** (missing guild/member data keeps the channel in the
+    pool): the send is then the final authority, and a refusal retries the
+    room's other channels.
+    """
+    guild_id = int(getattr(channel, "guild_id", 0) or 0)
+    guild = bot.cache.get_guild(guild_id) if guild_id else None
+    roles = _guild_roles(guild) if guild is not None else None
+    roles = roles or {}
+    member = _bot_member(bot, guild_id)
+    if member is None or not roles:
+        return True
+    perms = _channel_permissions(channel, member, roles)
+    if perms is None:
+        return True
+    return (perms & _POST_BITS) == _POST_BITS
+
+
 class ClusterBurst:
     """The Cluster species' catch behavior: burst Basic frogs nearby.
 
@@ -263,7 +369,9 @@ class ClusterBurst:
         no mention, and its thumbnail references the CATCH_BANNER media
         asset (published only), like the grant capture embed. Children
         then spawn as real Basic frogs living ``persist`` seconds,
-        staggered 0.75s apart (the rate-limit guard). Returns the
+        staggered 0.75s apart (the rate-limit guard); a child refused by
+        its target channel retries the zone's other channels, so the
+        announced count is the count that actually lands. Returns the
         announcement message — None when the burst can't fire (no child
         implementation injected, or no zone to burst into).
         """
@@ -278,12 +386,30 @@ class ClusterBurst:
                 "cluster catch channel %s outside text channels", cid
             )
             return None
+        # the target pool is re-checked on every burst, against the
+        # channel objects this burst just fetched: the zone is
+        # positional (a window over the room) and writability is not
+        # part of it, so every burst asks the permission question again.
+        # A permission the staff fixes mid-uptime is therefore honoured
+        # by the very next catch. If this check ever shows up as real
+        # work (it is a handful of bit operations per channel), caching
+        # the refused channel ids per process is the cheaper option —
+        # the price is a stale window right after someone fixes a
+        # permission, which is exactly the confusion to avoid.
+        writable = [channel for channel in zone if _may_post(bot, channel)]
+        if not writable:
+            _log.warning(
+                "cluster burst zone around %s holds no writable channel; "
+                "the catch bursts nothing",
+                cid,
+            )
+            return None
         count = _burst_spawn_count(random)
-        targets = [random.choice(zone) for _ in range(count)]
+        targets = [random.choice(writable) for _ in range(count)]
         _log.info(
             "cluster frog bursts %d basic(s) across %d channel(s)",
             count,
-            len(zone),
+            len(writable),
         )
         # the announcement follows the capture-message convention (see
         # ``grant_catch``): the catcher's mention and ping ride on the
@@ -302,60 +428,78 @@ class ClusterBurst:
             mentions_everyone=hikari.UNDEFINED,
         )
         utils.schedule_delete(bot, cid, int(sent.id), 7)
+        # refusals are learned **per burst only**: a channel that refuses
+        # this catch is skipped by the rest of this catch and re-probed
+        # by the next one (the send is the final authority whenever the
+        # pre-check above guessed wrong)
+        denied: set[int] = set()
         for target in targets:
-            self._start_child(bot, persist, target)
+            self._start_child(
+                bot, persist, target, zone=zone, denied=denied
+            )
             await asyncio.sleep(0.75)  # the rate-limit guard
         return sent
 
     async def _zone(
         self, bot: "CazzuBot", guild_id: int, cid: int
-    ) -> list[tuple[int, int]]:
-        """(channel_id, position) of text channels ±2 around ``cid`` in its room.
+    ) -> list[Any]:
+        """Text channels ±2 around ``cid`` inside its room, in display order.
 
-        The blast stays **within the channel category** of the caught
-        channel (its "room"): only text channels sharing the origin's
-        ``parent_id`` (None for uncategorized channels, which form one
-        implicit room) qualify, still ordered by (position, id) with the
-        ±2 radius taken inside that room. A cluster catch can therefore
-        never spill into a hidden/sensitive channel that merely sits next
-        to the origin in the guild-wide position order (e.g. a staff-only
-        announcements channel in an adjacent category). A future patch may
-        add a per-channel deny-list a burst must never target — the zone
-        narrowing above is the category-level containment; a blacklist
-        would be the explicit override on top.
+        Returns the live channel objects (not bare ids) because the caller
+        needs their category, position and permission overwrites. The blast
+        stays **within the channel category** of the caught channel (its
+        "room"): only text channels sharing the origin's ``parent_id``
+        (None for uncategorized channels, which form one implicit room)
+        qualify, ordered by (position, id) with the ±2 radius taken inside
+        that room. A cluster catch can therefore never spill into a
+        hidden/sensitive channel that merely sits next to the origin in the
+        guild-wide position order (e.g. a staff-only announcements channel
+        in an adjacent category). Writability is deliberately *not* part of
+        this window — the caller re-checks it per burst (``_may_post``).
         """
-        channels = await bot.rest.fetch_guild_channels(guild_id)
-        by_id = {
-            int(channel.id): channel
-            for channel in channels
+        channels = [
+            channel
+            for channel in await bot.rest.fetch_guild_channels(guild_id)
             if getattr(channel, "type", None) == _GUILD_TEXT
-        }
-        origin = by_id.get(cid)
+        ]
+        origin = next(
+            (channel for channel in channels if int(channel.id) == cid),
+            None,
+        )
         if origin is None:
             return []
         parent = getattr(origin, "parent_id", None)
-        texts = [
-            (
-                int(channel.id),
-                int(getattr(channel, "position", 0) or 0),
-            )
+        room = [
+            channel
             for channel in channels
-            if (
-                getattr(channel, "type", None) == _GUILD_TEXT
-                and getattr(channel, "parent_id", None) == parent
-            )
+            if getattr(channel, "parent_id", None) == parent
         ]
-        texts.sort(key=lambda entry: (entry[1], entry[0]))
-        ids = [entry[0] for entry in texts]
-        if cid not in ids:
-            return []
+        room.sort(
+            key=lambda channel: (
+                int(getattr(channel, "position", 0) or 0),
+                int(channel.id),
+            )
+        )
+        ids = [int(channel.id) for channel in room]
         index = ids.index(cid)
-        return texts[max(0, index - 2) : index + 3]
+        return room[max(0, index - 2) : index + 3]
 
     def _start_child(
-        self, bot: "CazzuBot", persist: int, target: tuple[int, int]
+        self,
+        bot: "CazzuBot",
+        persist: int,
+        target: Any,
+        zone: list[Any] | None = None,
+        denied: set[int] | None = None,
     ) -> None:
-        """Fire one child Basic-frog spawn as a tracked background task."""
+        """Fire one child Basic-frog spawn as a tracked background task.
+
+        ``zone`` is the catch's positional window (``_zone``'s result) and
+        ``denied`` the refusals this burst has already learned. The
+        announcement already promised ``count`` frogs, so a child whose
+        target refuses the spawn falls back across the zone's other
+        channels instead of silently shrinking the burst.
+        """
         impl = self.spawn_impl
         if impl is None:
             _log.error(
@@ -363,18 +507,73 @@ class ClusterBurst:
             )
             return
         task = asyncio.create_task(
-            cast(
-                "Coroutine[Any, Any, bool]",
-                impl(
-                    bot,
-                    persist,
-                    cid=target[0],
-                    species_key=FrogItemKey.BASIC,
-                ),
+            self._child(
+                bot,
+                persist,
+                target,
+                impl,
+                zone or [],
+                denied if denied is not None else set(),
             )
         )
         self._background.add(task)
         task.add_done_callback(self._background.discard)
+
+    async def _child(
+        self,
+        bot: "CazzuBot",
+        persist: int,
+        target: Any,
+        impl: Callable[..., Awaitable[bool]],
+        zone: list[Any],
+        denied: set[int],
+    ) -> None:
+        """Spawn one burst child, falling back across ``zone``'s channels.
+
+        ``denied`` belongs to the burst that spawned this child (created in
+        ``__call__``, shared by its children, discarded when the burst
+        ends): a channel that refuses the spawn (403 — the bot cannot post
+        there, e.g. a read-only room in the same category; or 404 — it
+        vanished) is skipped by the rest of *this* burst and probed again
+        by the next one, so a permission fixed mid-uptime lands on the very
+        next catch. Any other failure is a real fault: logged, never
+        retried (the frog may already be out).
+        """
+        candidates = [
+            target,
+            *(entry for entry in zone if entry.id != target.id),
+        ]
+        for index, candidate in enumerate(candidates):
+            if int(candidate.id) in denied:
+                continue
+            try:
+                await impl(
+                    bot,
+                    persist,
+                    cid=int(candidate.id),
+                    species_key=FrogItemKey.BASIC,
+                )
+            except (hikari.ForbiddenError, hikari.NotFoundError) as exc:
+                denied.add(int(candidate.id))
+                _log.warning(
+                    "cluster burst child refused by %s (%s); %s",
+                    candidate.id,
+                    type(exc).__name__,
+                    "trying another channel"
+                    if index + 1 < len(candidates)
+                    else "no channel left in the zone",
+                )
+            except Exception:
+                _log.exception(
+                    "cluster burst child spawn failed in %s", candidate.id
+                )
+                return
+            else:
+                return
+        _log.error(
+            "cluster burst lost a child: every channel in the zone "
+            "refuses a spawn"
+        )
 
 
 async def _burst_embed(

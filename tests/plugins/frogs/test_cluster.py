@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+from typing import Any
 
 import hikari
 import pendulum
@@ -18,7 +19,14 @@ from core.utils import member_snapshot
 import plugins.frogs.behaviors as behaviors_mod
 from plugins.frogs.behaviors import ClusterBurst
 from plugins.frogs.species import by_key
-from tests.fakes import FakeChannel, FakeMember, InstantAsyncio
+from tests.fakes import (
+    FakeChannel,
+    FakeMember,
+    FakePermissionOverwrite,
+    FakeRole,
+    FakeUser,
+    InstantAsyncio,
+)
 
 
 async def test_cluster_catch_bursts_basics_into_zone(
@@ -68,13 +76,15 @@ async def test_cluster_catch_bursts_basics_into_zone(
         cid=10,
         persist=30,
     )
-    # children are tracked background tasks — drain the loop
+    # children are tracked background tasks — drain the loop; Random(7)
+    # drives the burst count the same way it drives the burst's
+    expected = behaviors_mod._burst_spawn_count(random.Random(7))
     for _ in range(100):
-        if len(spawned) >= 4:
+        if len(spawned) >= expected:
             break
         await asyncio.sleep(0.01)
 
-    assert 4 <= len(spawned) <= 6
+    assert len(spawned) == expected  # every announced child landed
     assert {key for _, key in spawned} == {FrogItemKey.BASIC}
     assert {cid_ for cid_, _ in spawned} <= {9, 10, 11}
     # the announcement names the catcher and is the one standalone message
@@ -83,23 +93,16 @@ async def test_cluster_catch_bursts_basics_into_zone(
     assert len(created) == 1
     msg = created[0]
     embed = msg.embeds[0]
-    assert embed.title == "Cluster Frog burst!"
+    assert embed.title == "Cluster Frog just bursted!!"
     # the catcher's mention + ping live on the message content (Discord
     # does not resolve pings inside embeds), not in the embed description
-    assert f"<@{123}>" in msg.content
-    # cluster frogs are never "caught" — the copy says the catch failed
-    # but the frog burst anyway
-    assert "tried to catch" in msg.content
-    assert "failed" in msg.content
-    assert "burst" in msg.content
+    assert msg.content == "<@123>"
     assert "caught a" not in msg.content
     # the burst outcome count is the "new count" line (there is no item
-    # stack for a burst — the burst IS the catch); Random(7) drives the
-    # count the same way it drives the burst's
-    expected = __import__("random").Random(7).randint(4, 6)
-    assert f"**`{expected}`** Basic Frogs" in msg.content
+    # stack for a burst — the burst IS the catch)
+    assert f"**`{expected}`** Basic Frogs" in (embed.description or "")
     # unpublished cluster art adds no emoji — never the literal "None"
-    assert "None" not in msg.content
+    assert "None" not in (embed.description or "")
     # the embed is thumbnail-free (no CATCH_BANNER media) and carries no
     # mention — the mention lives on the content
     assert embed.thumbnail is None
@@ -144,7 +147,7 @@ async def test_cluster_zone_ignores_non_text_and_outside_channels(
 
     burst = ClusterBurst()
     zone = await burst._zone(bot, gid, 10)  # type: ignore[attr-defined]
-    zone_ids = [entry[0] for entry in zone]
+    zone_ids = [channel.id for channel in zone]
     assert zone_ids == [1, 9, 10, 11]
     assert 88 not in zone_ids
     assert 99 not in zone_ids
@@ -170,7 +173,7 @@ async def test_cluster_zone_uncategorized_channels_form_one_room(
 
     burst = ClusterBurst()
     zone = await burst._zone(bot, gid, 2)  # type: ignore[attr-defined]
-    assert [entry[0] for entry in zone] == [2, 3]
+    assert [channel.id for channel in zone] == [2, 3]
 
 
 async def test_cluster_burst_targets_stay_in_the_origin_category(
@@ -329,6 +332,254 @@ async def test_cluster_burst_jackpot_spawns_ten(
     assert {cid_ for cid_, _ in spawned} <= {98, 99, 100}
 
 
+class _CyclingRandom(random.Random):
+    """A burst driver: a fixed child count, targets taken round-robin.
+
+    ``choices`` pins the burst size (the weighted 2–10 roll) and ``choice``
+    walks the zone in order, so even a small room is exercised
+    completely — every channel gets a child, including the one that
+    refuses spawns.
+    """
+
+    def __init__(self, count: int) -> None:
+        super().__init__(0)
+        self._count = count
+        self._next = 0
+
+    def choices(
+        self,
+        population: Any,
+        weights: Any = None,
+        *,
+        cum_weights: Any = None,
+        k: int = 1,
+    ) -> list[int]:
+        return [self._count] * k
+
+    def choice(self, seq: Any) -> Any:
+        value = seq[self._next % len(seq)]
+        self._next += 1
+        return value
+
+
+def _forbid(cid: int) -> hikari.ForbiddenError:
+    """The 403 Discord returns for a channel the bot cannot post in."""
+    return hikari.ForbiddenError(
+        f"https://discord.com/api/v10/channels/{cid}/messages",
+        {},
+        b'{"message": "Missing Permissions", "code": 50013}',
+        "Missing Permissions",
+        50013,
+    )
+
+
+async def test_cluster_burst_retries_a_channel_that_refuses_the_spawn(
+    full_bot,
+    monkeypatch,
+) -> None:
+    """A channel the bot cannot post in never eats a child.
+
+    The announcement already promised ``count`` frogs, so a refusal (403)
+    falls back to the room's other channels — the count still lands — and
+    the refusal only marks that burst's own children, so the next catch
+    probes the channel again (a permission fix must not wait for a
+    restart or a cooldown). Production shape: #memes' ±2 window reached
+    read-only #serious, which refused 25% of every burst's children.
+    """
+    bot = full_bot
+    gid = bot.config.guild_id
+    guild = bot.rest.guilds[gid]
+    room = 100
+    for cid_, pos in ((98, 1), (99, 2), (100, 3)):
+        channel = FakeChannel(id=cid_, guild_id=gid)
+        channel.position = pos
+        channel.parent_id = room
+        guild.channels[cid_] = channel
+
+    refused = 100
+    attempts: list[int] = []
+    spawned: list[int] = []
+
+    async def fake_spawn(
+        b,
+        persist,
+        cid: int | None = None,
+        species_key: FrogItemKey | None = None,
+    ) -> bool:
+        target = cid or 0
+        attempts.append(target)
+        if target == refused:
+            raise _forbid(target)
+        spawned.append(target)
+        return False
+
+    burst = ClusterBurst()
+    burst.spawn_impl = fake_spawn
+    monkeypatch.setattr(behaviors_mod, "random", _CyclingRandom(6))
+    monkeypatch.setattr(behaviors_mod, "asyncio", InstantAsyncio())
+
+    cluster = by_key(FrogItemKey.CLUSTER)
+    assert cluster is not None
+    sent = await burst(
+        bot,
+        uid=123,
+        member=member_snapshot(FakeMember(id=123, name="t")),
+        species=cluster,
+        now=pendulum.now("UTC"),
+        cid=99,
+        persist=30,
+    )
+    for _ in range(200):
+        if len(spawned) == 6:
+            break
+        await asyncio.sleep(0.01)
+
+    assert sent is not None
+    assert len(spawned) == 6  # the announced count, not count - refusals
+    assert refused not in spawned
+    assert attempts.count(refused) >= 1  # it did take one refusal to learn
+
+    # a later burst probes the refused channel again (fresh per-burst set)
+    attempts.clear()
+    await burst(
+        bot,
+        uid=123,
+        member=member_snapshot(FakeMember(id=123, name="t")),
+        species=cluster,
+        now=pendulum.now("UTC"),
+        cid=99,
+        persist=30,
+    )
+    for _ in range(200):
+        if len(spawned) == 12:
+            break
+        await asyncio.sleep(0.01)
+
+    assert len(spawned) == 12
+    assert refused in attempts
+
+
+async def test_cluster_burst_picks_up_a_permission_fix_on_the_next_catch(
+    full_bot,
+    monkeypatch,
+) -> None:
+    """Writability is re-checked on every burst: no restart, no cooldown.
+
+    A read-only room in the zone (the production #serious shape: staff
+    deny Send Messages to @everyone) never eats a child, and the moment
+    the permission is allowed the very next catch targets it — the zone is
+    recomputed from fresh channel objects on each burst.
+    """
+    bot = full_bot
+    gid = bot.config.guild_id
+    guild = bot.rest.guilds[gid]
+    room = 100
+    for cid_, pos in ((98, 1), (99, 2), (100, 3)):
+        channel = FakeChannel(id=cid_, guild_id=gid)
+        channel.position = pos
+        channel.parent_id = room
+        guild.channels[cid_] = channel
+    _let_the_bot_post(bot, guild, deny_send=(100,))
+
+    attempts: list[int] = []
+    spawned: list[int] = []
+
+    async def fake_spawn(
+        b,
+        persist,
+        cid: int | None = None,
+        species_key: FrogItemKey | None = None,
+    ) -> bool:
+        attempts.append(cid or 0)
+        spawned.append(cid or 0)
+        return False
+
+    burst = ClusterBurst()
+    burst.spawn_impl = fake_spawn
+    monkeypatch.setattr(behaviors_mod, "random", _CyclingRandom(6))
+    monkeypatch.setattr(behaviors_mod, "asyncio", InstantAsyncio())
+
+    cluster = by_key(FrogItemKey.CLUSTER)
+    assert cluster is not None
+
+    async def _catch() -> None:
+        before = len(spawned)
+        await burst(
+            bot,
+            uid=123,
+            member=member_snapshot(FakeMember(id=123, name="t")),
+            species=cluster,
+            now=pendulum.now("UTC"),
+            cid=99,
+            persist=30,
+        )
+        for _ in range(200):
+            if len(spawned) - before >= 6:
+                break
+            await asyncio.sleep(0.01)
+
+    await _catch()
+    assert len(spawned) == 6  # the announced count still lands
+    assert 100 not in attempts  # the read-only room never eats a child
+
+    # staff allow the bot there mid-uptime — no restart, no cooldown
+    guild.channels[100].permission_overwrites = {}
+    attempts.clear()
+    await _catch()
+    assert 100 in attempts  # the very next burst probes it again
+    assert len(spawned) == 12
+
+
+async def test_cluster_burst_without_a_writable_channel_announces_nothing(
+    full_bot,
+    monkeypatch,
+) -> None:
+    """A zone where every channel denies post permission: the catch is a
+    no-op — no announcement promising frogs, no child spawn attempted."""
+    bot = full_bot
+    gid = bot.config.guild_id
+    guild = bot.rest.guilds[gid]
+    room = 100
+    for cid_, pos in ((50, 1), (51, 2)):
+        channel = FakeChannel(id=cid_, guild_id=gid)
+        channel.position = pos
+        channel.parent_id = room
+        guild.channels[cid_] = channel
+    _let_the_bot_post(bot, guild, deny_send=(50, 51))
+
+    spawned: list[int] = []
+
+    async def fake_spawn(
+        b,
+        persist,
+        cid: int | None = None,
+        species_key: FrogItemKey | None = None,
+    ) -> bool:
+        spawned.append(cid or 0)
+        return False
+
+    burst = ClusterBurst()
+    burst.spawn_impl = fake_spawn
+    monkeypatch.setattr(behaviors_mod, "random", _CyclingRandom(4))
+    monkeypatch.setattr(behaviors_mod, "asyncio", InstantAsyncio())
+
+    cluster = by_key(FrogItemKey.CLUSTER)
+    assert cluster is not None
+    created_before = len(bot.rest.created)
+    result = await burst(
+        bot,
+        uid=123,
+        member=member_snapshot(FakeMember(id=123, name="t")),
+        species=cluster,
+        now=pendulum.now("UTC"),
+        cid=50,
+        persist=30,
+    )
+    assert result is None
+    assert spawned == []
+    assert len(bot.rest.created) == created_before
+
+
 async def test_burst_embed_thumbnail_references_banner_asset(
     full_bot,
 ) -> None:
@@ -345,3 +596,32 @@ async def test_burst_embed_thumbnail_references_banner_asset(
     embed = await behaviors_mod._burst_embed(full_bot, cluster, 5)
     assert embed.thumbnail is not None
     assert embed.thumbnail.url == "https://cdn.example/catch_banner.png"
+
+
+def _let_the_bot_post(
+    bot: Any,
+    guild: Any,
+    *,
+    deny_send: tuple[int, ...] = (),
+) -> None:
+    """Give the bot computed writability in ``guild``'s channels.
+
+    ``deny_send`` names channels that deny Send Messages to @everyone —
+    the read-only-room shape the burst's per-burst check must skip.
+    """
+    bits = (
+        hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES
+    )
+    guild.roles = {
+        guild.id: FakeRole(id=guild.id, name="@everyone", permissions=bits)
+    }
+    bot.cache.me = FakeUser(id=900, name="cazzu", bot=True)
+    bot.cache.add_member(
+        FakeMember(id=900, name="cazzu", guild=guild, bot=True)
+    )
+    for cid in deny_send:
+        guild.channels[cid].permission_overwrites = {
+            guild.id: FakePermissionOverwrite(
+                deny=hikari.Permissions.SEND_MESSAGES
+            )
+        }

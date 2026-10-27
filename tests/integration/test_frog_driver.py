@@ -11,6 +11,7 @@ button's custom_id carries it (``frog:catch:<cid>:<key>``).
 from __future__ import annotations
 
 import asyncio
+import re
 
 import hikari
 import pendulum
@@ -341,28 +342,29 @@ async def test_capture_cluster_bursts_basics_no_item(
     msg = created[0]
     assert msg.channel_id == 99
     embed = msg.embeds[0]
-    assert embed.title == "Cluster Frog burst!"
+    assert embed.title == "Cluster Frog just bursted!!"
     # the catcher's mention + ping live on the message content (Discord
     # does not resolve pings inside embeds), not in the embed
-    assert "<@424242>" in msg.content
-    # cluster frogs are never caught — the copy says the catch failed
-    # and the frog burst instead; the burst outcome count is the "new
-    # count" line, and the embed stays thumbnail-free
-    assert "burst" in msg.content
-    assert "Basic Frogs" in msg.content
+    assert msg.content == "<@424242>"
+    # the burst outcome count is the "new count" line (the burst IS the
+    # catch) and it is the contract: every announced child must land
+    count = re.search(r"\*\*`(\d+)`\*\*", embed.description or "")
+    assert count is not None
+    announced = int(count.group(1))
+    assert "Basic Frogs" in (embed.description or "")
+    assert "burst" in (embed.description or "")
     assert "caught a" not in msg.content
     assert "None" not in msg.content
     assert embed.thumbnail is None
     assert "<@424242>" not in (embed.description or "")
-    assert "burst" in (embed.description or "")
     assert msg.create_kwargs is not None
     assert msg.create_kwargs["user_mentions"] == [424242]
     # children fired as Basic frogs into the zone
     for _ in range(100):
-        if len(spawned) >= 4:
+        if len(spawned) >= announced:
             break
         await asyncio.sleep(0.01)
-    assert 4 <= len(spawned) <= 6
+    assert len(spawned) == announced
     assert all(key == FrogItemKey.BASIC for _cid, key in spawned)
     assert all(cid_ in {98, 99, 100} for cid_, _key in spawned)
     # the capture is recorded in the ledger (log + counter) but never
